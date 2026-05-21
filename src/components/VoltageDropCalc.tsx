@@ -1,34 +1,134 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Ruler, Zap, AlertTriangle, Calculator, Link } from 'lucide-react';
-import { VoltageDropParams, Circuit, PanelConfig } from '../types';
+import { Ruler, Zap, AlertTriangle, Calculator, Link, Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import { VoltageDropCalculation, Circuit, PanelConfig } from '../types';
 import { WIRE_IMPEDANCE_TABLE, WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from '../constants';
 
 export interface VoltageDropCalcProps {
   panel?: PanelConfig;
   circuits?: Circuit[];
+  calculations: VoltageDropCalculation[];
+  setCalculations: React.Dispatch<React.SetStateAction<VoltageDropCalculation[]>>;
 }
 
-export default function VoltageDropCalc({ panel, circuits }: VoltageDropCalcProps) {
+export default function VoltageDropCalc({ panel, circuits, calculations, setCalculations }: VoltageDropCalcProps) {
   const [source, setSource] = useState<string>('custom');
-  
-  const [params, setParams] = useState<VoltageDropParams>({
-    loadA: 20,
-    length: 30,
-    wireSize: '3.5',
-    voltage: 230,
-    systemType: '1PH'
-  });
+  const [newLength, setNewLength] = useState<number>(30);
 
-  // Automatically update params if a source from the load schedule is selected
   useEffect(() => {
-    if (!circuits || !panel) return;
+    if (!circuits || !panel || calculations.length === 0) return;
     
-    if (source === 'main') {
+    setCalculations(prev => {
+      let changed = false;
+      const next = prev.map(calc => {
+        if (calc.source === 'main') {
+          // Recalculate main
+          const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
+          const is3PH = panel.system.includes('3PH');
+          
+          let mainCurrent = 0;
+          if (is3PH) {
+             const phaseLoads = { R: 0, Y: 0, B: 0 };
+             circuits.forEach(c => {
+               c.phases.forEach(p => {
+                 const key = p as keyof typeof phaseLoads;
+                 phaseLoads[key] = (phaseLoads[key] || 0) + c.loadVA / c.phases.length;
+               });
+             });
+             const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
+             mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * Math.sqrt(3));
+          } else {
+             mainCurrent = totalVA / panel.voltage;
+          }
+
+          const designAmp = mainCurrent * 1.25;
+          const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+          
+          let minSize = 2.0;
+          if (cb > 15 && cb <= 20) minSize = 3.5;
+          else if (cb > 20 && cb <= 30) minSize = 5.5;
+          const requiredAmpacity = Math.max(designAmp, cb);
+          const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+          
+          const newLoadA = Number(mainCurrent.toFixed(2));
+          const newWireSize = wire.size.toString();
+          const newVoltage = panel.voltage;
+          const newSystemType: '1PH' | '3PH' = is3PH ? '3PH' : '1PH';
+          
+          if (calc.loadA !== newLoadA || calc.wireSize !== newWireSize || calc.voltage !== newVoltage || calc.systemType !== newSystemType) {
+            changed = true;
+            return {
+              ...calc,
+              loadA: newLoadA,
+              wireSize: newWireSize,
+              voltage: newVoltage,
+              systemType: newSystemType
+            };
+          }
+        } else if (calc.source !== 'custom') {
+          // It's a circuit
+          const c = circuits.find(c => c.id === calc.source);
+          if (c) {
+            const newName = `Circuit ${c.circuitNo}: ${c.description}`;
+            const newSystemType: '1PH' | '3PH' = c.phases.length > 2 ? '3PH' : '1PH';
+            if (calc.loadA !== c.loadA || calc.wireSize !== c.wireSize || calc.voltage !== c.voltage || calc.name !== newName || calc.systemType !== newSystemType) {
+              changed = true;
+              return {
+                ...calc,
+                name: newName,
+                loadA: c.loadA,
+                wireSize: c.wireSize,
+                voltage: c.voltage,
+                systemType: newSystemType
+              };
+            }
+          }
+        }
+        return calc;
+      });
+      return changed ? next : prev;
+    });
+  }, [circuits, panel, setCalculations]);
+
+  const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
+    const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'];
+    const R = data.r;
+    const factor = calc.systemType === '3PH' ? Math.sqrt(3) : 2;
+    const vd = (factor * calc.length * calc.loadA * R) / 1000;
+    const vdPercentage = (vd / calc.voltage) * 100;
+    
+    return {
+      vd: vd.toFixed(2),
+      vdPercentage: vdPercentage.toFixed(2),
+      isCompliant: vdPercentage <= 3.0
+    };
+  };
+
+  const activeCalculations = useMemo(() => {
+    return calculations.map(c => ({
+      ...c,
+      result: calculateVDAndCompliance(c)
+    }));
+  }, [calculations]);
+
+  const handleAddCalculation = () => {
+    if (source === 'custom') {
+      const newCalc: VoltageDropCalculation = {
+        id: crypto.randomUUID(),
+        source: 'custom',
+        name: 'Custom Circuit ' + (calculations.length + 1),
+        loadA: 20,
+        length: newLength,
+        wireSize: '3.5',
+        voltage: 230,
+        systemType: '1PH'
+      };
+      setCalculations([...calculations, newCalc]);
+    } else if (source === 'main' && panel && circuits) {
       const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
       const is3PH = panel.system.includes('3PH');
       const mainCurrent = is3PH ? (totalVA) / (panel.voltage * Math.sqrt(3)) : (totalVA) / panel.voltage;
       const designAmp = mainCurrent * 1.25;
-      const cb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+      const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
       
       let minSize = 2.0;
       if (cb > 15 && cb <= 20) minSize = 3.5;
@@ -36,60 +136,68 @@ export default function VoltageDropCalc({ panel, circuits }: VoltageDropCalcProp
       const requiredAmpacity = Math.max(designAmp, cb);
       const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
       
-      setParams(p => ({
-        ...p,
+      const newCalc: VoltageDropCalculation = {
+        id: crypto.randomUUID(),
+        source: 'main',
+        name: 'Main Feeder',
         loadA: Number(mainCurrent.toFixed(2)),
+        length: newLength,
         wireSize: wire.size.toString(),
         voltage: panel.voltage,
         systemType: is3PH ? '3PH' : '1PH'
-      }));
-    } else if (source !== 'custom') {
+      };
+      setCalculations([...calculations, newCalc]);
+    } else if (circuits) {
       const c = circuits.find(c => c.id === source);
       if (c) {
-        setParams(p => ({
-          ...p,
+        const newCalc: VoltageDropCalculation = {
+          id: crypto.randomUUID(),
+          source: c.id,
+          name: `Circuit ${c.circuitNo}: ${c.description}`,
           loadA: c.loadA,
+          length: newLength,
           wireSize: c.wireSize,
           voltage: c.voltage,
           systemType: c.phases.length > 2 ? '3PH' : '1PH'
-        }));
+        };
+        setCalculations([...calculations, newCalc]);
       }
     }
-  }, [source, circuits, panel]);
+    setSource('custom');
+    setNewLength(30);
+  };
 
-  const calculation = useMemo(() => {
-    const data = WIRE_IMPEDANCE_TABLE[params.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'];
-    // Full impedance Z = sqrt(R^2 + X^2) or just use Resistance for simple residential/branch
-    // PEC formula: VD = 2 * L * I * (R*cosPhi + X*sinPhi) / 1000 for 1PH
-    // PEC formula: VD = sqrt(3) * L * I * (R*cosPhi + X*sinPhi) / 1000 for 3PH
-    
-    const R = data.r;
-    const factor = params.systemType === '3PH' ? Math.sqrt(3) : 2;
-    const vd = (factor * params.length * params.loadA * R) / 1000;
-    const vdPercentage = (vd / params.voltage) * 100;
+  const handleUpdateCalculation = (id: string, updates: Partial<VoltageDropCalculation>) => {
+    setCalculations(calculations.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
 
-    return {
-      vd: vd.toFixed(2),
-      vdPercentage: vdPercentage.toFixed(2),
-      isCompliant: vdPercentage <= 3.0 // PEC recommendation 3% for branch, 5% total
-    };
-  }, [params]);
+  const handleRemoveCalculation = (id: string) => {
+    setCalculations(calculations.filter(c => c.id !== id));
+  };
+
+  const worstCase = useMemo(() => {
+    if (activeCalculations.length === 0) return null;
+    return activeCalculations.reduce((prev, current) => {
+      return (parseFloat(current.result.vdPercentage) > parseFloat(prev.result.vdPercentage)) ? current : prev;
+    });
+  }, [activeCalculations]);
 
   return (
     <div className="w-full max-w-full space-y-6">
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 no-print">
-        <div className="flex items-center gap-2 mb-6">
-          <Ruler className="w-5 h-5 text-indigo-600" />
-          <h2 className="text-lg font-bold text-slate-800">Voltage Drop Parameters</h2>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Ruler className="w-5 h-5 text-indigo-600" />
+            <h2 className="text-lg font-bold text-slate-800">Add Circuit for Voltage Drop</h2>
+          </div>
         </div>
-        <p className="text-xs text-slate-400 mb-6 font-medium">Input circuit length and load to calculate PEC compliance.</p>
         
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 lg:flex-row items-end">
           {circuits && circuits.length > 0 && (
-            <div className="space-y-1.5 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
+            <div className="flex-1 space-y-1.5 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100">
               <label className="text-xs font-bold text-indigo-600 uppercase flex items-center gap-1"><Link className="w-3 h-3" /> Connect to Load Schedule</label>
               <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-sm text-indigo-900 font-medium font-sans mt-2 shadow-sm">
-                <option value="custom">Custom Parameters (Disconnected)</option>
+                <option value="custom">Custom Circuit</option>
                 <option value="main">Main Feeder</option>
                 <optgroup label="Branch Circuits">
                   {circuits.map(c => (
@@ -100,28 +208,18 @@ export default function VoltageDropCalc({ panel, circuits }: VoltageDropCalcProp
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-400 uppercase">Load (Amps)</label>
-                  <input type="number" readOnly={source !== 'custom'} value={params.loadA} onChange={e => setParams({...params, loadA: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm ${source !== 'custom' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-slate-50'}`} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-400 uppercase">Length (m)</label>
-                  <input type="number" value={params.length} onChange={e => setParams({...params, length: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-white border border-slate-300 shadow-sm shadow-slate-100 rounded-lg text-sm font-bold text-slate-900" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-400 uppercase">Wire (mm²)</label>
-                  <select disabled={source !== 'custom'} value={params.wireSize} onChange={e => setParams({...params, wireSize: e.target.value})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm ${source !== 'custom' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-slate-50'}`}>
-                    {Object.keys(WIRE_IMPEDANCE_TABLE).map(s => <option key={s} value={s}>{s} mm²</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-400 uppercase">System</label>
-                  <select disabled={source !== 'custom'} value={params.systemType} onChange={e => setParams({...params, systemType: e.target.value as any})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm ${source !== 'custom' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-slate-50'}`}>
-                    <option value="1PH">1Ф</option>
-                    <option value="3PH">3Ф</option>
-                  </select>
-                </div>
+          <div className="flex-1 space-y-1.5 p-4">
+            <label className="text-xs font-bold text-slate-400 uppercase">Length (m)</label>
+            <input type="number" value={newLength} onChange={e => setNewLength(parseFloat(e.target.value))} className="w-full px-3 py-2 bg-white border border-slate-300 shadow-sm shadow-slate-100 rounded-lg text-sm font-bold text-slate-900" />
+          </div>
+
+          <div className="flex-none p-4">
+            <button 
+              onClick={handleAddCalculation}
+              className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition shadow-lg shadow-indigo-200/50"
+            >
+              <Plus className="w-4 h-4" /> Add to List
+            </button>
           </div>
         </div>
       </section>
@@ -132,57 +230,168 @@ export default function VoltageDropCalc({ panel, circuits }: VoltageDropCalcProp
               <h3 className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Voltage Drop Analysis</h3>
               <p className="text-[10px] text-slate-400 font-bold uppercase">Engineering Verification</p>
            </div>
-           <p className="text-xs text-slate-400 font-mono">Ver: 1.0.2</p>
+           <p className="text-xs text-slate-400 font-mono">Ver: 1.0.3</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400 uppercase">Load Current (Amperes)</label>
-                <input readOnly={source !== 'custom'} type="number" value={params.loadA} onChange={e => setParams({...params, loadA: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm ${source !== 'custom' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'bg-slate-50'}`} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400 uppercase">One-way Length (Meters)</label>
-                <input type="number" value={params.length} onChange={e => setParams({...params, length: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-400 rounded-lg text-sm" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400 uppercase">Wire Size (mm²)</label>
-                <select disabled={source !== 'custom'} value={params.wireSize} onChange={e => setParams({...params, wireSize: e.target.value})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm ${source !== 'custom' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'bg-slate-50'}`}>
-                  {Object.keys(WIRE_IMPEDANCE_TABLE).map(s => <option key={s} value={s}>{s} mm²</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400 uppercase">System Type</label>
-                <select disabled={source !== 'custom'} value={params.systemType} onChange={e => setParams({...params, systemType: e.target.value as any})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm ${source !== 'custom' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'bg-slate-50'}`}>
-                  <option value="1PH">Single Phase (1Ф)</option>
-                  <option value="3PH">Three Phase (3Ф)</option>
-                </select>
-              </div>
+        {worstCase && (
+          <div className={`mb-8 p-6 rounded-2xl border-2 flex flex-col md:flex-row items-center justify-between transition-colors ${worstCase.result.isCompliant ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+            <div className="flex flex-col mb-4 md:mb-0">
+               <span className={`text-[10px] font-black uppercase mb-1 ${worstCase.result.isCompliant ? 'text-green-600' : 'text-red-600'}`}>Worst Case Scenario</span>
+               <h4 className="text-xl font-bold text-slate-900">{worstCase.name}</h4>
+               <p className="text-sm font-medium text-slate-600">Length: {worstCase.length}m | Load: {worstCase.loadA}A | Wire: {worstCase.wireSize}mm²</p>
             </div>
-          </div>
-
-          <div className="flex flex-col justify-center gap-6">
-            <div className={`p-8 rounded-2xl border-2 flex flex-col items-center transition-colors ${calculation.isCompliant ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              <span className={`text-[10px] font-black uppercase mb-1 ${calculation.isCompliant ? 'text-green-600' : 'text-red-600'}`}>Voltage Drop (%)</span>
-              <p className={`text-6xl font-black ${calculation.isCompliant ? 'text-green-700' : 'text-red-700'}`}>{calculation.vdPercentage}%</p>
-              <div className="mt-4 flex items-center gap-2 font-bold text-sm">
-                {calculation.isCompliant ? (
-                  <><Zap className="w-4 h-4 text-green-500" /> <span className="text-green-700 uppercase">Compliant with PEC</span></>
+            <div className="flex items-center gap-6">
+              <div className="text-center">
+                <p className="text-xs text-slate-400 uppercase font-black">Actual VD</p>
+                <p className="text-2xl font-bold text-slate-700">{worstCase.result.vd} Volts</p>
+              </div>
+              <div className={`text-center ${worstCase.result.isCompliant ? 'text-green-700' : 'text-red-700'}`}>
+                <span className="text-[10px] font-black uppercase mb-1">VD (%)</span>
+                <p className="text-5xl font-black">{worstCase.result.vdPercentage}%</p>
+              </div>
+              <div className="mt-2 flex items-center gap-2 font-bold text-sm">
+                {worstCase.result.isCompliant ? (
+                   <CheckCircle2 className="w-8 h-8 text-green-500" />
                 ) : (
-                  <><AlertTriangle className="w-4 h-4 text-red-500" /> <span className="text-red-700 uppercase">Exceeds PEC 3% Limit</span></>
+                   <AlertTriangle className="w-8 h-8 text-red-500" />
                 )}
               </div>
             </div>
-            <div className="text-center">
-              <p className="text-xs text-slate-400 uppercase font-black">Actual Voltage Drop</p>
-              <p className="text-2xl font-bold text-slate-700">{calculation.vd} Volts</p>
-            </div>
           </div>
+        )}
+
+        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold">
+                <th className="p-3">Circuit / Designation</th>
+                <th className="p-3 w-24">Length (m)</th>
+                <th className="p-3 w-20">Load (A)</th>
+                <th className="p-3 w-24">Wire (mm²)</th>
+                <th className="p-3 w-20">System</th>
+                <th className="p-3 w-20">VD (V)</th>
+                <th className="p-3 w-20">VD (%)</th>
+                <th className="p-3 w-20 text-center">Status</th>
+                <th className="p-3 w-10 no-print"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeCalculations.map((c) => (
+                <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 font-medium">
+                  <td className="p-3 text-slate-900 border-r border-slate-50">
+                    <input value={c.name} onChange={e => handleUpdateCalculation(c.id, { name: e.target.value })} className="w-full bg-transparent outline-none border-b border-transparent focus:border-slate-300" />
+                  </td>
+                  <td className="p-3 border-r border-slate-50">
+                    <input 
+                       type="number" 
+                       value={c.length} 
+                       onChange={e => handleUpdateCalculation(c.id, { length: parseFloat(e.target.value) || 0 })} 
+                       className="w-full bg-transparent outline-none font-bold text-indigo-700 bg-indigo-50/30 px-2 py-1 rounded" 
+                    />
+                  </td>
+                  <td className="p-3">
+                    <input 
+                       type="number" 
+                       readOnly={c.source !== 'custom'}
+                       value={c.loadA} 
+                       onChange={e => handleUpdateCalculation(c.id, { loadA: parseFloat(e.target.value) || 0 })} 
+                       className={`w-full bg-transparent outline-none px-2 py-1 rounded ${c.source === 'custom' ? 'focus:bg-slate-100 hover:bg-slate-100' : ''}`} 
+                    />
+                  </td>
+                  <td className="p-3">
+                     {c.source === 'custom' ? (
+                        <select value={c.wireSize} onChange={e => handleUpdateCalculation(c.id, { wireSize: e.target.value })} className="bg-transparent outline-none max-w-full">
+                           {Object.keys(WIRE_IMPEDANCE_TABLE).map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                     ) : (
+                        c.wireSize
+                     )}
+                  </td>
+                  <td className="p-3">
+                     {c.source === 'custom' ? (
+                        <select value={c.systemType} onChange={e => handleUpdateCalculation(c.id, { systemType: e.target.value as any })} className="bg-transparent outline-none">
+                           <option value="1PH">1Ф</option>
+                           <option value="3PH">3Ф</option>
+                        </select>
+                     ) : (
+                        c.systemType
+                     )}
+                  </td>
+                  <td className="p-3 text-slate-600">{c.result.vd}V</td>
+                  <td className={`p-3 font-bold ${c.result.isCompliant ? 'text-green-600' : 'text-red-600'}`}>{c.result.vdPercentage}%</td>
+                  <td className="p-3 flex justify-center">
+                    {c.result.isCompliant ? (
+                       <Zap className="w-5 h-5 text-green-500" />
+                    ) : (
+                       <AlertTriangle className="w-5 h-5 text-red-500" />
+                    )}
+                  </td>
+                  <td className="p-3 no-print">
+                    <button onClick={() => handleRemoveCalculation(c.id)} className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {activeCalculations.length === 0 && (
+                <tr>
+                   <td colSpan={9} className="p-8 text-center text-slate-400 font-medium italic">
+                      No circuits added to the calculation list. Select a source and click "Add to List".
+                   </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
-      {/* Calculations & Formulas Section (Only visible during PDF export / print) */}
+      {/* Render SLDs for each calculation outside of the main table section so we can grab them individually if needed */}
+      <div className="space-y-6">
+         {activeCalculations.map(calc => (
+            <section key={calc.id} id={`vd-diagram-${calc.id}`} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 panel-container">
+               <h4 className="text-lg font-bold text-slate-800 mb-10 text-center uppercase tracking-wider">{calc.name}</h4>
+               
+               <div className="flex items-center justify-between mx-auto max-w-3xl relative mt-4 mb-4">
+                 {/* Source */}
+                  <div className="flex flex-col items-center z-10 w-32">
+                       <div className="w-16 h-16 rounded-full border-[5px] border-indigo-600 flex items-center justify-center bg-white z-10 shadow-[0_0_15px_rgba(79,70,229,0.3)]">
+                          <Zap className="w-8 h-8 text-indigo-600" />
+                       </div>
+                       <div className="text-center mt-4">
+                          <span className="font-black text-slate-900 block uppercase tracking-wider">Source</span>
+                          <span className="text-sm font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded inline-block mt-1">{calc.voltage}V {calc.systemType}</span>
+                       </div>
+                  </div>
+
+                  {/* Feeder/Wire */}
+                  <div className="flex-1 h-3 bg-indigo-100 relative flex items-center justify-center -mx-4 z-0">
+                     <div className="absolute -top-14 text-center w-full flex flex-col items-center gap-1">
+                       <span className="font-bold text-slate-800 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-sm">L = {calc.length} m</span>
+                       <span className="text-xs font-bold text-slate-500">{calc.wireSize} mm² THHN/THWN</span>
+                       <div className={`text-xs font-black px-2 py-0.5 rounded ${calc.result.isCompliant ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          VD: {calc.result.vd}V ({calc.result.vdPercentage}%)
+                       </div>
+                     </div>
+                     {/* Triangle arrow representing current flow */}
+                     <div className="w-4 h-4 border-t-[8px] border-t-transparent border-l-[12px] border-l-indigo-300 border-b-[8px] border-b-transparent"></div>
+                  </div>
+
+                  {/* Load */}
+                  <div className="flex flex-col items-center z-10 w-32">
+                       <div className="w-16 h-16 border-[5px] border-slate-700 flex items-center justify-center bg-white z-10 shadow-[0_0_15px_rgba(51,65,85,0.2)]">
+                          <span className="font-black text-slate-700 text-sm tracking-widest">LOAD</span>
+                       </div>
+                       <div className="text-center mt-4">
+                          <span className="font-black text-slate-900 block uppercase tracking-wider">Current</span>
+                          <span className="text-sm font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded inline-block mt-1">{calc.loadA} A</span>
+                       </div>
+                  </div>
+               </div>
+            </section>
+         ))}
+      </div>
+
+      {/* Calculations & Formulas Section */}
       <section className="hidden print-show mt-12 bg-white rounded-2xl border-2 border-slate-800 p-8">
         <div className="flex items-center gap-2 mb-6">
           <Calculator className="w-5 h-5 text-indigo-600" />
@@ -205,7 +414,6 @@ export default function VoltageDropCalc({ panel, circuits }: VoltageDropCalcProp
               <span>{`VD (1-Phase) = (2 × K × I × L) / Area`}</span>
               <span>{`VD (3-Phase) = (√3 × K × I × L) / Area`}</span>
             </div>
-            <p className="mt-2 text-indigo-600 font-bold">Calculated Actual Voltage Drop: {calculation.vd} Volts</p>
           </div>
 
           <div>
@@ -213,12 +421,6 @@ export default function VoltageDropCalc({ panel, circuits }: VoltageDropCalcProp
             <p className="mb-2">Article 2.10.2.1(A) FPN No. 4 of the Philippine Electrical Code (PEC) 2017 recommends that the maximum voltage drop for branch circuits does not exceed 3%, and the total voltage drop for feeders and branch circuits does not exceed 5%.</p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
               <span>{`VD (%) = (Actual Voltage Drop / Source Voltage) × 100`}</span>
-            </div>
-            <div className="mt-2 text-indigo-600 font-bold flex flex-col gap-1">
-              <span>Calculated VD Percentage: {calculation.vdPercentage}%</span>
-              <span className={calculation.isCompliant ? "text-green-600" : "text-red-500"}>
-                Compliance: {calculation.isCompliant ? "Compliant (≤ 3%)" : "Exceeds limits (> 3%)"}
-              </span>
             </div>
           </div>
         </div>

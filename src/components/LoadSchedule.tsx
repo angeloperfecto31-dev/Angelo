@@ -101,6 +101,7 @@ export interface LoadScheduleProps {
   onAddSubPanel?: () => void;
   onRemoveSubPanel?: () => void;
   availableSubPanels?: { id: string, panel: PanelConfig, circuits: Circuit[] }[];
+  readOnly?: boolean;
 }
 
 const WireBundle = ({ system, wireSize, groundSize, isBranch = false, phases = [], className = "", direction = "down" }: { system?: string, wireSize: string | number, groundSize: string | number, isBranch?: boolean, phases?: string[], className?: string, direction?: "down" | "up" | "left" | "right" }) => {
@@ -266,7 +267,7 @@ const VerticalBusBarComponent: React.FC<{ label: string, is3Phase?: boolean }> =
    );
 };
 
-export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, isSubPanel = false, onRemoveSubPanel, availableSubPanels }: LoadScheduleProps) {
+export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, isSubPanel = false, onRemoveSubPanel, availableSubPanels, readOnly = false }: LoadScheduleProps) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
 
@@ -327,44 +328,48 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   };
 
   useEffect(() => {
-    let changed = false;
-    let newCircuits = [...circuits];
+    if (readOnly) return;
+    setCircuits(prevCircuits => {
+      let changed = false;
+      let newCircuits = [...prevCircuits];
 
-    if (availableSubPanels) {
-      for (let i = 0; i < newCircuits.length; i++) {
-        const c = newCircuits[i];
-        if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId) {
-          const sp = availableSubPanels.find(s => s.id === c.linkedSubPanelId);
-          if (sp) {
-             const subTotalVA = sp.circuits.reduce((sum, cc) => sum + cc.loadVA, 0);
-             const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + cc.wattage, 0);
-             
-             if (c.loadVA !== subTotalVA || c.wattage !== subTotalWattage || c.description !== sp.panel.designation) {
-                newCircuits[i] = { 
-                  ...c, 
-                  quantity: 1,
-                  wattage: subTotalWattage, 
-                  loadVA: subTotalVA, 
-                  description: sp.panel.designation || 'Sub-Panel' 
-                };
-                newCircuits[i] = { ...newCircuits[i], ...calculateCircuit(newCircuits[i]) } as Circuit;
-                changed = true;
-             }
+      if (availableSubPanels) {
+        for (let i = 0; i < newCircuits.length; i++) {
+          const c = newCircuits[i];
+          if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId) {
+            const sp = availableSubPanels.find(s => s.id === c.linkedSubPanelId);
+            if (sp) {
+               const subTotalVA = sp.circuits.reduce((sum, cc) => sum + cc.loadVA, 0);
+               const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + cc.wattage, 0);
+               
+               if (c.loadVA !== subTotalVA || c.wattage !== subTotalWattage || c.description !== sp.panel.designation) {
+                  newCircuits[i] = { 
+                    ...c, 
+                    quantity: 1,
+                    wattage: subTotalWattage, 
+                    loadVA: subTotalVA, 
+                    description: sp.panel.designation || 'Sub-Panel' 
+                  };
+                  newCircuits[i] = { ...newCircuits[i], ...calculateCircuit(newCircuits[i]) } as Circuit;
+                  changed = true;
+               }
+            }
           }
         }
       }
-    }
 
-    const recalculated = newCircuits.map(c => {
-       const rec = { ...c, ...calculateCircuit(c) } as Circuit;
-       if (JSON.stringify(rec) !== JSON.stringify(c)) changed = true;
-       return rec;
+      const recalculated = newCircuits.map(c => {
+         const rec = { ...c, ...calculateCircuit(c) } as Circuit;
+         if (JSON.stringify(rec) !== JSON.stringify(c)) changed = true;
+         return rec;
+      });
+
+      if (changed) {
+         return recalculated;
+      }
+      return prevCircuits;
     });
-
-    if (changed) {
-       setCircuits(recalculated);
-    }
-  }, [panel.system, panel.connectionType, panel.voltage, availableSubPanels, circuits]);
+  }, [panel.system, panel.connectionType, panel.voltage, availableSubPanels, setCircuits]);
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {
     let mcbP = c.mcbP;
@@ -580,6 +585,22 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     }
     return rows;
   }, [circuits, panel.system]);
+
+  React.useEffect(() => {
+    if (readOnly) return;
+    if (
+      panel.mainBreakerAT !== mainFeeder.cb || 
+      panel.mainBreakerAF !== mainFeeder.af || 
+      panel.icRating !== `${mainFeeder.kaic}kAIC`
+    ) {
+      setPanel(prev => ({
+        ...prev,
+        mainBreakerAT: mainFeeder.cb,
+        mainBreakerAF: mainFeeder.af,
+        icRating: `${mainFeeder.kaic}kAIC`
+      }));
+    }
+  }, [mainFeeder.cb, mainFeeder.af, mainFeeder.kaic, panel.mainBreakerAT, panel.mainBreakerAF, panel.icRating, setPanel]);
 
   return (
     <div className="w-full max-w-full space-y-6">
@@ -866,7 +887,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
           Single Line Diagram - {panel.designation}
         </h4>
         
-        <SingleLineDiagram panel={panel} mainFeeder={mainFeeder} panelRows={panelRows} formatWireSize={formatWireSize} />
+        <SingleLineDiagram panel={panel} mainFeeder={mainFeeder} panelRows={panelRows} formatWireSize={formatWireSize} isSubPanel={isSubPanel} />
       </section>
 
       {/* Legend & Disclaimer */}

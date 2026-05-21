@@ -7,9 +7,10 @@ interface SingleLineDiagramProps {
   mainFeeder: any;
   panelRows: any[];
   formatWireSize: (size: number) => number | string;
+  isSubPanel?: boolean;
 }
 
-export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mainFeeder, panelRows, formatWireSize }) => {
+export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel }) => {
   // SVG Dimensions Calculation
   const startY = 320;
   const rowHeight = 60;
@@ -49,14 +50,29 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mai
           </style>
         </defs>
 
-        {/* Source Triangle */}
-        <path d="M 230,80 L 270,100 L 230,120 Z" className="sld-line" fill="none" />
-        <text x="215" y="95" className="sld-text" textAnchor="end">{voltage}V {phaseText}</text>
-        <text x="215" y="115" className="sld-text" textAnchor="end">60Hz</text>
+        {/* Source Symbol */}
+        {isSubPanel ? (
+          <>
+            <circle cx="270" cy="100" r="5" fill="#1e293b" />
+            <text x="250" y="95" className="sld-text" textAnchor="end">{voltage}V {phaseText}</text>
+            <text x="250" y="115" className="sld-text" textAnchor="end">60Hz</text>
+            <text x="250" y="75" className="sld-text" textAnchor="end">CONNECTED TO MDP</text>
+          </>
+        ) : (
+          <>
+            <path d="M 230,80 L 270,100 L 230,120 Z" className="sld-line" fill="none" />
+            <text x="215" y="95" className="sld-text" textAnchor="end">{voltage}V {phaseText}</text>
+            <text x="215" y="115" className="sld-text" textAnchor="end">60Hz</text>
+          </>
+        )}
 
         {/* Top Feed Wire */}
         <line x1="270" y1="100" x2="400" y2="100" className="sld-line" />
-        <line x1="400" y1="100" x2="400" y2="120" className="sld-line" />
+        {isSubPanel ? (
+           <line x1="400" y1="100" x2="400" y2="180" className="sld-line" />
+        ) : (
+           <line x1="400" y1="100" x2="400" y2="120" className="sld-line" />
+        )}
         
         {/* Feed Text */}
         <text x="410" y="70" className="sld-text">
@@ -66,10 +82,13 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mai
         </text>
 
         {/* Meter */}
-        <circle cx="400" cy="135" r="15" className="sld-line" />
-        <text x="400" y="140" className="sld-text" textAnchor="middle">M</text>
-
-        <line x1="400" y1="150" x2="400" y2="180" className="sld-line" />
+        {!isSubPanel && (
+          <>
+            <circle cx="400" cy="135" r="15" className="sld-line" />
+            <text x="400" y="140" className="sld-text" textAnchor="middle">M</text>
+            <line x1="400" y1="150" x2="400" y2="180" className="sld-line" />
+          </>
+        )}
 
         {/* Main Breaker form */}
         <path d="M 400,180 A 10 10 0 0 1 400 200" className="sld-line" />

@@ -69,12 +69,19 @@ export interface ShortCircuitParams {
   transformerKVA: number;
   transformerZ: number; // percentage
   transformerVoltage: number;
+  primaryVoltage: number;
+  transformerConnection: string;
   utilityShortCircuitMVA: number;
   feederLength: number; // meters
   feederSize: string; // mm²
+  feederRuns: number;
+  conductorType: 'Copper' | 'Aluminum';
 }
 
-export interface VoltageDropParams {
+export interface VoltageDropCalculation {
+  id: string;
+  source: string;
+  name: string;
   loadA: number;
   length: number; // meters
   wireSize: string; // mm²
@@ -82,12 +89,25 @@ export interface VoltageDropParams {
   systemType: '1PH' | '3PH';
 }
 
+export interface LightFixture {
+  id: string;
+  brand: string;
+  model: string;
+  wattage: number;
+  lumens: number;
+  imageUrl: string;
+}
+
 export interface IlluminationParams {
+  inputMode: 'dimensions' | 'area';
   roomWidth: number;
   roomLength: number;
+  userArea: number;
   ceilingHeight: number;
   workingPlaneHeight: number;
+  mountingHeight?: number; // Optional since it can be derived, or explicit
   targetLux: number;
+  selectedFixtureId?: string;
   lumensPerFixture: number;
   coefficientOfUtilization: number;
   maintenanceFactor: number;

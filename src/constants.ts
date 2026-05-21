@@ -1,4 +1,4 @@
-import { ShortCircuitParams, VoltageDropParams, IlluminationParams } from './types';
+import { ShortCircuitParams, VoltageDropCalculation, IlluminationParams, LightFixture } from './types';
 
 // PEC Table 3.10.1.16 (Copper THHN/THWN at 75°C)
 export const WIRE_AMPACITY_TABLE = [
@@ -30,26 +30,74 @@ export const INITIAL_SHORT_CIRCUIT_PARAMS: ShortCircuitParams = {
   transformerKVA: 100,
   transformerZ: 5,
   transformerVoltage: 230,
+  primaryVoltage: 34500,
+  transformerConnection: 'Delta-Wye',
   utilityShortCircuitMVA: 500,
   feederLength: 10,
-  feederSize: '30'
+  feederSize: '30',
+  feederRuns: 1,
+  conductorType: 'Copper'
 };
 
-export const INITIAL_VOLTAGE_DROP_PARAMS: VoltageDropParams = {
-  loadA: 20,
-  length: 30,
-  wireSize: '3.5',
-  voltage: 230,
-  systemType: '1PH'
-};
+export const INITIAL_VOLTAGE_DROP_CALCULATIONS: VoltageDropCalculation[] = [
+  {
+    id: 'initial',
+    source: 'custom',
+    name: 'Custom Circuit',
+    loadA: 20,
+    length: 30,
+    wireSize: '3.5',
+    voltage: 230,
+    systemType: '1PH'
+  }
+];
+
+export const LIGHT_FIXTURES_LIBRARY: LightFixture[] = [
+  // Global Brands
+  { id: 'philips-a19', brand: 'Philips', model: 'LED A19 / GU10 / BR30', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
+  { id: 'osram-led', brand: 'OSRAM', model: 'LED / Halogen / Smart', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
+  { id: 'ge-led', brand: 'GE Lighting', model: 'LED / Smart Bulbs', wattage: 12, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
+  { id: 'cree-high', brand: 'Cree Lighting', model: 'High-efficiency LED bulbs', wattage: 18, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
+  { id: 'panasonic-bulb', brand: 'Panasonic', model: 'LED household bulbs', wattage: 12, lumens: 1200, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
+  { id: 'samsung-mod', brand: 'Samsung', model: 'LED modules / smart lighting', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
+  { id: 'lg-commercial', brand: 'LG Electronics', model: 'LED lamps / commercial', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
+  { id: 'havells-downlight', brand: 'Havells', model: 'LED bulbs / downlights', wattage: 10, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
+  { id: 'wipro-com', brand: 'Wipro Lighting', model: 'Commercial/residential LEDs', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
+  { id: 'opple-panel', brand: 'Opple Lighting', model: 'LED bulbs / panels', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
+  { id: 'xiaomi-smart', brand: 'Xiaomi', model: 'Smart LED bulbs', wattage: 10, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
+  { id: 'yeelight-rgb', brand: 'Yeelight', model: 'Smart RGB LED bulbs', wattage: 12, lumens: 1200, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
+  { id: 'ikea-ledare', brand: 'IKEA', model: 'LEDARE / SOLHETTA', wattage: 8, lumens: 800, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
+  { id: 'feit-bulb', brand: 'Feit Electric', model: 'Household / commercial LEDs', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
+  { id: 'sylvania-cfl', brand: 'Sylvania', model: 'LED / CFL / specialty', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
+  
+  // Philippines-Available
+  { id: 'omni-t8', brand: 'OMNI', model: 'LED bulbs / T8 tubes / panels', wattage: 36, lumens: 3600, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
+  { id: 'firefly-flood', brand: 'Firefly', model: 'Luminaires / floodlights', wattage: 100, lumens: 10000, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
+  { id: 'akari-solar', brand: 'Akari', model: 'Smart lighting / solar lights', wattage: 50, lumens: 5000, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
+  { id: 'landlite-deco', brand: 'Landlite', model: 'Decorative lighting / chandeliers', wattage: 40, lumens: 4000, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
+  { id: 'royu-led', brand: 'Royu', model: 'LED bulbs', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
+  { id: 'meiji-flood', brand: 'Meiji Electric', model: 'LED bulbs / industrial', wattage: 100, lumens: 10000, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
+
+  // Common Bulb Types
+  { id: 'common-a19', brand: 'Generic', model: 'A60 / A19 LED Bulb (Homes)', wattage: 10, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
+  { id: 'common-t8', brand: 'Generic', model: 'T8 LED Tube (Offices, schools)', wattage: 18, lumens: 1800, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
+  { id: 'common-gu10', brand: 'Generic', model: 'GU10 Spotlight (Accent)', wattage: 6, lumens: 500, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
+  { id: 'common-flood', brand: 'Generic', model: 'Floodlight LED (Outdoor)', wattage: 100, lumens: 10000, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
+  { id: 'common-panel', brand: 'Generic', model: 'Panel Light (Commercial)', wattage: 36, lumens: 3600, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
+  { id: 'common-street', brand: 'Generic', model: 'Street Light LED', wattage: 150, lumens: 15000, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
+];
 
 export const INITIAL_ILLUMINATION_PARAMS: IlluminationParams = {
+  inputMode: 'dimensions',
   roomWidth: 4,
   roomLength: 5,
+  userArea: 20,
   ceilingHeight: 2.7,
   workingPlaneHeight: 0.75,
+  mountingHeight: 1.95,
   targetLux: 300,
-  lumensPerFixture: 1800,
+  selectedFixtureId: 'philips-panel',
+  lumensPerFixture: 3400,
   coefficientOfUtilization: 0.6,
   maintenanceFactor: 0.8
 };

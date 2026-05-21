@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Security Net (Default-deny catch-all)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers (Pillar 3 & 10)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Check if user is the owner of the document
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Verify if the user matches our master admin email
+    function isAdmin() {
+      return isSignedIn() && 
+             (request.auth.token.email == "Angeloperfecto31@gmail.com" ||
+              request.auth.token.email == "angeloperfecto31@gmail.com");
+    }
+
+    // Prevent ID poisoning
+    function isValidId(id) {
+       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 2. Validation Blueprints (Pillar 2: Validation Blueprints)
+    function isValidUser(data) {
+      return data.email is string && data.email.size() <= 128
+        && (data.isActive == null || data.isActive is bool)
+        && (data.paymentStatus == null || data.paymentStatus is string)
+        && (data.bypassPayment == null || data.bypassPayment is bool)
+        && (data.activatedAt == null || data.activatedAt is string)
+        && (data.pendingVerification == null || (
+             data.pendingVerification.senderName is string && data.pendingVerification.senderName.size() <= 128 &&
+             data.pendingVerification.referenceNo is string && data.pendingVerification.referenceNo.size() <= 128 &&
+             data.pendingVerification.amount is number &&
+             data.pendingVerification.submittedAt is string
+           ));
+    }
+
+    function isValidSettings(data) {
+      return (data.qrCodeDataUrl == null || (data.qrCodeDataUrl is string && data.qrCodeDataUrl.size() <= 1000000))
+        && (data.updatedBy == null || data.updatedBy is string)
+        && (data.updatedAt == null || data.updatedAt is string);
+    }
+
+    // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
+    match /users/{userId} {
+      // Safe list query (Pillar 8: Secure List Queries)
+      // Only admins can inspect all users list or query it.
+      // Individual users can read only their own documents.
+      allow read: if isOwner(userId) || isAdmin();
+
+      allow create: if isValidId(userId) && (
+        (isOwner(userId) && isValidUser(incoming()) && incoming().email.lower() == request.auth.token.email.lower()) ||
+        isAdmin()
+      );
+
+      allow update: if isValidId(userId) && (
+        isAdmin() ||
+        (
+          isOwner(userId) && isValidUser(incoming()) &&
+          incoming().email.lower() == existing().email.lower() &&                                         // Email is immutable (case-insensitive)
+          (
+            // Action 1: Standard customer flow (no self-activation)
+            (
+              (existing().isActive == null || incoming().isActive == existing().isActive) &&
+              (
+                // Action 1a: Submit verifications
+                (incoming().paymentStatus == "pending_verification" && incoming().pendingVerification != null) ||
+                // Action 1b: Reset review process
+                (incoming().paymentStatus == "unpaid" && incoming().pendingVerification == null)
+              )
+            ) ||
+            // Action 2: Login bypass activation for already registered users
+            (
+              incoming().isActive == true &&
+              incoming().paymentStatus == "paid" &&
+              incoming().bypassPayment == true
+            )
+          )
+        )
+      );
+
+      // No deleting user accounts from the client
+      allow delete: if isAdmin();
+    }
+
+    // 4. Settings Collection Matched Rules (Pillar 6: Isolated Config and Admin Control)
+    match /settings/{settingId} {
+      // All authenticated users can read settings
+      allow read: if isSignedIn() && isValidId(settingId);
+
+      // Only administrators can manipulate configurations
+      allow create, update: if isAdmin() && isValidId(settingId) && isValidSettings(incoming());
+      allow delete: if isAdmin() && isValidId(settingId);
+    }
+  }
+}

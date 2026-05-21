@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with activation and verification status",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "The user's registered email address"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Indicates if the user has an active, paid account"
+        },
+        "paymentStatus": {
+          "type": "string",
+          "description": "The payment status of the user, e.g., unpaid, paid, pending_verification"
+        },
+        "bypassPayment": {
+          "type": "boolean",
+          "description": "True if user was activated via the login bypass"
+        },
+        "activatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user account was activated"
+        },
+        "pendingVerification": {
+          "type": "object",
+          "description": "Details of the GCash manual payment submission for review",
+          "properties": {
+            "senderName": {
+              "type": "string"
+            },
+            "referenceNo": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number"
+            },
+            "submittedAt": {
+              "type": "string"
+            }
+          }
+        },
+        "approvedBy": {
+          "type": "string"
+        },
+        "approvedAt": {
+          "type": "string"
+        },
+        "rejectedBy": {
+          "type": "string"
+        },
+        "rejectedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email"
+      ]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application configuration documents",
+      "type": "object",
+      "properties": {
+        "qrCodeDataUrl": {
+          "type": "string",
+          "description": "The base64 encoded string representing the custom GCash payment QR code"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Email address of the admin who updated the setting"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the last update"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and payment records"
+    },
+    "settings/{settingId}": {
+      "schema": "Settings",
+      "description": "Global environment settings"
+    }
+  }
+}
