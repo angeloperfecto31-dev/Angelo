@@ -805,6 +805,17 @@ export default function PaymentScreen({
   if (userProfile?.paymentStatus === "pending_verification" && !success) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+        {isAdminUser && (
+          <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 mb-4">
+            <button
+              onClick={() => setIsAdminMode(true)}
+              className="w-full py-2 px-4 flex items-center justify-center gap-2 text-xs font-bold text-white bg-indigo-600 hover:bg-[#0057E7] border border-transparent rounded-xl shadow-lg transition-all transform hover:scale-[1.01]"
+            >
+              <ShieldCheck className="w-4 h-4 animate-bounce" />
+              🔧 Open Transactions Monitor Panel
+            </button>
+          </div>
+        )}
         <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center mb-6">
           <div className="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg relative animate-pulse">
             <ShieldCheck className="w-8 h-8 text-white" />
