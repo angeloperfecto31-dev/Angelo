@@ -78,7 +78,7 @@ export default function PaymentScreen({
   const [adminFilter, setAdminFilter] = useState<"all" | "pending" | "paid" | "unpaid">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
 
-  const isAdminUser = user.email?.toLowerCase() === "angeloperfecto31@gmail.com";
+  const isAdminUser = user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
 
   useEffect(() => {
     // Listen to real-time changes in the user's Firestore document
@@ -237,7 +237,7 @@ export default function PaymentScreen({
     });
 
     return () => unsubscribe();
-  }, [isAdminUser]);
+  }, [isAdminUser, user]);
 
   const verifySession = async (sessionId: string) => {
     try {
@@ -481,7 +481,8 @@ export default function PaymentScreen({
   });
 
   // Admin Dashboard Mode
-  if (isAdminMode && isAdminUser) {
+  const showAdminDashboard = (forceAdmin || isAdminMode) && isAdminUser;
+  if (showAdminDashboard) {
     return (
       <div className={`flex flex-col font-sans w-full ${forceAdmin ? "bg-transparent py-2" : "min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8"}`}>
         <div className="max-w-6xl w-full mx-auto">

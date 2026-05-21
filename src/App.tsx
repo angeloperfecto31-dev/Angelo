@@ -51,7 +51,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
 
-  const isAdmin = user?.email?.toLowerCase() === "angeloperfecto31@gmail.com";
+  const isAdmin = user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
   const isActiveRef = useRef(false);
 
   useEffect(() => {
