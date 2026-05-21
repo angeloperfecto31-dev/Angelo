@@ -20,7 +20,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && 
              ("email" in request.auth.token) &&
-             request.auth.token.email.lower() == "angeloperfecto31@gmail.com";
+             (request.auth.token.email == "angeloperfecto31@gmail.com" || request.auth.token.email == "Angeloperfecto31@gmail.com");
     }
 
     // Prevent ID poisoning
@@ -95,8 +95,8 @@ service cloud.firestore {
         )
       );
 
-      // No deleting user accounts from the client
-      allow delete: if isAdmin();
+      // Users can delete their own account (for cancellation), or admins can
+      allow delete: if isAdmin() || isOwner(userId);
     }
 
     // 4. Settings Collection Matched Rules (Pillar 6: Isolated Config and Admin Control)

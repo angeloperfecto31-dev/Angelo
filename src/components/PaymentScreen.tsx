@@ -179,12 +179,44 @@ export default function PaymentScreen({
     // Check if we just returned from PayMongo Checkout
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get("session_id");
+    const isCancelled = urlParams.get("cancel") === "true";
 
     if (sessionId) {
       setVerifying(true);
       verifySession(sessionId);
+    } else if (isCancelled) {
+      handleCancelRegistration("You cancelled the payment process. Your registration was cancelled.");
     }
   }, []);
+
+  const handleCancelRegistration = async (msg?: string) => {
+    setLoading(true);
+    setError(msg || "Cancelling transaction and deleting account...");
+    const confirmCancel = msg ? true : window.confirm("Are you sure you want to cancel your transaction? This will permanently delete your registration data.");
+    
+    if (confirmCancel) {
+      try {
+        if (user) {
+          try {
+            await deleteDoc(doc(db, "users", user.uid));
+          } catch (dbErr) {
+            // ignore
+          }
+          await auth.currentUser?.delete();
+          window.history.replaceState({}, document.title, window.location.pathname);
+          window.location.reload();
+        }
+      } catch (e: any) {
+        console.error(e);
+        signOut(auth);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        window.location.reload();
+      }
+    } else {
+      setLoading(false);
+      setError("");
+    }
+  };
 
   // Listen to all users if the logged in user is the admin
   useEffect(() => {
@@ -1186,11 +1218,17 @@ export default function PaymentScreen({
           {/* Master Logout Options */}
           <div className="mt-6 border-t border-slate-100 pt-6">
             <button
-              onClick={handleLogout}
-              className="w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors bg-slate-50 hover:bg-slate-100 rounded-xl"
+              onClick={() => handleCancelRegistration()}
+              className="w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors bg-slate-50 border border-transparent hover:border-red-100 rounded-xl"
             >
               <LogOut className="w-4 h-4" />
-              Sign out of account
+              Cancel Transaction (Delete Registration)
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full mt-2 py-3 px-4 flex items-center justify-center gap-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors bg-transparent hover:bg-slate-50 rounded-xl"
+            >
+              Log out and verify later
             </button>
           </div>
 

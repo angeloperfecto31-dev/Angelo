@@ -59,7 +59,7 @@ app.post("/api/create-checkout", async (req, res) => {
             ],
             payment_method_types: ["gcash"],
             success_url: `${origin}/?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${origin}/`,
+            cancel_url: `${origin}/?cancel=true`,
             description: "AIStudio Build Website Access",
             customer_info: {
               email: email,
