@@ -4,6 +4,7 @@ import { auth, db } from "../firebase";
 import {
   doc,
   setDoc,
+  deleteDoc,
   onSnapshot,
   collection,
   serverTimestamp,
@@ -249,6 +250,8 @@ export default function PaymentScreen({
           document.title,
           window.location.pathname,
         );
+        alert("Payment Successful! Please log in to your account to continue.");
+        signOut(auth).catch(console.error);
         if (onPaymentSuccess) {
           onPaymentSuccess();
         }
@@ -480,7 +483,7 @@ export default function PaymentScreen({
   // Admin Dashboard Mode
   if (isAdminMode && isAdminUser) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col font-sans py-8 px-4 sm:px-6 lg:px-8">
+      <div className={`flex flex-col font-sans w-full ${forceAdmin ? "bg-transparent py-2" : "min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8"}`}>
         <div className="max-w-6xl w-full mx-auto">
           {/* Admin Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-md mb-8">

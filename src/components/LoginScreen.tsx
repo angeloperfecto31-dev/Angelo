@@ -18,7 +18,22 @@ export default function LoginScreen() {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+        } catch (signInErr: any) {
+          const code = signInErr.code || '';
+          const msg = signInErr.message || '';
+          if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('auth/invalid-credential')) {
+            // Attempt to create the account instead
+            try {
+              await createUserWithEmailAndPassword(auth, email, password);
+            } catch (createErr: any) {
+              throw createErr;
+            }
+          } else {
+            throw signInErr;
+          }
+        }
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
       }

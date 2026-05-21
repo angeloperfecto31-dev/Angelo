@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -51,6 +51,9 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
 
+  const isAdmin = user?.email?.toLowerCase() === "angeloperfecto31@gmail.com";
+  const isActiveRef = useRef(false);
+
   useEffect(() => {
     // Determine if we should sign out (first time this instance runs)
     if (!window.sessionStorage.getItem("hasRunBefore")) {
@@ -62,6 +65,7 @@ export default function App() {
       setUser(currentUser);
       if (!currentUser) {
         setIsActive(false);
+        isActiveRef.current = false;
         setAuthLoading(false);
       }
     });
@@ -72,19 +76,31 @@ export default function App() {
     if (!user) return;
 
     // Listen to user document in Firestore to check active status
+    let initialLoad = true;
     const unsubscribe = onSnapshot(
       doc(db, "users", user.uid),
       (docSnap) => {
         if (docSnap.exists() && docSnap.data().isActive === true) {
-          setIsActive(true);
+          if (!initialLoad && !isActiveRef.current && !isAdmin) {
+             // Transitioned from inactive to active while logged in!
+             // Give a tiny delay for payment screen to unmount or show a message if we wanted, but the prompt says redirect automatically.
+             alert("Your account has been manually approved and activated! Please log in to your account to continue.");
+             signOut(auth).catch(console.error);
+          } else {
+             setIsActive(true);
+             isActiveRef.current = true;
+          }
         } else {
           setIsActive(false);
+          isActiveRef.current = false;
         }
+        initialLoad = false;
         setAuthLoading(false);
       },
       (error) => {
         console.error("Firestore listener error:", error);
         setIsActive(false);
+        isActiveRef.current = false;
         setAuthLoading(false);
         try {
           handleFirestoreError(error, OperationType.GET, "users/" + user.uid);
@@ -95,10 +111,10 @@ export default function App() {
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isAdmin]);
 
   const [activeTab, setActiveTab] = useState<
-    "schedule" | "isc" | "vd" | "lighting" | "floor-plan"
+    "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify"
   >("schedule");
   const [panel, setPanel] = useState<PanelConfig>(INITIAL_PANEL);
   const [circuits, setCircuits] = useState<Circuit[]>(INITIAL_CIRCUITS);
@@ -121,7 +137,6 @@ export default function App() {
   );
 
   const [floorPlanImages, setFloorPlanImages] = useState<string[]>([]);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
   const isPostPaymentRedirect = window.location.search.includes("session_id=");
@@ -147,12 +162,6 @@ export default function App() {
 
   if (!isActive) {
     return <PaymentScreen user={user} />;
-  }
-
-  // Admin bypass
-  const isAdmin = user?.email?.toLowerCase() === "angeloperfecto31@gmail.com";
-  if (showAdminPanel && isAdmin) {
-    return <PaymentScreen user={user} forceAdmin={true} onPaymentSuccess={() => setShowAdminPanel(false)} />;
   }
 
   const tabs = [
@@ -191,6 +200,13 @@ export default function App() {
       color: "text-emerald-600",
       bg: "bg-emerald-50",
     },
+    ...(isAdmin ? [{
+      id: "verify",
+      label: "Verify Users",
+      icon: ShieldCheck,
+      color: "text-amber-600",
+      bg: "bg-amber-50",
+    }] : [])
   ];
 
   const exportToExcel = () => {
@@ -639,12 +655,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             {isAdmin && (
               <button
-                onClick={() => setShowAdminPanel(true)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-colors"
-                title="Open Admin Monitor Panels"
+                onClick={() => setActiveTab("verify")}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-black transition-all shadow-md shrink-0"
+                title="Verify user registrations"
               >
-                <ShieldCheck className="w-4 h-4" />
-                <span className="hidden xl:inline">Admin Panel</span>
+                <ShieldCheck className="w-4 h-4 animate-pulse" />
+                <span>Verify Registrations</span>
               </button>
             )}
             <Auth />
@@ -787,6 +803,15 @@ export default function App() {
                 images={floorPlanImages}
                 setImages={setFloorPlanImages}
               />
+            )}
+            {activeTab === "verify" && (
+              <div className="w-full">
+                <PaymentScreen
+                  user={user}
+                  forceAdmin={true}
+                  onPaymentSuccess={() => setActiveTab("schedule")}
+                />
+              </div>
             )}
           </motion.div>
         </AnimatePresence>
