@@ -77,6 +77,12 @@ export default function PaymentScreen({
   const [searchQuery, setSearchQuery] = useState("");
   const [adminFilter, setAdminFilter] = useState<"all" | "pending" | "paid" | "unpaid">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
+  const [confirmingAction, setConfirmingAction] = useState<{
+    uid: string;
+    type: "approve" | "reject" | "toggle";
+    email: string;
+    currentActiveStatus?: boolean;
+  } | null>(null);
 
   const isAdminUser = user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
 
@@ -384,11 +390,6 @@ export default function PaymentScreen({
 
   // Admin action: Approve manual payment
   const handleAdminApprove = async (targetUid: string, userEmail: string) => {
-    const confirmApprove = window.confirm(
-      `Approve manually submitted payment and activate account for ${userEmail}?`,
-    );
-    if (!confirmApprove) return;
-
     setAdminStatusMsg("");
     try {
       await setDoc(
@@ -412,11 +413,6 @@ export default function PaymentScreen({
 
   // Admin action: Reject manual payment
   const handleAdminReject = async (targetUid: string, userEmail: string) => {
-    const confirmReject = window.confirm(
-      `Reject manual submission for ${userEmail}? This will require the user to resubmit correct reference details.`,
-    );
-    if (!confirmReject) return;
-
     setAdminStatusMsg("");
     try {
       await setDoc(
@@ -439,10 +435,6 @@ export default function PaymentScreen({
   };
 
   const handleAdminToggleToggleStatus = async (targetUid: string, currentActiveStatus: boolean, userEmail: string) => {
-    const action = currentActiveStatus ? "deactivate" : "activate";
-    const confirmToggle = window.confirm(`Are you sure you want to ${action} ${userEmail}?`);
-    if (!confirmToggle) return;
-
     setAdminStatusMsg("");
     try {
       await setDoc(
@@ -459,6 +451,20 @@ export default function PaymentScreen({
       try {
         handleFirestoreError(err, OperationType.WRITE, "users/" + targetUid);
       } catch (e) {}
+    }
+  };
+
+  const executeConfirmedAction = async () => {
+    if (!confirmingAction) return;
+    const { uid, type, email, currentActiveStatus } = confirmingAction;
+    setConfirmingAction(null);
+
+    if (type === "approve") {
+      await handleAdminApprove(uid, email);
+    } else if (type === "reject") {
+      await handleAdminReject(uid, email);
+    } else if (type === "toggle") {
+      await handleAdminToggleToggleStatus(uid, !!currentActiveStatus, email);
     }
   };
 
@@ -768,18 +774,42 @@ export default function PaymentScreen({
 
                       {/* Right: Actions */}
                       <div className="flex gap-2 shrink-0 w-full md:w-auto justify-end">
-                        {isPending ? (
+                        {confirmingAction?.uid === u.uid ? (
+                          <div className="flex flex-col items-end gap-2 bg-amber-50 p-3 rounded-xl border border-amber-200 shadow-sm max-w-[280px]">
+                            <span className="text-[10px] font-black text-amber-900 leading-normal text-right">
+                              Confirm {confirmingAction.type === 'approve' ? 'APPROVAL & ACTIVATION' : confirmingAction.type === 'reject' ? 'REJECTION' : confirmingAction.currentActiveStatus ? 'DEACTIVATION' : 'ACTIVATION'}?
+                            </span>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={executeConfirmedAction}
+                                className={`px-2.5 py-1 text-white font-black rounded-md text-[10px] uppercase shadow-sm transition-transform active:scale-95 cursor-pointer ${
+                                  confirmingAction.type === 'approve' || (confirmingAction.type === 'toggle' && !confirmingAction.currentActiveStatus)
+                                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                                    : 'bg-red-600 hover:bg-red-700'
+                                }`}
+                              >
+                                Yes
+                              </button>
+                              <button
+                                onClick={() => setConfirmingAction(null)}
+                                className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black rounded-md text-[10px] uppercase cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : isPending ? (
                           <>
                             <button
-                              onClick={() => handleAdminApprove(u.uid, u.email)}
-                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-sm"
+                              onClick={() => setConfirmingAction({ uid: u.uid, type: "approve", email: u.email })}
+                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
                             >
                               <Check className="w-3.5 h-3.5" />
                               Approve
                             </button>
                             <button
-                              onClick={() => handleAdminReject(u.uid, u.email)}
-                              className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg text-xs transition-colors border border-red-100 flex items-center gap-1.5 shadow-sm"
+                              onClick={() => setConfirmingAction({ uid: u.uid, type: "reject", email: u.email })}
+                              className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg text-xs transition-all border border-red-100 flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
                             >
                               <X className="w-3.5 h-3.5" />
                               Reject
@@ -787,8 +817,8 @@ export default function PaymentScreen({
                           </>
                         ) : (
                           <button
-                            onClick={() => handleAdminToggleToggleStatus(u.uid, isUserActive, u.email)}
-                            className={`px-3.5 py-2 font-bold rounded-lg text-xs transition-colors border shadow-sm ${
+                            onClick={() => setConfirmingAction({ uid: u.uid, type: "toggle", email: u.email, currentActiveStatus: isUserActive })}
+                            className={`px-3.5 py-2 font-bold rounded-lg text-xs transition-all border shadow-sm active:scale-95 cursor-pointer ${
                               isUserActive
                                 ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-100"
                                 : "bg-indigo-600 hover:bg-indigo-700 text-white border-transparent"
