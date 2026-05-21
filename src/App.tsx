@@ -160,7 +160,7 @@ export default function App() {
     return <LoginScreen />;
   }
 
-  if (!isActive) {
+  if (!isActive && !isAdmin) {
     return <PaymentScreen user={user} />;
   }
 
