@@ -5,6 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
+import { ShieldCheck } from "lucide-react";
 import {
   Zap,
   Layout,
@@ -120,6 +121,7 @@ export default function App() {
   );
 
   const [floorPlanImages, setFloorPlanImages] = useState<string[]>([]);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
   const isPostPaymentRedirect = window.location.search.includes("session_id=");
@@ -145,6 +147,12 @@ export default function App() {
 
   if (!isActive) {
     return <PaymentScreen user={user} />;
+  }
+
+  // Admin bypass
+  const isAdmin = user?.email?.toLowerCase() === "angeloperfecto31@gmail.com";
+  if (showAdminPanel && isAdmin) {
+    return <PaymentScreen user={user} forceAdmin={true} onPaymentSuccess={() => setShowAdminPanel(false)} />;
   }
 
   const tabs = [
@@ -629,6 +637,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => setShowAdminPanel(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg text-xs font-bold transition-colors"
+                title="Open Admin Monitor Panels"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span className="hidden xl:inline">Admin Panel</span>
+              </button>
+            )}
             <Auth />
             <button
               onClick={handleExportWord}

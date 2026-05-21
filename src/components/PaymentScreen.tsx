@@ -32,11 +32,13 @@ import axios from "axios";
 interface PaymentScreenProps {
   user: User;
   onPaymentSuccess?: () => void;
+  forceAdmin?: boolean;
 }
 
 export default function PaymentScreen({
   user,
   onPaymentSuccess,
+  forceAdmin = false,
 }: PaymentScreenProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -69,7 +71,7 @@ export default function PaymentScreen({
   };
 
   // Admin View state
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(forceAdmin);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [adminFilter, setAdminFilter] = useState<"all" | "pending" | "paid" | "unpaid">("all");
@@ -429,42 +431,6 @@ export default function PaymentScreen({
     signOut(auth);
   };
 
-  if (success) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-        <div className="sm:mx-auto sm:w-full sm:max-w-md bg-white py-12 px-4 shadow-xl sm:rounded-2xl border border-slate-100 flex flex-col items-center">
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
-            <CheckCircle2 className="w-10 h-10 text-emerald-600" />
-          </div>
-          <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase">
-            Payment Successful!
-          </h2>
-          <p className="text-slate-500 text-center mb-8">
-            Your account has been activated. You now have full access to PEC
-            PRO. Please wait while we load your dashboard...
-          </p>
-          <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
-        </div>
-      </div>
-    );
-  }
-
-  if (verifying) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-        <div className="sm:mx-auto sm:w-full sm:max-w-md bg-white py-12 px-4 shadow-xl sm:rounded-2xl border border-slate-100 flex flex-col items-center">
-          <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-6" />
-          <h2 className="text-xl font-bold text-slate-900 mb-2">
-            Verifying Payment...
-          </h2>
-          <p className="text-sm text-slate-500 text-center">
-            Checking your transaction with PayMongo. Please do not close this window.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Filter users for the Admin panel view
   const filteredUsers = allUsers.filter((u) => {
     const matchesSearch =
@@ -501,10 +467,16 @@ export default function PaymentScreen({
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setIsAdminMode(false)}
+                onClick={() => {
+                  if (forceAdmin && onPaymentSuccess) {
+                    onPaymentSuccess();
+                  } else {
+                    setIsAdminMode(false);
+                  }
+                }}
                 className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors shrink-0"
               >
-                Go back to Payment Screen
+                {forceAdmin ? "Close Panel" : "Go back to Payment Screen"}
               </button>
               <button
                 onClick={handleLogout}
@@ -800,6 +772,46 @@ export default function PaymentScreen({
       </div>
     );
   }
+
+  if (success && !forceAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md bg-white py-12 px-4 shadow-xl sm:rounded-2xl border border-slate-100 flex flex-col items-center">
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
+            <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-2 uppercase">
+            Payment Successful!
+          </h2>
+          <p className="text-slate-500 text-center mb-8">
+            Your account has been activated. You now have full access to PEC
+            PRO. Please wait while we load your dashboard...
+          </p>
+          <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (verifying) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md bg-white py-12 px-4 shadow-xl sm:rounded-2xl border border-slate-100 flex flex-col items-center">
+          <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-6" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">
+            Verifying Payment...
+          </h2>
+          <p className="text-sm text-slate-500 text-center">
+            Checking your transaction with PayMongo. Please do not close this window.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+
+
+
 
   // Active Pending Review State Screen for regular user
   if (userProfile?.paymentStatus === "pending_verification" && !success) {

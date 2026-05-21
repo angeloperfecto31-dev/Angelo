@@ -18,17 +18,7 @@ export default function LoginScreen() {
 
     try {
       if (isLogin) {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
-        // Account already registered in Firebase. Activate and bypass payment.
-        const userRef = doc(db, 'users', user.uid);
-        await setDoc(userRef, {
-          email: user.email,
-          isActive: true,
-          paymentStatus: 'paid',
-          bypassPayment: true,
-          activatedAt: new Date().toISOString()
-        }, { merge: true });
+        await signInWithEmailAndPassword(auth, email, password);
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
       }
@@ -56,22 +46,7 @@ export default function LoginScreen() {
   const handleGoogleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      const userCredential = await signInWithPopup(auth, provider);
-      const additionalInfo = getAdditionalUserInfo(userCredential);
-      const isNewUser = additionalInfo?.isNewUser ?? false;
-      const user = userCredential.user;
-
-      if (!isNewUser && user) {
-        // Account already registered in Firebase. Activate and bypass payment.
-        const userRef = doc(db, 'users', user.uid);
-        await setDoc(userRef, {
-          email: user.email,
-          isActive: true,
-          paymentStatus: 'paid',
-          bypassPayment: true,
-          activatedAt: new Date().toISOString()
-        }, { merge: true });
-      }
+      await signInWithPopup(auth, provider);
     } catch (err: any) {
       console.error(err);
       const errorCode = err.code || '';
