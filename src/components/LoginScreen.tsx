@@ -38,8 +38,7 @@ export default function LoginScreen() {
       const errorMessage = err.message || '';
       
       if (errorCode === 'auth/invalid-credential' || errorMessage.includes('auth/invalid-credential') || errorCode === 'auth/wrong-password' || errorCode === 'auth/user-not-found') {
-        setError('Incorrect email or password. If you do not have an account, we have switched you to Sign Up mode.');
-        setIsLogin(false);
+        setError('Incorrect email or password.');
       } else if (errorCode === 'auth/email-already-in-use' || errorMessage.includes('auth/email-already-in-use')) {
         setError('An account with this email already exists.');
       } else if (errorCode === 'auth/weak-password' || errorMessage.includes('auth/weak-password')) {
