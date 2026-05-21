@@ -19,8 +19,8 @@ service cloud.firestore {
     // Verify if the user matches our master admin email
     function isAdmin() {
       return isSignedIn() && 
-             (request.auth.token.email == "Angeloperfecto31@gmail.com" ||
-              request.auth.token.email == "angeloperfecto31@gmail.com");
+             ("email" in request.auth.token) &&
+             request.auth.token.email.lower() == "angeloperfecto31@gmail.com";
     }
 
     // Prevent ID poisoning
@@ -39,11 +39,11 @@ service cloud.firestore {
     // 2. Validation Blueprints (Pillar 2: Validation Blueprints)
     function isValidUser(data) {
       return data.email is string && data.email.size() <= 128
-        && (data.isActive == null || data.isActive is bool)
-        && (data.paymentStatus == null || data.paymentStatus is string)
-        && (data.bypassPayment == null || data.bypassPayment is bool)
-        && (data.activatedAt == null || data.activatedAt is string)
-        && (data.pendingVerification == null || (
+        && (!("isActive" in data) || data.isActive == null || data.isActive is bool)
+        && (!("paymentStatus" in data) || data.paymentStatus == null || data.paymentStatus is string)
+        && (!("bypassPayment" in data) || data.bypassPayment == null || data.bypassPayment is bool)
+        && (!("activatedAt" in data) || data.activatedAt == null || data.activatedAt is string)
+        && (!("pendingVerification" in data) || data.pendingVerification == null || (
              data.pendingVerification.senderName is string && data.pendingVerification.senderName.size() <= 128 &&
              data.pendingVerification.referenceNo is string && data.pendingVerification.referenceNo.size() <= 128 &&
              data.pendingVerification.amount is number &&
@@ -52,9 +52,9 @@ service cloud.firestore {
     }
 
     function isValidSettings(data) {
-      return (data.qrCodeDataUrl == null || (data.qrCodeDataUrl is string && data.qrCodeDataUrl.size() <= 1000000))
-        && (data.updatedBy == null || data.updatedBy is string)
-        && (data.updatedAt == null || data.updatedAt is string);
+      return (!("qrCodeDataUrl" in data) || data.qrCodeDataUrl == null || (data.qrCodeDataUrl is string && data.qrCodeDataUrl.size() <= 1000000))
+        && (!("updatedBy" in data) || data.updatedBy == null || data.updatedBy is string)
+        && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
     }
 
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
@@ -65,7 +65,7 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
 
       allow create: if isValidId(userId) && (
-        (isOwner(userId) && isValidUser(incoming()) && incoming().email.lower() == request.auth.token.email.lower()) ||
+        (isOwner(userId) && isValidUser(incoming()) && ("email" in request.auth.token) && incoming().email.lower() == request.auth.token.email.lower()) ||
         isAdmin()
       );
 
@@ -73,16 +73,16 @@ service cloud.firestore {
         isAdmin() ||
         (
           isOwner(userId) && isValidUser(incoming()) &&
-          incoming().email.lower() == existing().email.lower() &&                                         // Email is immutable (case-insensitive)
+          (!("email" in existing()) || existing().email == null || incoming().email.lower() == existing().email.lower()) &&                                         // Email is immutable (case-insensitive)
           (
             // Action 1: Standard customer flow (no self-activation)
             (
-              (existing().isActive == null || incoming().isActive == existing().isActive) &&
+              (!("isActive" in existing()) || existing().isActive == null || incoming().isActive == existing().isActive) &&
               (
                 // Action 1a: Submit verifications
                 (incoming().paymentStatus == "pending_verification" && incoming().pendingVerification != null) ||
                 // Action 1b: Reset review process
-                (incoming().paymentStatus == "unpaid" && incoming().pendingVerification == null)
+                (incoming().paymentStatus == "unpaid" && (!("pendingVerification" in incoming()) || incoming().pendingVerification == null))
               )
             ) ||
             // Action 2: Login bypass activation for already registered users
