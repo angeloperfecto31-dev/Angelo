@@ -339,7 +339,7 @@ export default function PaymentScreen({
           pendingVerification: {
             senderName: manualName.trim(),
             referenceNo: cleanedRef,
-            amount: 1,
+            amount: 1000,
             submittedAt: new Date().toISOString(),
           },
         },
@@ -959,7 +959,7 @@ export default function PaymentScreen({
                 </div>
                 <div className="flex justify-between text-xs pt-1 border-t border-slate-200/50">
                   <span className="text-slate-400 font-bold uppercase tracking-wider">Amount Paid</span>
-                  <span className="text-slate-900 font-black text-xs font-mono">₱1.00</span>
+                  <span className="text-slate-900 font-black text-xs font-mono">₱1,000.00</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-slate-400 font-bold uppercase tracking-wider">Submitted On</span>
@@ -1040,7 +1040,7 @@ export default function PaymentScreen({
               </p>
             </div>
             <div className="flex items-end gap-1">
-              <span className="text-4xl font-black tracking-tight text-slate-900">₱1</span>
+              <span className="text-4xl font-black tracking-tight text-slate-900">₱1,000</span>
               <span className="text-slate-400 font-bold mb-1.5 uppercase text-xs">.00</span>
             </div>
           </div>
@@ -1221,7 +1221,7 @@ export default function PaymentScreen({
                 </div>
                 <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                    Please transfer exactly <strong className="text-slate-800">₱1.00</strong> to the GCash details above.
+                    Please transfer exactly <strong className="text-slate-800">₱1,000.00</strong> to the GCash details above.
                   </span>
                 </div>
               </div>
