@@ -373,14 +373,24 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {
     let mcbP = c.mcbP;
+    
+    // Auto-update poles based on global connection type for 1-phase systems
+    if (!panel.system.includes('3PH')) {
+      if (panel.connectionType === 'Line-to-Line') {
+        mcbP = 2;
+      } else if (panel.connectionType === 'Line-to-Neutral') {
+        mcbP = 1;
+      }
+    }
+
     if (!mcbP) {
       if (panel.system.includes('3PH')) {
         mcbP = 3;
         if (panel.connectionType === 'Line-to-Line') {
           // In L-L 3-Phase, 1-phase loads need 2 poles.
           if (c.loadType === LoadType.LIGHTING || c.loadType === LoadType.CONVENIENCE_OUTLET) mcbP = 2;
-        } else if (panel.connectionType === 'Line-to-Ground') {
-          // In L-G 3-Phase, 1-phase loads need 1 pole
+        } else if (panel.connectionType === 'Line-to-Neutral') {
+          // In L-N 3-Phase, 1-phase loads need 1 pole
           if (c.loadType === LoadType.LIGHTING || c.loadType === LoadType.CONVENIENCE_OUTLET) mcbP = 1;
         }
       } else {
@@ -400,7 +410,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     let defaultV = panel.voltage || 230;
     // For a 400V/230V system branch:
     if (panel.system === '400V/230V, 3PH, 4W') {
-       if (panel.connectionType === 'Line-to-Ground' && mcbP === 1) defaultV = 230;
+       if (panel.connectionType === 'Line-to-Neutral' && mcbP === 1) defaultV = 230;
        else if (mcbP >= 2) defaultV = 400;
     } else if (panel.system === '230V, 3PH, 3W') {
        defaultV = 230;
@@ -419,11 +429,6 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     // Use the higher of either the calculated minimum or the manually selected CB rating
     const mcbAT = Math.max(requiredMcbAT, c.mcbAT || 0);
-
-    // If we originally fell back to 1-pole but the breaker is >= 30A for 1PH, auto adjust to 2-pole (for AIRCON/MOTOR typical Philippines)
-    if (!c.mcbP && mcbP === 1 && !panel.system.includes('3PH') && mcbAT >= 30) {
-       mcbP = 2;
-    }
 
     // Automatic selection logic
     const mcbAF = mcbAT <= 50 ? 50 : mcbAT <= 100 ? 100 : mcbAT <= 225 ? 225 : 400;
@@ -631,15 +636,13 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
               {Object.keys(SYSTEM_VOLTAGES).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          {panel.system.includes('3PH') && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Connection</label>
-              <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
-                <option value="Line-to-Line">Line-to-Line</option>
-                <option value="Line-to-Ground">Line-to-Ground</option>
-              </select>
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Connection</label>
+            <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+              <option value="Line-to-Line">Line-to-Line</option>
+              <option value="Line-to-Neutral">Line-to-Neutral</option>
+            </select>
+          </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Table Font Size ({tableFontSize}px)</label>
             <div className="flex items-center h-10 px-2 mt-1">
@@ -711,7 +714,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
               </tr>
               {panel.system.includes('3PH') && (
                 <tr>
-                  {panel.connectionType === 'Line-to-Ground' ? (
+                  {panel.connectionType === 'Line-to-Neutral' ? (
                     <>
                       <th className="px-1 py-1 border border-slate-700 text-center text-red-500 print:text-slate-900" style={{ fontSize: tableFontSize - 2 }}>AN</th>
                       <th className="px-1 py-1 border border-slate-700 text-center text-yellow-500 print:text-slate-900" style={{ fontSize: tableFontSize - 2 }}>BN</th>

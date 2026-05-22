@@ -55,7 +55,7 @@ export interface PanelConfig {
   designation: string;
   type: string;
   system: '230V, 1PH, 2W' | '230V, 3PH, 3W' | '400V/230V, 3PH, 4W';
-  connectionType?: 'Line-to-Line' | 'Line-to-Ground';
+  connectionType?: 'Line-to-Line' | 'Line-to-Neutral';
   mounting: string;
   enclosure: string;
   mainBreakerAT: number;
