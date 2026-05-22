@@ -79,7 +79,7 @@ export default function PaymentScreen({
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [confirmingAction, setConfirmingAction] = useState<{
     uid: string;
-    type: "approve" | "reject" | "toggle";
+    type: "approve" | "reject" | "toggle" | "delete";
     email: string;
     currentActiveStatus?: boolean;
   } | null>(null);
@@ -454,6 +454,19 @@ export default function PaymentScreen({
     }
   };
 
+  const handleAdminDelete = async (targetUid: string, userEmail: string) => {
+    setAdminStatusMsg("");
+    try {
+      await deleteDoc(doc(db, "users", targetUid));
+      setAdminStatusMsg(`Deleted user record for ${userEmail}`);
+    } catch (err: any) {
+      setAdminStatusMsg("Error deleting user: " + err.message);
+      try {
+        handleFirestoreError(err, OperationType.DELETE, "users/" + targetUid);
+      } catch (e) {}
+    }
+  };
+
   const executeConfirmedAction = async () => {
     if (!confirmingAction) return;
     const { uid, type, email, currentActiveStatus } = confirmingAction;
@@ -465,6 +478,8 @@ export default function PaymentScreen({
       await handleAdminReject(uid, email);
     } else if (type === "toggle") {
       await handleAdminToggleToggleStatus(uid, !!currentActiveStatus, email);
+    } else if (type === "delete") {
+      await handleAdminDelete(uid, email);
     }
   };
 
@@ -777,7 +792,7 @@ export default function PaymentScreen({
                         {confirmingAction?.uid === u.uid ? (
                           <div className="flex flex-col items-end gap-2 bg-amber-50 p-3 rounded-xl border border-amber-200 shadow-sm max-w-[280px]">
                             <span className="text-[10px] font-black text-amber-900 leading-normal text-right">
-                              Confirm {confirmingAction.type === 'approve' ? 'APPROVAL & ACTIVATION' : confirmingAction.type === 'reject' ? 'REJECTION' : confirmingAction.currentActiveStatus ? 'DEACTIVATION' : 'ACTIVATION'}?
+                              Confirm {confirmingAction.type === 'approve' ? 'APPROVAL & ACTIVATION' : confirmingAction.type === 'reject' ? 'REJECTION' : confirmingAction.type === 'delete' ? 'DELETION' : confirmingAction.currentActiveStatus ? 'DEACTIVATION' : 'ACTIVATION'}?
                             </span>
                             <div className="flex gap-1.5">
                               <button
@@ -816,16 +831,26 @@ export default function PaymentScreen({
                             </button>
                           </>
                         ) : (
-                          <button
-                            onClick={() => setConfirmingAction({ uid: u.uid, type: "toggle", email: u.email, currentActiveStatus: isUserActive })}
-                            className={`px-3.5 py-2 font-bold rounded-lg text-xs transition-all border shadow-sm active:scale-95 cursor-pointer ${
-                              isUserActive
-                                ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-100"
-                                : "bg-indigo-600 hover:bg-indigo-700 text-white border-transparent"
-                            }`}
-                          >
-                            {isUserActive ? "Revoke Pro Access" : "Direct Activate (Trial)"}
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setConfirmingAction({ uid: u.uid, type: "toggle", email: u.email, currentActiveStatus: isUserActive })}
+                              className={`px-3.5 py-2 font-bold rounded-lg text-xs transition-all border shadow-sm active:scale-95 cursor-pointer ${
+                                isUserActive
+                                  ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-100"
+                                  : "bg-indigo-600 hover:bg-indigo-700 text-white border-transparent"
+                              }`}
+                            >
+                              {isUserActive ? "Revoke Pro Access" : "Direct Activate (Trial)"}
+                            </button>
+                            {!isUserActive && (
+                              <button
+                                onClick={() => setConfirmingAction({ uid: u.uid, type: "delete", email: u.email })}
+                                className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs transition-all border border-transparent shadow-sm active:scale-95 cursor-pointer"
+                              >
+                                Delete User
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
