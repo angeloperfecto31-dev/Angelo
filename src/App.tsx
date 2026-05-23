@@ -640,7 +640,7 @@ export default function App() {
             </div>
             <div className="hidden md:block">
               <span className="font-black text-slate-900 tracking-tight text-lg">
-                PEC PRO
+                ElectricalPH
               </span>
               <p className="text-[10px] text-slate-400 font-bold uppercase -mt-1">
                 PH Engineering Tool
@@ -965,7 +965,7 @@ export default function App() {
                 <Zap className="w-4 h-4 text-yellow-900" />
               </div>
               <span className="font-bold text-slate-900">
-                PEC Load Schedule Pro
+                ElectricalPH
               </span>
             </div>
             <p className="text-xs text-slate-400 max-w-xs text-center md:text-left">

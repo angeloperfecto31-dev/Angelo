@@ -519,7 +519,7 @@ export default function PaymentScreen({
                 </span>
               </div>
               <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
-                PEC PRO - Transactions Console
+                ElectricalPH - Transactions Console
               </h1>
             </div>
             <div className="flex gap-2">
@@ -875,8 +875,8 @@ export default function PaymentScreen({
             Payment Successful!
           </h2>
           <p className="text-slate-500 text-center mb-8">
-            Your account has been activated. You now have full access to PEC
-            PRO. Please wait while we load your dashboard...
+            Your account has been activated. You now have full access to ElectricalPH.
+            Please wait while we load your dashboard...
           </p>
           <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
         </div>
@@ -1022,7 +1022,7 @@ export default function PaymentScreen({
           Unlock Features
         </h2>
         <p className="mt-2 text-center text-xs text-slate-500 font-bold max-w-sm uppercase tracking-wider">
-          PEC Engineer Load Schedule Premium Suit
+          ElectricalPH Premium Suite
         </p>
       </div>
 
