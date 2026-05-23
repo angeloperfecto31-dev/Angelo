@@ -425,7 +425,28 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     const designLoadA = loadA * 1.25;
     
     // Calculate the minimum required CB rating based on the load
-    let requiredMcbAT = STANDARD_CB_RATINGS.find(r => r >= designLoadA) || 15;
+    let requiredMcbAT = 15;
+    if (c.loadType === LoadType.AIR_CON) {
+       const flc = loadA;
+       const limit175 = flc * 1.75;
+       const limit225 = flc * 2.25;
+       
+       // Sizing for ACU specifically (omitting 25A according to modern PEC application)
+       const ACU_STANDARD_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 400];
+       const under175 = ACU_STANDARD_RATINGS.filter(r => r <= limit175);
+       const baseRating = under175.length > 0 ? under175[under175.length - 1] : 0;
+       const nextHigherIndex = ACU_STANDARD_RATINGS.findIndex(r => r > baseRating);
+       const nextHigherRating = nextHigherIndex !== -1 ? ACU_STANDARD_RATINGS[nextHigherIndex] : 15;
+       
+       if (nextHigherRating <= limit225) {
+          requiredMcbAT = Math.max(15, nextHigherRating);
+       } else {
+          const under225 = ACU_STANDARD_RATINGS.filter(r => r <= limit225);
+          requiredMcbAT = under225.length > 0 ? Math.max(15, under225[under225.length - 1]) : 15;
+       }
+    } else {
+       requiredMcbAT = STANDARD_CB_RATINGS.find(r => r >= designLoadA) || 15;
+    }
     
     // Use the higher of either the calculated minimum or the manually selected CB rating
     const mcbAT = Math.max(requiredMcbAT, c.mcbAT || 0);

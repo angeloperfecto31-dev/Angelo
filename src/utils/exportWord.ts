@@ -109,19 +109,19 @@ export const exportToWord = async (
   // GENERAL NOTES AND SPECIFICATIONS
   docChildren.push(createHeader(`General Notes and Specifications`, true));
   const generalNotes = [
-    "1. All electrical works herein shall be executed in accordance with the latest edition of the Philippine Electrical Code (PEC) 2017 Part 1 and Part 2, the rules and regulations of the local enforcing authority, and the requirements of the local power company.",
-    "2. The electrical works shall be done under the direct and immediate supervision of a duly licensed Professional Electrical Engineer (PEE) or Registered Electrical Engineer (REE).",
-    "3. All materials to be used shall be brand new, of the approved type for the location and purpose, and shall bear the PS or ICC mark.",
-    `4. Power service to the building shall be ${panel.system || "230V, 1PH, 2W"} or equivalent, sourced from the local utility company.`,
-    "5. All wires shall be THHN/THWN-2 copper conductors with thermoplastic insulation, minimum 600V, unless otherwise specified.",
-    "6. Minimum size of wire to be used shall be 3.5 mm² copper conductor (12 AWG), except for control leads.",
-    "7. All electrical conduits shall be Polyvinyl Chloride (PVC) Schedule 40 or Rigid Steel Conduit (RSC) depending on the area.",
-    "8. Circuit breakers shall be of the molded case type, bolt-on, with proper trip rating and interrupting capacity.",
-    "9. All non-current carrying metallic parts of electrical equipment, raceways, and enclosures shall be properly grounded in accordance with PEC regulations.",
-    "10. Mounting height of wiring devices shall be as follows:",
-    "    - Switches: 1.37m from finished floor line.",
-    "    - Convenience Outlets: 0.30m from finished floor line.",
-    "    - Panelboards: 1.50m (center) from finished floor line."
+    "1. All electrical works herein shall be executed in accordance with the latest edition of the Philippine Electrical Code (PEC) 2017 Part 1 (for design, installation, and safety of electrical systems in buildings) and Part 2 (for electrical safety standards, utility/generation connections, and workplace safety guidelines), the rules and regulations of the local enforcing authority, and the requirements of the local power company.",
+    "2. Supervision & Professional License (PEC Article 1.3 / RA 7920): The electrical works shall be done under the direct and immediate supervision of a Registered Electrical Engineer (REE) or Registered Master Electrician (RME) as allowed by law, and signed/sealed by a Professional Electrical Engineer (PEE).",
+    "3. Quality and Standards (PEC Section 1.10.1.3): All materials to be used shall be brand new, certified by the Bureau of Philippine Standards (BPS) with Product Safety (PS) or Import Commodity Clearance (ICC) marks, and suitable for the environment.",
+    `4. System Nominal Voltages (PEC Section 2.20.1.5): Power service to the building shall be ${panel.system || "230V, 1PH, 2W"} or equivalent, sourced from the local utility distribution system conforming to PEC Part 2 standards.`,
+    "5. Conductor Insulation (PEC Article 3.10): All wires shall be copper with THHN/THWN-2 thermoplastic high heat-resistant nylon-coated insulation, rated for 600V with a maximum operating temperature of 90°C in dry locations and 75°C in wet locations.",
+    "6. Branch Circuit Size Limits (PEC Section 2.10.2.1 / 3.10.1.16): The minimum standard wire size for lighting and general convenience outlets is 3.5 mm² copper (12 AWG) to ensure mechanical strength and limit voltage drop under nominal loads.",
+    "7. Conduits and Raceways (PEC Chapter 3): All electrical conduits shall be heavy-wall Polyvinyl Chloride (PVC) Schedule 40 (conforming to PEC Article 3.52) or Rigid Metal Conduit (RMC, Article 3.44) and electrical metallic tubing (EMT, Article 3.58) depending on structural or environmental exposure.",
+    "8. Circuit Breaker Interrupting Capacity (PEC Section 1.10.1.9): Standard molded-case circuit breakers (MCCB/MCB) shall be utilized, having a trip rating matching the PEC-allowable branch conductor ampacity, and an interrupting capacity (kAIC) greater than or equal to the calculated maximum symmetrical/asymmetrical fault currents.",
+    "9. Equipment Grounding (PEC Article 2.50): All non-current carrying metallic enclosures, frames, and raceways of the electrical distribution system shall be solidly grounded using standard copper equipment grounding conductors (EGC) sized according to PEC Table 2.50.6.13.",
+    "10. Standard Device Mounting Heights (PEC Occupational Rules & General Guidelines): Mounting height of wiring devices shall be as follows:",
+    "    - Wall Switches: 1.37 meters above the finished floor line (center).",
+    "    - General Convenience Outlets: 0.30 meters above the finished floor line.",
+    "    - Main and Branch Panelboards: 1.50 meters above the finished floor line (measured to top of cabinet structure)."
   ];
 
   generalNotes.forEach(note => docChildren.push(createParagraph(note)));
@@ -162,6 +162,15 @@ export const exportToWord = async (
       createParagraph(`Main Feeder Design Ampacity: ${designAmp.toFixed(2)} A`),
       createParagraph(`Recommended Main Breaker: ${cb} AF/AT`),
       createParagraph(`Recommended Main Wire Size: ${wire.size} mm² THHN/THWN`),
+      new Paragraph({ spacing: { after: 200 } }),
+      new Paragraph({
+        children: [new TextRun({ text: "PEC 2017 Design References & Sizing Standards Map:", font: "Segoe UI", size: 22, color: "1E3A8A", bold: true })],
+        spacing: { before: 200, after: 100 }
+      }),
+      createParagraph("• PEC Article 2.20 (Branch-Circuit, Feeder, and Service Calculations): Standards for branch-circuit loads (general lighting, receptacles, and heavy appliance loads) to verify safe and reliable power distribution sizing."),
+      createParagraph("• PEC Article 2.40 (Overcurrent Protection / Small Conductor Limit): Enforces standard overcurrent limits (Section 2.40.1.4 / Table 2.40.4(D)) limiting overcurrent devices to 15A for 2.0 mm² wire, 20A for 3.5 mm² wire, and 30A for 5.5 mm² wire protect against severe wire thermal distress."),
+      createParagraph("• PEC Article 4.40 (Air-Conditioning and Refrigerating Equipment): Dictates exact branch-circuit sizing criteria. Conductor rating must be at least 125% of the hermetic motor-compressor FLC (Section 4.40.4.2). The circuit breaker sizing uses standard maximum rating limit of 175% of FLC (Section 4.40.6.2(A)) or up to 225% as absolute ceiling exception to secure motor starting transients."),
+      createParagraph("• PEC Article 4.30 (Motors, Motor Circuits, and Controllers): Governs standard electric motor branch circuits, sizing the conductor ampacity at 125% of motor FLC (Section 4.30.2.2) and protecting against starting transients with inverse-time breakers sized up to 250% of FLC (Table 4.30.4.2)."),
       new Paragraph({ spacing: { after: 400 } })
     );
 
@@ -255,6 +264,14 @@ export const exportToWord = async (
     createParagraph(`Total Impedance = ${totalZpu.toFixed(4)}`),
     createParagraph(`Symmetrical Fault Current (Isc) = FLA / Total Impedance = ${iscSecondary.toFixed(2)} A`, true),
     createParagraph(`Asymmetrical Fault Current = Isc × 1.25 = ${iscAsym.toFixed(2)} A`, true),
+    new Paragraph({ spacing: { after: 120 } }),
+    new Paragraph({
+      children: [new TextRun({ text: "PEC 2017 Short Circuit & Protective System Sizing Standards:", font: "Segoe UI", size: 22, color: "1E3A8A", bold: true })],
+      spacing: { before: 200, after: 100 }
+    }),
+    createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): Requires that all overcurrent protective devices (OCPD) intended to interrupt fault currents have a safety rating (kAIC) sufficient for the nominal design voltage and the maximum possible short circuit current at the line terminals."),
+    createParagraph("• PEC Section 2.30.7.1 & Article 2.40 (Overcurrent Protection Coordination): Enforces short-circuit coordination, ensuring localized faults are cleared safely by branch breakers without causing primary system trip cascades."),
+    createParagraph("• PEC Part 2 (Electrical Safety in Workplace / Service Integration): Dictates safety standards and clearances for utility-level power connections, protecting personnel during high-energy arc discharge faults."),
   );
   if (images?.isc) {
     docChildren.push(createSubHeader(`Short Circuit Diagram`));
@@ -270,6 +287,14 @@ export const exportToWord = async (
     createParagraph(`3-Phase Voltage Drop = (√3 × K × I × L) / Area`),
     createParagraph(`Voltage Drop Percentage = (Actual Voltage Drop / Source Voltage) × 100`),
     createParagraph(`* K = 3.56 for Copper (ohms per km/mm²)`),
+    new Paragraph({ spacing: { after: 120 } }),
+    new Paragraph({
+      children: [new TextRun({ text: "PEC 2017 Voltage Drop Standards & Efficiency Limits:", font: "Segoe UI", size: 22, color: "1E3A8A", bold: true })],
+      spacing: { before: 200, after: 100 }
+    }),
+    createParagraph("• PEC Section 2.10.1.19 FPN No. 4 (Branch Circuits): Recommends branch-circuit conductors be sized to limit voltage drop to 3% or less at the farthest electrical outlet, ensuring reliable operating voltage for connected equipment."),
+    createParagraph("• PEC Section 2.15.1.2(A)(1) FPN No. 2 (Feeder Circuits): Recommends feeder-circuit conductors be sized to prevent a voltage drop exceeding 3% at the primary distribution node."),
+    createParagraph("• Full System Efficiency (PEC Part 1 & Part 2): Sizing both distribution feeders and branch circuits to keep the combined total voltage drop below 5% at the farthest outlet node, maintaining energy efficiency and standard equipment operations."),
     new Paragraph({ spacing: { after: 400 } })
   );
 
@@ -401,6 +426,13 @@ export const exportToWord = async (
     createParagraph(`Total Required Lumens = (${targetLux} × ${roomArea}) / (${cu} × ${mf}) = ${Math.round(expectedLumens)} Lumens`),
     createParagraph(`Quantity of Fixtures Required = Total Required Lumens / Lumens per Fixture`),
     createParagraph(`Quantity = ${Math.round(expectedLumens)} / ${lumensPerFix} = ${qty} Fixtures`, true),
+    new Paragraph({ spacing: { after: 120 } }),
+    new Paragraph({
+      children: [new TextRun({ text: "PEC 2017 & Visual Safety Compliance Standards:", font: "Segoe UI", size: 22, color: "1E3A8A", bold: true })],
+      spacing: { before: 200, after: 100 }
+    }),
+    createParagraph("• PEC Section 2.20.2.3 (General Lighting Loads by Occupancy): Outlines baseline unit power densities (VA per m²) which act as safety requirements for sizing lighting feeder loads during design building phases."),
+    createParagraph("• PEC Part 2 & DOLE Rule 1075 (Environmental Safety - Illumination): Recommends average lighting intensities (Lux) for typical work spaces, promoting occupational health and safety standards by protecting laborers against eye strains and industrial accidents."),
   );
   if (images?.illumination) {
     docChildren.push(createSubHeader(`Illumination Calculation Diagram`));
