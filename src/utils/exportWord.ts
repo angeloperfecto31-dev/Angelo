@@ -77,6 +77,17 @@ export const exportToWord = async (
       children: [new TextRun({ text: "Date: " + new Date().toLocaleDateString(), font: "Segoe UI", size: 24, color: "94A3B8", italics: true })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 2000 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "🛡 SAFETY DISCLAIMER", font: "Segoe UI", size: 24, color: "000000", bold: true })],
+      spacing: { after: 200 }
+    }),
+    new Paragraph({
+      children: [
+        new TextRun({ text: "This document is generated for preliminary design and estimation purposes based on Philippine Electrical Code (PEC) guidelines. Calculations must be reviewed and certified by a ", font: "Segoe UI", size: 20, color: "000000" }),
+        new TextRun({ text: "Professional Electrical Engineer (PEE)", font: "Segoe UI", size: 20, color: "000000", bold: true, underline: {} }),
+        new TextRun({ text: " before implementation. The developers are not liable for errors in manual data entry or misinterpretations.", font: "Segoe UI", size: 20, color: "000000" }),
+      ],
     })
   );
 

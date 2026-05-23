@@ -561,7 +561,7 @@ export default function App() {
 
   const handleExportWord = async () => {
     try {
-      const getImg = async (id: string) => {
+      const getImg = async (id: string, customFilter?: (node: HTMLElement) => boolean) => {
         const el = document.getElementById(id);
         if (!el) return null;
         try {
@@ -571,6 +571,18 @@ export default function App() {
             backgroundColor: "#ffffff",
             pixelRatio: 1,
             skipFonts: true,
+            filter: (node) => {
+              const element = node as any;
+              if (element instanceof HTMLElement || element instanceof SVGElement) {
+                if (element.classList?.contains('export-hide') || element.classList?.contains('no-print')) {
+                  return false;
+                }
+              }
+              if (customFilter && element instanceof HTMLElement) {
+                return customFilter(element);
+              }
+              return true;
+            }
           });
         } catch (err) {
           console.warn(`Failed to capture image for element ${id}:`, err);
@@ -687,24 +699,16 @@ export default function App() {
         id="print-area"
         className="w-full max-w-[1600px] p-4 md:p-8 flex flex-col items-center gap-8"
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="w-full flex justify-center"
-          >
-            {activeTab === "schedule" && (
-              <div className="flex flex-col gap-12 w-full max-w-full">
-                <LoadSchedule
-                  panel={panel}
-                  setPanel={setPanel}
-                  circuits={circuits}
-                  setCircuits={setCircuits}
-                  availableSubPanels={subPanels}
-                />
+        <div className="w-full relative min-h-[500px]">
+          <div className={`w-full flex justify-center ${activeTab === "schedule" ? "block opacity-100" : "hidden opacity-0"} transition-opacity duration-300`}>
+            <div className="flex flex-col gap-12 w-full max-w-full">
+              <LoadSchedule
+                panel={panel}
+                setPanel={setPanel}
+                circuits={circuits}
+                setCircuits={setCircuits}
+                availableSubPanels={subPanels}
+              />
 
                 {subPanels.map((sp, index) => (
                   <React.Fragment key={sp.id}>
@@ -769,8 +773,9 @@ export default function App() {
                   Add Sub-Panel
                 </button>
               </div>
-            )}
-            {activeTab === "isc" && (
+            </div>
+            
+            <div className={`w-full flex justify-center ${activeTab === "isc" ? "block opacity-100" : "hidden opacity-0"} transition-opacity duration-300`}>
               <ShortCircuitCalc
                 panel={panel}
                 circuits={circuits}
@@ -780,16 +785,18 @@ export default function App() {
                 source={iscSource}
                 setSource={setIscSource}
               />
-            )}
-            {activeTab === "vd" && (
+            </div>
+            
+            <div className={`w-full flex justify-center ${activeTab === "vd" ? "block opacity-100" : "hidden opacity-0"} transition-opacity duration-300`}>
               <VoltageDropCalc
                 panel={panel}
                 circuits={circuits}
                 calculations={vdCalculations}
                 setCalculations={setVdCalculations}
               />
-            )}
-            {activeTab === "lighting" && (
+            </div>
+            
+            <div className={`w-full flex justify-center ${activeTab === "lighting" ? "block opacity-100" : "hidden opacity-0"} transition-opacity duration-300`}>
               <IlluminationCalc
                 circuits={circuits}
                 setCircuits={setCircuits}
@@ -797,14 +804,16 @@ export default function App() {
                 params={illumParams}
                 setParams={setIllumParams}
               />
-            )}
-            {activeTab === "floor-plan" && (
+            </div>
+            
+            <div className={`w-full flex justify-center ${activeTab === "floor-plan" ? "block opacity-100" : "hidden opacity-0"} transition-opacity duration-300`}>
               <FloorPlanUploader
                 images={floorPlanImages}
                 setImages={setFloorPlanImages}
               />
-            )}
-            {activeTab === "verify" && (
+            </div>
+            
+            <div className={`w-full flex justify-center ${activeTab === "verify" ? "block opacity-100" : "hidden opacity-0"} transition-opacity duration-300`}>
               <div className="w-full">
                 <PaymentScreen
                   user={user}
@@ -812,9 +821,8 @@ export default function App() {
                   onPaymentSuccess={() => setActiveTab("schedule")}
                 />
               </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+            </div>
+          </div>
       </main>
 
       {/* Hidden Export Container for capturing all diagrams */}
