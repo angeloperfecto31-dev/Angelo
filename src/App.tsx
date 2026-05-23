@@ -561,8 +561,17 @@ export default function App() {
 
   const handleExportWord = async () => {
     try {
-      const getImg = async (id: string) => {
-        const el = document.getElementById(id);
+      const getImg = async (id: string, exportContainerId?: string) => {
+        let el: HTMLElement | null = null;
+        if (exportContainerId) {
+          const container = document.getElementById(exportContainerId);
+          if (container) {
+            el = container.querySelector(`[id="${id}"]`) as HTMLElement;
+          }
+        }
+        if (!el) {
+          el = document.getElementById(id);
+        }
         if (!el) return null;
         try {
           // Reduced pixel ratio from 2 to 1 to handle extremely large DOM elements (e.g., long load schedules) without exceeding canvas memory limits
@@ -571,6 +580,10 @@ export default function App() {
             backgroundColor: "#ffffff",
             pixelRatio: 1,
             skipFonts: true,
+            style: {
+              opacity: "1",
+              visibility: "visible",
+            },
           });
         } catch (err) {
           console.warn(`Failed to capture image for element ${id}:`, err);
@@ -587,20 +600,20 @@ export default function App() {
       const allPanels = [panel, ...subPanels.map((sp) => sp.panel)];
       for (const p of allPanels) {
         const id = `sld-${p?.designation || "main"}`;
-        sldImages[p?.designation || ""] = await getImg(id);
+        sldImages[p?.designation || ""] = await getImg(id, "export-container-sld");
       }
 
       const images = {
         sld: sldImages,
-        isc: await getImg("short-circuit-diagram"),
+        isc: await getImg("short-circuit-diagram", "export-container-isc"),
         vdDiagrams: {} as Record<string, string | null>,
-        illumination: await getImg("illumination-diagram"),
+        illumination: await getImg("illumination-diagram", "export-container-illum"),
         floorPlan: floorPlanImages,
       };
 
       for (const calc of vdCalculations) {
         if (calc?.id) {
-          images.vdDiagrams[calc.id] = await getImg(`vd-diagram-${calc.id}`);
+          images.vdDiagrams[calc.id] = await getImg(`vd-diagram-${calc.id}`, "export-container-vd");
         }
       }
 
@@ -687,16 +700,15 @@ export default function App() {
         id="print-area"
         className="w-full max-w-[1600px] p-4 md:p-8 flex flex-col items-center gap-8"
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="w-full flex justify-center"
-          >
-            {activeTab === "schedule" && (
+        <div className="w-full">
+          {/* Load Schedule Tab */}
+          <div className={activeTab === "schedule" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "schedule" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
               <div className="flex flex-col gap-12 w-full max-w-full">
                 <LoadSchedule
                   panel={panel}
@@ -769,8 +781,17 @@ export default function App() {
                   Add Sub-Panel
                 </button>
               </div>
-            )}
-            {activeTab === "isc" && (
+            </motion.div>
+          </div>
+
+          {/* Short Circuit Tab */}
+          <div className={activeTab === "isc" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "isc" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
               <ShortCircuitCalc
                 panel={panel}
                 circuits={circuits}
@@ -780,16 +801,34 @@ export default function App() {
                 source={iscSource}
                 setSource={setIscSource}
               />
-            )}
-            {activeTab === "vd" && (
+            </motion.div>
+          </div>
+
+          {/* Voltage Drop Tab */}
+          <div className={activeTab === "vd" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "vd" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
               <VoltageDropCalc
                 panel={panel}
                 circuits={circuits}
                 calculations={vdCalculations}
                 setCalculations={setVdCalculations}
               />
-            )}
-            {activeTab === "lighting" && (
+            </motion.div>
+          </div>
+
+          {/* Illumination Tab */}
+          <div className={activeTab === "lighting" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "lighting" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
               <IlluminationCalc
                 circuits={circuits}
                 setCircuits={setCircuits}
@@ -797,14 +836,32 @@ export default function App() {
                 params={illumParams}
                 setParams={setIllumParams}
               />
-            )}
-            {activeTab === "floor-plan" && (
+            </motion.div>
+          </div>
+
+          {/* Floor Plan Tab */}
+          <div className={activeTab === "floor-plan" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "floor-plan" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
               <FloorPlanUploader
                 images={floorPlanImages}
                 setImages={setFloorPlanImages}
               />
-            )}
-            {activeTab === "verify" && (
+            </motion.div>
+          </div>
+
+          {/* Verify Admin Tab */}
+          <div className={activeTab === "verify" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "verify" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
               <div className="w-full">
                 <PaymentScreen
                   user={user}
@@ -812,9 +869,9 @@ export default function App() {
                   onPaymentSuccess={() => setActiveTab("schedule")}
                 />
               </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+            </motion.div>
+          </div>
+        </div>
       </main>
 
       {/* Hidden Export Container for capturing all diagrams */}

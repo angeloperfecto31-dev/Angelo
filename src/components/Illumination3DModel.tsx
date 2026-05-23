@@ -131,8 +131,8 @@ export default function Illumination3DModel({
     const camera = new THREE.PerspectiveCamera(45, containerWidth / containerHeight, 0.1, 1000);
     camera.position.set(width * 1.5, height * 2.5, length * 1.5);
 
-    // Setup renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    // Setup renderer with preserveDrawingBuffer enabled for image exports
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(containerWidth, containerHeight);
     containerRef.current.appendChild(renderer.domElement);
@@ -296,20 +296,31 @@ export default function Illumination3DModel({
     };
     animate();
 
-    // Event resize listener
+    // Event resize listener with ResizeObserver
     const handleResize = () => {
       if (!containerRef.current) return;
-      const w = containerRef.current.clientWidth || 600;
-      const h = containerRef.current.clientHeight || 450;
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      if (w === 0 || h === 0) return;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
+
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
     window.addEventListener('resize', handleResize);
 
     // Unmount cleanup
     return () => {
       cancelAnimationFrame(animationFrameId);
+      resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       controls.dispose();
       renderer.dispose();

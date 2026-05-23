@@ -328,70 +328,6 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     setActiveTab('schedule');
   };
 
-  const renderFloorPlan = () => {
-    const { fixtures } = calculation;
-    if (fixtures <= 0) return null;
-
-    let cols = Math.ceil(Math.sqrt(fixtures));
-    let rows = Math.ceil(fixtures / cols);
-
-    // If using dimensions, adjust ratio
-    if (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0) {
-      const ratio = params.roomWidth / params.roomLength;
-      cols = Math.max(1, Math.round(Math.sqrt(fixtures * ratio)));
-      rows = Math.ceil(fixtures / cols);
-    }
-    
-    const isDimensions = params.inputMode === 'dimensions' && params.roomLength > 0 && params.roomWidth > 0;
-    const ratio = isDimensions ? params.roomWidth / params.roomLength : 1;
-    
-    const gridStyle = {
-      display: 'grid',
-      gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-      gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-      gap: 'min(2vw, 1.25rem)',
-      padding: 'min(4vw, 2.5rem)',
-      width: '100%',
-      maxWidth: `min(100%, calc(450px * ${ratio}))`,
-      aspectRatio: isDimensions ? `${params.roomWidth} / ${params.roomLength}` : '1 / 1',
-      margin: '0 auto',
-      backgroundColor: '#f8fafc',
-      border: '4px solid #e2e8f0',
-      borderRadius: '1rem',
-      position: 'relative' as const,
-      boxShadow: 'inset 0 4px 15px rgba(0,0,0,0.03)'
-    };
-
-    const fixturesArray = Array.from({ length: fixtures }, (_, i) => i);
-
-    return (
-      <div className="mt-8 flex flex-col items-center">
-        <h4 className="text-xl font-black text-slate-800 mb-2">Automated Luminaire Layout</h4>
-        <p className="text-sm font-semibold text-slate-500 mb-6 flex items-center gap-1.5 justify-center">
-          <Lightbulb className="w-4 h-4 text-amber-500" />
-          Reflected Ceiling Plan (RCP) showing suggested {fixtures} fixtures
-        </p>
-        <div style={gridStyle}>
-           {params.inputMode === 'dimensions' && (
-              <>
-                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-black text-slate-400 uppercase tracking-widest">{params.roomWidth}m (Room Width)</div>
-                 <div className="absolute top-1/2 -left-14 -translate-y-1/2 -rotate-90 text-[10px] font-black text-slate-400 uppercase tracking-widest">{params.roomLength}m (Room Length)</div>
-              </>
-           )}
-           {params.inputMode === 'area' && (
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] font-black text-slate-400 uppercase tracking-widest">{Number(calculation.area)}m² (Total Floor Area)</div>
-           )}
-          {fixturesArray.map((_, i) => (
-            <div key={i} className="flex items-center justify-center relative group">
-               <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-yellow-100 border-2 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.35)] flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:bg-yellow-250">
-                 <Lightbulb className="w-5 h-5 md:w-6 md:h-6 text-yellow-600 animate-pulse" />
-               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="w-full max-w-full space-y-6">
@@ -961,7 +897,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
           </div>
         </div>
         
-        {renderFloorPlan()}
+
 
         {/* Calculations & Formulas Section (Only visible during PDF export / print) */}
         <section className="hidden print-show mt-12 bg-white rounded-2xl border-2 border-slate-800 p-8">
