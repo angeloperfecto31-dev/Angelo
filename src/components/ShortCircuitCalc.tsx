@@ -325,8 +325,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
       {/* Impedance Diagram Visual (ETAP Style) */}
       <div className={isDiagramExpanded ? "fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex p-4 pb-20 items-center justify-center overflow-auto" : ""}>
-        <section className={`bg-white rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 p-8'}`}>
-          <div className="flex items-center justify-between mb-8 export-hide no-print">
+        <section id="short-circuit-diagram" className={`bg-white rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 p-8'}`}>
+          <div className="flex items-center justify-between mb-8">
             <div className="flex flex-col gap-1">
               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                 <Activity className="w-4 h-4 text-red-500" />
@@ -381,14 +381,14 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             </div>
           </div>
 
-          <div id="short-circuit-diagram" className="w-full relative flex items-center justify-center">
-            <div className={`w-full flex-col items-center py-6 font-sans overflow-x-auto ${diagramTab === 'svg' ? 'flex' : 'hidden'}`}>
+          <div className="relative">
+            <div className={`w-full flex flex-col items-center py-6 font-sans overflow-x-auto ${diagramTab === 'svg' ? 'block' : 'hidden'}`}>
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
-            <div 
-              className="relative w-[850px] h-[720px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
-              style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
-            >
-              {/* SVG 2D Single Line Impedance Diagram */}
+              <div 
+                className="relative w-[850px] h-[720px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
+                style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
+              >
+                {/* SVG 2D Single Line Impedance Diagram */}
                 <svg
                   viewBox="0 0 850 720"
                   className="absolute top-0 left-0 w-full h-full font-sans text-slate-800 pointer-events-none"
@@ -663,11 +663,12 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
               </div>
             </div>
-          <div 
-            className={`flex-col items-center py-12 font-sans overflow-x-auto min-w-[600px] transition-[filter] ${diagramTab === 'interactive' ? 'flex' : 'hidden'}`}
-            style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
-          >
-            {/* Utility Box */}
+
+            <div 
+              className={`flex flex-col items-center py-12 font-sans overflow-x-auto min-w-[600px] transition-[filter] ${diagramTab === 'interactive' ? 'flex' : 'hidden'}`}
+              style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
+            >
+              {/* Utility Box */}
               <div className="flex flex-col items-center">
                 <div className="w-40 border-2 border-slate-900 p-2 bg-slate-50 relative flex flex-col items-center shadow-sm">
                    <span className="text-[9px] font-black absolute -top-2.5 bg-white px-2 uppercase tracking-widest text-slate-500">Utility</span>
@@ -850,7 +851,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             </div>
           </div>
           
-          <p className="text-[9px] text-slate-400 mt-8 italic text-center export-hide no-print">Diagram generated per Philippine Electrical Code calculation methods.</p>
+          <p className="text-[9px] text-slate-400 mt-8 italic text-center">Diagram generated per Philippine Electrical Code calculation methods.</p>
         </section>
       </div>
 
