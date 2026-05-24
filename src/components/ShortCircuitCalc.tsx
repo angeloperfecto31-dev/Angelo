@@ -201,18 +201,18 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
   return (
     <div className="w-full max-w-full space-y-6">
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-hidden no-print">
+      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 overflow-hidden no-print">
         <div className="flex items-center gap-2 mb-6">
-          <ShieldAlert className="w-5 h-5 text-red-600" />
-          <h2 className="text-lg font-bold text-slate-800">Calculation Parameters</h2>
+          <ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-400" />
+          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-sans">Calculation Parameters</h2>
         </div>
         <div className="flex flex-col gap-6">
           {circuits && panel && (
-            <div className="space-y-1.5 p-4 bg-red-50/50 rounded-xl border border-red-100">
-              <label className="text-xs font-bold text-red-600 uppercase flex items-center gap-1"><Link className="w-3 h-3" /> Connect to Load Schedule</label>
-              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-sm text-red-900 font-medium font-sans mt-2 shadow-sm">
-                <option value="custom">Custom Parameters (Disconnected)</option>
-                <option value="auto">Auto-Size from {panel.designation} connected load ({(circuits.reduce((sum, c) => sum + c.loadVA, 0) / 1000).toFixed(2)} kVA)</option>
+            <div className="space-y-1.5 p-4 bg-red-50/50 dark:bg-red-950/25 rounded-xl border border-red-100 dark:border-red-900/40">
+              <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase flex items-center gap-1"><Link className="w-3 h-3" /> Connect to Load Schedule</label>
+              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-850 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-900 dark:text-red-200 font-medium font-sans mt-2 shadow-sm focus:outline-none">
+                <option value="custom" className="dark:bg-slate-900 dark:text-slate-100">Custom Parameters (Disconnected)</option>
+                <option value="auto" className="dark:bg-slate-900 dark:text-slate-100">Auto-Size from {panel.designation} connected load ({(circuits.reduce((sum, c) => sum + c.loadVA, 0) / 1000).toFixed(2)} kVA)</option>
               </select>
             </div>
           )}
@@ -220,77 +220,77 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Utility MVAsc</label>
-                  <input type="number" value={params.utilityShortCircuitMVA} onChange={e => setParams({...params, utilityShortCircuitMVA: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.utilityShortCircuitMVA} onChange={e => setParams({...params, utilityShortCircuitMVA: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Pri Voltage (V)</label>
-                  <input type="number" value={params.primaryVoltage} onChange={e => setParams({...params, primaryVoltage: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.primaryVoltage} onChange={e => setParams({...params, primaryVoltage: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Sec Voltage (V)</label>
-                  <input readOnly={source === 'auto'} type="number" value={params.transformerVoltage} onChange={e => setParams({...params, transformerVoltage: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-slate-50 focus:ring-2 focus:ring-red-500'}`} />
+                  <input readOnly={source === 'auto'} type="number" value={params.transformerVoltage} onChange={e => setParams({...params, transformerVoltage: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-850 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Connection</label>
-                  <select value={params.transformerConnection} onChange={e => setParams({...params, transformerConnection: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none">
-                     <option value="Delta-Wye">Delta-Wye</option>
-                     <option value="Wye-Wye">Wye-Wye</option>
-                     <option value="Delta-Delta">Delta-Delta</option>
+                  <select value={params.transformerConnection} onChange={e => setParams({...params, transformerConnection: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                     <option value="Delta-Wye" className="dark:bg-slate-900 dark:text-slate-100">Delta-Wye</option>
+                     <option value="Wye-Wye" className="dark:bg-slate-900 dark:text-slate-100">Wye-Wye</option>
+                     <option value="Delta-Delta" className="dark:bg-slate-900 dark:text-slate-100">Delta-Delta</option>
                   </select>
                 </div>
                 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Trans (kVA)</label>
-                  <input readOnly={source === 'auto'} type="number" value={params.transformerKVA} onChange={e => setParams({...params, transformerKVA: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-slate-50 focus:ring-2 focus:ring-red-500'}`} />
+                  <input readOnly={source === 'auto'} type="number" value={params.transformerKVA} onChange={e => setParams({...params, transformerKVA: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-850 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Trans (%Z)</label>
-                  <input type="number" value={params.transformerZ} onChange={e => setParams({...params, transformerZ: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.transformerZ} onChange={e => setParams({...params, transformerZ: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Length (m)</label>
-                  <input type="number" value={params.feederLength} onChange={e => setParams({...params, feederLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.feederLength} onChange={e => setParams({...params, feederLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5 flex gap-2">
                   <div className="flex-1">
                      <label className="text-xs font-bold text-slate-400 uppercase">Size(mm²)</label>
-                     <select value={params.feederSize} onChange={e => setParams({...params, feederSize: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none">
-                        {['2.0', '3.5', '5.5', '8.0', '14', '22', '30', '38', '50', '60', '80', '100', '125', '150', '200', '250', '325', '400', '500'].map(s => <option key={s} value={s}>{s}</option>)}
+                     <select value={params.feederSize} onChange={e => setParams({...params, feederSize: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                        {['2.0', '3.5', '5.5', '8.0', '14', '22', '30', '38', '50', '60', '80', '100', '125', '150', '200', '250', '325', '400', '500'].map(s => <option key={s} value={s} className="dark:bg-slate-900 dark:text-slate-100">{s}</option>)}
                      </select>
                   </div>
                   <div className="flex-1">
                      <label className="text-xs font-bold text-slate-400 uppercase">Type</label>
-                     <select value={params.conductorType} onChange={e => setParams({...params, conductorType: e.target.value as 'Copper' | 'Aluminum'})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none">
-                        <option value="Copper">Copper</option>
-                        <option value="Aluminum">Aluminum</option>
+                     <select value={params.conductorType} onChange={e => setParams({...params, conductorType: e.target.value as 'Copper' | 'Aluminum'})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                        <option value="Copper" className="dark:bg-slate-900 dark:text-slate-100">Copper</option>
+                        <option value="Aluminum" className="dark:bg-slate-900 dark:text-slate-100">Aluminum</option>
                      </select>
                   </div>
                   <div className="w-16">
                      <label className="text-xs font-bold text-slate-400 uppercase">Runs</label>
-                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                   </div>
                 </div>
           </div>
         </div>
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 flex flex-col items-center panel-container print:rounded-none">
-        <div className="w-full border-b border-slate-100 pb-4 mb-8">
-           <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Short Circuit Calculation Report</h3>
+      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-8 flex flex-col items-center panel-container print:rounded-none">
+        <div className="w-full border-b border-slate-100 dark:border-slate-800 pb-4 mb-8">
+           <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter">Short Circuit Calculation Report</h3>
            <p className="text-[10px] text-slate-400 font-bold uppercase">PEC 2017 Requirement 1.10.1.24</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
           <div className="space-y-6">
             <div className="space-y-2">
-               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-1">Input Data Summary</h4>
+               <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800 pb-1">Input Data Summary</h4>
                <div className="grid grid-cols-2 gap-y-2 text-xs">
-                 <span className="text-slate-500">Transformer Rating:</span>
-                 <span className="font-bold text-slate-900 text-right">{params.transformerKVA} kVA</span>
-                 <span className="text-slate-500">Secondary Voltage:</span>
-                 <span className="font-bold text-slate-900 text-right">{params.transformerVoltage}V</span>
-                 <span className="text-slate-500">Transformer %Z:</span>
-                 <span className="font-bold text-slate-900 text-right">{params.transformerZ}%</span>
+                 <span className="text-slate-500 dark:text-slate-400">Transformer Rating:</span>
+                 <span className="font-bold text-slate-900 dark:text-slate-100 text-right">{params.transformerKVA} kVA</span>
+                 <span className="text-slate-500 dark:text-slate-400">Secondary Voltage:</span>
+                 <span className="font-bold text-slate-900 dark:text-slate-100 text-right">{params.transformerVoltage}V</span>
+                 <span className="text-slate-500 dark:text-slate-400">Transformer %Z:</span>
+                 <span className="font-bold text-slate-900 dark:text-slate-100 text-right">{params.transformerZ}%</span>
                </div>
             </div>
 
@@ -326,46 +326,46 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
       {/* Impedance Diagram Visual (ETAP Style) */}
       <div className={isDiagramExpanded ? "fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex p-4 pb-20 items-center justify-center overflow-auto" : ""}>
-        <section id="short-circuit-diagram" className={`bg-white rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 p-8'}`}>
+        <section id="short-circuit-diagram" className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 dark:border-slate-800 p-8'}`}>
           <div className="flex items-center justify-between mb-8">
             <div className="flex flex-col gap-1">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
                 <Activity className="w-4 h-4 text-red-500" />
                 Single Line Impedance Diagram
               </h4>
-              <p className="text-xs text-slate-500 font-sans print:hidden">Select representation view:</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-sans print:hidden">Select representation view:</p>
             </div>
             
             <div className="flex items-center gap-4 no-print">
-              <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                 <button 
                   type="button"
                   onClick={() => setIsBWMode(false)} 
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${!isBWMode ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:text-slate-950'}`}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${!isBWMode ? 'bg-white dark:bg-slate-700 shadow text-slate-800 dark:text-slate-200' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100'}`}
                 >
                   Colored Mode
                 </button>
                 <button 
                   type="button"
                   onClick={() => setIsBWMode(true)} 
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${isBWMode ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:text-slate-950'}`}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${isBWMode ? 'bg-white dark:bg-slate-700 shadow text-slate-800 dark:text-slate-200' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100'}`}
                 >
                   B&W Mode
                 </button>
               </div>
-
-              <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                 <button 
                   type="button"
                   onClick={() => setDiagramTab('svg')} 
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${diagramTab === 'svg' ? 'bg-white shadow text-red-600' : 'text-slate-600 hover:text-slate-950'}`}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${diagramTab === 'svg' ? 'bg-white dark:bg-slate-700 shadow text-red-600 dark:text-red-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100'}`}
                 >
                   2D Core Schematic
                 </button>
                 <button 
                   type="button"
                   onClick={() => setDiagramTab('interactive')} 
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${diagramTab === 'interactive' ? 'bg-white shadow text-red-600' : 'text-slate-600 hover:text-slate-950'}`}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${diagramTab === 'interactive' ? 'bg-white dark:bg-slate-700 shadow text-red-600 dark:text-red-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100'}`}
                 >
                   Interactive (Blocks)
                 </button>
@@ -374,7 +374,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
               <button
                 type="button"
                 onClick={() => exportDiagramToDXF(panel, params, calculation, motorLoadVA)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-800 text-white rounded-md hover:bg-slate-900 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-800 dark:bg-slate-700 text-white rounded-md hover:bg-slate-900 dark:hover:bg-slate-600 transition-colors"
                 title="Export AutoCAD 2D (DXF)"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -384,7 +384,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
               <button 
                 type="button"
                 onClick={() => setIsDiagramExpanded(!isDiagramExpanded)}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                 title={isDiagramExpanded ? "Minimize Diagram" : "Maximize Diagram"}
               >
                 {isDiagramExpanded ? <Minimize2 className="w-4 h-4 text-slate-500" /> : <Maximize2 className="w-4 h-4 text-slate-500" />}
@@ -402,32 +402,45 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                 {/* SVG 2D Single Line Impedance Diagram */}
                 <svg
                   viewBox="0 0 850 720"
-                  className="absolute top-0 left-0 w-full h-full font-sans text-slate-800 pointer-events-none"
+                  className="absolute top-0 left-0 w-full h-full font-sans text-slate-800 dark:text-slate-100 pointer-events-none"
                 >
                   <defs>
                     <style>
                       {`
                         .sld-line { fill: none; stroke: #334155; stroke-width: 2; }
+                        .dark .sld-line { stroke: #94a3b8; }
                         .sld-dash { fill: none; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 4 4; }
+                        .dark .sld-dash { stroke: #475569; }
                         .sld-text-title { fill: #1e3a8a; font-family: "Inter", sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+                        .dark .sld-text-title { fill: #93c5fd; }
                         .sld-text-val { fill: #0f172a; font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 10px; font-weight: bold; }
+                        .dark .sld-text-val { fill: #e2e8f0; }
                         .sld-text-lbl { fill: #64748b; font-family: "Inter", sans-serif; font-size: 10px; font-weight: 500; }
+                        .dark .sld-text-lbl { fill: #94a3b8; }
+                        .sld-shape-tx-blue { fill: #eff6ff; stroke: #2563eb; }
+                        .dark .sld-shape-tx-blue { fill: #1e3a8a/30; stroke: #3b82f6; }
+                        .sld-shape-tx-green { fill: #f0fdf4; stroke: #16a34a; }
+                        .dark .sld-shape-tx-green { fill: #14532d/30; stroke: #4ade80; }
+                        .sld-shape-tx-orange { fill: #fff7ed; stroke: #ea580c; }
+                        .dark .sld-shape-tx-orange { fill: #7c2d12/30; stroke: #f97316; }
+                        .sld-symbol-bg { fill: #f8fafc; }
+                        .dark .sld-symbol-bg { fill: #1e293b; }
                       `}
                     </style>
                   </defs>
 
                   {/* HEADER DIVIDERS / COHESIVE COLUMNS */}
                   {/* Left Head */}
-                  <text x="180" y="30" className="sld-text-title" textAnchor="middle" fill="#0f172a" style={{ fontSize: '13px', fontWeight: 'bold' }}>I. System Single Line Diagram</text>
-                  <line x1="80" y1="40" x2="280" y2="40" stroke="#334155" strokeWidth="2" />
+                  <text x="180" y="30" className="sld-text-title" textAnchor="middle" style={{ fontSize: '13px', fontWeight: 'bold' }}>I. System Single Line Diagram</text>
+                  <line x1="80" y1="40" x2="280" y2="40" className="sld-line" strokeWidth="2" />
 
                   {/* Equivalent Head */}
-                  <text x="560" y="30" className="sld-text-title" textAnchor="middle" fill="#dc2626" style={{ fontSize: '13px', fontWeight: 'bold' }}>II. Sequence Impedance Model</text>
-                  <line x1="460" y1="40" x2="660" y2="40" stroke="#dc2626" strokeWidth="2" />
+                  <text x="560" y="30" className="sld-text-title" textAnchor="middle" style={{ fontSize: '13px', fontWeight: 'bold' }}>II. Sequence Impedance Model</text>
+                  <line x1="460" y1="40" x2="660" y2="40" className="sld-line" strokeWidth="2" />
 
                   {/* ROW 1: UTILITY */}
                   {/* Left Column Symbol (Utility generator circle) */}
-                  <circle cx="180" cy="90" r="22" className="sld-line" fill="#f8fafc" />
+                  <circle cx="180" cy="90" r="22" className="sld-line sld-symbol-bg" />
                   <path d="M 166,90 Q 173,78 180,90 T 194,90" className="sld-line" strokeWidth="2" />
                   <text x="180" y="125" className="sld-text-lbl" textAnchor="middle" style={{ fontWeight: 'bold' }}>UTILITY INF. BUS</text>
 
@@ -435,13 +448,13 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   <line x1="210" y1="90" x2="510" y2="90" className="sld-dash" />
 
                   {/* Right Column Index Reference Bar (Infinite Bus) */}
-                  <line x1="510" y1="90" x2="610" y2="90" stroke="#475569" strokeWidth="6" />
-                  <text x="560" y="75" className="sld-text-title" textAnchor="middle" fill="#475569">Infinite Bus (V = 1.0 pu)</text>
+                  <line x1="510" y1="90" x2="610" y2="90" className="sld-line" strokeWidth="6" />
+                  <text x="560" y="75" className="sld-text-title" textAnchor="middle">Infinite Bus (V = 1.0 pu)</text>
 
                   {/* Right Column Utility Impedance Series Reactor */}
                   <line x1="560" y1="90" x2="560" y2="120" className="sld-line" />
-                  <rect x="545" y="120" width="30" height="35" fill="#eff6ff" stroke="#2563eb" strokeWidth="2" rx="3" />
-                  <text x="560" y="141" className="sld-text-val" textAnchor="middle" fill="#1e40af">Zu</text>
+                  <rect x="545" y="120" width="30" height="35" className="sld-shape-tx-blue" strokeWidth="2" rx="3" />
+                  <text x="560" y="141" className="sld-text-val" textAnchor="middle" style={{ fill: '#3b82f6' }}>Zu</text>
                   <line x1="560" y1="155" x2="560" y2="185" className="sld-line" />
 
 
@@ -451,7 +464,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
                   {/* ROW 2: TRANSFORMER */}
                   {/* Left Column Transformer Symbol (Overlap Circles) */}
-                  <circle cx="180" cy="212" r="20" className="sld-line" fill="#f8fafc" />
+                  <circle cx="180" cy="212" r="20" className="sld-line sld-symbol-bg" />
                   <circle cx="180" cy="232" r="20" className="sld-line" fill="none" />
                   <text x="180" y="270" className="sld-text-lbl" textAnchor="middle" style={{ fontWeight: 'bold' }}>TX-01 TRANSFORMER</text>
 
@@ -459,8 +472,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   <line x1="210" y1="212" x2="510" y2="212" className="sld-dash" />
 
                   {/* Right Column Transformer impedance series block */}
-                  <rect x="545" y="185" width="30" height="35" fill="#f0fdf4" stroke="#16a34a" strokeWidth="2" rx="3" />
-                  <text x="560" y="206" className="sld-text-val" textAnchor="middle" fill="#166534">Zt</text>
+                  <rect x="545" y="185" width="30" height="35" className="sld-shape-tx-green" strokeWidth="2" rx="3" />
+                  <text x="560" y="206" className="sld-text-val" textAnchor="middle" style={{ fill: '#4ade80' }}>Zt</text>
                   <line x1="560" y1="220" x2="560" y2="280" className="sld-line" strokeWidth="2" />
 
 
@@ -470,16 +483,16 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
                   {/* ROW 3: MAIN BREAKER & MDP BUS */}
                   {/* Left Column Main Breaker Rectangle */}
-                  <rect x="171" y="300" width="18" height="26" rx="2" className="sld-line" fill="#1e293b" />
-                  <line x1="171" y1="313" x2="189" y2="313" stroke="white" strokeWidth="1.5" />
-                  <text x="200" y="317" className="sld-text-val" fill="#1e293b">{panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A'}</text>
+                  <rect x="171" y="300" width="18" height="26" rx="2" className="sld-line sld-symbol-bg" />
+                  <line x1="171" y1="313" x2="189" y2="313" className="sld-line" strokeWidth="1.5" />
+                  <text x="200" y="317" className="sld-text-val">{panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A'}</text>
 
                   <line x1="180" y1="326" x2="180" y2="350" className="sld-line" />
 
                   {/* MDP Horizontal Copper BUS BAR */}
-                  <line x1="80" y1="350" x2="280" y2="350" stroke="#0f172a" strokeWidth="5" />
-                  <text x="285" y="347" className="sld-text-title" fill="#0f172a">MAIN MDP BUS</text>
-                  <text x="285" y="360" className="sld-text-val" fill="#ef4444">{calculation.iscMainBreaker} A (Isc Symmetrical)</text>
+                  <line x1="80" y1="350" x2="280" y2="350" className="sld-line" strokeWidth="5" />
+                  <text x="285" y="347" className="sld-text-title">MAIN MDP BUS</text>
+                  <text x="285" y="360" className="sld-text-val" style={{ fill: '#ef4444' }}>{calculation.iscMainBreaker} A (Isc Symmetrical)</text>
 
                   {/* Divider Dash linking Left and Right */}
                   <line x1="285" y1="350" x2="510" y2="350" className="sld-dash" />
@@ -487,7 +500,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   {/* Right Column MDP node */}
                   <circle cx="560" cy="280" r="5" fill="#dc2626" />
                   <text x="575" y="284" className="sld-text-lbl" style={{ fontWeight: 'bold' }}>MDP MAIN BUS NODE</text>
-                  <text x="575" y="296" className="sld-text-val" fill="#dc2626">Isc = {calculation.iscMainBreaker}A</text>
+                  <text x="575" y="296" className="sld-text-val" style={{ fill: '#dc2626' }}>Isc = {calculation.iscMainBreaker}A</text>
 
 
                   {/* FEEDER CONDUCTOR WORKWAY */}
@@ -496,16 +509,16 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
                   {/* ROW 4: FEEDER SEGMENT */}
                   {/* Left Column Segment Line representing conductor feeder */}
-                  <line x1="180" y1="400" x2="180" y2="480" className="sld-line" strokeWidth="3" stroke="#ea580c" />
-                  <text x="180" y="445" className="sld-text-val" fill="#ea580c" textAnchor="middle">★ FEEDER CABLE ★</text>
+                  <line x1="180" y1="400" x2="180" y2="480" className="sld-line" strokeWidth="3" style={{ stroke: '#ea580c' }} />
+                  <text x="180" y="445" className="sld-text-val" style={{ fill: '#ea580c' }} textAnchor="middle">★ FEEDER CABLE ★</text>
 
                   {/* Divider Dash linking Left and Right */}
                   <line x1="210" y1="440" x2="510" y2="440" className="sld-dash" />
 
                   {/* Right Column Feeder Line impedance series block */}
                   <line x1="560" y1="285" x2="560" y2="380" className="sld-line" />
-                  <rect x="545" y="380" width="30" height="35" fill="#fff7ed" stroke="#ea580c" strokeWidth="2" rx="3" />
-                  <text x="560" y="401" className="sld-text-val" textAnchor="middle" fill="#c2410c">Zcab</text>
+                  <rect x="545" y="380" width="30" height="35" className="sld-shape-tx-orange" strokeWidth="2" rx="3" />
+                  <text x="560" y="401" className="sld-text-val" textAnchor="middle" style={{ fill: '#ea580c' }}>Zcab</text>
                   <line x1="560" y1="415" x2="560" y2="520" className="sld-line" strokeWidth="2" />
 
 

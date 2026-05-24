@@ -46,14 +46,14 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
   };
 
   return (
-    <div className="w-full max-w-4xl bg-white p-8 rounded-3xl shadow-xl shadow-slate-100 border border-slate-100">
+    <div className="w-full max-w-4xl bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 shadow-slate-100 dark:shadow-none">
       <div className="flex items-center gap-4 mb-8">
-        <div className="p-3 bg-emerald-100 rounded-xl">
-          <Map className="w-7 h-7 text-emerald-600" />
+        <div className="p-3 bg-emerald-100 dark:bg-emerald-950/30 rounded-xl">
+          <Map className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
         </div>
         <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Floor Plans</h2>
-          <p className="text-sm font-medium text-slate-500 mt-1">Upload the electrical floor plans for inclusion in the report</p>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight font-sans">Floor Plans</h2>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">Upload the electrical floor plans for inclusion in the report</p>
         </div>
       </div>
 
@@ -62,11 +62,11 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className="w-full h-40 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer mb-8"
+        className="w-full h-40 border-2 border-dashed border-slate-300 dark:border-slate-705 rounded-2xl flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer mb-8"
       >
-        <Upload className="w-10 h-10 text-slate-400 mb-2" />
-        <p className="text-slate-600 font-semibold mb-1">Click or drag images here</p>
-        <p className="text-slate-400 text-sm">Supports PNG, JPG, JPEG (Multiple allowed)</p>
+        <Upload className="w-10 h-10 text-slate-400 dark:text-slate-500 mb-2" />
+        <p className="text-slate-600 dark:text-slate-350 font-semibold mb-1">Click or drag images here</p>
+        <p className="text-slate-400 dark:text-slate-500 text-sm">Supports PNG, JPG, JPEG (Multiple allowed)</p>
         <input 
           type="file" 
           ref={fileInputRef}
@@ -86,12 +86,12 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
                 initial={{ opacity: 0, scale: 0.9 }} 
                 animate={{ opacity: 1, scale: 1 }} 
                 exit={{ opacity: 0, scale: 0.9 }}
-                className="relative flex justify-center bg-slate-100 rounded-2xl p-2 overflow-hidden border border-slate-200"
+                className="relative flex justify-center bg-slate-100 dark:bg-slate-800 rounded-2xl p-2 overflow-hidden border border-slate-200 dark:border-slate-700"
               >
                 <img src={image} alt={`Floor Plan ${index + 1}`} className="max-w-full h-auto object-contain rounded-xl shadow-sm" />
                 <button 
                   onClick={(e) => { e.stopPropagation(); removeImage(index); }}
-                  className="absolute top-4 right-4 p-1.5 bg-white/90 backdrop-blur-sm rounded-full shadow hover:bg-red-50 hover:text-red-600 transition-colors"
+                  className="absolute top-4 right-4 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm text-slate-800 dark:text-slate-200 rounded-full shadow hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-405 transition-colors"
                   title="Remove image"
                 >
                   <X className="w-5 h-5" />

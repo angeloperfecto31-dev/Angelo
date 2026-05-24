@@ -5,7 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
-import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2, Sun, Moon } from "lucide-react";
 import {
   Zap,
   Layout,
@@ -116,6 +116,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<
     "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify"
   >("dashboard");
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem("theme");
+    return saved === "dark";
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  }, [isDarkMode]);
   const [panel, setPanel] = useState<PanelConfig>(INITIAL_PANEL);
   const [circuits, setCircuits] = useState<Circuit[]>(INITIAL_CIRCUITS);
   const [subPanels, setSubPanels] = useState<
@@ -637,12 +651,12 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Sidebar Navigation */}
-      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between hidden md:flex shrink-0 no-print transition-all">
+      <aside className="w-64 bg-slate-900 dark:bg-slate-950 border-r border-slate-800 flex flex-col justify-between hidden md:flex shrink-0 no-print transition-all">
         <div>
           {/* Logo and Brand */}
-          <div className="h-16 flex items-center px-6 border-b border-slate-800/50 bg-slate-900/50">
+          <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800/50 bg-slate-900/50">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-yellow-400 rounded-lg shadow-sm">
                 <Zap className="w-5 h-5 text-yellow-900" />
@@ -656,6 +670,14 @@ export default function App() {
                 </p>
               </div>
             </div>
+            {/* Desktop Theme Switcher */}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-400" />}
+            </button>
           </div>
           
           {/* Navigation Menu */}
@@ -719,31 +741,43 @@ export default function App() {
       </aside>
 
       {/* Main Layout Wrapper */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 relative">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 relative transition-colors duration-200">
         
         {/* Mobile Navbar */}
-        <header className="md:hidden h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-20 shrink-0 shadow-sm no-print">
+        <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sticky top-0 z-20 shrink-0 shadow-sm no-print">
            <div className="flex items-center gap-2">
               <div className="p-1.5 bg-yellow-400 rounded-md">
                 <Zap className="w-4 h-4 text-yellow-900" />
               </div>
-              <span className="font-extrabold text-slate-900 text-lg tracking-tight">ElectricalPH</span>
+              <span className="font-extrabold text-slate-900 dark:text-white text-lg tracking-tight">ElectricalPH</span>
            </div>
            
-           <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
-             {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${
-                    activeTab === tab.id ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-             ))}
+           <div className="flex items-center gap-1">
+             {/* Mobile Theme Toggle Button */}
+             <button
+               onClick={() => setIsDarkMode(!isDarkMode)}
+               className="p-1.5 mr-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+               title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+             >
+               {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-500" />}
+             </button>
            </div>
         </header>
+
+        {/* Mobile secondary navigation bar */}
+        <div className="md:hidden bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-2 sticky top-16 z-20 overflow-x-auto whitespace-nowrap hide-scrollbar flex gap-2 no-print backdrop-blur-md">
+          {tabs.map((tab) => (
+             <button
+               key={tab.id}
+               onClick={() => setActiveTab(tab.id as any)}
+               className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                 activeTab === tab.id ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm" : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
+               }`}
+             >
+               {tab.label}
+             </button>
+          ))}
+        </div>
 
         {/* Scrollable Content Area */}
         <main
@@ -794,22 +828,22 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 
                 {/* Connected Load Schedule Telemetry */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">CONNECTED CAPACITY</span>
-                      <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                      <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">CONNECTED CAPACITY</span>
+                      <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
                         {(circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) / 1000).toFixed(2)} kVA
                       </h3>
                     </div>
-                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
+                    <div className="p-3 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
                       <Layout className="w-5 h-5" />
                     </div>
                   </div>
                   
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                    <span className="font-bold text-slate-700">{circuits.length} Registered Loops</span>
-                    <button onClick={() => setActiveTab("schedule")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span className="font-bold text-slate-700 dark:text-slate-300">{circuits.length} Registered Loops</span>
+                    <button onClick={() => setActiveTab("schedule")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
                       Configure <ArrowUpRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -828,31 +862,31 @@ export default function App() {
                   const scStatus = iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
 
                   return (
-                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">CALCULATED ISC</span>
-                          <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">CALCULATED ISC</span>
+                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
                             {iscKAIC.toFixed(2)} kA
                           </h3>
                         </div>
                         <div className={`p-3 rounded-xl shadow-sm transition-all ${
                           scStatus === 'COMPLIANT' 
-                            ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' 
-                            : 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' 
+                            : 'bg-rose-50 dark:bg-rose-950/35 text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white'
                         }`}>
                           <ShieldAlert className="w-5 h-5" />
                         </div>
                       </div>
                       
-                      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                         <span className={`font-extrabold flex items-center gap-1.5 ${
-                          scStatus === 'COMPLIANT' ? 'text-emerald-600' : 'text-rose-600'
+                          scStatus === 'COMPLIANT' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                         }`}>
                           <span className={`w-2 h-2 rounded-full ${scStatus === 'COMPLIANT' ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} /> 
                           {scStatus} Limit ({panelLimitKAIC}kA pf)
                         </span>
-                        <button onClick={() => setActiveTab("isc")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                        <button onClick={() => setActiveTab("isc")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
                           Audit <ArrowUpRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -877,31 +911,31 @@ export default function App() {
                   const isVDPass = maxVDPercent <= 3.0;
 
                   return (
-                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">MAX VOLTAGE DROP</span>
-                          <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">MAX VOLTAGE DROP</span>
+                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
                             {maxVDPercent.toFixed(2)}%
                           </h3>
                         </div>
                         <div className={`p-3 rounded-xl shadow-sm transition-all ${
                           isVDPass 
-                            ? 'bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white' 
-                            : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
+                            ? 'bg-green-50 dark:bg-emerald-950/35 text-green-600 dark:text-emerald-400 group-hover:bg-green-600 group-hover:text-white' 
+                            : 'bg-amber-50 dark:bg-amber-950/35 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white'
                         }`}>
                           <Ruler className="w-5 h-5" />
                         </div>
                       </div>
                       
-                      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                         <span className={`font-extrabold flex items-center gap-1.5 ${
-                          isVDPass ? 'text-green-600' : 'text-amber-600 hover:text-amber-700'
+                          isVDPass ? 'text-green-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400 hover:text-amber-700'
                         }`}>
                           <span className={`w-2 h-2 rounded-full ${isVDPass ? 'bg-green-500' : 'bg-amber-500 animate-ping'}`} /> 
                           {isVDPass ? 'PEC Compliant (<3%)' : 'Exceeds PEC Limit'}
                         </span>
-                        <button onClick={() => setActiveTab("vd")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                        <button onClick={() => setActiveTab("vd")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
                           Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -916,31 +950,31 @@ export default function App() {
                   const isLCompliance = calculatedLux >= illumParams.targetLux;
 
                   return (
-                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">EST. ILLUMINATION</span>
-                          <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">EST. ILLUMINATION</span>
+                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
                             {calculatedLux || 0} Lux
                           </h3>
                         </div>
                         <div className={`p-3 rounded-xl shadow-sm transition-all ${
                           isLCompliance 
-                            ? 'bg-yellow-50 text-yellow-600 group-hover:bg-yellow-500 group-hover:text-white' 
-                            : 'bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white'
+                            ? 'bg-yellow-50 dark:bg-yellow-950/35 text-yellow-600 dark:text-yellow-400 group-hover:bg-yellow-500 group-hover:text-white' 
+                            : 'bg-orange-50 dark:bg-orange-950/35 text-orange-600 dark:text-orange-400 group-hover:bg-orange-600 group-hover:text-white'
                         }`}>
                           <Lightbulb className="w-5 h-5" />
                         </div>
                       </div>
                       
-                      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                         <span className={`font-extrabold flex items-center gap-1.5 ${
-                          isLCompliance ? 'text-emerald-600' : 'text-orange-600'
+                          isLCompliance ? 'text-emerald-600 dark:text-emerald-200' : 'text-orange-600 dark:text-orange-300'
                         }`}>
                           <span className={`w-2 h-2 rounded-full ${isLCompliance ? 'bg-emerald-500' : 'bg-orange-500 animate-pulse'}`} /> 
                           {isLCompliance ? 'Target Met' : 'Low Illum vs Target'}
                         </span>
-                        <button onClick={() => setActiveTab("lighting")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                        <button onClick={() => setActiveTab("lighting")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
                           Simulate <ArrowUpRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -954,33 +988,33 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
                 {/* Panel board specifications summary */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm lg:col-span-2 space-y-6">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm lg:col-span-2 space-y-6">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Layers className="w-5 h-5 text-indigo-600" />
-                      <h4 className="font-bold text-slate-800 uppercase tracking-wider text-sm">Specification Standards Overview (PEC Part 1)</h4>
+                      <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-sm">Specification Standards Overview (PEC Part 1)</h4>
                     </div>
-                    <span className="text-xs font-bold text-slate-400 bg-slate-50 border border-slate-200/60 px-2 rounded-md">
+                    <span className="text-xs font-bold text-slate-400 dark:text-slate-505 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
                       Feeder: {panel.type || 'Main Panelboard'}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">SYSTEM VOLTAGE</span>
-                      <p className="text-sm font-extrabold text-slate-800">{panel.system}</p>
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">SYSTEM VOLTAGE</span>
+                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.system}</p>
                     </div>
-                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">ENCLOSURE STYLE</span>
-                      <p className="text-sm font-extrabold text-slate-800">{panel.enclosure || "NEMA 1 Indoors"}</p>
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">ENCLOSURE STYLE</span>
+                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.enclosure || "NEMA 1 Indoors"}</p>
                     </div>
-                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">MOUNTING METHOD</span>
-                      <p className="text-sm font-extrabold text-slate-800">{panel.mounting || "Wall Surface"}</p>
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">MOUNTING METHOD</span>
+                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.mounting || "Wall Surface"}</p>
                     </div>
-                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">INTERRUPTING COMPLIANCE</span>
-                      <p className="text-sm font-extrabold text-slate-800">{panel.icRating || "10kA KAIC"}</p>
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">INTERRUPTING COMPLIANCE</span>
+                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.icRating || "10kA KAIC"}</p>
                     </div>
                   </div>
 
@@ -1021,31 +1055,31 @@ export default function App() {
                 </div>
 
                 {/* PEC Quick Reference Guide */}
-                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
                   <div>
                     <div className="flex items-center gap-2 mb-4">
                       <Zap className="w-4 h-4 text-yellow-500" />
-                      <h4 className="font-bold text-slate-800 uppercase tracking-wider text-xs">PEC 2017 Quick Reference Guide</h4>
+                      <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs">PEC 2017 Quick Reference Guide</h4>
                     </div>
-                    <ul className="space-y-4 text-xs text-slate-600">
+                    <ul className="space-y-4 text-xs text-slate-600 dark:text-slate-400">
                       <li className="flex items-start gap-2">
                         <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
-                        <span><strong className="text-slate-800">Section 2.10.2.1:</strong> Branch circuits branch wire size must possess wire ampacity not less than 125% of continuous load.</span>
+                        <span><strong className="text-slate-800 dark:text-slate-200">Section 2.10.2.1:</strong> Branch circuits branch wire size must possess wire ampacity not less than 125% of continuous load.</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
-                        <span><strong className="text-slate-800">Table 3.10.1.16:</strong> Minimum conductor wire size for general lighting branch loops in residential lands is <strong className="text-slate-900 font-extrabold">2.0 mm² THHN Cooper</strong>.</span>
+                        <span><strong className="text-slate-800 dark:text-slate-200">Table 3.10.1.16:</strong> Minimum conductor wire size for general lighting branch loops in residential lands is <strong className="text-slate-900 dark:text-white font-extrabold">2.0 mm² THHN Cooper</strong>.</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
-                        <span><strong className="text-slate-800">Section 2.40.1.3:</strong> Breaker standard ratings are 15A, 20A, 30A, 40A, 50A, 60A, 70A, 100A, 115A, 125A.</span>
+                        <span><strong className="text-slate-800 dark:text-slate-200">Section 2.40.1.3:</strong> Breaker standard ratings are 15A, 20A, 30A, 40A, 50A, 60A, 70A, 100A, 115A, 125A.</span>
                       </li>
                     </ul>
                   </div>
 
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
-                    <span className="text-indigo-950 font-bold">Standard Grounding sizes?</span>
-                    <button onClick={() => alert("Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.")} className="px-3 py-1 bg-white border border-indigo-200 text-indigo-700 font-bold rounded-lg hover:bg-slate-50 shadow-sm transition-colors shrink-0">
+                  <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950/40 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
+                    <span className="text-indigo-950 dark:text-indigo-200 font-bold">Standard Grounding sizes?</span>
+                    <button onClick={() => alert("Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.")} className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-750 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-705 shadow-sm transition-colors shrink-0">
                       View Table
                     </button>
                   </div>
@@ -1054,26 +1088,26 @@ export default function App() {
               </div>
 
               {/* Direct Actions & Interactive Quick Launcher Tab */}
-              <div className="bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-                <h4 className="font-black text-slate-500 uppercase tracking-widest text-[10px]">Jump-switch to Active Calculation Terminals:</h4>
+              <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+                <h4 className="font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest text-[10px]">Jump-switch to Active Calculation Terminals:</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
-                  <button onClick={() => setActiveTab("schedule")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                  <button onClick={() => setActiveTab("schedule")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Layout className="w-5 h-5 text-indigo-500" />
                     Load Schedule
                   </button>
-                  <button onClick={() => setActiveTab("isc")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                  <button onClick={() => setActiveTab("isc")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <ShieldAlert className="w-5 h-5 text-rose-500" />
                     Short Circuit
                   </button>
-                  <button onClick={() => setActiveTab("vd")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                  <button onClick={() => setActiveTab("vd")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Ruler className="w-5 h-5 text-emerald-500" />
                     Voltage Drop
                   </button>
-                  <button onClick={() => setActiveTab("lighting")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                  <button onClick={() => setActiveTab("lighting")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Lightbulb className="w-5 h-5 text-yellow-500" />
                     Illumination
                   </button>
-                  <button onClick={() => setActiveTab("floor-plan")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                  <button onClick={() => setActiveTab("floor-plan")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Map className="w-5 h-5 text-cyan-500" />
                     Blueprint Preview
                   </button>
@@ -1157,7 +1191,7 @@ export default function App() {
                       },
                     ]);
                   }}
-                  className="w-full py-6 border-2 border-dashed border-slate-300 rounded-2xl flex items-center justify-center gap-2 text-slate-500 font-bold hover:text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50/50 transition-all no-print"
+                  className="w-full py-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 font-bold hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all no-print"
                 >
                   <Plus className="w-5 h-5" />
                   Add Sub-Panel

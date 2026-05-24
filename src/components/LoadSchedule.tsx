@@ -623,16 +623,16 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
   return (
     <div className="w-full max-w-full space-y-6">
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-hidden no-print">
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 overflow-hidden no-print">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            <Settings2 className="w-5 h-5 text-indigo-600" />
-            <h2 className="text-lg font-bold text-slate-800">{isSubPanel ? 'Sub-Panel Configuration' : 'Panel Board Configuration'}</h2>
+            <Settings2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{isSubPanel ? 'Sub-Panel Configuration' : 'Panel Board Configuration'}</h2>
           </div>
           {isSubPanel && onRemoveSubPanel && (
             <button 
               onClick={onRemoveSubPanel}
-              className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-lg flex items-center gap-1.5 transition-colors"
             >
               <Trash2 className="w-4 h-4" />
               Remove Sub-Panel
@@ -641,31 +641,31 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Project Name</label>
-            <input value={panel.project} onChange={e => setPanel({...panel, project: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Project Name</label>
+            <input value={panel.project} onChange={e => setPanel({...panel, project: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Location</label>
-            <input value={panel.location || ''} onChange={e => setPanel({...panel, location: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Electrical Room" />
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Location</label>
+            <input value={panel.location || ''} onChange={e => setPanel({...panel, location: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Electrical Room" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Designation</label>
-            <input value={panel.designation || ''} onChange={e => setPanel({...panel, designation: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. MDP" />
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Designation</label>
+            <input value={panel.designation || ''} onChange={e => setPanel({...panel, designation: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. MDP" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Panel Type</label>
-            <input value={panel.type || ''} onChange={e => setPanel({...panel, type: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Main Distribution Panel" />
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Panel Type</label>
+            <input value={panel.type || ''} onChange={e => setPanel({...panel, type: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Main Distribution Panel" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mounting</label>
-            <input value={panel.mounting || ''} onChange={e => setPanel({...panel, mounting: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Flush Mounted" />
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Mounting</label>
+            <input value={panel.mounting || ''} onChange={e => setPanel({...panel, mounting: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Flush Mounted" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Enclosure</label>
-            <input value={panel.enclosure || ''} onChange={e => setPanel({...panel, enclosure: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. NEMA 1" />
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Enclosure</label>
+            <input value={panel.enclosure || ''} onChange={e => setPanel({...panel, enclosure: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. NEMA 1" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">System Voltage</label>
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">System Voltage</label>
             <select 
               value={panel.system} 
               onChange={e => {
@@ -675,20 +675,20 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   setCircuits(circuits.map(c => ({...c, mcbP: 3})));
                 }
               }} 
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              {Object.keys(SYSTEM_VOLTAGES).map(s => <option key={s} value={s}>{s}</option>)}
+              {Object.keys(SYSTEM_VOLTAGES).map(s => <option key={s} value={s} className="dark:bg-slate-900 dark:text-slate-100">{s}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Connection</label>
-            <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm transition-colors focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
-              <option value="Line-to-Line">Line-to-Line</option>
-              <option value="Line-to-Neutral">Line-to-Neutral</option>
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Connection</label>
+            <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+              <option value="Line-to-Line" className="dark:bg-slate-900 dark:text-slate-100">Line-to-Line</option>
+              <option value="Line-to-Neutral" className="dark:bg-slate-900 dark:text-slate-100">Line-to-Neutral</option>
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Table Font Size ({tableFontSize}px)</label>
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Table Font Size ({tableFontSize}px)</label>
             <div className="flex items-center h-10 px-2 mt-1">
               <input 
                 type="range" 
@@ -704,26 +704,26 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
         </div>
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden panel-container print:rounded-none">
-        <div className="p-8 border-b-2 border-slate-100 flex flex-col md:flex-row justify-between gap-8 bg-slate-50/50 print:bg-white print:py-4">
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden panel-container print:rounded-none">
+        <div className="p-8 border-b-2 border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between gap-8 bg-slate-50/50 dark:bg-slate-900/50 print:bg-white print:py-4">
           <div className="flex items-start gap-4">
             <div className="no-print p-3 bg-indigo-600 rounded-lg"><FileText className="w-6 h-6 text-white" /></div>
             <div className="space-y-1">
-              <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter print:text-xl">Panel Board Schedule</h3>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter print:text-xl">Panel Board Schedule</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 text-sm font-medium mt-3">
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">PROJECT</span><span className="text-slate-900 uppercase">{panel.project}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">LOCATION</span><span className="text-slate-900 uppercase">{panel.location}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">DESIGNATION</span><span className="text-slate-900 uppercase">{panel.designation}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">SYSTEM VOLTAGE</span><span className="text-slate-900 uppercase">{panel.system}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">PANEL TYPE</span><span className="text-slate-900 uppercase">{panel.type}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">MOUNTING</span><span className="text-slate-900 uppercase">{panel.mounting}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 font-bold tracking-wider">ENCLOSURE</span><span className="text-slate-900 uppercase">{panel.enclosure}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">PROJECT</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.project}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">LOCATION</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.location}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">DESIGNATION</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.designation}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">SYSTEM VOLTAGE</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.system}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">PANEL TYPE</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.type}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">MOUNTING</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.mounting}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">ENCLOSURE</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.enclosure}</span></div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto print:overflow-visible bg-slate-50/30 rounded-xl border border-slate-100">
+        <div className="overflow-x-auto print:overflow-visible bg-slate-50/30 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
           <table 
             className="w-full border-collapse text-sm table-auto print:!w-full whitespace-nowrap" 
           >
@@ -785,7 +785,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 const isSpace = (c.description?.toUpperCase() === 'SPACE') || c.loadType === LoadType.SPACE;
                 
                 return (
-                <tr key={c.id} style={{ fontSize: tableFontSize }} className={`${idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-indigo-50/30 group print:bg-white border-b border-slate-100`}>
+                <tr key={c.id} style={{ fontSize: tableFontSize }} className={`${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-850/50' : 'bg-white dark:bg-slate-900'} hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 group print:bg-white border-b border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100`}>
                   <td className="px-1 py-3 text-center font-bold text-indigo-600 truncate">{c.circuitNo}</td>
                   <td className="px-2 py-3 overflow-hidden">
                     <div className="flex items-center gap-1 min-w-0">
@@ -796,32 +796,32 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                           fallbackSubId = availableSubPanels[0].id;
                         }
                         updateCircuit(c.id, { loadType: nextType, linkedSubPanelId: fallbackSubId });
-                      }} className="p-0.5 bg-slate-100 rounded uppercase font-black no-print shrink-0" style={{ fontSize: tableFontSize - 3 }}>
-                        {Object.keys(DESCRIPTION_CODES).map(code => <option key={code} value={code}>{code}</option>)}
+                      }} className="p-0.5 bg-slate-100 dark:bg-slate-800 border-0 rounded uppercase font-black no-print shrink-0 text-slate-800 dark:text-slate-100" style={{ fontSize: tableFontSize - 3 }}>
+                        {Object.keys(DESCRIPTION_CODES).map(code => <option key={code} value={code} className="dark:bg-slate-900 dark:text-slate-100">{code}</option>)}
                       </select>
                       {c.loadType === 'SUB' ? (
                         <select 
                           value={c.linkedSubPanelId || ''} 
                           onChange={e => updateCircuit(c.id, { linkedSubPanelId: e.target.value })}
-                          className="flex-1 bg-transparent font-medium min-w-0 truncate" 
+                          className="flex-1 bg-transparent dark:bg-slate-900 font-medium min-w-0 truncate text-slate-800 dark:text-slate-100" 
                         >
-                          <option value="" disabled>Select Sub-Panel</option>
+                          <option value="" disabled className="dark:bg-slate-900 dark:text-slate-100">Select Sub-Panel</option>
                           {availableSubPanels?.map(sp => (
-                            <option key={sp.id} value={sp.id}>{sp.panel.designation || 'Unnamed Sub-Panel'}</option>
+                            <option key={sp.id} value={sp.id} className="dark:bg-slate-900 dark:text-slate-100">{sp.panel.designation || 'Unnamed Sub-Panel'}</option>
                           ))}
                         </select>
                       ) : (
-                        <input className="flex-1 bg-transparent font-medium min-w-0" value={c.description} onChange={e => updateCircuit(c.id, { description: e.target.value })} />
+                        <input className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none" value={c.description} onChange={e => updateCircuit(c.id, { description: e.target.value })} />
                       )}
                     </div>
                   </td>
                   <td className="px-1 py-3 text-center">
-                    {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono ${c.loadType === 'SUB' ? 'text-slate-400 font-bold' : ''}`} value={c.wattage} onChange={e => updateCircuit(c.id, { wattage: parseInt(e.target.value) || 0 })} />}
+                    {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.wattage} onChange={e => updateCircuit(c.id, { wattage: parseInt(e.target.value) || 0 })} />}
                   </td>
                   <td className="px-1 py-3 text-center">
-                    {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono ${c.loadType === 'SUB' ? 'text-slate-400 font-bold' : ''}`} value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />}
+                    {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />}
                   </td>
-                  <td className="px-1 py-3 text-center font-mono font-bold text-slate-400 truncate">
+                  <td className="px-1 py-3 text-center font-mono font-bold text-slate-400 dark:text-slate-500 truncate">
                     {isSpace ? '-' : c.loadVA}
                   </td>
                   <td className="px-1 py-3 text-center">
@@ -834,7 +834,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                         }} className={`w-4 h-4 rounded-sm font-bold shrink-0 ${
                           c.phases.includes(p as Phase) 
                             ? p === 'R' ? 'bg-red-600 text-white' : p === 'Y' ? 'bg-yellow-400 text-black' : 'bg-blue-600 text-white'
-                            : 'bg-slate-100 text-slate-400'
+                            : 'bg-slate-100 dark:bg-slate-850 text-slate-400 dark:text-slate-500'
                         } ${!panel.system.includes('3PH') && p !== 'R' ? 'hidden' : ''}`} style={{ fontSize: tableFontSize - 4 }}>{p}</button>
                       ))}
                     </div>
@@ -852,24 +852,24 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   )}
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbAT} onChange={e => updateCircuit(c.id, { mcbAT: parseInt(e.target.value) })} className="bg-transparent text-center font-bold appearance-none w-14 max-w-full mx-auto">
-                      {STANDARD_CB_RATINGS.map(r => <option key={r} value={r}>{r}</option>)}
+                    <select value={c.mcbAT} onChange={e => updateCircuit(c.id, { mcbAT: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-850 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900">
+                      {STANDARD_CB_RATINGS.map(r => <option key={r} value={r} className="dark:bg-slate-900 dark:text-slate-100">{r}</option>)}
                     </select>
                     )}
                   </td>
-                  <td className="px-1 py-3 text-center font-bold text-slate-400 truncate">{isSpace ? '-' : c.mcbAF}</td>
+                  <td className="px-1 py-3 text-center font-bold text-slate-400 dark:text-slate-500 truncate">{isSpace ? '-' : c.mcbAF}</td>
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbP} onChange={e => updateCircuit(c.id, { mcbP: parseInt(e.target.value) })} className="bg-transparent text-center appearance-none w-12 max-w-full mx-auto">
-                      {[1, 2, 3].map(p => <option key={p} value={p}>{p}P</option>)}
+                    <select value={c.mcbP} onChange={e => updateCircuit(c.id, { mcbP: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-850 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900">
+                      {[1, 2, 3].map(p => <option key={p} value={p} className="dark:bg-slate-900 dark:text-slate-100">{p}P</option>)}
                     </select>
                     )}
                   </td>
-                  <td className="px-1 py-3 text-center text-slate-400 font-bold truncate">{isSpace ? '-' : c.mcbKAIC}</td>
+                  <td className="px-1 py-3 text-center text-slate-400 dark:text-slate-500 font-bold truncate">{isSpace ? '-' : c.mcbKAIC}</td>
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbType} onChange={e => updateCircuit(c.id, { mcbType: e.target.value as MCBType })} className="bg-transparent text-center appearance-none cursor-pointer w-24 max-w-full mx-auto truncate" style={{ fontSize: tableFontSize - 2 }}>
-                      {Object.values(MCBType).map(t => <option key={t} value={t}>{t}</option>)}
+                    <select value={c.mcbType} onChange={e => updateCircuit(c.id, { mcbType: e.target.value as MCBType })} className="bg-transparent text-center text-slate-850 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900" style={{ fontSize: tableFontSize - 2 }}>
+                      {Object.values(MCBType).map(t => <option key={t} value={t} className="dark:bg-slate-900 dark:text-slate-100">{t}</option>)}
                     </select>
                     )}
                   </td>
@@ -933,8 +933,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       </section>
 
       {/* Single Line Diagram / Panel Layout */}
-      <section id={`sld-${panel.designation || 'main'}`} className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm print:shadow-none print:border-2 print:border-slate-800 overflow-x-auto">
-        <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-12 flex items-center gap-2">
+      <section id={`sld-${panel.designation || 'main'}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-2xl shadow-sm print:shadow-none print:border-2 print:border-slate-800 overflow-x-auto">
+        <h4 className="text-sm font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-12 flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-500" />
           Single Line Diagram - {panel.designation}
         </h4>
@@ -944,23 +944,23 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
       {/* Legend & Disclaimer */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-12 print:mt-8">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 print:border-2 print:border-slate-800">
-          <h4 className="flex items-center gap-2 text-sm font-bold text-slate-400 uppercase mb-4 print:text-slate-900">
-            <Info className="w-4 h-4 text-indigo-600 no-print" />
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 print:border-2 print:border-slate-800">
+          <h4 className="flex items-center gap-2 text-sm font-bold text-slate-400 dark:text-slate-500 uppercase mb-4 print:text-slate-900">
+            <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 no-print" />
             Legend & Technical Notes
           </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 text-xs font-medium text-slate-600 print:text-slate-900">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 text-xs font-medium text-slate-600 dark:text-slate-400 print:text-slate-900">
             <div className="space-y-1.5">
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">L</span> — Lighting Outlets (100VA/outlet)</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">S / CO</span> — Socket / Convenience Outlets (180VA/outlet)</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">AC / ACU</span> — Air Conditioning Unit</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">FCU / CU</span> — Fan Coil / Condensing Unit</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">WH</span> — Water Heater</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">M / WP</span> — Motor / Water Pump</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">RE</span> — Range Equipment / Electric Stove</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">SP</span> — Spare / Future Circuit</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">L</span> — Lighting Outlets (100VA/outlet)</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">S / CO</span> — Socket / Convenience Outlets (180VA/outlet)</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">AC / ACU</span> — Air Conditioning Unit</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">FCU / CU</span> — Fan Coil / Condensing Unit</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">WH</span> — Water Heater</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">M / WP</span> — Motor / Water Pump</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">RE</span> — Range Equipment / Electric Stove</p>
+              <p><span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">SP</span> — Spare / Future Circuit</p>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 leading-relaxed">
               <p>• <strong>Wiring:</strong> Copper THHN/THWN as per PEC</p>
               <p>• <strong>Min Wire Size:</strong> 2.0mm² (Lighting), 3.5mm² (Power)</p>
               <p>• <strong>Conduit:</strong> Schedule 40 PVC, EMT, or RSC</p>
@@ -972,14 +972,14 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
           </div>
         </div>
 
-        <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 flex flex-col justify-center print:bg-white print:border-2 print:border-slate-800">
-          <div className="flex items-center gap-2 mb-2 text-amber-800 font-bold text-sm uppercase print:text-slate-900">
+        <div className="bg-amber-50 dark:bg-amber-950/20 p-6 rounded-2xl border border-amber-200 dark:border-amber-900/50 flex flex-col justify-center print:bg-white print:border-2 print:border-slate-800">
+          <div className="flex items-center gap-2 mb-2 text-amber-800 dark:text-amber-400 font-bold text-sm uppercase print:text-slate-900">
             <ShieldAlert className="w-4 h-4 no-print" />
             Safety Disclaimer
           </div>
-          <p className="text-[10px] text-amber-700 leading-relaxed font-medium print:text-slate-700">
+          <p className="text-[10px] text-amber-700 dark:text-amber-350 leading-relaxed font-medium print:text-slate-700">
             This document is generated for preliminary design and estimation purposes based on Philippine Electrical Code (PEC) guidelines. 
-            Calculations must be reviewed and certified by a <span className="font-bold underline text-amber-900 print:text-slate-900">Professional Electrical Engineer (PEE)</span> before implementation. 
+            Calculations must be reviewed and certified by a <span className="font-bold underline text-amber-900 dark:text-amber-300 print:text-slate-900">Professional Electrical Engineer (PEE)</span> before implementation. 
             The developers are not liable for errors in manual data entry or misinterpretations.
           </p>
         </div>
