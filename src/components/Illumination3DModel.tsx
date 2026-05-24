@@ -347,32 +347,88 @@ export default function Illumination3DModel({
     };
   }, [width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, canvasTextureElement, targetLux]);
 
+  // Compute estimated average lighting intensity (Lux) for HUD indicators
+  const estAverageLux = Math.ceil((fixtures * lumens * 0.6) / (width * length || 1));
+  
+  let complianceBadge = "NO WORKPLACE FIXTURES";
+  let complianceBg = "bg-slate-900/95 border-slate-700 text-slate-300";
+  let complianceMessage = "Please add lighting fixtures to calculate estimated lux on the working plane.";
+
+  if (fixtures > 0) {
+    if (estAverageLux >= targetLux) {
+      if (estAverageLux >= targetLux * 1.6) {
+        complianceBadge = "PASSED (OVERLIT WARNING)";
+        complianceBg = "bg-amber-950/90 border-amber-500 text-yellow-300";
+        complianceMessage = `Estimated ${estAverageLux} Lux on working plane exceeds the requested target of ${targetLux} Lux. Consider reducing the number of fixtures.`;
+      } else {
+        complianceBadge = "PEC COMPLIANT (PASSED)";
+        complianceBg = "bg-emerald-950/90 border-emerald-500/80 text-emerald-300";
+        complianceMessage = `Excellent configuration! Average level of ${estAverageLux} Lux satisfies target (${targetLux} Lux) comfortably.`;
+      }
+    } else {
+      if (estAverageLux >= targetLux * 0.8) {
+        complianceBadge = "CRITICAL BORDERLINE";
+        complianceBg = "bg-yellow-950/90 border-yellow-500/80 text-yellow-300 font-bold";
+        complianceMessage = `${estAverageLux} Lux is critically close or slightly below target (${targetLux} Lux). Minor adjustments recommended.`;
+      } else {
+        complianceBadge = "NEEDS ADJUSTMENT";
+        complianceBg = "bg-rose-950/95 border-rose-500 text-rose-300";
+        complianceMessage = `Underlit: Average lux of ${estAverageLux} Lux is dangerously below standard target (${targetLux} Lux). Add fixtures!`;
+      }
+    }
+  }
+
   return (
-    <div className="w-full h-[450px] mt-8 bg-slate-950 rounded-xl overflow-hidden relative border-2 border-slate-800 shadow-inner">
-      <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-80 flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:w-[calc(100%-32px)]">
-        <div className="flex flex-col gap-1">
-          <span>3D Lighting Visualizer</span>
-          <span className="text-[10px] font-medium text-slate-400 normal-case">Drag to rotate, scroll to zoom</span>
+    <div className="w-full h-[480px] mt-8 bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 shadow-xl">
+      
+      {/* Heads-Up Display (HUD) Controls Overlay */}
+      <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-90 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none">
+        <div className="flex flex-col gap-1.5 bg-slate-900/90 px-4 py-3 border border-slate-800 rounded-xl backdrop-blur-md">
+          <span className="text-white text-xs font-bold font-mono tracking-tight flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+            3D Lighting CAD Space
+          </span>
+          <span className="text-[10px] font-medium text-slate-400 normal-case">Drag mouse pointer to rotate, scroll wheel to zoom model.</span>
+          <div className="text-[10px] text-yellow-300 font-mono tracking-normal mt-1 border-t border-slate-800 pt-1.5 font-bold normal-case">
+            ROOM SIZE: {width.toFixed(2)}m (Width) × {length.toFixed(2)}m (Length) × {ceilingHeight.toFixed(2)}m (Ceiling Height)
+          </div>
         </div>
         
         {/* LPD Compliance Status Indicator */}
-        <div className="mt-2 md:mt-0 right-0">
+        <div className="mt-2 md:mt-0 right-0 flex flex-col gap-2 pointer-events-auto">
           {lpdValue <= lpdLimit * 0.9 ? (
             <div className="bg-emerald-900/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 text-[10px] uppercase backdrop-blur-sm flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
-              <span>Status: Passed (LPD {lpdValue.toFixed(1)}W/m²)</span>
+              <span>LPD Limit: Passed ({lpdValue.toFixed(2)} W/m² / {lpdLimit} max)</span>
             </div>
           ) : lpdValue <= lpdLimit ? (
             <div className="bg-amber-900/80 border border-amber-500/50 px-3 py-1.5 rounded-lg text-amber-300 text-[10px] uppercase backdrop-blur-sm flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
-              <span>Needs Adjustment (LPD {lpdValue.toFixed(1)}W/m²)</span>
+              <span>LPD Standard critical ({lpdValue.toFixed(2)} W/m²)</span>
             </div>
           ) : (
             <div className="bg-red-900/80 border border-red-500/50 px-3 py-1.5 rounded-lg text-red-300 text-[10px] uppercase backdrop-blur-sm flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-              <span>Critical Overload (LPD {lpdValue.toFixed(1)}W/m²)</span>
+              <span>LPD Standard Overload ({lpdValue.toFixed(2)} W/m²)</span>
             </div>
           )}
+
+          {/* Fixture compliant status */}
+          <div className={`px-3 py-1.5 rounded-lg border text-[10px] uppercase text-center backdrop-blur-sm ${complianceBg}`}>
+            {complianceBadge}
+          </div>
+        </div>
+      </div>
+
+      {/* Floating Detailed Adequacy Note Panel */}
+      <div className="absolute left-4 bottom-4 bg-slate-900/95 border border-slate-800 p-4 rounded-xl text-white z-10 text-[10px] max-w-[340px] pointer-events-auto backdrop-blur-md shadow-lg space-y-1.5">
+        <div className="font-extrabold text-cyan-400 uppercase tracking-wider text-[10px]">Real-term Assessment Notes</div>
+        <div className="text-slate-200 font-medium normal-case leading-relaxed">
+          {complianceMessage}
+        </div>
+        <div className="text-[9px] text-slate-400 border-t border-slate-800/80 pt-1 flex justify-between">
+          <span>Target Lux: <strong>{targetLux} lx</strong></span>
+          <span>Estimated: <strong>{estAverageLux} lx</strong></span>
         </div>
       </div>
 
@@ -389,7 +445,7 @@ export default function Illumination3DModel({
       )}
 
       {enableDaylight && (
-        <div className="absolute left-4 bottom-4 bg-indigo-950/80 border border-indigo-800/80 px-2.5 py-1.5 rounded-lg text-indigo-200 z-10 text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-md">
+        <div className="absolute right-4 top-24  bg-indigo-950/80 border border-indigo-800/80 px-2.5 py-1.5 rounded-lg text-indigo-200 z-10 text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-md">
           <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></div>
           Daylight Source Enabled (North Window)
         </div>

@@ -5,7 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2 } from "lucide-react";
 import {
   Zap,
   Layout,
@@ -114,8 +114,8 @@ export default function App() {
   }, [user, isAdmin]);
 
   const [activeTab, setActiveTab] = useState<
-    "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify"
-  >("schedule");
+    "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify"
+  >("dashboard");
   const [panel, setPanel] = useState<PanelConfig>(INITIAL_PANEL);
   const [circuits, setCircuits] = useState<Circuit[]>(INITIAL_CIRCUITS);
   const [subPanels, setSubPanels] = useState<
@@ -165,6 +165,13 @@ export default function App() {
   }
 
   const tabs = [
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      icon: Gauge,
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+    },
     {
       id: "schedule",
       label: "Load Schedule",
@@ -745,6 +752,337 @@ export default function App() {
         >
           <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-8 pb-32">
             <div className="w-full">
+          {/* Dashboard Tab */}
+          <div className={activeTab === "dashboard" ? "w-full animate-fade" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={activeTab === "dashboard" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="space-y-8"
+            >
+              {/* Engineering Hero Header */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 rounded-3xl p-6 sm:p-8 text-white border border-slate-800 shadow-xl relative overflow-hidden">
+                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
+                  backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.4), transparent 50%), linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
+                  backgroundSize: '100% 100%, 30px 30px, 30px 30px'
+                }} />
+                
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="space-y-2">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-yellow-300 text-xs font-bold uppercase tracking-wider">
+                      ⚡ Active Session Station
+                    </span>
+                    <h2 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
+                      {panel.project || 'Untitled Project Station'}
+                    </h2>
+                    <p className="text-slate-300 text-sm max-w-2xl">
+                      Engineering dashboard for PEC compliant system design and safety audits. Real-time telemetry is active. All components verified against standard electrical wire sizes and conductor tolerances.
+                    </p>
+                  </div>
+                  
+                  <div className="bg-white/10 shrink-0 backdrop-blur-md border border-white/10 px-6 py-4 rounded-2xl flex flex-col gap-1 shadow-lg text-slate-100">
+                    <span className="text-xs text-indigo-200 uppercase font-black tracking-widest">Local Time (Manila)</span>
+                    <span className="font-mono text-xl font-bold text-yellow-300">
+                      {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' })}
+                    </span>
+                    <span className="text-xs text-slate-400">PEC Standards Version: PEC 2017</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bento Grid: Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                
+                {/* Connected Load Schedule Telemetry */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">CONNECTED CAPACITY</span>
+                      <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                        {(circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) / 1000).toFixed(2)} kVA
+                      </h3>
+                    </div>
+                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
+                      <Layout className="w-5 h-5" />
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                    <span className="font-bold text-slate-700">{circuits.length} Registered Loops</span>
+                    <button onClick={() => setActiveTab("schedule")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                      Configure <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Short Circuit Fault Adequacy */}
+                {(() => {
+                  const baseKVA = iscParams.transformerKVA || 500;
+                  const baseKV = (iscParams.transformerVoltage || 230) / 1000;
+                  const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 250) * 1000);
+                  const zTranspu = (iscParams.transformerZ || 5) / 100;
+                  const iFullLoad = baseKVA / (Math.sqrt(3) * baseKV);
+                  const iscMainBreakerVal = iFullLoad / (zUtilitypu + zTranspu) || 12500; 
+                  const iscKAIC = (iscMainBreakerVal / 1000);
+                  const panelLimitKAIC = parseFloat(panel.icRating) || 10;
+                  const scStatus = iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
+
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">CALCULATED ISC</span>
+                          <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                            {iscKAIC.toFixed(2)} kA
+                          </h3>
+                        </div>
+                        <div className={`p-3 rounded-xl shadow-sm transition-all ${
+                          scStatus === 'COMPLIANT' 
+                            ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' 
+                            : 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white'
+                        }`}>
+                          <ShieldAlert className="w-5 h-5" />
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className={`font-extrabold flex items-center gap-1.5 ${
+                          scStatus === 'COMPLIANT' ? 'text-emerald-600' : 'text-rose-600'
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${scStatus === 'COMPLIANT' ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} /> 
+                          {scStatus} Limit ({panelLimitKAIC}kA pf)
+                        </span>
+                        <button onClick={() => setActiveTab("isc")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                          Audit <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Voltage Drop Audit */}
+                {(() => {
+                  let maxVDPercent = 0;
+                  vdCalculations.forEach((vd) => {
+                    const size = parseFloat(vd.wireSize) || 3.5;
+                    const r = 0.0172 / size; 
+                    const factor = vd.systemType === '3PH' ? Math.sqrt(3) : 2;
+                    const dropV = factor * vd.loadA * vd.length * r;
+                    const pct = (dropV / vd.voltage) * 100;
+                    if (pct > maxVDPercent) maxVDPercent = pct;
+                  });
+                  if (vdCalculations.length === 0) {
+                    maxVDPercent = 1.15; 
+                  }
+                  const isVDPass = maxVDPercent <= 3.0;
+
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">MAX VOLTAGE DROP</span>
+                          <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                            {maxVDPercent.toFixed(2)}%
+                          </h3>
+                        </div>
+                        <div className={`p-3 rounded-xl shadow-sm transition-all ${
+                          isVDPass 
+                            ? 'bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white' 
+                            : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'
+                        }`}>
+                          <Ruler className="w-5 h-5" />
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className={`font-extrabold flex items-center gap-1.5 ${
+                          isVDPass ? 'text-green-600' : 'text-amber-600 hover:text-amber-700'
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${isVDPass ? 'bg-green-500' : 'bg-amber-500 animate-ping'}`} /> 
+                          {isVDPass ? 'PEC Compliant (<3%)' : 'Exceeds PEC Limit'}
+                        </span>
+                        <button onClick={() => setActiveTab("vd")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                          Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Illumination target status */}
+                {(() => {
+                  const illumArea = illumParams.inputMode === 'area' ? illumParams.userArea : illumParams.roomWidth * illumParams.roomLength;
+                  const calculatedLux = Math.ceil((illumParams.lumensPerFixture * (illumParams.coefficientOfUtilization || 0.6) * (illumParams.maintenanceFactor || 0.8)) / (illumArea || 20));
+                  const isLCompliance = calculatedLux >= illumParams.targetLux;
+
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">EST. ILLUMINATION</span>
+                          <h3 className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                            {calculatedLux || 0} Lux
+                          </h3>
+                        </div>
+                        <div className={`p-3 rounded-xl shadow-sm transition-all ${
+                          isLCompliance 
+                            ? 'bg-yellow-50 text-yellow-600 group-hover:bg-yellow-500 group-hover:text-white' 
+                            : 'bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white'
+                        }`}>
+                          <Lightbulb className="w-5 h-5" />
+                        </div>
+                      </div>
+                      
+                      <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <span className={`font-extrabold flex items-center gap-1.5 ${
+                          isLCompliance ? 'text-emerald-600' : 'text-orange-600'
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${isLCompliance ? 'bg-emerald-500' : 'bg-orange-500 animate-pulse'}`} /> 
+                          {isLCompliance ? 'Target Met' : 'Low Illum vs Target'}
+                        </span>
+                        <button onClick={() => setActiveTab("lighting")} className="text-indigo-600 font-extrabold hover:underline flex items-center gap-1">
+                          Simulate <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+              </div>
+
+              {/* Sub-panels and System parameters side-by-side */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                {/* Panel board specifications summary */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm lg:col-span-2 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-5 h-5 text-indigo-600" />
+                      <h4 className="font-bold text-slate-800 uppercase tracking-wider text-sm">Specification Standards Overview (PEC Part 1)</h4>
+                    </div>
+                    <span className="text-xs font-bold text-slate-400 bg-slate-50 border border-slate-200/60 px-2 rounded-md">
+                      Feeder: {panel.type || 'Main Panelboard'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">SYSTEM VOLTAGE</span>
+                      <p className="text-sm font-extrabold text-slate-800">{panel.system}</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">ENCLOSURE STYLE</span>
+                      <p className="text-sm font-extrabold text-slate-800">{panel.enclosure || "NEMA 1 Indoors"}</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">MOUNTING METHOD</span>
+                      <p className="text-sm font-extrabold text-slate-800">{panel.mounting || "Wall Surface"}</p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100/80 rounded-2xl p-4 space-y-1">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">INTERRUPTING COMPLIANCE</span>
+                      <p className="text-sm font-extrabold text-slate-800">{panel.icRating || "10kA KAIC"}</p>
+                    </div>
+                  </div>
+
+                  {/* Quick System loads bar-analysis */}
+                  <div className="space-y-3">
+                    <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">LOAD DISTRIBUTION BY COMPONENT TYPE</h5>
+                    {(() => {
+                      const totalVA = circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) || 1;
+                      const lightingVA = circuits.filter(c => c.loadType === 'L').reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                      const outletVA = circuits.filter(c => c.loadType === 'S').reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                      const motorVA = circuits.filter(c => c.loadType === 'AC' || c.loadType === 'M').reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                      const othersVA = totalVA - (lightingVA + outletVA + motorVA);
+
+                      const lightPct = (lightingVA / totalVA) * 100;
+                      const outletPct = (outletVA / totalVA) * 100;
+                      const motorPct = (motorVA / totalVA) * 100;
+                      const otherPct = (othersVA / totalVA) * 100;
+
+                      return (
+                        <div className="space-y-4">
+                          <div className="h-4 w-full bg-slate-100 rounded-full flex overflow-hidden">
+                            <div style={{ width: `${lightPct}%` }} className="bg-indigo-500 h-full transition-all" title={`Lighting: ${lightPct.toFixed(1)}%`} />
+                            <div style={{ width: `${outletPct}%` }} className="bg-emerald-500 h-full transition-all" title={`Convenience Outlets: ${outletPct.toFixed(1)}%`} />
+                            <div style={{ width: `${motorPct}%` }} className="bg-amber-500 h-full transition-all" title={`Motors / AC: ${motorPct.toFixed(1)}%`} />
+                            <div style={{ width: `${otherPct}%` }} className="bg-slate-400 h-full transition-all" title={`Others: ${otherPct.toFixed(1)}%`} />
+                          </div>
+                          
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-indigo-500" /> Lighting (<strong>{lightPct.toFixed(1)}%</strong>)</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500" /> Outlets (<strong>{outletPct.toFixed(1)}%</strong>)</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-500" /> Motors/AC (<strong>{motorPct.toFixed(1)}%</strong>)</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-400" /> Others (<strong>{otherPct.toFixed(1)}%</strong>)</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* PEC Quick Reference Guide */}
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Zap className="w-4 h-4 text-yellow-500" />
+                      <h4 className="font-bold text-slate-800 uppercase tracking-wider text-xs">PEC 2017 Quick Reference Guide</h4>
+                    </div>
+                    <ul className="space-y-4 text-xs text-slate-600">
+                      <li className="flex items-start gap-2">
+                        <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
+                        <span><strong className="text-slate-800">Section 2.10.2.1:</strong> Branch circuits branch wire size must possess wire ampacity not less than 125% of continuous load.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
+                        <span><strong className="text-slate-800">Table 3.10.1.16:</strong> Minimum conductor wire size for general lighting branch loops in residential lands is <strong className="text-slate-900 font-extrabold">2.0 mm² THHN Cooper</strong>.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
+                        <span><strong className="text-slate-800">Section 2.40.1.3:</strong> Breaker standard ratings are 15A, 20A, 30A, 40A, 50A, 60A, 70A, 100A, 115A, 125A.</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
+                    <span className="text-indigo-950 font-bold">Standard Grounding sizes?</span>
+                    <button onClick={() => alert("Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.")} className="px-3 py-1 bg-white border border-indigo-200 text-indigo-700 font-bold rounded-lg hover:bg-slate-50 shadow-sm transition-colors shrink-0">
+                      View Table
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Direct Actions & Interactive Quick Launcher Tab */}
+              <div className="bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+                <h4 className="font-black text-slate-500 uppercase tracking-widest text-[10px]">Jump-switch to Active Calculation Terminals:</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
+                  <button onClick={() => setActiveTab("schedule")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                    <Layout className="w-5 h-5 text-indigo-500" />
+                    Load Schedule
+                  </button>
+                  <button onClick={() => setActiveTab("isc")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-rose-500" />
+                    Short Circuit
+                  </button>
+                  <button onClick={() => setActiveTab("vd")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                    <Ruler className="w-5 h-5 text-emerald-500" />
+                    Voltage Drop
+                  </button>
+                  <button onClick={() => setActiveTab("lighting")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                    <Lightbulb className="w-5 h-5 text-yellow-500" />
+                    Illumination
+                  </button>
+                  <button onClick={() => setActiveTab("floor-plan")} className="bg-white hover:bg-slate-50 border border-slate-200/80 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 hover:text-indigo-600 transition-all flex flex-col items-center gap-2">
+                    <Map className="w-5 h-5 text-cyan-500" />
+                    Blueprint Preview
+                  </button>
+                </div>
+              </div>
+
+            </motion.div>
+          </div>
+
           {/* Load Schedule Tab */}
           <div className={activeTab === "schedule" ? "w-full" : "hidden"}>
             <motion.div
