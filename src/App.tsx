@@ -630,77 +630,121 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center">
-      {/* Tab Navigation */}
-      <nav className="w-full bg-white border-b border-slate-200 sticky top-0 z-50 no-print shadow-sm font-sans">
-        <div className="max-w-[1600px] mx-auto px-4 flex items-center h-16 justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-400 rounded-lg shadow-sm">
-              <Zap className="w-5 h-5 text-yellow-900" />
-            </div>
-            <div className="hidden md:block">
-              <span className="font-black text-slate-900 tracking-tight text-lg">
-                ElectricalPH
-              </span>
-              <p className="text-[10px] text-slate-400 font-bold uppercase -mt-1">
-                PH Engineering Tool
-              </p>
+    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
+      {/* Sidebar Navigation */}
+      <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between hidden md:flex shrink-0 no-print transition-all">
+        <div>
+          {/* Logo and Brand */}
+          <div className="h-16 flex items-center px-6 border-b border-slate-800/50 bg-slate-900/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-400 rounded-lg shadow-sm">
+                <Zap className="w-5 h-5 text-yellow-900" />
+              </div>
+              <div>
+                <span className="font-black text-white tracking-tight text-lg">
+                  ElectricalPH
+                </span>
+                <p className="text-[10px] text-slate-400 font-bold uppercase -mt-1 tracking-wider">
+                  Engineering Tool
+                </p>
+              </div>
             </div>
           </div>
-
-          <div className="flex bg-slate-100 p-1 rounded-xl">
+          
+          {/* Navigation Menu */}
+          <div className="p-4 space-y-1">
+            <p className="px-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 mt-4">Modules</p>
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${
                   activeTab === tab.id
-                    ? `bg-white shadow-sm shadow-slate-200 ${tab.color}`
-                    : "text-slate-500 hover:text-slate-700"
+                    ? `bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-inner`
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
                 }`}
               >
-                <tab.icon className="w-4 h-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
+                <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-indigo-400' : 'text-slate-500'}`} />
+                <span>{tab.label}</span>
+                {activeTab === tab.id && (
+                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                )}
               </button>
             ))}
-          </div>
-
-          <div className="flex items-center gap-2">
+            
+            {/* Verify Users for Admin */}
             {isAdmin && (
               <button
                 onClick={() => setActiveTab("verify")}
-                className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-black transition-all shadow-md shrink-0"
-                title="Verify user registrations"
+                className={`w-full flex items-center gap-3 px-3 py-2.5 mt-8 rounded-lg text-sm font-semibold transition-all ${
+                  activeTab === "verify" 
+                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                    : "text-amber-400/70 hover:text-amber-400 hover:bg-slate-800/50"
+                }`}
               >
-                <ShieldCheck className="w-4 h-4 animate-pulse" />
+                <ShieldCheck className="w-4 h-4" />
                 <span>Verify Registrations</span>
               </button>
             )}
-            <Auth />
-            <button
-              onClick={handleExportWord}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200/50"
-            >
-              <FileText className="w-4 h-4" />
-              <span className="hidden lg:inline">Export Word Report</span>
-            </button>
-            <button
-              onClick={exportToExcel}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200/50"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden lg:inline">Export Excel</span>
-            </button>
           </div>
         </div>
-      </nav>
 
-      {/* Main Content Area */}
-      <main
-        id="print-area"
-        className="w-full max-w-[1600px] p-4 md:p-8 flex flex-col items-center gap-8"
-      >
-        <div className="w-full">
+        {/* Bottom Sidebar - User Profile & Actions */}
+        <div className="p-4 border-t border-slate-800/50 space-y-3 bg-slate-900/50">
+          <button
+            onClick={handleExportWord}
+            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/20"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Generate Report</span>
+          </button>
+          <button
+            onClick={exportToExcel}
+            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 hover:text-white transition-colors border border-slate-700/50"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Export to Excel</span>
+          </button>
+          <div className="pt-2 flex justify-center">
+            <Auth />
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Layout Wrapper */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 relative">
+        
+        {/* Mobile Navbar */}
+        <header className="md:hidden h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-20 shrink-0 shadow-sm no-print">
+           <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-yellow-400 rounded-md">
+                <Zap className="w-4 h-4 text-yellow-900" />
+              </div>
+              <span className="font-extrabold text-slate-900 text-lg tracking-tight">ElectricalPH</span>
+           </div>
+           
+           <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
+             {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${
+                    activeTab === tab.id ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+             ))}
+           </div>
+        </header>
+
+        {/* Scrollable Content Area */}
+        <main
+          id="print-area"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 w-full"
+        >
+          <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-8 pb-32">
+            <div className="w-full">
           {/* Load Schedule Tab */}
           <div className={activeTab === "schedule" ? "w-full" : "hidden"}>
             <motion.div
@@ -872,9 +916,8 @@ export default function App() {
             </motion.div>
           </div>
         </div>
-      </main>
 
-      {/* Hidden Export Container for capturing all diagrams */}
+        {/* Hidden Export Container for capturing all diagrams */}
       <div className="fixed top-0 left-[-9999px] w-[1000px] opacity-0 pointer-events-none flex flex-col gap-8 no-print z-[-10] bg-slate-50 min-h-screen">
         <div id="export-container-sld">
           <div className="flex flex-col gap-12 w-full max-w-full">
@@ -955,43 +998,41 @@ export default function App() {
             setParams={setIllumParams}
           />
         </div>
-      </div>
-
-      <footer className="w-full bg-white border-t border-slate-100 py-12 mt-auto no-print">
-        <div className="max-w-[1600px] mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex flex-col items-center md:items-start">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-6 h-6 bg-yellow-400 rounded flex items-center justify-center">
-                <Zap className="w-4 h-4 text-yellow-900" />
-              </div>
-              <span className="font-bold text-slate-900">
-                ElectricalPH
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 max-w-xs text-center md:text-left">
-              Professional calculators based on PEC Part 1 and Part 2.
-              High-fidelity design for electrical engineers and contractors.
-            </p>
-          </div>
-          <div className="flex gap-8">
-            <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-black text-slate-300 uppercase letter tracking-widest text-center md:text-left">
-                Standards
-              </span>
-              <div className="flex gap-4 opacity-30 grayscale items-center h-8">
-                <img
-                  src="https://upload.wikimedia.org/wikipedia/commons/b/ba/IEEE_Logo.svg"
-                  className="h-4"
-                  alt="IEEE"
-                />
-                <span className="text-xs font-bold text-slate-900">
-                  PEC 2017
+        </div>
+        
+        <footer className="w-full bg-white/50 border-t border-slate-200 mt-12 py-8 rounded-2xl no-print">
+          <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="flex flex-col items-center md:items-start">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 bg-yellow-400 rounded flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-yellow-900" />
+                </div>
+                <span className="font-bold text-slate-900">
+                  ElectricalPH
                 </span>
               </div>
+              <p className="text-xs text-slate-500 max-w-xs text-center md:text-left">
+                Professional calculators based on PEC Part 1 and Part 2.
+                High-fidelity design for electrical engineers and contractors.
+              </p>
+            </div>
+            <div className="flex gap-8">
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase letter tracking-widest text-center md:text-left">
+                  Standards Supported
+                </span>
+                <div className="flex gap-4 opacity-50 grayscale items-center h-8">
+                  <span className="text-xs font-bold text-slate-900">
+                    PEC 2017 & ASHRAE 90.1
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
+        </footer>
         </div>
-      </footer>
+      </main>
     </div>
+  </div>
   );
 }
