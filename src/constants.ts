@@ -51,40 +51,36 @@ export const INITIAL_VOLTAGE_DROP_CALCULATIONS: VoltageDropCalculation[] = [
     systemType: '1PH'
   }
 ];
-
 export const LIGHT_FIXTURES_LIBRARY: LightFixture[] = [
-  // Global Brands
-  { id: 'philips-a19', brand: 'Philips', model: 'LED A19 / GU10 / BR30', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
-  { id: 'osram-led', brand: 'OSRAM', model: 'LED / Halogen / Smart', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
-  { id: 'ge-led', brand: 'GE Lighting', model: 'LED / Smart Bulbs', wattage: 12, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
-  { id: 'cree-high', brand: 'Cree Lighting', model: 'High-efficiency LED bulbs', wattage: 18, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
-  { id: 'panasonic-bulb', brand: 'Panasonic', model: 'LED household bulbs', wattage: 12, lumens: 1200, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
-  { id: 'samsung-mod', brand: 'Samsung', model: 'LED modules / smart lighting', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
-  { id: 'lg-commercial', brand: 'LG Electronics', model: 'LED lamps / commercial', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
-  { id: 'havells-downlight', brand: 'Havells', model: 'LED bulbs / downlights', wattage: 10, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
-  { id: 'wipro-com', brand: 'Wipro Lighting', model: 'Commercial/residential LEDs', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
-  { id: 'opple-panel', brand: 'Opple Lighting', model: 'LED bulbs / panels', wattage: 20, lumens: 2000, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
-  { id: 'xiaomi-smart', brand: 'Xiaomi', model: 'Smart LED bulbs', wattage: 10, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
-  { id: 'yeelight-rgb', brand: 'Yeelight', model: 'Smart RGB LED bulbs', wattage: 12, lumens: 1200, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
-  { id: 'ikea-ledare', brand: 'IKEA', model: 'LEDARE / SOLHETTA', wattage: 8, lumens: 800, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
-  { id: 'feit-bulb', brand: 'Feit Electric', model: 'Household / commercial LEDs', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
-  { id: 'sylvania-cfl', brand: 'Sylvania', model: 'LED / CFL / specialty', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
-  
-  // Philippines-Available
-  { id: 'omni-t8', brand: 'OMNI', model: 'LED bulbs / T8 tubes / panels', wattage: 36, lumens: 3600, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
-  { id: 'firefly-flood', brand: 'Firefly', model: 'Luminaires / floodlights', wattage: 100, lumens: 10000, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
-  { id: 'akari-solar', brand: 'Akari', model: 'Smart lighting / solar lights', wattage: 50, lumens: 5000, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
-  { id: 'landlite-deco', brand: 'Landlite', model: 'Decorative lighting / chandeliers', wattage: 40, lumens: 4000, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
-  { id: 'royu-led', brand: 'Royu', model: 'LED bulbs', wattage: 15, lumens: 1500, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
-  { id: 'meiji-flood', brand: 'Meiji Electric', model: 'LED bulbs / industrial', wattage: 100, lumens: 10000, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
+  { id: 'ind-led-bulb', category: 'Indoor', lightType: 'LED Bulb', wattageRange: '3W–24W', lumensRange: '250–3000 lm', brands: 'Philips, Omni, Firefly, Akari', wattage: 12, lumens: 1000 },
+  { id: 'ind-smart-bulb', category: 'Indoor', lightType: 'Smart Bulb', wattageRange: '7W–15W', lumensRange: '800–1600 lm', brands: 'Philips Wiz, Philips Hue, Tapo', wattage: 10, lumens: 1000 },
+  { id: 'ind-t5-t8', category: 'Indoor', lightType: 'T5/T8 Tube Light', wattageRange: '5W–40W', lumensRange: '500–4500 lm', brands: 'Philips, Omni, Firefly', wattage: 18, lumens: 1800 },
+  { id: 'ind-panel', category: 'Indoor', lightType: 'Panel Light', wattageRange: '6W–48W', lumensRange: '500–5000 lm', brands: 'Philips, Akari', wattage: 36, lumens: 3600 },
+  { id: 'ind-downlight', category: 'Indoor', lightType: 'Downlight/Recessed Light', wattageRange: '3W–18W', lumensRange: '250–2200 lm', brands: 'Philips, Firefly', wattage: 12, lumens: 1000 },
+  { id: 'ind-ceiling', category: 'Indoor', lightType: 'Ceiling Light', wattageRange: '12W–60W', lumensRange: '1000–7000 lm', brands: 'Firefly, Omni', wattage: 24, lumens: 2400 },
+  { id: 'ind-chandelier', category: 'Indoor', lightType: 'Chandelier', wattageRange: '20W–100W', lumensRange: '2000–12000 lm', brands: 'Philips, Decorative Brands', wattage: 40, lumens: 4000 },
+  { id: 'ind-track', category: 'Indoor', lightType: 'Track Light', wattageRange: '7W–40W', lumensRange: '600–4500 lm', brands: 'Philips, Omni', wattage: 15, lumens: 1200 },
+  { id: 'ind-desk', category: 'Indoor', lightType: 'Desk Lamp', wattageRange: '3W–12W', lumensRange: '200–1200 lm', brands: 'Philips, Xiaomi', wattage: 7, lumens: 600 },
+  { id: 'ind-emergency', category: 'Indoor', lightType: 'Emergency Light', wattageRange: '5W–20W', lumensRange: '500–4000 lm', brands: 'Firefly, Akari', wattage: 10, lumens: 1000 },
 
-  // Common Bulb Types
-  { id: 'common-a19', brand: 'Generic', model: 'A60 / A19 LED Bulb (Homes)', wattage: 10, lumens: 1000, imageUrl: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=300&h=300&fit=crop' },
-  { id: 'common-t8', brand: 'Generic', model: 'T8 LED Tube (Offices, schools)', wattage: 18, lumens: 1800, imageUrl: 'https://images.unsplash.com/photo-1563821731-0cf879d034ee?w=300&h=300&fit=crop' },
-  { id: 'common-gu10', brand: 'Generic', model: 'GU10 Spotlight (Accent)', wattage: 6, lumens: 500, imageUrl: 'https://images.unsplash.com/photo-1542841381-80a5214ad6bb?w=300&h=300&fit=crop' },
-  { id: 'common-flood', brand: 'Generic', model: 'Floodlight LED (Outdoor)', wattage: 100, lumens: 10000, imageUrl: 'https://images.unsplash.com/photo-1555529733-0e67056058e1?w=300&h=300&fit=crop' },
-  { id: 'common-panel', brand: 'Generic', model: 'Panel Light (Commercial)', wattage: 36, lumens: 3600, imageUrl: 'https://images.unsplash.com/photo-1628148815147-3803acbbbed5?w=300&h=300&fit=crop' },
-  { id: 'common-street', brand: 'Generic', model: 'Street Light LED', wattage: 150, lumens: 15000, imageUrl: 'https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=300&h=300&fit=crop' },
+  { id: 'out-floodlight', category: 'Outdoor', lightType: 'Floodlight', wattageRange: '10W–300W', lumensRange: '900–30000 lm', brands: 'Firefly, Akari, Philips', wattage: 100, lumens: 10000 },
+  { id: 'out-street', category: 'Outdoor', lightType: 'Street Light', wattageRange: '30W–120W', lumensRange: '3000–15000 lm', brands: 'Omni, Firefly', wattage: 60, lumens: 6000 },
+  { id: 'out-solar', category: 'Outdoor', lightType: 'Solar Light', wattageRange: '1W–300W', lumensRange: '100–30000 lm', brands: 'Akari, Firefly', wattage: 50, lumens: 5000 },
+  { id: 'out-garden', category: 'Outdoor', lightType: 'Garden Light', wattageRange: '3W–10W', lumensRange: '200–1200 lm', brands: 'Philips, Omni', wattage: 5, lumens: 500 },
+  { id: 'out-wall', category: 'Outdoor', lightType: 'Wall Sconce', wattageRange: '5W–20W', lumensRange: '400–2500 lm', brands: 'Philips, Akari', wattage: 10, lumens: 1000 },
+  { id: 'out-highbay', category: 'Outdoor', lightType: 'High Bay Light', wattageRange: '50W–200W', lumensRange: '5000–30000 lm', brands: 'Philips, Omni', wattage: 150, lumens: 18000 },
+  { id: 'out-lowbay', category: 'Outdoor', lightType: 'Low Bay Light', wattageRange: '40W–100W', lumensRange: '4000–12000 lm', brands: 'Firefly, Philips', wattage: 60, lumens: 6000 },
+  { id: 'out-canopy', category: 'Outdoor', lightType: 'Canopy Light', wattageRange: '40W–80W', lumensRange: '4000–12000 lm', brands: 'Omni, Philips', wattage: 60, lumens: 6000 },
+  { id: 'out-pool', category: 'Outdoor', lightType: 'Pool/Underwater Light', wattageRange: '12W–35W', lumensRange: '800–4000 lm', brands: 'Hayward, Philips', wattage: 15, lumens: 1500 },
+
+  { id: 'spl-motion', category: 'Special', lightType: 'Motion Sensor Light', wattageRange: '5W–50W', lumensRange: '500–5000 lm', brands: 'Omni, Philips', wattage: 15, lumens: 1500 },
+  { id: 'spl-rgb', category: 'Special', lightType: 'RGB Smart Light', wattageRange: '5W–15W', lumensRange: '500–1600 lm', brands: 'Philips Hue, Xiaomi', wattage: 10, lumens: 1000 },
+  { id: 'spl-uv', category: 'Special', lightType: 'UV Light', wattageRange: '6W–40W', lumensRange: 'N/A', brands: 'Philips, Omni', wattage: 20, lumens: 0 },
+  { id: 'spl-grow', category: 'Special', lightType: 'Grow Light', wattageRange: '20W–300W', lumensRange: '2000–30000 lm', brands: 'Generic, Philips', wattage: 100, lumens: 10000 },
+  { id: 'spl-exit', category: 'Special', lightType: 'Exit Light', wattageRange: '3W–10W', lumensRange: '200–800 lm', brands: 'Firefly, Akari', wattage: 5, lumens: 400 },
+  { id: 'spl-strip', category: 'Special', lightType: 'LED Strip Light', wattageRange: '4W–24W/m', lumensRange: '300–2400 lm/m', brands: 'Philips, Xiaomi', wattage: 10, lumens: 1000 },
+  { id: 'spl-cob-strip', category: 'Special', lightType: 'COB LED Strip', wattageRange: '10W–20W/m', lumensRange: '800–2000 lm/m', brands: 'Philips, Omni', wattage: 15, lumens: 1500 },
+  { id: 'spl-neon', category: 'Special', lightType: 'Neon Flex Light', wattageRange: '5W–15W/m', lumensRange: '300–1500 lm/m', brands: 'Akari, Omni', wattage: 10, lumens: 1000 }
 ];
 
 export const INITIAL_ILLUMINATION_PARAMS: IlluminationParams = {
@@ -95,9 +91,9 @@ export const INITIAL_ILLUMINATION_PARAMS: IlluminationParams = {
   ceilingHeight: 2.7,
   workingPlaneHeight: 0.75,
   mountingHeight: 1.95,
-  targetLux: 300,
-  selectedFixtureId: 'philips-panel',
-  lumensPerFixture: 3400,
+  targetLux: 500, // Default to a standard office lux
+  selectedFixtureId: 'ind-panel',
+  lumensPerFixture: 3600,
   coefficientOfUtilization: 0.6,
   maintenanceFactor: 0.8
 };
@@ -133,14 +129,61 @@ export const WIRE_IMPEDANCE_TABLE: Record<string, { r: number, x: number }> = {
   '150': { r: 0.118, x: 0.121 },
 };
 
-export const RECOMMENDED_LUX_LEVELS = {
-  'STAIRWAY / CORRIDOR': 100,
-  'WAREHOUSE / STORAGE': 150,
-  'GENERAL OFFICE': 300,
-  'CONFERENCE ROOM': 500,
-  'DRAWING OFFICE / LAB': 750,
-  'CLASSROOM': 300,
+export const RECOMMENDED_LUX_LEVELS_CATEGORIZED: Record<string, { name: string; lux: number }[]> = {
+  "Residential Lighting": [
+    { name: "Living Room", lux: 150 },
+    { name: "Bedroom", lux: 200 },
+    { name: "Kitchen (General)", lux: 300 },
+    { name: "Kitchen (Task)", lux: 500 },
+    { name: "Bathroom (General)", lux: 200 },
+    { name: "Bathroom (Mirror)", lux: 500 },
+    { name: "Hallways / Stairs", lux: 100 },
+    { name: "Dining Area", lux: 200 },
+  ],
+  "Office & Educational": [
+    { name: "General Office", lux: 500 },
+    { name: "Workstations", lux: 500 },
+    { name: "Meeting Rooms", lux: 500 },
+    { name: "Reading / Study", lux: 500 },
+    { name: "CAD / Drafting", lux: 750 },
+    { name: "Classrooms", lux: 500 },
+    { name: "Libraries", lux: 500 },
+  ],
+  "Commercial & Retail": [
+    { name: "Small Shops", lux: 500 },
+    { name: "Supermarkets", lux: 750 },
+    { name: "Showrooms", lux: 750 },
+    { name: "Display / Feature Areas", lux: 2000 },
+    { name: "Reception", lux: 300 },
+  ],
+  "Industrial": [
+    { name: "Warehouses", lux: 100 },
+    { name: "Packing / Sorting", lux: 300 },
+    { name: "Mechanical Rooms", lux: 150 },
+    { name: "Heavy Industrial Work", lux: 500 },
+    { name: "Precision Work / Inspection", lux: 2000 },
+  ],
+  "Public Areas": [
+    { name: "Corridors", lux: 150 },
+    { name: "Stairwells", lux: 100 },
+    { name: "Lobbies", lux: 200 },
+    { name: "Parking Areas", lux: 150 },
+    { name: "Outdoor Walkways", lux: 40 },
+  ],
+  "Healthcare": [
+    { name: "Patient Rooms", lux: 200 },
+    { name: "Examination Rooms", lux: 1000 },
+    { name: "Operating Rooms", lux: 1500 },
+  ]
 };
+
+export const RECOMMENDED_LUX_LEVELS: Record<string, number> = {};
+Object.entries(RECOMMENDED_LUX_LEVELS_CATEGORIZED).forEach(([_, items]) => {
+  items.forEach(item => {
+    RECOMMENDED_LUX_LEVELS[item.name] = item.lux;
+  });
+});
+
 
 export interface LoadPreset {
   category: string;

@@ -924,18 +924,25 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <Info className="w-4 h-4 text-indigo-600 no-print" />
             Legend & Technical Notes
           </h4>
-          <div className="grid grid-cols-2 gap-4 text-xs font-medium text-slate-600 print:text-slate-900">
-            <div className="space-y-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 text-xs font-medium text-slate-600 print:text-slate-900">
+            <div className="space-y-1.5">
               <p><span className="text-indigo-600 font-bold print:text-slate-900">L</span> — Lighting Outlets (100VA/outlet)</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">S</span> — Socket Outlets (180VA/outlet)</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">AC</span> — Air Conditioning Units</p>
-              <p><span className="text-indigo-600 font-bold print:text-slate-900">M</span> — Motor / Water Pumps</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">S / CO</span> — Socket / Convenience Outlets (180VA/outlet)</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">AC / ACU</span> — Air Conditioning Unit</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">FCU / CU</span> — Fan Coil / Condensing Unit</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">WH</span> — Water Heater</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">M / WP</span> — Motor / Water Pump</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">RE</span> — Range Equipment / Electric Stove</p>
+              <p><span className="text-indigo-600 font-bold print:text-slate-900">SP</span> — Spare / Future Circuit</p>
             </div>
-            <div className="space-y-1">
-              <p>• Wiring: Copper THHN/THWN as per PEC</p>
-              <p>• Min Wire Size: 2.0mm² (Lighting)</p>
-              <p>• Min Wire Size: 3.5mm² (Power)</p>
-              <p>• Conduit: Schedule 40 PVC or RSC</p>
+            <div className="space-y-1.5">
+              <p>• <strong>Wiring:</strong> Copper THHN/THWN as per PEC</p>
+              <p>• <strong>Min Wire Size:</strong> 2.0mm² (Lighting), 3.5mm² (Power)</p>
+              <p>• <strong>Conduit:</strong> Schedule 40 PVC, EMT, or RSC</p>
+              <p>• <strong>Grounding:</strong> Equipment grounded per PEC Table 2.50.6.13</p>
+              <p>• <strong>Voltage Drop:</strong> Max 3% (Branch), Max 5% (Feeder)</p>
+              <p>• <strong>Protection (CB):</strong> Rated ≥125% continuous load</p>
+              <p>• <strong>Installation:</strong> Conform to local utility & PEC guidelines</p>
             </div>
           </div>
         </div>

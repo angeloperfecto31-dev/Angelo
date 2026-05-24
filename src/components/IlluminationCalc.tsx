@@ -21,7 +21,7 @@ import {
   AlertTriangle 
 } from 'lucide-react';
 import { IlluminationParams, Circuit, MCBType, LoadType } from '../types';
-import { RECOMMENDED_LUX_LEVELS, LIGHT_FIXTURES_LIBRARY } from '../constants';
+import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
 
 export interface IlluminationCalcProps {
@@ -376,8 +376,12 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Target Lux Standard</label>
               <select value={params.targetLux} onChange={e => setParams({...params, targetLux: parseInt(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
-                {Object.entries(RECOMMENDED_LUX_LEVELS).map(([name, lux]) => (
-                  <option key={name} value={lux}>{name} ({lux} Lux)</option>
+                {Object.entries(RECOMMENDED_LUX_LEVELS_CATEGORIZED).map(([category, items]) => (
+                  <optgroup key={category} label={category}>
+                    {items.map(item => (
+                      <option key={item.name} value={item.lux}>{item.name} ({item.lux} Lux)</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -417,15 +421,15 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
               const selectedFixture = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
               return (
                 <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
-                  <div className="w-16 h-16 bg-white rounded-lg border border-slate-200 overflow-hidden shrink-0">
-                    <img src={selectedFixture.imageUrl} alt={selectedFixture.model} className="w-full h-full object-cover mix-blend-multiply" crossOrigin="anonymous" />
+                  <div className="w-16 h-16 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center shrink-0">
+                    <Lightbulb className="w-8 h-8 text-slate-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{selectedFixture.brand}</p>
-                    <p className="font-bold text-slate-800 truncate mb-1">{selectedFixture.model}</p>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded">{selectedFixture.lumens} lm</span>
-                      <span className="text-xs font-medium text-slate-500">{selectedFixture.wattage}W</span>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{selectedFixture.category} - {selectedFixture.brands}</p>
+                    <p className="font-bold text-slate-800 truncate mb-1">{selectedFixture.lightType}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded">{selectedFixture.lumensRange}</span>
+                      <span className="text-xs font-medium text-slate-500 bg-slate-200 px-2 py-0.5 rounded">{selectedFixture.wattageRange}</span>
                     </div>
                   </div>
                 </div>
@@ -962,7 +966,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
             </div>
             
             <div className="p-6 overflow-y-auto">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {LIGHT_FIXTURES_LIBRARY.map((fixture) => (
                   <button
                     type="button"
@@ -971,24 +975,37 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                       setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens });
                       setShowFixtureModal(false);
                     }}
-                    className={`relative flex flex-col items-center text-left border rounded-xl overflow-hidden transition-all group ${
-                      params.selectedFixtureId === fixture.id ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+                    className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group ${
+                      params.selectedFixtureId === fixture.id ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
                     }`}
                   >
                     {params.selectedFixtureId === fixture.id && (
-                      <div className="absolute top-2 right-2 bg-white rounded-full z-10 shadow-sm">
+                      <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm">
                         <CheckCircle2 className="w-5 h-5 text-yellow-500" />
                       </div>
                     )}
-                    <div className="w-full h-32 bg-slate-100 relative">
-                      <img src={fixture.imageUrl} alt={fixture.model} className="w-full h-full object-cover mix-blend-multiply opacity-80 group-hover:opacity-100 transition-opacity" crossOrigin="anonymous" />
-                    </div>
-                    <div className="p-4 w-full bg-white border-t border-slate-100">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider truncate mb-1">{fixture.brand}</p>
-                      <p className="text-sm font-bold text-slate-800 leading-tight mb-3 truncate" title={fixture.model}>{fixture.model}</p>
-                      <div className="flex items-center justify-between mt-auto">
-                        <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded">{fixture.lumens} lm</span>
-                        <span className="text-xs font-medium text-slate-500">{fixture.wattage}W</span>
+                    <div className="p-5 w-full flex flex-col h-full">
+                      <div className="flex items-center gap-2 mb-2">
+                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{fixture.category}</span>
+                      </div>
+                      <p className="text-base font-bold text-slate-800 leading-tight mb-2 truncate" title={fixture.lightType}>{fixture.lightType}</p>
+                      
+                      <div className="mt-auto space-y-3">
+                        <div>
+                          <p className="text-xs text-slate-500 font-medium truncate mb-0.5">Typical Brands</p>
+                          <p className="text-[10px] text-slate-400 truncate" title={fixture.brands}>{fixture.brands}</p>
+                        </div>
+                        
+                        <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] text-slate-400 uppercase tracking-wider mb-0.5">Wattage</span>
+                            <span className="text-xs font-bold text-slate-600">{fixture.wattageRange}</span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className="text-[9px] text-slate-400 uppercase tracking-wider mb-0.5">Lumens</span>
+                            <span className="text-xs font-bold text-yellow-600">{fixture.lumensRange}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </button>

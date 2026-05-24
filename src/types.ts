@@ -91,11 +91,13 @@ export interface VoltageDropCalculation {
 
 export interface LightFixture {
   id: string;
-  brand: string;
-  model: string;
+  category: string;
+  lightType: string;
+  wattageRange: string;
+  lumensRange: string;
+  brands: string;
   wattage: number;
   lumens: number;
-  imageUrl: string;
 }
 
 export interface IlluminationParams {

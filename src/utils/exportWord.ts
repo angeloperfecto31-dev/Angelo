@@ -417,7 +417,7 @@ export const exportToWord = async (
   docChildren.push(createHeader(`4. Illumination Calculation (Lumen Method)`));
   
   const roomArea = 20; // 4x5m standard typical room assumed for example
-  const targetLux = RECOMMENDED_LUX_LEVELS['GENERAL OFFICE'] || 300;
+  const targetLux = RECOMMENDED_LUX_LEVELS['General Office'] || 300;
   const lumensPerFix = 1800; // standard equivalent LED tube
   const cu = 0.6;
   const mf = 0.8;
