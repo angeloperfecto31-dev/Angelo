@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Maximize2, Minimize2 } from 'lucide-react';
+import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Maximize2, Minimize2, Download } from 'lucide-react';
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from '../constants';
+import { exportDiagramToDXF } from '../utils/exportDxf';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -369,6 +370,16 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   Interactive (Blocks)
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => exportDiagramToDXF(panel, params, calculation, motorLoadVA)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-800 text-white rounded-md hover:bg-slate-900 transition-colors"
+                title="Export AutoCAD 2D (DXF)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                DXF
+              </button>
 
               <button 
                 type="button"
