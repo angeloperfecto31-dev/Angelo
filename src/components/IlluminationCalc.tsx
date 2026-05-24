@@ -18,7 +18,8 @@ import {
   DollarSign, 
   Calendar, 
   Clock, 
-  AlertTriangle 
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 import { IlluminationParams, Circuit, MCBType, LoadType } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
@@ -293,7 +294,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   }, [calculation.fixtures, calculation.area, params.selectedFixtureId, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
 
   const handleAddToSchedule = () => {
-    if (!setCircuits || !circuits || !setActiveTab) return;
+    if (!setCircuits || !circuits) return;
     const newNo = circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
     
     // Estimate LED wattage at approx 100 lumens/watt if not specified
@@ -325,7 +326,81 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     };
 
     setCircuits([...circuits, newCircuit]);
-    setActiveTab('schedule');
+    
+    // Add to local Saved Rooms table
+    const newSavedRoom = {
+      id: crypto.randomUUID(),
+      circuitNo: newNo,
+      roomName: lpdLimitInfo.roomName,
+      targetLux: params.targetLux,
+      area: Number(calculation.area),
+      fixtureId: selectedFixture.id,
+      fixtureLightType: selectedFixture.lightType,
+      fixturesCount: calculation.fixtures,
+      totalLumens: calculation.totalLumens,
+      totalWattage: totalVA
+    };
+    
+    setParams({
+      ...params,
+      savedRooms: [...(params.savedRooms || []), newSavedRoom]
+    });
+  };
+
+  const updateSavedRoom = (id: string, field: string, value: any) => {
+    if (!params.savedRooms) return;
+    
+    let updatedCircuitNo: number | undefined;
+    let newWattage: number | undefined;
+    let newQuantity: number | undefined;
+
+    const newRooms = params.savedRooms.map(r => {
+      if (r.id === id) {
+        const updated = { ...r, [field]: value };
+        if (field === 'fixturesCount') {
+          const fix = LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId);
+          if (fix) {
+            updated.totalWattage = fix.wattage * updated.fixturesCount;
+            updated.totalLumens = fix.lumens * updated.fixturesCount;
+            newWattage = updated.totalWattage;
+            newQuantity = updated.fixturesCount;
+          }
+        }
+        updatedCircuitNo = updated.circuitNo;
+        return updated;
+      }
+      return r;
+    });
+    setParams({ ...params, savedRooms: newRooms });
+
+    if (updatedCircuitNo !== undefined && circuits && setCircuits && field === 'fixturesCount' && newWattage !== undefined && newQuantity !== undefined) {
+      const newCircuits = circuits.map(c => {
+        if (c.circuitNo === updatedCircuitNo) {
+          return {
+            ...c,
+            quantity: newQuantity!,
+            loadVA: newWattage!,
+            loadA: newWattage! / c.voltage
+          };
+        }
+        return c;
+      });
+      setCircuits(newCircuits);
+    }
+  };
+
+  const removeSavedRoom = (id: string) => {
+    if (!params.savedRooms) return;
+    const roomToRemove = params.savedRooms.find(r => r.id === id);
+    setParams({
+      ...params,
+      savedRooms: params.savedRooms.filter(r => r.id !== id)
+    });
+    
+    // Attempt to remove from global circuits too
+    if (roomToRemove && roomToRemove.circuitNo && circuits && setCircuits) {
+       setCircuits(circuits.filter(c => c.circuitNo !== roomToRemove.circuitNo));
+    }
   };
 
 
@@ -946,6 +1021,75 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         </section>
 
       </section>
+
+      {/* Saved Lighting Details Table */}
+      {params.savedRooms && params.savedRooms.length > 0 && (
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-hidden no-print">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-slate-800">Calculated Lighting Rooms</h3>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Click cell values to edit</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="text-xs uppercase bg-slate-50 text-slate-500 font-bold border-y border-slate-200">
+                <tr>
+                  <th className="px-4 py-3">Room / Space</th>
+                  <th className="px-4 py-3">Target Lux</th>
+                  <th className="px-4 py-3">Area (m²)</th>
+                  <th className="px-4 py-3">Fixture Type</th>
+                  <th className="px-4 py-3 text-right">No. of Fixtures</th>
+                  <th className="px-4 py-3 text-right">Total Lumens</th>
+                  <th className="px-4 py-3 text-right">Est. Wattage (VA)</th>
+                  <th className="px-4 py-3 text-center border-l border-slate-200">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {params.savedRooms.map((room) => (
+                  <tr key={room.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-4 py-3 font-semibold text-slate-900 border-r border-slate-100">
+                      <input 
+                        type="text" 
+                        value={room.roomName} 
+                        onChange={(e) => updateSavedRoom(room.id, 'roomName', e.target.value)}
+                        className="w-full bg-transparent p-1 border border-transparent hover:border-slate-300 focus:border-indigo-500 rounded outline-none transition-colors"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <input 
+                        type="number" 
+                        value={room.targetLux} 
+                        onChange={(e) => updateSavedRoom(room.id, 'targetLux', Number(e.target.value))}
+                        className="w-20 bg-transparent p-1 border border-transparent hover:border-slate-300 focus:border-indigo-500 rounded outline-none transition-colors text-slate-800 font-medium"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-slate-500">{room.area}</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs font-bold uppercase tracking-wider">{room.fixtureLightType}</td>
+                    <td className="px-4 py-3 text-right">
+                      <input 
+                        type="number" 
+                        value={room.fixturesCount} 
+                        onChange={(e) => updateSavedRoom(room.id, 'fixturesCount', Number(e.target.value))}
+                        className="w-16 bg-transparent p-1 border border-transparent hover:border-slate-300 focus:border-indigo-500 rounded outline-none transition-colors text-right text-indigo-600 font-bold"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-amber-600">{room.totalLumens}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-700">{room.totalWattage}W</td>
+                    <td className="px-4 py-3 text-center border-l border-slate-100">
+                      <button
+                        title="Remove calculation"
+                        onClick={() => removeSavedRoom(room.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 mx-auto" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Fixture Selection Modal */}
       {showFixtureModal && (

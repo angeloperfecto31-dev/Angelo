@@ -100,6 +100,19 @@ export interface LightFixture {
   lumens: number;
 }
 
+export interface SavedLightingDetail {
+  id: string;
+  roomName: string;
+  targetLux: number;
+  area: number;
+  fixtureId?: string;
+  fixtureLightType?: string;
+  fixturesCount: number;
+  totalLumens: number;
+  totalWattage: number;
+  circuitNo?: number; // optionally link to circuit
+}
+
 export interface IlluminationParams {
   inputMode: 'dimensions' | 'area';
   roomWidth: number;
@@ -113,4 +126,5 @@ export interface IlluminationParams {
   lumensPerFixture: number;
   coefficientOfUtilization: number;
   maintenanceFactor: number;
+  savedRooms?: SavedLightingDetail[];
 }
