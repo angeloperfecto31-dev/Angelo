@@ -481,9 +481,18 @@ export const exportToWord = async (
 
   // Active Parameters Section
   const roomArea = illumParams.inputMode === 'area' ? illumParams.userArea : (illumParams.roomWidth * illumParams.roomLength);
+  
+  let cu = illumParams.coefficientOfUtilization;
+  if (illumParams.inputMode === 'dimensions' && illumParams.roomWidth > 0 && illumParams.roomLength > 0) {
+    const hrc = Math.max(0.1, (illumParams.ceilingHeight || 2.7) - (illumParams.workingPlaneHeight || 0.75));
+    const roomIndex = (illumParams.roomWidth * illumParams.roomLength) / (hrc * (illumParams.roomWidth + illumParams.roomLength));
+    const riFactor = roomIndex / (roomIndex + 0.5);
+    const baselineRiFactor = 2.0 / 2.5; 
+    cu = Math.min(0.95, Math.max(0.1, illumParams.coefficientOfUtilization * (riFactor / baselineRiFactor)));
+  }
+
   const targetLux = illumParams.targetLux;
   const lumensPerFix = illumParams.lumensPerFixture;
-  const cu = illumParams.coefficientOfUtilization;
   const mf = illumParams.maintenanceFactor;
   const expectedLumens = (targetLux * roomArea) / (cu * mf);
   const qty = Math.ceil(expectedLumens / lumensPerFix);
@@ -495,7 +504,7 @@ export const exportToWord = async (
     createParagraph(`• Area: ${roomArea} m²`),
     createParagraph(`• Target Illuminance: ${targetLux} Lux`),
     createParagraph(`• Lumens per Fixture: ${lumensPerFix}`),
-    createParagraph(`• Coefficient of Utilization (CU): ${cu}`),
+    createParagraph(`• Coefficient of Utilization (CU): ${cu.toFixed(2)}`),
     createParagraph(`• Maintenance Factor (MF): ${mf}`),
     new Paragraph({ spacing: { after: 200 } }),
     createParagraph(`Calculated Fixture Quantity: ${qty} Fixtures`, true)

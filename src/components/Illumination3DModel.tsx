@@ -5,25 +5,35 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 interface SceneProps {
   width: number;
   length: number;
-  height: number;
+  height: number; // This is mountingHeight for fixtures
+  ceilingHeight: number; // This is actual ceiling height for walls
   fixtures: number;
   lumens: number;
   showFalseColor?: boolean;
   enableDaylight?: boolean;
   windowArea?: number;
   skyCondition?: 'overcast' | 'partly' | 'clear';
+  isLpdCompliant?: boolean;
+  lpdValue?: number;
+  lpdLimit?: number;
+  targetLux: number;
 }
 
 export default function Illumination3DModel({ 
   width, 
   length, 
   height, 
+  ceilingHeight,
   fixtures, 
   lumens,
   showFalseColor = false,
   enableDaylight = false,
   windowArea = 2.0,
-  skyCondition = 'partly'
+  skyCondition = 'partly',
+  isLpdCompliant = true,
+  lpdValue = 0,
+  lpdLimit = 0,
+  targetLux
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -84,25 +94,32 @@ export default function Illumination3DModel({
           totalLux += daylightPointLux;
         }
 
-        // Color mapper representing realistic lux values
+        // Define dynamic thresholds based on targetLux
+        const t1 = targetLux * 0.33;
+        const t2 = targetLux * 0.67;
+        const t3 = targetLux * 1.0;
+        const t4 = targetLux * 1.67;
+        const t5 = targetLux * 2.5;
+
+        // Color mapper representing relative lux values
         let rgbColor = 'rgb(0,0,50)';
-        if (totalLux < 50) {
-          const ratio = totalLux / 50;
+        if (totalLux < t1) {
+          const ratio = totalLux / t1;
           rgbColor = `rgb(0, 0, ${Math.round(50 + ratio * 150)})`;
-        } else if (totalLux < 150) {
-          const ratio = (totalLux - 50) / 100;
+        } else if (totalLux < t2) {
+          const ratio = (totalLux - t1) / (t2 - t1);
           rgbColor = `rgb(0, ${Math.round(ratio * 200)}, 200)`;
-        } else if (totalLux < 300) {
-          const ratio = (totalLux - 150) / 150;
+        } else if (totalLux < t3) {
+          const ratio = (totalLux - t2) / (t3 - t2);
           rgbColor = `rgb(0, 255, ${Math.round(200 - ratio * 200)})`;
-        } else if (totalLux < 500) {
-          const ratio = (totalLux - 300) / 200;
+        } else if (totalLux < t4) {
+          const ratio = (totalLux - t3) / (t4 - t3);
           rgbColor = `rgb(${Math.round(ratio * 255)}, 255, 0)`;
-        } else if (totalLux < 750) {
-          const ratio = (totalLux - 500) / 250;
+        } else if (totalLux < t5) {
+          const ratio = (totalLux - t4) / (t5 - t4);
           rgbColor = `rgb(255, ${Math.round(255 - ratio * 155)}, 0)`;
         } else {
-          const ratio = Math.min(1, (totalLux - 750) / 500);
+          const ratio = Math.min(1, (totalLux - t5) / t5);
           rgbColor = `rgb(255, ${Math.round(100 + ratio * 155)}, ${Math.round(100 + ratio * 155)})`;
         }
 
@@ -112,7 +129,7 @@ export default function Illumination3DModel({
     }
 
     return canvas;
-  }, [width, length, height, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition]);
+  }, [width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, targetLux]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -129,7 +146,7 @@ export default function Illumination3DModel({
 
     // Setup camera
     const camera = new THREE.PerspectiveCamera(45, containerWidth / containerHeight, 0.1, 1000);
-    camera.position.set(width * 1.5, height * 2.5, length * 1.5);
+    camera.position.set(width * 1.5, ceilingHeight * 2.5, length * 1.5);
 
     // Setup renderer with preserveDrawingBuffer enabled for image exports
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
@@ -244,7 +261,7 @@ export default function Illumination3DModel({
     // Render Windows geometry if daylight is configured
     if (enableDaylight) {
       const winW = Math.min(width * 0.7, Math.sqrt(windowArea) * 1.5);
-      const winH = Math.min(height * 0.6, Math.sqrt(windowArea));
+      const winH = Math.min(ceilingHeight * 0.6, Math.sqrt(windowArea));
       const winGeo = new THREE.PlaneGeometry(winW, winH);
       const winMat = new THREE.MeshBasicMaterial({ 
         color: 0x38bdf8, 
@@ -253,7 +270,7 @@ export default function Illumination3DModel({
         side: THREE.DoubleSide 
       });
       const winMesh = new THREE.Mesh(winGeo, winMat);
-      winMesh.position.set(0, height / 2, -length / 2 + 0.01);
+      winMesh.position.set(0, ceilingHeight / 2, -length / 2 + 0.01);
       scene.add(winMesh);
     }
 
@@ -264,27 +281,27 @@ export default function Illumination3DModel({
       opacity: 0.12 
     });
 
-    const vWallGeoX = new THREE.BoxGeometry(width, height, 0.04);
-    const vWallGeoZ = new THREE.BoxGeometry(0.04, height, length);
+    const vWallGeoX = new THREE.BoxGeometry(width, ceilingHeight, 0.04);
+    const vWallGeoZ = new THREE.BoxGeometry(0.04, ceilingHeight, length);
 
     // Back wall
     const wallBack = new THREE.Mesh(vWallGeoX, wallMat);
-    wallBack.position.set(0, height / 2, -length / 2);
+    wallBack.position.set(0, ceilingHeight / 2, -length / 2);
     scene.add(wallBack);
 
     // Front wall
     const wallFront = new THREE.Mesh(vWallGeoX, wallMat);
-    wallFront.position.set(0, height / 2, length / 2);
+    wallFront.position.set(0, ceilingHeight / 2, length / 2);
     scene.add(wallFront);
 
     // Left wall
     const wallLeft = new THREE.Mesh(vWallGeoZ, wallMat);
-    wallLeft.position.set(-width / 2, height / 2, 0);
+    wallLeft.position.set(-width / 2, ceilingHeight / 2, 0);
     scene.add(wallLeft);
 
     // Right wall
     const wallRight = new THREE.Mesh(vWallGeoZ, wallMat);
-    wallRight.position.set(width / 2, height / 2, 0);
+    wallRight.position.set(width / 2, ceilingHeight / 2, 0);
     scene.add(wallRight);
 
     // Animation Render Loop
@@ -328,24 +345,46 @@ export default function Illumination3DModel({
         containerRef.current.innerHTML = '';
       }
     };
-  }, [width, length, height, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, canvasTextureElement]);
+  }, [width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, canvasTextureElement, targetLux]);
 
   return (
     <div className="w-full h-[450px] mt-8 bg-slate-950 rounded-xl overflow-hidden relative border-2 border-slate-800 shadow-inner">
-      <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-80 flex flex-col gap-1">
-        <span>3D Lighting Visualizer</span>
-        <span className="text-[10px] font-medium text-slate-400 normal-case">Drag to rotate, scroll to zoom</span>
+      <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-80 flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:w-[calc(100%-32px)]">
+        <div className="flex flex-col gap-1">
+          <span>3D Lighting Visualizer</span>
+          <span className="text-[10px] font-medium text-slate-400 normal-case">Drag to rotate, scroll to zoom</span>
+        </div>
+        
+        {/* LPD Compliance Status Indicator */}
+        <div className="mt-2 md:mt-0 right-0">
+          {lpdValue <= lpdLimit * 0.9 ? (
+            <div className="bg-emerald-900/80 border border-emerald-500/50 px-3 py-1.5 rounded-lg text-emerald-300 text-[10px] uppercase backdrop-blur-sm flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+              <span>Status: Passed (LPD {lpdValue.toFixed(1)}W/m²)</span>
+            </div>
+          ) : lpdValue <= lpdLimit ? (
+            <div className="bg-amber-900/80 border border-amber-500/50 px-3 py-1.5 rounded-lg text-amber-300 text-[10px] uppercase backdrop-blur-sm flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
+              <span>Needs Adjustment (LPD {lpdValue.toFixed(1)}W/m²)</span>
+            </div>
+          ) : (
+            <div className="bg-red-900/80 border border-red-500/50 px-3 py-1.5 rounded-lg text-red-300 text-[10px] uppercase backdrop-blur-sm flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+              <span>Critical Overload (LPD {lpdValue.toFixed(1)}W/m²)</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {showFalseColor && (
         <div className="absolute right-4 bottom-4 bg-slate-900/95 border border-slate-700/80 p-3.5 rounded-xl text-white z-10 text-[10px] space-y-2 backdrop-blur-md shadow-lg max-w-[220px]">
           <div className="font-extrabold border-b border-white/10 pb-1 mb-1 uppercase tracking-widest text-[#fbbf24] text-[9px]">False Color Lux Index</div>
-          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ffffff] border border-slate-700 shrink-0"></div><span className="font-medium text-slate-200">&gt; 750 Lux (Overlit / Bright)</span></div>
-          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ff0000] shrink-0"></div><span className="font-medium text-slate-200">500 - 750 Lux (Task Area / High)</span></div>
-          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ffff00] shrink-0"></div><span className="font-medium text-slate-200">300 - 500 Lux (Standard Office)</span></div>
-          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#00ff00] shrink-0"></div><span className="font-medium text-slate-200">200 - 300 Lux (Ambient / Warm)</span></div>
-          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#00ffff] shrink-0"></div><span className="font-medium text-slate-200">100 - 200 Lux (Low / Hallways)</span></div>
-          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#0000a0] shrink-0"></div><span className="font-medium text-slate-200">&lt; 100 Lux (Min / Shadows)</span></div>
+          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ffffff] border border-slate-700 shrink-0"></div><span className="font-medium text-slate-200">&gt; {Math.round(targetLux * 2.5)} Lux (Overlit / Bright)</span></div>
+          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ff0000] shrink-0"></div><span className="font-medium text-slate-200">{Math.round(targetLux * 1.67)} - {Math.round(targetLux * 2.5)} Lux (Task Area / High)</span></div>
+          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ffff00] shrink-0"></div><span className="font-medium text-slate-200">{Math.round(targetLux * 1.0)} - {Math.round(targetLux * 1.67)} Lux (Standard Target)</span></div>
+          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#00ff00] shrink-0"></div><span className="font-medium text-slate-200">{Math.round(targetLux * 0.67)} - {Math.round(targetLux * 1.0)} Lux (Ambient / Warm)</span></div>
+          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#00ffff] shrink-0"></div><span className="font-medium text-slate-200">{Math.round(targetLux * 0.33)} - {Math.round(targetLux * 0.67)} Lux (Low / Hallways)</span></div>
+          <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#0000a0] shrink-0"></div><span className="font-medium text-slate-200">&lt; {Math.round(targetLux * 0.33)} Lux (Min / Shadows)</span></div>
         </div>
       )}
 

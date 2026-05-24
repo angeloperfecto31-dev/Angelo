@@ -55,14 +55,29 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   // Primary calculations
   const calculation = useMemo(() => {
     const area = params.inputMode === 'area' ? params.userArea : params.roomWidth * params.roomLength;
+    
+    // Calculate Room Index to adjust CU dynamically based on ceiling height
+    let effectiveCU = params.coefficientOfUtilization;
+    if (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0) {
+      const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
+      const roomIndex = (params.roomWidth * params.roomLength) / (hrc * (params.roomWidth + params.roomLength));
+      
+      // Standardize the User's CU entry against a typical Room Index of 2.0
+      // This scaling ensures that higher ceilings (lower Room Index) reduce CU, requiring more fixtures.
+      const riFactor = roomIndex / (roomIndex + 0.5);
+      const baselineRiFactor = 2.0 / 2.5; // RI of 2.0
+      effectiveCU = Math.min(0.95, Math.max(0.1, params.coefficientOfUtilization * (riFactor / baselineRiFactor)));
+    }
+
     // Basic Lumen Formula: N = (E * A) / (F * CU * MF)
-    const totalLumensRequired = (params.targetLux * area) / (params.coefficientOfUtilization * params.maintenanceFactor);
+    const totalLumensRequired = (params.targetLux * area) / (effectiveCU * params.maintenanceFactor);
     const fixturesNeeded = Math.ceil(totalLumensRequired / params.lumensPerFixture);
 
     return {
       area: area.toFixed(2),
       fixtures: fixturesNeeded,
-      totalLumens: Math.round(totalLumensRequired)
+      totalLumens: Math.round(totalLumensRequired),
+      effectiveCU: Number(effectiveCU.toFixed(2))
     };
   }, [params]);
 
@@ -605,12 +620,17 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                     width={params.roomWidth} 
                     length={params.roomLength} 
                     height={mountingHeight} 
+                    ceilingHeight={ceilingHeight}
                     fixtures={calculation.fixtures} 
                     lumens={params.lumensPerFixture} 
                     showFalseColor={showFalseColor}
                     enableDaylight={enableDaylight}
                     windowArea={windowArea}
                     skyCondition={skyCondition}
+                    isLpdCompliant={energyAudit.passLPD}
+                    lpdValue={energyAudit.lpd}
+                    lpdLimit={lpdLimitInfo.limit}
+                    targetLux={params.targetLux}
                   />
                 ) : (
                   <div className="w-full h-[320px] bg-slate-100/80 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center p-6 mt-8">
