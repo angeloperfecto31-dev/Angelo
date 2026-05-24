@@ -386,13 +386,6 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     if (!mcbP) {
       if (panel.system.includes('3PH')) {
         mcbP = 3;
-        if (panel.connectionType === 'Line-to-Line') {
-          // In L-L 3-Phase, 1-phase loads need 2 poles.
-          if (c.loadType === LoadType.LIGHTING || c.loadType === LoadType.CONVENIENCE_OUTLET) mcbP = 2;
-        } else if (panel.connectionType === 'Line-to-Neutral') {
-          // In L-N 3-Phase, 1-phase loads need 1 pole
-          if (c.loadType === LoadType.LIGHTING || c.loadType === LoadType.CONVENIENCE_OUTLET) mcbP = 1;
-        }
       } else {
         mcbP = 1;
         if (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR) {
@@ -653,7 +646,17 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">System Voltage</label>
-            <select value={panel.system} onChange={e => setPanel({...panel, system: e.target.value as any, voltage: SYSTEM_VOLTAGES[e.target.value as keyof typeof SYSTEM_VOLTAGES]})} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+            <select 
+              value={panel.system} 
+              onChange={e => {
+                const newSystem = e.target.value as any;
+                setPanel({...panel, system: newSystem, voltage: SYSTEM_VOLTAGES[newSystem as keyof typeof SYSTEM_VOLTAGES]});
+                if (newSystem === '230V, 3PH, 3W' || newSystem === '400V/230V, 3PH, 4W') {
+                  setCircuits(circuits.map(c => ({...c, mcbP: 3})));
+                }
+              }} 
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm"
+            >
               {Object.keys(SYSTEM_VOLTAGES).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
