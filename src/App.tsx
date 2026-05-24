@@ -617,7 +617,7 @@ export default function App() {
         }
       }
 
-      await exportToWord(panel, circuits, subPanels, vdCalculations, images);
+      await exportToWord(panel, circuits, subPanels, vdCalculations, illumParams, images);
     } catch (e) {
       console.error("Error generating Word doc:", e);
       let errorMsg = "Unknown error";

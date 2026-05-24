@@ -7,6 +7,7 @@ export const exportToWord = async (
   circuits: Circuit[],
   subPanels: { id: string, panel: PanelConfig, circuits: Circuit[] }[],
   vdCalculations: import('../types').VoltageDropCalculation[],
+  illumParams: import('../types').IlluminationParams,
   images?: any
 ) => {
   const docChildren: any[] = [];
@@ -416,39 +417,118 @@ export const exportToWord = async (
   // === 4. ILLUMINATION CALCULATION ===
   docChildren.push(createHeader(`4. Illumination Calculation (Lumen Method)`));
   
-  const roomArea = 20; // 4x5m standard typical room assumed for example
-  const targetLux = RECOMMENDED_LUX_LEVELS['General Office'] || 300;
-  const lumensPerFix = 1800; // standard equivalent LED tube
-  const cu = 0.6;
-  const mf = 0.8;
+  if (illumParams?.savedRooms && illumParams.savedRooms.length > 0) {
+    docChildren.push(createParagraph(`The table below lists the illumination calculations for the selected rooms based on the required target lux from the Philippine Electrical Code (PEC) & DOLE Guidelines.`));
+    docChildren.push(new Paragraph({ spacing: { after: 200 } }));
+    
+    // Create Table Rows
+    const tableRows: TableRow[] = [];
+    const createTableCell = (text: string, isHeader = false) => new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text, bold: isHeader, font: "Segoe UI", size: 18 })], alignment: AlignmentType.CENTER })],
+      verticalAlign: VerticalAlign.CENTER,
+      margins: { top: 80, bottom: 80, left: 80, right: 80 }
+    });
+
+    tableRows.push(new TableRow({
+      children: [
+        createTableCell('Room / Space', true),
+        createTableCell('Target Lux', true),
+        createTableCell('Area (m²)', true),
+        createTableCell('Fixture Type', true),
+        createTableCell('Fixtures Required', true),
+        createTableCell('Total Lumens', true),
+        createTableCell('Est. Wattage (VA)', true),
+      ]
+    }));
+
+    illumParams.savedRooms.forEach(room => {
+      tableRows.push(new TableRow({
+        children: [
+          createTableCell(String(room.roomName)),
+          createTableCell(String(room.targetLux)),
+          createTableCell(String(room.area)),
+          createTableCell(String(room.fixtureLightType || 'Not specified')),
+          createTableCell(String(room.fixturesCount)),
+          createTableCell(String(room.totalLumens)),
+          createTableCell(String(room.totalWattage)),
+        ]
+      }));
+    });
+
+    docChildren.push(new Table({
+      rows: tableRows,
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: { style: BorderStyle.SINGLE, size: 1, color: "cbd5e1" },
+        bottom: { style: BorderStyle.SINGLE, size: 1, color: "cbd5e1" },
+        left: { style: BorderStyle.SINGLE, size: 1, color: "cbd5e1" },
+        right: { style: BorderStyle.SINGLE, size: 1, color: "cbd5e1" },
+        insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "cbd5e1" },
+        insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "cbd5e1" },
+      }
+    }));
+    docChildren.push(new Paragraph({ spacing: { after: 200 } }));
+
+    // Lumen Method Formulas
+    docChildren.push(createSubHeader(`Lumen Method Calculation Formulas:`));
+    docChildren.push(
+      createParagraph(`1. Total Required Lumens = (Target Lux × Room Area) / (Coefficient of Utilization × Maintenance Factor)`),
+      createParagraph(`2. Quantity of Fixtures Required = Total Required Lumens / Lumens per Fixture`)
+    );
+
+    docChildren.push(new Paragraph({ spacing: { after: 400 } }));
+  }
+
+  // Active Parameters Section
+  const roomArea = illumParams.inputMode === 'area' ? illumParams.userArea : (illumParams.roomWidth * illumParams.roomLength);
+  const targetLux = illumParams.targetLux;
+  const lumensPerFix = illumParams.lumensPerFixture;
+  const cu = illumParams.coefficientOfUtilization;
+  const mf = illumParams.maintenanceFactor;
   const expectedLumens = (targetLux * roomArea) / (cu * mf);
   const qty = Math.ceil(expectedLumens / lumensPerFix);
+  const workingPlaneHeight = illumParams.workingPlaneHeight || 0.75;
 
+  docChildren.push(createSubHeader(`Current Room Lighting Analysis`));
   docChildren.push(
-    createParagraph(`This section details the lumen method calculation used for general area lighting sizing.`),
-    createParagraph(`Typical Space Area: ${roomArea} m²`),
-    createParagraph(`Target Illuminance: ${targetLux} Lux`),
-    createParagraph(`Lumens per Fixture: ${lumensPerFix}`),
-    createParagraph(`Coefficient of Utilization (CU): ${cu}`),
-    createParagraph(`Maintenance Factor (MF): ${mf}`),
+    createParagraph(`Detailed analysis for the active room or space geometry.`),
+    createParagraph(`• Area: ${roomArea} m²`),
+    createParagraph(`• Target Illuminance: ${targetLux} Lux`),
+    createParagraph(`• Lumens per Fixture: ${lumensPerFix}`),
+    createParagraph(`• Coefficient of Utilization (CU): ${cu}`),
+    createParagraph(`• Maintenance Factor (MF): ${mf}`),
     new Paragraph({ spacing: { after: 200 } }),
-    createSubHeader(`Formulas & Results:`),
-    createParagraph(`Total Required Lumens = (Lux × Area) / (CU × MF)`),
-    createParagraph(`Total Required Lumens = (${targetLux} × ${roomArea}) / (${cu} × ${mf}) = ${Math.round(expectedLumens)} Lumens`),
-    createParagraph(`Quantity of Fixtures Required = Total Required Lumens / Lumens per Fixture`),
-    createParagraph(`Quantity = ${Math.round(expectedLumens)} / ${lumensPerFix} = ${qty} Fixtures`, true),
-    new Paragraph({ spacing: { after: 120 } }),
+    createParagraph(`Calculated Fixture Quantity: ${qty} Fixtures`, true)
+  );
+
+  docChildren.push(createSubHeader(`Uniformity Grid & Point-by-Point Illumination`));
+  docChildren.push(createParagraph(`The point-by-point calculation estimates illuminance levels at multiple grid points across the working plane (+${workingPlaneHeight}m). Uniformity represents the ratio of minimum lux to average lux (U0) to ensure the room does not have major shadow areas.`));
+
+  if (images?.illumination) {
+    docChildren.push(createSubHeader(`3D View & Lighting Diagrams`));
+    docChildren.push(createParagraph(`Visual representation of the lighting scene, utilizing False Color index where necessary to demonstrate luminance contours.`));
+    await addImageToDoc(images.illumination);
+  }
+
+  docChildren.push(createSubHeader(`Daylight Analysis and Sensor Integration`));
+  docChildren.push(createParagraph(`Natural light integration assesses the potential daylight factor falling on the working plane. By integrating daylight harvesting sensors (photocells), ambient artificial light can be smoothly dimmed whenever natural sunlight provides sufficient lux. This provides both energy savings and circadian rhythm benefits.`));
+
+  docChildren.push(createSubHeader(`Glare Assessment (UGR)`));
+  docChildren.push(createParagraph(`Unified Glare Rating (UGR) predicts visual comfort and limits discomfort glare from luminaires. Values typical range below 19 for general office tasks. Appropriate fixture shielding, diffusers, or adjustments in mounting height are recommended if UGR exceeds acceptable limits.`));
+
+  docChildren.push(createSubHeader(`Energy & Lighting Power Density (LPD) Audit`));
+  let lpd = (qty * 36) / roomArea; // Estimated 36W fixture if not specified
+  docChildren.push(createParagraph(`Lighting Power Density (LPD) is the total installed lighting wattage per unit area (W/m² or W/ft²). ASHRAE 90.1 standard generally limits generic office spaces to around 6.0 - 9.0 W/m² depending on task precision. Keeping within boundaries minimizes energy waste while respecting illumination requirements.`));
+
+  docChildren.push(new Paragraph({ spacing: { after: 120 } }));
+  docChildren.push(
     new Paragraph({
       children: [new TextRun({ text: "PEC 2017 & Visual Safety Compliance Standards:", font: "Segoe UI", size: 22, color: "1E3A8A", bold: true })],
       spacing: { before: 200, after: 100 }
     }),
     createParagraph("• PEC Section 2.20.2.3 (General Lighting Loads by Occupancy): Outlines baseline unit power densities (VA per m²) which act as safety requirements for sizing lighting feeder loads during design building phases."),
-    createParagraph("• PEC Part 2 & DOLE Rule 1075 (Environmental Safety - Illumination): Recommends average lighting intensities (Lux) for typical work spaces, promoting occupational health and safety standards by protecting laborers against eye strains and industrial accidents."),
+    createParagraph("• PEC Part 2 & DOLE Rule 1075 (Environmental Safety - Illumination): Recommends average lighting intensities (Lux) for typical work spaces, promoting occupational health and safety standards by protecting laborers against eye strains and industrial accidents.")
   );
-  if (images?.illumination) {
-    docChildren.push(createSubHeader(`Illumination Calculation Diagram`));
-    await addImageToDoc(images.illumination);
-  }
 
   if (images?.floorPlan && Array.isArray(images.floorPlan) && images.floorPlan.length > 0) {
     docChildren.push(createHeader(`5. Electrical Floor Plan`, true));
