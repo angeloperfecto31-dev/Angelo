@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -37,9 +37,60 @@ export default function Illumination3DModel({
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Debounce WebGL recreation & 2D heatmap texture generation to prevent lag during fast typing
+  const [debouncedParams, setDebouncedParams] = useState({
+    width,
+    length,
+    height,
+    ceilingHeight,
+    fixtures,
+    lumens,
+    showFalseColor,
+    enableDaylight,
+    windowArea,
+    skyCondition,
+    targetLux
+  });
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedParams({
+        width,
+        length,
+        height,
+        ceilingHeight,
+        fixtures,
+        lumens,
+        showFalseColor,
+        enableDaylight,
+        windowArea,
+        skyCondition,
+        targetLux
+      });
+    }, 280); // 280ms provides optimal blend between live feel and high-performance typing fluidity
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, targetLux]);
+
+  const {
+    width: dWidth,
+    length: dLength,
+    height: dHeight,
+    ceilingHeight: dCeilingHeight,
+    fixtures: dFixtures,
+    lumens: dLumens,
+    showFalseColor: dShowFalseColor,
+    enableDaylight: dEnableDaylight,
+    windowArea: dWindowArea,
+    skyCondition: dSkyCondition,
+    targetLux: dTargetLux
+  } = debouncedParams;
+
   // Generate false color heat-map texture dynamically using a 2D canvas
   const canvasTextureElement = useMemo(() => {
-    if (!showFalseColor) return null;
+    if (!dShowFalseColor) return null;
     
     const canvas = document.createElement('canvas');
     canvas.width = 64;
@@ -48,58 +99,58 @@ export default function Illumination3DModel({
     if (!ctx) return null;
 
     // find fixture positions
-    let cols = Math.ceil(Math.sqrt(fixtures));
-    let rows = Math.ceil(fixtures / cols);
-    const ratio = width / Math.max(0.1, length);
-    cols = Math.max(1, Math.round(Math.sqrt(fixtures * ratio)));
-    rows = Math.ceil(fixtures / cols);
+    let cols = Math.ceil(Math.sqrt(dFixtures));
+    let rows = Math.ceil(dFixtures / cols);
+    const ratio = dWidth / Math.max(0.1, dLength);
+    cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
+    rows = Math.ceil(dFixtures / cols);
 
     const fixturePositions: {x: number; z: number}[] = [];
-    if (fixtures > 0 && cols > 0 && rows > 0) {
-      const stepX = width / cols;
-      const stepZ = length / rows;
-      for (let i = 0; i < fixtures; i++) {
+    if (dFixtures > 0 && cols > 0 && rows > 0) {
+      const stepX = dWidth / cols;
+      const stepZ = dLength / rows;
+      for (let i = 0; i < dFixtures; i++) {
         const r = Math.floor(i / cols);
         const c = i % cols;
         fixturePositions.push({
-          x: -width / 2 + stepX / 2 + c * stepX,
-          z: -length / 2 + stepZ / 2 + r * stepZ
+          x: -dWidth / 2 + stepX / 2 + c * stepX,
+          z: -dLength / 2 + stepZ / 2 + r * stepZ
         });
       }
     }
 
-    const skyIllum = skyCondition === 'clear' ? 35000 : skyCondition === 'partly' ? 18000 : 7000;
+    const skyIllum = dSkyCondition === 'clear' ? 35000 : dSkyCondition === 'partly' ? 18000 : 7000;
 
     for (let cZ = 0; cZ < 64; cZ++) {
       for (let cX = 0; cX < 64; cX++) {
         // Map 0-63 grid to actual coordinates from -width/2 to width/2, -length/2 to length/2
-        const realX = -width / 2 + (cX / 63) * width;
-        const realZ = -length / 2 + (cZ / 63) * length;
+        const realX = -dWidth / 2 + (cX / 63) * dWidth;
+        const realZ = -dLength / 2 + (cZ / 63) * dLength;
 
         let totalLux = 0;
         fixturePositions.forEach(pos => {
-          const distSq = (realX - pos.x)**2 + (realZ - pos.z)**2 + height**2;
-          const intensity = lumens / (2 * Math.PI); // forward light distribution scale
-          const ptLux = (intensity * height) / Math.pow(distSq, 1.5);
+          const distSq = (realX - pos.x)**2 + (realZ - pos.z)**2 + dHeight**2;
+          const intensity = dLumens / (2 * Math.PI); // forward light distribution scale
+          const ptLux = (intensity * dHeight) / Math.pow(distSq, 1.5);
           totalLux += ptLux;
         });
 
         // Add daylight factor details (from North y=negative direction)
-        if (enableDaylight) {
+        if (dEnableDaylight) {
           // North is negative Z in three.js: e.g. -length/2
-          const distFromNorth = realZ - (-length/2);
-          const dfAtWall = 0.08 * (windowArea / (width * length)) * 100;
+          const distFromNorth = realZ - (-dLength/2);
+          const dfAtWall = 0.08 * (dWindowArea / (dWidth * dLength)) * 100;
           const locDF = dfAtWall * Math.exp(-0.5 * Math.max(0, distFromNorth));
           const daylightPointLux = locDF * skyIllum / 100;
           totalLux += daylightPointLux;
         }
 
         // Define dynamic thresholds based on targetLux
-        const t1 = targetLux * 0.33;
-        const t2 = targetLux * 0.67;
-        const t3 = targetLux * 1.0;
-        const t4 = targetLux * 1.67;
-        const t5 = targetLux * 2.5;
+        const t1 = dTargetLux * 0.33;
+        const t2 = dTargetLux * 0.67;
+        const t3 = dTargetLux * 1.0;
+        const t4 = dTargetLux * 1.67;
+        const t5 = dTargetLux * 2.5;
 
         // Color mapper representing relative lux values
         let rgbColor = 'rgb(0,0,50)';
@@ -129,7 +180,7 @@ export default function Illumination3DModel({
     }
 
     return canvas;
-  }, [width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, targetLux]);
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -146,7 +197,7 @@ export default function Illumination3DModel({
 
     // Setup camera
     const camera = new THREE.PerspectiveCamera(45, containerWidth / containerHeight, 0.1, 1000);
-    camera.position.set(width * 1.5, ceilingHeight * 2.5, length * 1.5);
+    camera.position.set(dWidth * 1.5, dCeilingHeight * 2.5, dLength * 1.5);
 
     // Setup renderer with preserveDrawingBuffer enabled for image exports
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
@@ -162,28 +213,28 @@ export default function Illumination3DModel({
     controls.minPolarAngle = 0.05;
 
     // Lighting config
-    const ambientIntensity = showFalseColor ? 0.05 : 0.2;
+    const ambientIntensity = dShowFalseColor ? 0.05 : 0.2;
     const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity);
     scene.add(ambientLight);
 
     // Fixture Positions Grid derivation
-    let cols = Math.ceil(Math.sqrt(fixtures));
-    let rows = Math.ceil(fixtures / cols);
-    const ratio = width / Math.max(0.1, length);
-    cols = Math.max(1, Math.round(Math.sqrt(fixtures * ratio)));
-    rows = Math.ceil(fixtures / cols);
+    let cols = Math.ceil(Math.sqrt(dFixtures));
+    let rows = Math.ceil(dFixtures / cols);
+    const ratio = dWidth / Math.max(0.1, dLength);
+    cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
+    rows = Math.ceil(dFixtures / cols);
 
     const fixturePositions: [number, number, number][] = [];
-    if (fixtures > 0 && cols > 0 && rows > 0) {
-      const stepX = width / cols;
-      const stepZ = length / rows;
+    if (dFixtures > 0 && cols > 0 && rows > 0) {
+      const stepX = dWidth / cols;
+      const stepZ = dLength / rows;
 
-      for (let i = 0; i < fixtures; i++) {
+      for (let i = 0; i < dFixtures; i++) {
         const r = Math.floor(i / cols);
         const c = i % cols;
-        const x = -width / 2 + stepX / 2 + c * stepX;
-        const z = -length / 2 + stepZ / 2 + r * stepZ;
-        fixturePositions.push([x, height, z]);
+        const x = -dWidth / 2 + stepX / 2 + c * stepX;
+        const z = -dLength / 2 + stepZ / 2 + r * stepZ;
+        fixturePositions.push([x, dHeight, z]);
       }
     }
 
@@ -204,45 +255,45 @@ export default function Illumination3DModel({
     // Aggregate point lights (up to 16) to prevent WebGL driver crashes
     const MAX_LIGHTS = 16;
     let lightPositions: [number, number, number][] = [];
-    if (fixtures <= MAX_LIGHTS) {
+    if (dFixtures <= MAX_LIGHTS) {
       lightPositions = fixturePositions;
     } else {
       const count = MAX_LIGHTS;
       let lCols = Math.ceil(Math.sqrt(count));
       let lRows = Math.ceil(count / lCols);
-      const lRatio = width / Math.max(0.1, length);
+      const lRatio = dWidth / Math.max(0.1, dLength);
       lCols = Math.max(1, Math.round(Math.sqrt(count * lRatio)));
       lRows = Math.ceil(count / lCols);
 
       if (count > 0 && lCols > 0 && lRows > 0) {
-        const stepX = width / lCols;
-        const stepZ = length / lRows;
+        const stepX = dWidth / lCols;
+        const stepZ = dLength / lRows;
         for (let i = 0; i < count; i++) {
           const r = Math.floor(i / lCols);
           const c = i % lCols;
-          const x = -width / 2 + stepX / 2 + c * stepX;
-          const z = -length / 2 + stepZ / 2 + r * stepZ;
-          lightPositions.push([x, height, z]);
+          const x = -dWidth / 2 + stepX / 2 + c * stepX;
+          const z = -dLength / 2 + stepZ / 2 + r * stepZ;
+          lightPositions.push([x, dHeight, z]);
         }
       }
     }
 
-    const pointLightIntensity = Math.min(lumens, 10000) / 100;
-    const intensityMultiplier = fixtures > MAX_LIGHTS ? fixtures / MAX_LIGHTS : 1;
+    const pointLightIntensity = Math.min(dLumens, 10000) / 100;
+    const intensityMultiplier = dFixtures > MAX_LIGHTS ? dFixtures / MAX_LIGHTS : 1;
     const finalIntensity = pointLightIntensity * intensityMultiplier;
-    const lightIntensity = showFalseColor ? finalIntensity * 0.15 : finalIntensity;
+    const lightIntensity = dShowFalseColor ? finalIntensity * 0.15 : finalIntensity;
 
     lightPositions.forEach(pos => {
-      const pointLight = new THREE.PointLight(0xfffff0, lightIntensity, height * 3.5, 1.8);
+      const pointLight = new THREE.PointLight(0xfffff0, lightIntensity, dHeight * 3.5, 1.8);
       pointLight.position.set(pos[0], pos[1], pos[2]);
       scene.add(pointLight);
     });
 
     // Floor Base plane
-    const floorGeo = new THREE.PlaneGeometry(width, length);
+    const floorGeo = new THREE.PlaneGeometry(dWidth, dLength);
     let floorMat;
 
-    if (showFalseColor && canvasTextureElement) {
+    if (dShowFalseColor && canvasTextureElement) {
       const texture = new THREE.CanvasTexture(canvasTextureElement);
       floorMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
     } else {
@@ -259,9 +310,9 @@ export default function Illumination3DModel({
     scene.add(floorMesh);
 
     // Render Windows geometry if daylight is configured
-    if (enableDaylight) {
-      const winW = Math.min(width * 0.7, Math.sqrt(windowArea) * 1.5);
-      const winH = Math.min(ceilingHeight * 0.6, Math.sqrt(windowArea));
+    if (dEnableDaylight) {
+      const winW = Math.min(dWidth * 0.7, Math.sqrt(dWindowArea) * 1.5);
+      const winH = Math.min(dCeilingHeight * 0.6, Math.sqrt(dWindowArea));
       const winGeo = new THREE.PlaneGeometry(winW, winH);
       const winMat = new THREE.MeshBasicMaterial({ 
         color: 0x38bdf8, 
@@ -270,7 +321,7 @@ export default function Illumination3DModel({
         side: THREE.DoubleSide 
       });
       const winMesh = new THREE.Mesh(winGeo, winMat);
-      winMesh.position.set(0, ceilingHeight / 2, -length / 2 + 0.01);
+      winMesh.position.set(0, dCeilingHeight / 2, -dLength / 2 + 0.01);
       scene.add(winMesh);
     }
 
@@ -281,27 +332,27 @@ export default function Illumination3DModel({
       opacity: 0.12 
     });
 
-    const vWallGeoX = new THREE.BoxGeometry(width, ceilingHeight, 0.04);
-    const vWallGeoZ = new THREE.BoxGeometry(0.04, ceilingHeight, length);
+    const vWallGeoX = new THREE.BoxGeometry(dWidth, dCeilingHeight, 0.04);
+    const vWallGeoZ = new THREE.BoxGeometry(0.04, dCeilingHeight, dLength);
 
     // Back wall
     const wallBack = new THREE.Mesh(vWallGeoX, wallMat);
-    wallBack.position.set(0, ceilingHeight / 2, -length / 2);
+    wallBack.position.set(0, dCeilingHeight / 2, -dLength / 2);
     scene.add(wallBack);
 
     // Front wall
     const wallFront = new THREE.Mesh(vWallGeoX, wallMat);
-    wallFront.position.set(0, ceilingHeight / 2, length / 2);
+    wallFront.position.set(0, dCeilingHeight / 2, dLength / 2);
     scene.add(wallFront);
 
     // Left wall
     const wallLeft = new THREE.Mesh(vWallGeoZ, wallMat);
-    wallLeft.position.set(-width / 2, ceilingHeight / 2, 0);
+    wallLeft.position.set(-dWidth / 2, dCeilingHeight / 2, 0);
     scene.add(wallLeft);
 
     // Right wall
     const wallRight = new THREE.Mesh(vWallGeoZ, wallMat);
-    wallRight.position.set(width / 2, ceilingHeight / 2, 0);
+    wallRight.position.set(dWidth / 2, dCeilingHeight / 2, 0);
     scene.add(wallRight);
 
     // Animation Render Loop
@@ -345,7 +396,7 @@ export default function Illumination3DModel({
         containerRef.current.innerHTML = '';
       }
     };
-  }, [width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, enableDaylight, windowArea, skyCondition, canvasTextureElement, targetLux]);
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux]);
 
   // Compute estimated average lighting intensity (Lux) for HUD indicators
   const estAverageLux = Math.ceil((fixtures * lumens * 0.6) / (width * length || 1));
