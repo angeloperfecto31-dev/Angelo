@@ -62,10 +62,10 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className="w-full h-40 border-2 border-dashed border-slate-300 dark:border-slate-705 rounded-2xl flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-850 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer mb-8"
+        className="w-full h-40 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer mb-8"
       >
         <Upload className="w-10 h-10 text-slate-400 dark:text-slate-500 mb-2" />
-        <p className="text-slate-600 dark:text-slate-350 font-semibold mb-1">Click or drag images here</p>
+        <p className="text-slate-600 dark:text-slate-300 font-semibold mb-1">Click or drag images here</p>
         <p className="text-slate-400 dark:text-slate-500 text-sm">Supports PNG, JPG, JPEG (Multiple allowed)</p>
         <input 
           type="file" 
@@ -91,7 +91,7 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
                 <img src={image} alt={`Floor Plan ${index + 1}`} className="max-w-full h-auto object-contain rounded-xl shadow-sm" />
                 <button 
                   onClick={(e) => { e.stopPropagation(); removeImage(index); }}
-                  className="absolute top-4 right-4 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm text-slate-800 dark:text-slate-200 rounded-full shadow hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-405 transition-colors"
+                  className="absolute top-4 right-4 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm text-slate-800 dark:text-slate-200 rounded-full shadow hover:bg-red-50 dark:hover:bg-red-950/50 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                   title="Remove image"
                 >
                   <X className="w-5 h-5" />

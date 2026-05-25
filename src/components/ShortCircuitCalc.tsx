@@ -210,7 +210,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           {circuits && panel && (
             <div className="space-y-1.5 p-4 bg-red-50/50 dark:bg-red-950/25 rounded-xl border border-red-100 dark:border-red-900/40">
               <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase flex items-center gap-1"><Link className="w-3 h-3" /> Connect to Load Schedule</label>
-              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-850 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-900 dark:text-red-200 font-medium font-sans mt-2 shadow-sm focus:outline-none">
+              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-900 dark:text-red-200 font-medium font-sans mt-2 shadow-sm focus:outline-none">
                 <option value="custom" className="dark:bg-slate-900 dark:text-slate-100">Custom Parameters (Disconnected)</option>
                 <option value="auto" className="dark:bg-slate-900 dark:text-slate-100">Auto-Size from {panel.designation} connected load ({(circuits.reduce((sum, c) => sum + c.loadVA, 0) / 1000).toFixed(2)} kVA)</option>
               </select>
@@ -220,19 +220,19 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Utility MVAsc</label>
-                  <input type="number" value={params.utilityShortCircuitMVA} onChange={e => setParams({...params, utilityShortCircuitMVA: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.utilityShortCircuitMVA} onChange={e => setParams({...params, utilityShortCircuitMVA: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Pri Voltage (V)</label>
-                  <input type="number" value={params.primaryVoltage} onChange={e => setParams({...params, primaryVoltage: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.primaryVoltage} onChange={e => setParams({...params, primaryVoltage: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Sec Voltage (V)</label>
-                  <input readOnly={source === 'auto'} type="number" value={params.transformerVoltage} onChange={e => setParams({...params, transformerVoltage: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-850 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`} />
+                  <input readOnly={source === 'auto'} type="number" value={params.transformerVoltage} onChange={e => setParams({...params, transformerVoltage: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Connection</label>
-                  <select value={params.transformerConnection} onChange={e => setParams({...params, transformerConnection: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                  <select value={params.transformerConnection} onChange={e => setParams({...params, transformerConnection: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
                      <option value="Delta-Wye" className="dark:bg-slate-900 dark:text-slate-100">Delta-Wye</option>
                      <option value="Wye-Wye" className="dark:bg-slate-900 dark:text-slate-100">Wye-Wye</option>
                      <option value="Delta-Delta" className="dark:bg-slate-900 dark:text-slate-100">Delta-Delta</option>
@@ -241,33 +241,33 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Trans (kVA)</label>
-                  <input readOnly={source === 'auto'} type="number" value={params.transformerKVA} onChange={e => setParams({...params, transformerKVA: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-850 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`} />
+                  <input readOnly={source === 'auto'} type="number" value={params.transformerKVA} onChange={e => setParams({...params, transformerKVA: parseFloat(e.target.value)})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Trans (%Z)</label>
-                  <input type="number" value={params.transformerZ} onChange={e => setParams({...params, transformerZ: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.transformerZ} onChange={e => setParams({...params, transformerZ: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Length (m)</label>
-                  <input type="number" value={params.feederLength} onChange={e => setParams({...params, feederLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                  <input type="number" value={params.feederLength} onChange={e => setParams({...params, feederLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                 </div>
                 <div className="space-y-1.5 flex gap-2">
                   <div className="flex-1">
                      <label className="text-xs font-bold text-slate-400 uppercase">Size(mm²)</label>
-                     <select value={params.feederSize} onChange={e => setParams({...params, feederSize: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                     <select value={params.feederSize} onChange={e => setParams({...params, feederSize: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
                         {['2.0', '3.5', '5.5', '8.0', '14', '22', '30', '38', '50', '60', '80', '100', '125', '150', '200', '250', '325', '400', '500'].map(s => <option key={s} value={s} className="dark:bg-slate-900 dark:text-slate-100">{s}</option>)}
                      </select>
                   </div>
                   <div className="flex-1">
                      <label className="text-xs font-bold text-slate-400 uppercase">Type</label>
-                     <select value={params.conductorType} onChange={e => setParams({...params, conductorType: e.target.value as 'Copper' | 'Aluminum'})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                     <select value={params.conductorType} onChange={e => setParams({...params, conductorType: e.target.value as 'Copper' | 'Aluminum'})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
                         <option value="Copper" className="dark:bg-slate-900 dark:text-slate-100">Copper</option>
                         <option value="Aluminum" className="dark:bg-slate-900 dark:text-slate-100">Aluminum</option>
                      </select>
                   </div>
                   <div className="w-16">
                      <label className="text-xs font-bold text-slate-400 uppercase">Runs</label>
-                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-855 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-955 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                   </div>
                 </div>
           </div>
@@ -645,7 +645,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   className="w-44 border border-orange-200 bg-orange-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
                   <div className="select-none pointer-events-none text-[9px]">
-                    <div className="font-bold text-amber-805 uppercase tracking-widest text-[8px] mb-0.5">Feeder Impedance</div>
+                    <div className="font-bold text-amber-800 uppercase tracking-widest text-[8px] mb-0.5">Feeder Impedance</div>
                     <div className="text-slate-500 font-mono text-[8.5px]">R={calculation.feederR} Ω | X={calculation.feederX} Ω</div>
                     <div className="text-slate-500 mt-0.5">Z_feeder (pu):</div>
                     <div className="font-mono font-bold text-amber-800 text-[10px]">{calculation.zFeederpu} pu</div>
@@ -680,8 +680,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   <div className="select-none pointer-events-none text-[9px]">
                     <div className="font-bold text-red-800 uppercase tracking-widest text-[8px] mb-0.5">Impedance Total</div>
                     <div className="text-slate-500 text-[8px] leading-tight">Total Z = {(parseFloat(calculation.zUtilitypu) + parseFloat(calculation.zTranspu) + parseFloat(calculation.zFeederpu)).toFixed(5)} pu</div>
-                    <div className="text-slate-550 text-[8px]">Multiplier M = {calculation.multiplier}</div>
-                    <div className="mt-1 font-bold text-red-750 text-[10px]">Asym Isc (1.6x): {(parseFloat(calculation.totalFaultM) * 1.6).toFixed(0)} A</div>
+                    <div className="text-slate-500 text-[8px]">Multiplier M = {calculation.multiplier}</div>
+                    <div className="mt-1 font-bold text-red-700 text-[10px]">Asym Isc (1.6x): {(parseFloat(calculation.totalFaultM) * 1.6).toFixed(0)} A</div>
                   </div>
                 </DraggableBox>
 

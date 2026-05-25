@@ -429,8 +429,8 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
            
            {/* Global input mode toggle */}
            <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-             <button title="Dimensions Mode" onClick={() => setParams({...params, inputMode: 'dimensions'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'dimensions' ? 'bg-white dark:bg-slate-705 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Dimensions</button>
-             <button title="Area Mode" onClick={() => setParams({...params, inputMode: 'area'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'area' ? 'bg-white dark:bg-slate-705 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Total Area</button>
+             <button title="Dimensions Mode" onClick={() => setParams({...params, inputMode: 'dimensions'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'dimensions' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Dimensions</button>
+             <button title="Area Mode" onClick={() => setParams({...params, inputMode: 'area'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'area' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Total Area</button>
            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -438,33 +438,33 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
               <>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Width (m)</label>
-                  <input type="number" step="0.1" value={params.roomWidth} onChange={e => setParams({...params, roomWidth: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                  <input type="number" step="0.1" value={params.roomWidth} onChange={e => setParams({...params, roomWidth: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Length (m)</label>
-                  <input type="number" step="0.1" value={params.roomLength} onChange={e => setParams({...params, roomLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                  <input type="number" step="0.1" value={params.roomLength} onChange={e => setParams({...params, roomLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
                 </div>
               </>
              ) : (
               <div className="space-y-1.5 md:col-span-2">
                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Area (m²)</label>
-                 <input type="number" value={params.userArea} onChange={e => setParams({...params, userArea: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+                  <input type="number" value={params.userArea} onChange={e => setParams({...params, userArea: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
               </div>
              )}
             
             <div className="space-y-1.5">
                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Ceiling Ht (m)</label>
-               <input type="number" step="0.1" value={ceilingHeight} onChange={e => setParams({...params, ceilingHeight: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+               <input type="number" step="0.1" value={ceilingHeight} onChange={e => setParams({...params, ceilingHeight: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
             </div>
             
             <div className="space-y-1.5">
                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Working Plane (m)</label>
-               <input type="number" step="0.05" value={workingPlaneHeight} onChange={e => setParams({...params, workingPlaneHeight: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+               <input type="number" step="0.05" value={workingPlaneHeight} onChange={e => setParams({...params, workingPlaneHeight: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
             </div>
 
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Target Lux Standard</label>
-              <select value={params.targetLux} onChange={e => setParams({...params, targetLux: parseInt(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+              <select value={params.targetLux} onChange={e => setParams({...params, targetLux: parseInt(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
                 {RECOMMENDED_LUX_LEVELS_CATEGORIZED && Object.entries(RECOMMENDED_LUX_LEVELS_CATEGORIZED).map(([category, items]) => (
                   <optgroup key={category} label={category} className="dark:bg-slate-900 dark:text-slate-100">
                     {items.map(item => (
@@ -477,18 +477,18 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Util. Coefficient (CU)</label>
-              <input type="number" min="0.1" max="1.0" step="0.05" value={params.coefficientOfUtilization} onChange={e => setParams({...params, coefficientOfUtilization: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+              <input type="number" min="0.1" max="1.0" step="0.05" value={params.coefficientOfUtilization} onChange={e => setParams({...params, coefficientOfUtilization: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
             </div>
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Maint. Factor (MF)</label>
-              <input type="number" min="0.1" max="1.0" step="0.05" value={params.maintenanceFactor} onChange={e => setParams({...params, maintenanceFactor: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+              <input type="number" min="0.1" max="1.0" step="0.05" value={params.maintenanceFactor} onChange={e => setParams({...params, maintenanceFactor: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
             </div>
         </div>
       </section>
 
       <section id="illumination-diagram" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-8 panel-container">
-        <div className="w-full border-b border-slate-100 dark:border-slate-850 pb-4 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="w-full border-b border-slate-100 dark:border-slate-800 pb-4 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
            <div>
               <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter">Lighting Design Report</h3>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">LUMEN METHOD, GLARE, UNIFORMITY & DAYLIGHT AUDIT</p>
@@ -509,7 +509,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
             {(() => {
               const selectedFixture = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
               return (
-                <div className="flex items-center gap-5 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
+                <div className="flex items-center gap-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
                   <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-750 flex items-center justify-center shrink-0">
                     <Lightbulb className="w-8 h-8 text-indigo-400" />
                   </div>
@@ -540,7 +540,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
           <div className="md:col-span-1 space-y-6">
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Required Target Illuminance</label>
-              <div className="bg-slate-55 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 px-4 py-3 rounded-xl flex items-center justify-between">
+              <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 px-4 py-3 rounded-xl flex items-center justify-between">
                 <div>
                   <span className="text-xs text-slate-500 dark:text-slate-405 font-bold uppercase block">Target Lux</span>
                   <span className="text-lg font-black text-slate-800 dark:text-slate-100">{params.targetLux} Lux</span>
@@ -592,7 +592,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
           </div>
 
           {/* Interactive view main column */}
-          <div className="md:col-span-2 border border-slate-150 rounded-2xl p-6 bg-slate-50/50">
+          <div className="md:col-span-2 border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
 
             {/* TAB 1: 3D Visualization */}
             {activeSubTab === '3d' && (
@@ -679,15 +679,15 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                    </div>
 
                    <div className="mt-8 border-t border-slate-100 pt-5 grid grid-cols-3 gap-3 text-center sm:text-left">
-                     <div className="bg-slate-50 p-2.5 rounded border border-slate-150">
+                     <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                        <span className="text-[9px] font-black text-slate-400 block uppercase">Min Lux</span>
                        <span className="text-lg font-black text-slate-800">{luxGridData.minLux} lx</span>
                      </div>
-                     <div className="bg-slate-50 p-2.5 rounded border border-slate-150">
+                     <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                        <span className="text-[9px] font-black text-slate-400 block uppercase">Max Lux</span>
                        <span className="text-lg font-black text-slate-800">{luxGridData.maxLux} lx</span>
                      </div>
-                     <div className="bg-slate-50 p-2.5 rounded border border-slate-150">
+                     <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                        <span className="text-[9px] font-black text-slate-400 block uppercase">Avg Calculated</span>
                        <span className="text-lg font-black text-indigo-600">{luxGridData.averageLux} lx</span>
                      </div>
@@ -699,14 +699,14 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                    <h5 className="text-xs font-black text-slate-500 uppercase tracking-wider block">Visual Quality & Uniformity metrics</h5>
                    
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div className="bg-white p-4 rounded-xl border border-slate-150 space-y-1">
+                     <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-1">
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-bold text-slate-600 block">Overall Uniformity (U₀)</span>
-                          <span className={`text-xs px-2 py-0.5 rounded font-black ${luxGridData.uniformityU0 >= 0.4 ? 'bg-green-150 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          <span className={`text-xs px-2 py-0.5 rounded font-black ${luxGridData.uniformityU0 >= 0.4 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                             {luxGridData.uniformityU0 >= 0.4 ? 'Pass' : 'Low Uniformity'}
                           </span>
                         </div>
-                        <p className="text-xl font-black text-slate-850">
+                        <p className="text-xl font-black text-slate-800">
                            {luxGridData.uniformityU0} <span className="text-xs text-slate-400 font-medium">U₀ (Target &ge; 0.40)</span>
                         </p>
                         <p className="text-[10px] text-slate-400 leading-normal">
@@ -714,14 +714,14 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                         </p>
                      </div>
 
-                     <div className="bg-white p-4 rounded-xl border border-slate-150 space-y-1">
+                     <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-1">
                         <div className="flex justify-between items-center">
                           <span className="text-xs font-bold text-slate-600 block">Contrast Ratio (U₁)</span>
-                          <span className={`text-xs px-2 py-0.5 rounded font-black ${luxGridData.uniformityU1 >= 0.16 ? 'bg-green-150 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          <span className={`text-xs px-2 py-0.5 rounded font-black ${luxGridData.uniformityU1 >= 0.16 ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                             {luxGridData.uniformityU1 >= 0.16 ? 'Pass' : 'Contrast Alert'}
                           </span>
                         </div>
-                        <p className="text-xl font-black text-slate-850">
+                        <p className="text-xl font-black text-slate-800">
                            {luxGridData.uniformityU1} <span className="text-xs text-slate-400 font-medium">U₁ (Target &ge; 0.16)</span>
                         </p>
                         <p className="text-[10px] text-slate-400 leading-normal">
@@ -753,7 +753,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
                 {enableDaylight ? (
                   <div className="space-y-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white p-4 rounded-xl border border-slate-150">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white p-4 rounded-xl border border-slate-200">
                       <div className="space-y-1.5">
                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Window Area (m²)</label>
                          <input 
@@ -838,8 +838,8 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                    <span className="text-base font-extrabold text-slate-800">Unified Glare Rating (UGR Analysis)</span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-5 items-center bg-white p-5 rounded-xl border border-slate-150 shadow-sm">
-                   <div className="w-24 h-24 rounded-full border-4 border-slate-150 flex flex-col items-center justify-center shrink-0 shadow-inner bg-slate-50 select-none">
+                <div className="flex flex-col sm:flex-row gap-5 items-center bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                   <div className="w-24 h-24 rounded-full border-4 border-slate-200 flex flex-col items-center justify-center shrink-0 shadow-inner bg-slate-50 select-none">
                      <span className="text-slate-400 text-[9px] uppercase font-black">UGR value</span>
                      <span className="text-2xl font-black text-slate-800">{glareAnalysis.value}</span>
                    </div>
@@ -853,12 +853,12 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                    </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-150">
+                <div className="bg-white p-4 rounded-xl border border-slate-200">
                   <h5 className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-1"><Shield className="w-3.5 h-3.5 text-indigo-500" /> Standard Unified Glare Rating (UGR) limits</h5>
                   <div className="overflow-x-auto">
                     <table className="w-full text-[11px] text-slate-600 text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-150 text-slate-400">
+                        <tr className="border-b border-slate-200 text-slate-400">
                           <th className="py-2.5 font-bold uppercase">Space Type</th>
                           <th className="py-2.5 font-bold uppercase text-center">UGR limit</th>
                           <th className="py-2.5 font-bold uppercase text-right">Current conformance</th>
@@ -907,14 +907,14 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* LPD panel */}
-                  <div className="bg-white p-4 rounded-xl border border-slate-150 space-y-1">
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-1">
                      <div className="flex justify-between items-center">
                        <span className="text-xs font-bold text-slate-600 block">Lighting Power Density (LPD)</span>
-                       <span className={`text-[10px] px-2 py-0.5 rounded font-black border ${energyAudit.passLPD ? 'bg-green-55 text-green-700 border-green-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                       <span className={`text-[10px] px-2 py-0.5 rounded font-black border ${energyAudit.passLPD ? 'bg-green-100 text-green-700 border-green-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
                          {energyAudit.passLPD ? 'ASHRAE Compliant' : 'Exceeds limit'}
                        </span>
                      </div>
-                     <p className="text-2xl font-black text-slate-850">
+                     <p className="text-2xl font-black text-slate-800">
                         {energyAudit.lpd} <span className="text-xs font-medium text-slate-400">W/m²</span>
                      </p>
                      <p className="text-[9px] text-slate-400 leading-normal" title={lpdLimitInfo.description}>
@@ -923,7 +923,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                   </div>
 
                   {/* Operational Settings panel */}
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-150 flex flex-col justify-between">
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Operating Parameters</span>
                      <div className="grid grid-cols-2 gap-2 mt-2">
                        <div className="space-y-1">
@@ -938,18 +938,18 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                   </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-150 space-y-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-4">
                   <h4 className="text-xs font-black text-slate-700 flex items-center gap-1 border-b border-slate-100 pb-2">
                      <DollarSign className="w-4 h-4 text-emerald-500" />
                      Annual Energy Consumption & Financing Projection
                   </h4>
 
                   <div className="grid grid-cols-3 gap-3 text-center sm:text-left">
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-150">
+                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                       <span className="text-[9px] font-black text-slate-400 block uppercase">Standard usage</span>
                       <span className="text-base font-black text-slate-700">{energyAudit.annualKWhStandard} kWh</span>
                     </div>
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-150">
+                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200">
                       <span className="text-[9px] font-black text-slate-400 block uppercase">Standard Cost</span>
                       <span className="text-base font-black text-slate-700">₱{energyAudit.annualCostStandard.toLocaleString()}</span>
                     </div>

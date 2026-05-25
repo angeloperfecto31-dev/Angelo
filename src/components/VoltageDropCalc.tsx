@@ -196,7 +196,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
           {circuits && circuits.length > 0 && (
             <div className="flex-1 space-y-1.5 p-4 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-900/35">
               <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-1"><Link className="w-3 h-3" /> Connect to Load Schedule</label>
-              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-850 border border-indigo-200 dark:border-indigo-900 rounded-lg text-sm text-indigo-900 dark:text-indigo-200 font-medium font-sans mt-2 shadow-sm focus:outline-none">
+              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 rounded-lg text-sm text-indigo-900 dark:text-indigo-200 font-medium font-sans mt-2 shadow-sm focus:outline-none">
                 <option value="custom" className="dark:bg-slate-900 dark:text-slate-100">Custom Circuit</option>
                 <option value="main" className="dark:bg-slate-900 dark:text-slate-100">Main Feeder</option>
                 <optgroup label="Branch Circuits" className="dark:bg-slate-900 dark:text-slate-100">
@@ -210,7 +210,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
 
           <div className="flex-1 space-y-1.5 p-4">
             <label className="text-xs font-bold text-slate-400 uppercase">Length (m)</label>
-            <input type="number" value={newLength} onChange={e => setNewLength(parseFloat(e.target.value))} className="w-full px-3 py-2 bg-white dark:bg-slate-855 border border-slate-300 dark:border-slate-700 shadow-sm shadow-slate-100 dark:shadow-none rounded-lg text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none" />
+            <input type="number" value={newLength} onChange={e => setNewLength(parseFloat(e.target.value))} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm shadow-slate-100 dark:shadow-none rounded-lg text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none" />
           </div>
 
           <div className="flex-none p-4">
@@ -234,7 +234,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
         </div>
 
         {worstCase && (
-          <div className={`mb-8 p-6 rounded-2xl border-2 flex flex-col md:flex-row items-center justify-between transition-colors ${worstCase.result.isCompliant ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/40 text-green-800 dark:text-green-350' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-800 dark:text-red-350'}`}>
+          <div className={`mb-8 p-6 rounded-2xl border-2 flex flex-col md:flex-row items-center justify-between transition-colors ${worstCase.result.isCompliant ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/40 text-green-800 dark:text-green-300' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-800 dark:text-red-300'}`}>
             <div className="flex flex-col mb-4 md:mb-0">
                <span className={`text-[10px] font-black uppercase mb-1 ${worstCase.result.isCompliant ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>Worst Case Scenario</span>
                <h4 className="text-xl font-bold text-slate-900 dark:text-slate-100">{worstCase.name}</h4>
@@ -277,7 +277,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
             </thead>
             <tbody>
               {activeCalculations.map((c) => (
-                <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 transition-colors last:border-0 font-medium">
+                <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors last:border-0 font-medium">
                   <td className="p-3 text-slate-900 dark:text-slate-100 border-r border-slate-50 dark:border-slate-800">
                     <input value={c.name} onChange={e => handleUpdateCalculation(c.id, { name: e.target.value })} className="w-full bg-transparent outline-none border-b border-transparent focus:border-slate-300 text-slate-900 dark:text-slate-100 font-medium" />
                   </td>
@@ -295,7 +295,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
                        readOnly={c.source !== 'custom'}
                        value={c.loadA} 
                        onChange={e => handleUpdateCalculation(c.id, { loadA: parseFloat(e.target.value) || 0 })} 
-                       className={`w-full bg-transparent outline-none px-2 py-1 rounded text-slate-900 dark:text-slate-100 ${c.source === 'custom' ? 'focus:bg-slate-150 hover:bg-slate-150 dark:focus:bg-slate-800 dark:hover:bg-slate-800' : ''}`} 
+                        className={`w-full bg-transparent outline-none px-2 py-1 rounded text-slate-900 dark:text-slate-100 ${c.source === 'custom' ? 'focus:bg-slate-200 hover:bg-slate-200 dark:focus:bg-slate-800 dark:hover:bg-slate-800' : ''}`} 
                     />
                   </td>
                   <td className="p-3">
@@ -366,7 +366,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
                   {/* Feeder/Wire */}
                   <div className="flex-1 h-3 bg-indigo-100 dark:bg-indigo-950/40 relative flex items-center justify-center -mx-4 z-0">
                      <div className="absolute -top-14 text-center w-full flex flex-col items-center gap-1">
-                       <span className="font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-750 shadow-sm">L = {calc.length} m</span>
+                       <span className="font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">L = {calc.length} m</span>
                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{calc.wireSize} mm² THHN/THWN</span>
                        <div className={`text-xs font-black px-2 py-0.5 rounded ${calc.result.isCompliant ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'}`}>
                           VD: {calc.result.vd}V ({calc.result.vdPercentage}%)

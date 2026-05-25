@@ -994,25 +994,25 @@ export default function App() {
                       <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                       <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-sm">Specification Standards Overview (PEC Part 1)</h4>
                     </div>
-                    <span className="text-xs font-bold text-slate-400 dark:text-slate-505 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
+                    <span className="text-xs font-bold text-slate-400 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
                       Feeder: {panel.type || 'Main Panelboard'}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
                       <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">SYSTEM VOLTAGE</span>
                       <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.system}</p>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
                       <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">ENCLOSURE STYLE</span>
                       <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.enclosure || "NEMA 1 Indoors"}</p>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
                       <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">MOUNTING METHOD</span>
                       <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.mounting || "Wall Surface"}</p>
                     </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-850 rounded-2xl p-4 space-y-1">
+                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
                       <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">INTERRUPTING COMPLIANCE</span>
                       <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.icRating || "10kA KAIC"}</p>
                     </div>
@@ -1079,7 +1079,7 @@ export default function App() {
 
                   <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950/40 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
                     <span className="text-indigo-950 dark:text-indigo-200 font-bold">Standard Grounding sizes?</span>
-                    <button onClick={() => alert("Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.")} className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-750 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-705 shadow-sm transition-colors shrink-0">
+                    <button onClick={() => alert("Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.")} className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0">
                       View Table
                     </button>
                   </div>
@@ -1091,23 +1091,23 @@ export default function App() {
               <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
                 <h4 className="font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest text-[10px]">Jump-switch to Active Calculation Terminals:</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
-                  <button onClick={() => setActiveTab("schedule")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
+                  <button onClick={() => setActiveTab("schedule")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Layout className="w-5 h-5 text-indigo-500" />
                     Load Schedule
                   </button>
-                  <button onClick={() => setActiveTab("isc")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
+                  <button onClick={() => setActiveTab("isc")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <ShieldAlert className="w-5 h-5 text-rose-500" />
                     Short Circuit
                   </button>
-                  <button onClick={() => setActiveTab("vd")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
+                  <button onClick={() => setActiveTab("vd")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Ruler className="w-5 h-5 text-emerald-500" />
                     Voltage Drop
                   </button>
-                  <button onClick={() => setActiveTab("lighting")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
+                  <button onClick={() => setActiveTab("lighting")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Lightbulb className="w-5 h-5 text-yellow-500" />
                     Illumination
                   </button>
-                  <button onClick={() => setActiveTab("floor-plan")} className="bg-white dark:bg-slate-850 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
+                  <button onClick={() => setActiveTab("floor-plan")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
                     <Map className="w-5 h-5 text-cyan-500" />
                     Blueprint Preview
                   </button>

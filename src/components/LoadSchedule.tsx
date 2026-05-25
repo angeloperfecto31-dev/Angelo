@@ -642,27 +642,27 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-4">
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Project Name</label>
-            <input value={panel.project} onChange={e => setPanel({...panel, project: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
+            <input value={panel.project} onChange={e => setPanel({...panel, project: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Location</label>
-            <input value={panel.location || ''} onChange={e => setPanel({...panel, location: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Electrical Room" />
+            <input value={panel.location || ''} onChange={e => setPanel({...panel, location: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Electrical Room" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Designation</label>
-            <input value={panel.designation || ''} onChange={e => setPanel({...panel, designation: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. MDP" />
+            <input value={panel.designation || ''} onChange={e => setPanel({...panel, designation: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. MDP" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Panel Type</label>
-            <input value={panel.type || ''} onChange={e => setPanel({...panel, type: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Main Distribution Panel" />
+            <input value={panel.type || ''} onChange={e => setPanel({...panel, type: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Main Distribution Panel" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Mounting</label>
-            <input value={panel.mounting || ''} onChange={e => setPanel({...panel, mounting: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Flush Mounted" />
+            <input value={panel.mounting || ''} onChange={e => setPanel({...panel, mounting: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Flush Mounted" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Enclosure</label>
-            <input value={panel.enclosure || ''} onChange={e => setPanel({...panel, enclosure: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. NEMA 1" />
+            <input value={panel.enclosure || ''} onChange={e => setPanel({...panel, enclosure: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. NEMA 1" />
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">System Voltage</label>
@@ -675,14 +675,14 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   setCircuits(circuits.map(c => ({...c, mcbP: 3})));
                 }
               }} 
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
               {Object.keys(SYSTEM_VOLTAGES).map(s => <option key={s} value={s} className="dark:bg-slate-900 dark:text-slate-100">{s}</option>)}
             </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Connection</label>
-            <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-750 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+            <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
               <option value="Line-to-Line" className="dark:bg-slate-900 dark:text-slate-100">Line-to-Line</option>
               <option value="Line-to-Neutral" className="dark:bg-slate-900 dark:text-slate-100">Line-to-Neutral</option>
             </select>
@@ -711,13 +711,13 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <div className="space-y-1">
               <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter print:text-xl">Panel Board Schedule</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 text-sm font-medium mt-3">
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">PROJECT</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.project}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">LOCATION</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.location}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">DESIGNATION</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.designation}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">SYSTEM VOLTAGE</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.system}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">PANEL TYPE</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.type}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">MOUNTING</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.mounting}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">ENCLOSURE</span><span className="text-slate-900 dark:text-slate-150 uppercase font-bold">{panel.enclosure}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">PROJECT</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.project}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">LOCATION</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.location}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">DESIGNATION</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.designation}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">SYSTEM VOLTAGE</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.system}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">PANEL TYPE</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.type}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">MOUNTING</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.mounting}</span></div>
+                <div className="flex flex-col"><span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">ENCLOSURE</span><span className="text-slate-900 dark:text-slate-200 uppercase font-bold">{panel.enclosure}</span></div>
               </div>
             </div>
           </div>
@@ -785,7 +785,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 const isSpace = (c.description?.toUpperCase() === 'SPACE') || c.loadType === LoadType.SPACE;
                 
                 return (
-                <tr key={c.id} style={{ fontSize: tableFontSize }} className={`${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-850/50' : 'bg-white dark:bg-slate-900'} hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 group print:bg-white border-b border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100`}>
+                <tr key={c.id} style={{ fontSize: tableFontSize }} className={`${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-800/50' : 'bg-white dark:bg-slate-900'} hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 group print:bg-white border-b border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100`}>
                   <td className="px-1 py-3 text-center font-bold text-indigo-600 truncate">{c.circuitNo}</td>
                   <td className="px-2 py-3 overflow-hidden">
                     <div className="flex items-center gap-1 min-w-0">
@@ -834,7 +834,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                         }} className={`w-4 h-4 rounded-sm font-bold shrink-0 ${
                           c.phases.includes(p as Phase) 
                             ? p === 'R' ? 'bg-red-600 text-white' : p === 'Y' ? 'bg-yellow-400 text-black' : 'bg-blue-600 text-white'
-                            : 'bg-slate-100 dark:bg-slate-850 text-slate-400 dark:text-slate-500'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
                         } ${!panel.system.includes('3PH') && p !== 'R' ? 'hidden' : ''}`} style={{ fontSize: tableFontSize - 4 }}>{p}</button>
                       ))}
                     </div>
@@ -852,7 +852,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   )}
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbAT} onChange={e => updateCircuit(c.id, { mcbAT: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-850 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900">
+                    <select value={c.mcbAT} onChange={e => updateCircuit(c.id, { mcbAT: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900">
                       {STANDARD_CB_RATINGS.map(r => <option key={r} value={r} className="dark:bg-slate-900 dark:text-slate-100">{r}</option>)}
                     </select>
                     )}
@@ -860,7 +860,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   <td className="px-1 py-3 text-center font-bold text-slate-400 dark:text-slate-500 truncate">{isSpace ? '-' : c.mcbAF}</td>
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbP} onChange={e => updateCircuit(c.id, { mcbP: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-850 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900">
+                    <select value={c.mcbP} onChange={e => updateCircuit(c.id, { mcbP: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900">
                       {[1, 2, 3].map(p => <option key={p} value={p} className="dark:bg-slate-900 dark:text-slate-100">{p}P</option>)}
                     </select>
                     )}
@@ -868,7 +868,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   <td className="px-1 py-3 text-center text-slate-400 dark:text-slate-500 font-bold truncate">{isSpace ? '-' : c.mcbKAIC}</td>
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbType} onChange={e => updateCircuit(c.id, { mcbType: e.target.value as MCBType })} className="bg-transparent text-center text-slate-850 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900" style={{ fontSize: tableFontSize - 2 }}>
+                    <select value={c.mcbType} onChange={e => updateCircuit(c.id, { mcbType: e.target.value as MCBType })} className="bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900" style={{ fontSize: tableFontSize - 2 }}>
                       {Object.values(MCBType).map(t => <option key={t} value={t} className="dark:bg-slate-900 dark:text-slate-100">{t}</option>)}
                     </select>
                     )}
@@ -977,7 +977,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <ShieldAlert className="w-4 h-4 no-print" />
             Safety Disclaimer
           </div>
-          <p className="text-[10px] text-amber-700 dark:text-amber-350 leading-relaxed font-medium print:text-slate-700">
+          <p className="text-[10px] text-amber-700 dark:text-amber-300 leading-relaxed font-medium print:text-slate-700">
             This document is generated for preliminary design and estimation purposes based on Philippine Electrical Code (PEC) guidelines. 
             Calculations must be reviewed and certified by a <span className="font-bold underline text-amber-900 dark:text-amber-300 print:text-slate-900">Professional Electrical Engineer (PEE)</span> before implementation. 
             The developers are not liable for errors in manual data entry or misinterpretations.

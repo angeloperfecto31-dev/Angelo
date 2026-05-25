@@ -703,7 +703,7 @@ export default function PaymentScreen({
           </div>
 
           {/* Users List */}
-          <div className="bg-white rounded-2xl border border-slate-150 shadow-md divide-y divide-slate-100 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-md divide-y divide-slate-100 overflow-hidden">
             {filteredUsers.length === 0 ? (
               <div className="p-12 text-center bg-white flex flex-col items-center">
                 <Users className="w-12 h-12 text-slate-300 mb-3" />
