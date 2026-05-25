@@ -19,7 +19,8 @@ import {
   Calendar, 
   Clock, 
   AlertTriangle,
-  Trash2
+  Trash2,
+  Plus
 } from 'lucide-react';
 import { IlluminationParams, Circuit, MCBType, LoadType } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
@@ -52,6 +53,25 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   const workingPlaneHeight = params.workingPlaneHeight || 0.75;
   const mountingHeight = params.mountingHeight !== undefined ? params.mountingHeight : ceilingHeight - workingPlaneHeight;
 
+  // Active fixture model derived from selection or manual input
+  const activeFixture = useMemo(() => {
+    if (params.isCustomFixture) {
+      const curL = params.customLumens !== undefined ? params.customLumens : 1500;
+      const curW = params.customWattage !== undefined ? params.customWattage : 15;
+      return {
+        id: 'custom',
+        category: 'Custom',
+        lightType: params.customLightType || 'Custom Fixture',
+        wattageRange: `${curW}W`,
+        lumensRange: `${curL} lm`,
+        brands: 'Manual Intake Spec',
+        wattage: curW,
+        lumens: curL
+      };
+    }
+    return LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+  }, [params.isCustomFixture, params.selectedFixtureId, params.customLightType, params.customWattage, params.customLumens]);
+
   // Primary calculations
   const calculation = useMemo(() => {
     const area = params.inputMode === 'area' ? params.userArea : params.roomWidth * params.roomLength;
@@ -71,7 +91,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
     // Basic Lumen Formula: N = (E * A) / (F * CU * MF)
     const totalLumensRequired = (params.targetLux * area) / (effectiveCU * params.maintenanceFactor);
-    const fixturesNeeded = Math.ceil(totalLumensRequired / params.lumensPerFixture);
+    const fixturesNeeded = Math.ceil(totalLumensRequired / (activeFixture.lumens || 1));
 
     return {
       area: area.toFixed(2),
@@ -79,7 +99,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       totalLumens: Math.round(totalLumensRequired),
       effectiveCU: Number(effectiveCU.toFixed(2))
     };
-  }, [params]);
+  }, [params, activeFixture.lumens]);
 
   // Derived properties from Space Standard Limits (ASHRAE 90.1)
   const lpdLimitInfo = useMemo(() => {
@@ -162,7 +182,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         fixtureCoords.forEach(fixture => {
           const distSq = (x - fixture.x)**2 + (z - fixture.z)**2 + h**2;
           // Apply lighting distribution curve (intensity modeled around 50% lumens emitted into general field)
-          const intensity = (params.lumensPerFixture * params.coefficientOfUtilization * params.maintenanceFactor) / (2 * Math.PI);
+          const intensity = (activeFixture.lumens * params.coefficientOfUtilization * params.maintenanceFactor) / (2 * Math.PI);
           directLux += (intensity * h) / Math.pow(distSq, 1.5);
         });
 
@@ -198,12 +218,12 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       uniformityU0,
       uniformityU1
     };
-  }, [params, calculation.fixtures, mountingHeight, enableDaylight, skyCondition, windowArea]);
+  }, [params, calculation.fixtures, mountingHeight, enableDaylight, skyCondition, windowArea, activeFixture.lumens]);
 
   // Unified Glare Rating (UGR) estimation
   const glareAnalysis = useMemo(() => {
     const fixtureCount = calculation.fixtures;
-    const lumenWeight = params.lumensPerFixture / 3000;
+    const lumenWeight = activeFixture.lumens / 3000;
     const areaWeight = (params.roomWidth * params.roomLength || 20) / 25;
     const hWeight = 2.0 / (mountingHeight || 2.0);
 
@@ -235,7 +255,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     }
 
     return { value: ugrValue, assessment, labelColor, description };
-  }, [calculation.fixtures, params.lumensPerFixture, params.roomWidth, params.roomLength, mountingHeight]);
+  }, [calculation.fixtures, activeFixture.lumens, params.roomWidth, params.roomLength, mountingHeight]);
 
   // Smart Daylight Integration Energy Savings
   const daylightSavings = useMemo(() => {
@@ -306,15 +326,14 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       co2Optimized: Math.round(co2Optimized),
       co2SavedYearly: Math.round(co2SavedYearly)
     };
-  }, [calculation.fixtures, calculation.area, params.selectedFixtureId, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
+  }, [calculation.fixtures, calculation.area, activeFixture, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
 
   const handleAddToSchedule = () => {
     if (!setCircuits || !circuits) return;
     const newNo = circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
     
-    // Estimate LED wattage at approx 100 lumens/watt if not specified
-    const selectedFixture = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
-    const estimatedWattage = selectedFixture.wattage;
+    // Use active fixture spec (manual/library)
+    const estimatedWattage = activeFixture.wattage;
     const totalVA = estimatedWattage * calculation.fixtures;
     
     const newCircuit: Circuit = {
@@ -349,11 +368,13 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       roomName: lpdLimitInfo.roomName,
       targetLux: params.targetLux,
       area: Number(calculation.area),
-      fixtureId: selectedFixture.id,
-      fixtureLightType: selectedFixture.lightType,
+      fixtureId: activeFixture.id,
+      fixtureLightType: activeFixture.lightType,
       fixturesCount: calculation.fixtures,
       totalLumens: calculation.totalLumens,
-      totalWattage: totalVA
+      totalWattage: totalVA,
+      fixtureWattage: activeFixture.wattage,
+      fixtureLumens: activeFixture.lumens
     };
     
     setParams({
@@ -373,13 +394,14 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       if (r.id === id) {
         const updated = { ...r, [field]: value };
         if (field === 'fixturesCount') {
-          const fix = LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId);
-          if (fix) {
-            updated.totalWattage = fix.wattage * updated.fixturesCount;
-            updated.totalLumens = fix.lumens * updated.fixturesCount;
-            newWattage = updated.totalWattage;
-            newQuantity = updated.fixturesCount;
-          }
+          const isCustom = updated.fixtureId === 'custom';
+          const fixWattage = isCustom ? (updated.fixtureWattage || params.customWattage || 15) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.wattage || 0);
+          const fixLumens = isCustom ? (updated.fixtureLumens || params.customLumens || 1500) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.lumens || 0);
+          
+          updated.totalWattage = fixWattage * updated.fixturesCount;
+          updated.totalLumens = fixLumens * updated.fixturesCount;
+          newWattage = updated.totalWattage;
+          newQuantity = updated.fixturesCount;
         }
         updatedCircuitNo = updated.circuitNo;
         return updated;
@@ -390,15 +412,15 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
     if (updatedCircuitNo !== undefined && circuits && setCircuits && field === 'fixturesCount' && newWattage !== undefined && newQuantity !== undefined) {
       const newCircuits = circuits.map(c => {
-        if (c.circuitNo === updatedCircuitNo) {
-          return {
-            ...c,
-            quantity: newQuantity!,
-            loadVA: newWattage!,
-            loadA: newWattage! / c.voltage
-          };
-        }
-        return c;
+         if (c.circuitNo === updatedCircuitNo) {
+           return {
+             ...c,
+             quantity: newQuantity!,
+             loadVA: newWattage!,
+             loadA: newWattage! / c.voltage
+           };
+         }
+         return c;
       });
       setCircuits(newCircuits);
     }
@@ -503,36 +525,99 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
            </div>
         </div>
 
-        <div className="mb-8 no-print flex flex-col md:flex-row gap-4 items-end">
-          <div className="flex-1">
-            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Selected Fixture details</h4>
-            {(() => {
-              const selectedFixture = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
-              return (
-                <div className="flex items-center gap-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
-                  <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-750 flex items-center justify-center shrink-0">
-                    <Lightbulb className="w-8 h-8 text-indigo-400" />
+        <div className="mb-8 no-print animate-fade-in">
+          <div className="flex justify-between items-center mb-3">
+            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Selected Fixture details</h4>
+            {params.isCustomFixture && (
+              <button 
+                type="button"
+                onClick={() => setParams({ ...params, isCustomFixture: false, selectedFixtureId: 'ind-panel', lumensPerFixture: 3600 })} 
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
+              >
+                Use Library Standard
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+            <div className="flex-grow min-w-0 flex flex-col">
+            {params.isCustomFixture ? (
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900 flex items-center justify-center shrink-0">
+                    <Lightbulb className="w-6 h-6 text-indigo-550" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">{selectedFixture.category} &middot; {selectedFixture.brands}</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate mb-1.5">{selectedFixture.lightType}</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-bold text-yellow-700 bg-yellow-100/80 dark:bg-yellow-950/20 border border-yellow-200/50 dark:border-yellow-900/40 px-2.5 py-1 rounded-md">{selectedFixture.lumensRange}</span>
-                      <span className="text-xs font-semibold text-slate-600 bg-slate-100 dark:bg-slate-800 border border-slate-200/50 dark:border-slate-750 px-2.5 py-1 rounded-md">{selectedFixture.wattageRange}</span>
-                    </div>
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Custom Light Specification</p>
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">{params.customLightType || 'Custom Fixture'}</h4>
                   </div>
                 </div>
-              );
-            })()}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Light Type / Name</label>
+                    <input 
+                      type="text" 
+                      value={params.customLightType || ''} 
+                      placeholder="e.g. LED Custom Batten" 
+                      onChange={e => setParams({ ...params, customLightType: e.target.value })} 
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Lumens (lm)</label>
+                    <input 
+                      type="number" 
+                      value={params.customLumens || ''} 
+                      placeholder="e.g. 1500" 
+                      onChange={e => {
+                        const lumens = Math.max(0, parseInt(e.target.value) || 0);
+                        setParams({ ...params, customLumens: lumens, lumensPerFixture: lumens });
+                      }} 
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Wattage (W)</label>
+                    <input 
+                      type="number" 
+                      value={params.customWattage || ''} 
+                      placeholder="e.g. 15" 
+                      onChange={e => {
+                        const wattage = Math.max(0, parseInt(e.target.value) || 0);
+                        setParams({ ...params, customWattage: wattage });
+                      }} 
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm flex-grow h-full">
+                <div className="w-16 h-16 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-center shrink-0">
+                  <Lightbulb className="w-8 h-8 text-indigo-500 dark:text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-1">{activeFixture.category} &middot; {activeFixture.brands}</p>
+                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate mb-1.5">{activeFixture.lightType}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-900/30 px-2.5 py-1 rounded-md">{activeFixture.lumensRange}</span>
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-350 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 px-2.5 py-1 rounded-md">{activeFixture.wattageRange}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <button 
             type="button"
             onClick={() => setShowFixtureModal(true)} 
-            className="flex items-center justify-center gap-2 px-6 py-4 bg-indigo-50/10 dark:bg-indigo-950/20 border-2 border-dashed border-indigo-200 dark:border-indigo-900 rounded-2xl text-indigo-700 dark:text-indigo-400 hover:border-indigo-600 dark:hover:border-indigo-500 hover:bg-indigo-100/25 transition-all font-bold h-[104px] shadow-sm animate-pulse-subtle"
+            className="flex flex-col items-center justify-center gap-2 px-6 py-4 bg-indigo-50/10 dark:bg-indigo-950/20 border-2 border-dashed border-indigo-200 dark:border-indigo-900 rounded-2xl text-indigo-700 dark:text-indigo-400 hover:border-indigo-600 dark:hover:border-indigo-500 hover:bg-indigo-100/25 transition-all font-bold lg:w-[240px] shadow-sm animate-pulse-subtle shrink-0"
           >
-            <List className="w-5 h-5" /> Browse Fixture Library
+            <List className="w-5 h-5 mb-1" /> 
+            <span>Browse Fixture Library</span>
+            <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold">Or Select Custom Fixture</span>
           </button>
         </div>
+      </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
           
@@ -1130,19 +1215,58 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
             
             <div className="p-6 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Manual Specification Selection Entry */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setParams({ 
+                      ...params, 
+                      isCustomFixture: true, 
+                      selectedFixtureId: 'custom', 
+                      customLightType: params.customLightType || 'Custom LED Fixture', 
+                      customLumens: params.customLumens || 1500, 
+                      customWattage: params.customWattage || 15, 
+                      lumensPerFixture: params.customLumens || 1500 
+                    });
+                    setShowFixtureModal(false);
+                  }}
+                  className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group p-5 bg-gradient-to-br from-indigo-50/10 to-white hover:border-indigo-400 hover:shadow-md ${
+                    params.isCustomFixture ? 'border-indigo-500 ring-2 ring-indigo-550/30 scale-[1.02] shadow-md z-10 bg-indigo-50/10' : 'border-slate-200 border-dashed hover:border-indigo-300'
+                  }`}
+                >
+                  {params.isCustomFixture && (
+                    <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm p-0.5 border border-indigo-250">
+                      <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                    </div>
+                  )}
+                  <div className="w-full flex flex-col h-full">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Manual entry</span>
+                    </div>
+                    <p className="text-base font-bold text-slate-800 leading-tight mb-2">Custom Fixture Specifications</p>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed mb-4">
+                      No matching item in library? Manually define Light type, Lumens, and Watts parameters.
+                    </p>
+                    <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between text-indigo-700 font-bold text-xs gap-1">
+                      <span>Specify manually</span>
+                      <Plus className="w-4 h-4" />
+                    </div>
+                  </div>
+                </button>
+
                 {LIGHT_FIXTURES_LIBRARY.map((fixture) => (
                   <button
                     type="button"
                     key={fixture.id}
                     onClick={() => {
-                      setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens });
+                      setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens, isCustomFixture: false });
                       setShowFixtureModal(false);
                     }}
                     className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group ${
-                      params.selectedFixtureId === fixture.id ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
+                      (!params.isCustomFixture && params.selectedFixtureId === fixture.id) ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
                     }`}
                   >
-                    {params.selectedFixtureId === fixture.id && (
+                    {(!params.isCustomFixture && params.selectedFixtureId === fixture.id) && (
                       <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm">
                         <CheckCircle2 className="w-5 h-5 text-yellow-500" />
                       </div>

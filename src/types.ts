@@ -111,6 +111,8 @@ export interface SavedLightingDetail {
   totalLumens: number;
   totalWattage: number;
   circuitNo?: number; // optionally link to circuit
+  fixtureWattage?: number;
+  fixtureLumens?: number;
 }
 
 export interface IlluminationParams {
@@ -127,4 +129,8 @@ export interface IlluminationParams {
   coefficientOfUtilization: number;
   maintenanceFactor: number;
   savedRooms?: SavedLightingDetail[];
+  isCustomFixture?: boolean;
+  customLightType?: string;
+  customLumens?: number;
+  customWattage?: number;
 }
