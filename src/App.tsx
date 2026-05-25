@@ -149,6 +149,15 @@ export default function App() {
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
   );
+  
+  const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>({});
+
+  const handleAddIllumSnapshot = (circuitId: string, image: string, roomName: string) => {
+    setIllumSnapshots(prev => ({
+      ...prev,
+      [circuitId]: image
+    }));
+  };
 
   const [floorPlanImages, setFloorPlanImages] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -590,23 +599,71 @@ export default function App() {
       const getImg = async (id: string) => {
         const el = document.getElementById(id);
         if (!el) return null;
+
+        // Temporarily disable dark mode on the root element.
+        // This ensures the captured diagram card renders in pristine light mode (black on white)
+        // instead of getting partially or completely obscured by dark background theme overrides.
+        const wasDark = document.documentElement.classList.contains("dark");
+        if (wasDark) {
+          document.documentElement.classList.remove("dark");
+        }
+
         try {
-          // Reduced pixel ratio from 2 to 1 to handle extremely large DOM elements (e.g., long load schedules) without exceeding canvas memory limits
-          return await toPng(el, {
+          const isSld = id.startsWith("sld-");
+          const pRatio = 1.5;
+          
+          let width = el.scrollWidth;
+          let height = el.scrollHeight;
+          
+          if (id === "short-circuit-diagram") {
+            width = 850;
+            height = 880;
+          } else if (isSld) {
+            const svgEl = el.querySelector("svg");
+            width = 900;
+            if (svgEl) {
+              const viewBox = svgEl.getAttribute("viewBox");
+              if (viewBox) {
+                const parts = viewBox.split(" ");
+                if (parts.length === 4) {
+                  const vbWidth = parseFloat(parts[2]);
+                  const vbHeight = parseFloat(parts[3]);
+                  // Scale height proportionally to width 900, plus 180px for the card header/padding
+                  height = (vbHeight / vbWidth) * width + 180;
+                }
+              }
+            }
+          }
+          
+          const result = await toPng(el, {
             quality: 1,
             backgroundColor: "#ffffff",
-            pixelRatio: 1,
-            width: el.scrollWidth,
-            height: el.scrollHeight,
+            pixelRatio: pRatio,
+            width: width,
+            height: height,
             skipFonts: true,
             style: {
               opacity: "1",
               visibility: "visible",
               transform: "none",
+              left: "0",
+              top: "0",
+              margin: "0",
+              position: "relative",
+              width: id === "short-circuit-diagram" ? "850px" : (isSld ? "900px" : undefined),
+              height: id === "short-circuit-diagram" ? "880px" : (isSld ? `${height}px` : undefined),
             },
           });
+
+          if (wasDark) {
+            document.documentElement.classList.add("dark");
+          }
+          return result;
         } catch (err) {
           console.warn(`Failed to capture image for element ${id}:`, err);
+          if (wasDark) {
+            document.documentElement.classList.add("dark");
+          }
           return null;
         }
       };
@@ -622,7 +679,8 @@ export default function App() {
         sld: sldImages,
         isc: await getImg("short-circuit-diagram"),
         vdDiagrams: {} as Record<string, string | null>,
-        illumination: await getImg("illumination-diagram"),
+        illumination: await getImg("illumination-diagram"), // The current one
+        illumSnapshots: illumSnapshots, // the recorded ones
         floorPlan: floorPlanImages,
       };
 
@@ -1114,10 +1172,10 @@ export default function App() {
           </div>
 
           {/* Load Schedule Tab */}
-          <div className={activeTab === "schedule" || isExporting ? "w-full" : "hidden"}>
+          <div className={(activeTab === "schedule" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "schedule" || isExporting ? { opacity: 1, y: 0 } : {}}
+              animate={(activeTab === "schedule" || isExporting) ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1197,10 +1255,10 @@ export default function App() {
           </div>
 
           {/* Short Circuit Tab */}
-          <div className={activeTab === "isc" || isExporting ? "w-full" : "hidden"}>
+          <div className={(activeTab === "isc" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "isc" || isExporting ? { opacity: 1, y: 0 } : {}}
+              animate={(activeTab === "isc" || isExporting) ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1217,10 +1275,10 @@ export default function App() {
           </div>
 
           {/* Voltage Drop Tab */}
-          <div className={activeTab === "vd" || isExporting ? "w-full" : "hidden"}>
+          <div className={(activeTab === "vd" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "vd" || isExporting ? { opacity: 1, y: 0 } : {}}
+              animate={(activeTab === "vd" || isExporting) ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1234,10 +1292,10 @@ export default function App() {
           </div>
 
           {/* Illumination Tab */}
-          <div className={activeTab === "lighting" || isExporting ? "w-full" : "hidden"}>
+          <div className={(activeTab === "lighting" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "lighting" || isExporting ? { opacity: 1, y: 0 } : {}}
+              animate={(activeTab === "lighting" || isExporting) ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1247,6 +1305,7 @@ export default function App() {
                 setActiveTab={setActiveTab}
                 params={illumParams}
                 setParams={setIllumParams}
+                onSnapshotCapture={handleAddIllumSnapshot}
               />
             </motion.div>
           </div>

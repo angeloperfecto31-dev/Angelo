@@ -437,7 +437,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           </div>
 
           <div className="relative">
-            <div className="w-full flex flex-col items-center py-6 font-sans overflow-x-auto block">
+            <div className="w-full flex flex-col items-center justify-center py-6 font-sans overflow-x-auto">
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
               <div 
                 id="short-circuit-diagram"

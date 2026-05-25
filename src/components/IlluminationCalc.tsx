@@ -22,6 +22,7 @@ import {
   Trash2,
   Plus
 } from 'lucide-react';
+import { toPng } from 'html-to-image';
 import { IlluminationParams, Circuit, MCBType, LoadType } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
@@ -32,9 +33,10 @@ export interface IlluminationCalcProps {
   setActiveTab?: (tab: 'schedule' | 'isc' | 'vd' | 'lighting') => void;
   params: IlluminationParams;
   setParams: React.Dispatch<React.SetStateAction<IlluminationParams>>;
+  onSnapshotCapture?: (circuitId: string, image: string, roomName: string) => void;
 }
 
-export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams }: IlluminationCalcProps) {
+export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams, onSnapshotCapture }: IlluminationCalcProps) {
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
 
@@ -328,7 +330,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     };
   }, [calculation.fixtures, calculation.area, activeFixture, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
 
-  const handleAddToSchedule = () => {
+  const handleAddToSchedule = async () => {
     if (!setCircuits || !circuits) return;
     const newNo = circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
     
@@ -358,6 +360,30 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       conduitType: 'PVC',
       loadType: LoadType.LIGHTING
     };
+    
+    if (onSnapshotCapture) {
+      const el = document.getElementById("illumination-diagram");
+      if (el) {
+        try {
+          const dataUrl = await toPng(el, {
+            quality: 1,
+            backgroundColor: "#ffffff",
+            pixelRatio: 1,
+            width: el.scrollWidth,
+            height: el.scrollHeight,
+            skipFonts: true,
+            style: {
+              opacity: "1",
+              visibility: "visible",
+              transform: "none",
+            },
+          });
+          onSnapshotCapture(newCircuit.id, dataUrl, lpdLimitInfo.roomName);
+        } catch (err) {
+          console.warn("Failed to capture illumination state", err);
+        }
+      }
+    }
 
     setCircuits([...circuits, newCircuit]);
     

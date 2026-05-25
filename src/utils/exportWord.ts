@@ -1122,8 +1122,19 @@ export const exportToWord = async (
   docChildren.push(new Paragraph({ spacing: { before: 200 } }));
   docChildren.push(createCallout("🔍 LIGHTING ENVIRONMENTAL ERGONOMICS & DECARBONIZATION AUDIT", illumFindings));
 
-  if (images?.illumination) {
-    docChildren.push(createSubHeader(`3D False-Color Rendering Diagrams`));
+  if (images?.illumSnapshots && Object.keys(images.illumSnapshots).length > 0) {
+    docChildren.push(createSubHeader(`3D False-Color Rendering Diagrams (Load Schedule Circuits)`));
+    for (const [circuitId, imgBase64] of Object.entries(images.illumSnapshots)) {
+      if (imgBase64 && typeof imgBase64 === 'string') {
+        const circuitMatch = circuits.find(c => c.id === circuitId);
+        if (circuitMatch && circuitMatch.roomName) {
+           docChildren.push(createParagraph(`Calculated Environment: ${circuitMatch.roomName}`));
+        }
+        await addImageToDoc(imgBase64);
+      }
+    }
+  } else if (images?.illumination) {
+    docChildren.push(createSubHeader(`3D False-Color Rendering Diagrams (Active State)`));
     await addImageToDoc(images.illumination);
   }
 
