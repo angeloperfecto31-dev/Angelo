@@ -624,55 +624,72 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
           {/* Main lumen estimation left box */}
           <div className="md:col-span-1 space-y-6">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Required Target Illuminance</label>
-              <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 px-4 py-3 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Required Target Illuminance</label>
+              </div>
+              <div className="bg-slate-50/50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50 px-4 py-3 rounded-2xl flex items-center justify-between shadow-sm">
                 <div>
-                  <span className="text-xs text-slate-500 dark:text-slate-405 font-bold uppercase block">Target Lux</span>
-                  <span className="text-lg font-black text-slate-800 dark:text-slate-100">{params.targetLux} Lux</span>
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase block tracking-wider">Target Lux</span>
+                  <span className="text-lg font-mono font-black text-slate-900 dark:text-slate-100 tracking-tight">{params.targetLux} <span className="text-[10px] text-slate-500 font-bold font-sans">LUX</span></span>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] text-slate-400 dark:text-slate-505 font-black uppercase block">Zone Type</span>
-                  <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 tracking-tight">{lpdLimitInfo.roomName}</span>
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase block tracking-wider">Zone Type</span>
+                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 tracking-tight">{lpdLimitInfo.roomName}</span>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block font-sans">Mounting Clearance (m)</label>
-              <div className="bg-slate-5 border border-slate-200 dark:border-slate-800 p-3.5 rounded-xl font-mono text-xs text-slate-600 dark:text-slate-400 space-y-1">
-                <div className="flex justify-between"><span>Ceiling Height:</span><span className="font-bold">{ceilingHeight}m</span></div>
-                <div className="flex justify-between"><span>Working Plane:</span><span className="font-bold">+{workingPlaneHeight}m</span></div>
-                <div className="border-t border-slate-200 dark:border-slate-750 pt-1 mt-1 flex justify-between text-slate-900 dark:text-slate-100 font-sans font-black">
-                  <span>Effective Height (H):</span>
-                  <span className="text-indigo-600 dark:text-indigo-400">{mountingHeight.toFixed(2)}m</span>
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                <label className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest block font-sans">Mounting Clearance</label>
+              </div>
+              <div className="bg-slate-50/50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50 p-4 rounded-2xl font-mono text-xs text-slate-600 dark:text-slate-400 space-y-2 shadow-sm">
+                <div className="flex justify-between items-center"><span className="text-slate-500 font-sans text-[11px] font-medium uppercase tracking-wider">Ceiling Height:</span><span className="font-bold text-slate-900 dark:text-slate-200">{ceilingHeight}m</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500 font-sans text-[11px] font-medium uppercase tracking-wider">Working Plane:</span><span className="font-bold text-slate-900 dark:text-slate-200">+{workingPlaneHeight}m</span></div>
+                <div className="border-t border-slate-200 dark:border-slate-700/50 pt-2 mt-2 flex justify-between items-center text-slate-900 dark:text-slate-100 font-sans font-black">
+                  <span className="text-[11px] uppercase tracking-wider">Effective Height (H):</span>
+                  <span className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">{mountingHeight.toFixed(2)}m</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-col justify-center items-center bg-slate-900 rounded-2xl p-6 text-white shadow-xl text-center">
-               <span className="text-[10px] font-black uppercase text-slate-500 mb-2">Quantity of Luminaires</span>
-               <p className="text-6xl font-black text-yellow-400">{calculation.fixtures}</p>
-               <p className="text-xs font-black text-slate-400 uppercase mt-2">Fixtures Distributed</p>
-               
-               <div className="w-full mt-6 pt-6 border-t border-white/10 grid grid-cols-2 gap-4 text-center">
-                  <div>
-                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Est. Room Area</span>
-                     <p className="text-base font-bold text-white">{calculation.area} m²</p>
-                  </div>
-                  <div>
-                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Total Required Lm</span>
-                     <p className="text-base font-bold text-white">{calculation.totalLumens}</p>
-                  </div>
+            <div className="relative overflow-hidden bg-slate-900 dark:bg-slate-950 border border-slate-800 rounded-3xl p-6 text-white shadow-lg text-center">
+               <div className="relative z-10">
+                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Quantity of Luminaires</span>
+                 <div className="flex items-baseline justify-center gap-1.5">
+                   <p className="text-[80px] leading-[1] font-mono font-black text-amber-400 tracking-tighter">{calculation.fixtures}</p>
+                 </div>
+                 <p className="text-[10px] font-bold text-slate-500 uppercase mt-2 tracking-wider">Fixtures Distributed</p>
+                 
+                 <div className="w-full mt-6 pt-5 border-t border-slate-800 grid grid-cols-2 gap-4 text-center">
+                    <div>
+                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Est. Room Area</span>
+                       <p className="text-base font-mono font-bold text-slate-100">{calculation.area} <span className="text-[10px] text-slate-500 font-sans">m²</span></p>
+                    </div>
+                    <div>
+                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Total Required Lm</span>
+                       <p className="text-base font-mono font-bold text-slate-100">{calculation.totalLumens}</p>
+                    </div>
+                 </div>
+                 {circuits && setCircuits && (
+                   <button 
+                     type="button"
+                     onClick={handleAddToSchedule}
+                     className="w-full mt-6 bg-amber-400 hover:bg-amber-300 text-amber-950 font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+                   >
+                     <Link className="w-4 h-4" /> Add to Load Schedule
+                   </button>
+                 )}
                </div>
-               {circuits && setCircuits && (
-                 <button 
-                   type="button"
-                   onClick={handleAddToSchedule}
-                   className="w-full mt-6 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm"
-                 >
-                   <Link className="w-4.5 h-4.5" /> Add to Load Schedule
-                 </button>
-               )}
+               
+               {/* Background pattern */}
+               <div className="absolute right-[-20px] bottom-[-20px] opacity-[0.03] select-none pointer-events-none">
+                 <svg width="120" height="120" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                   <path d="M12 2L22 22H2L12 2Z" />
+                 </svg>
+               </div>
             </div>
           </div>
 

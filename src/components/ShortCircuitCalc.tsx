@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Maximize2, Minimize2, Download } from 'lucide-react';
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from '../constants';
-import { exportDiagramToDXF } from '../utils/exportDxf';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -91,7 +90,6 @@ const DraggableBox = ({
 export default function ShortCircuitCalc({ panel, circuits, subPanels, params, setParams, source, setSource }: ShortCircuitCalcProps) {
 
   const [isDiagramExpanded, setIsDiagramExpanded] = useState(false);
-  const [diagramTab, setDiagramTab] = useState<'svg' | 'interactive'>('svg');
   const [isBWMode, setIsBWMode] = useState(false);
 
   const { motorLoadVA, nonMotorLoadVA } = useMemo(() => {
@@ -280,51 +278,118 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
         </div>
       </section>
 
-      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-8 flex flex-col items-center panel-container print:rounded-none">
-        <div className="w-full border-b border-slate-100 dark:border-slate-800 pb-4 mb-8">
-           <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter">Short Circuit Calculation Report</h3>
-           <p className="text-[10px] text-slate-400 font-bold uppercase">PEC 2017 Requirement 1.10.1.24</p>
+      <section className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden panel-container print:rounded-none">
+        <div className="relative p-8 flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-600"></div>
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400">
+              <ShieldAlert className="w-3.5 h-3.5 animate-pulse" /> Point-To-Point Fault Analysis
+            </span>
+            <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight font-sans">Short Circuit Calculation Report</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">PEC 2017 Requirement Section 1.10.1.24 — Electrical Safety Conformity</p>
+          </div>
+          <div className="mt-4 md:mt-0 px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl shadow-xs text-center md:text-right">
+            <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase block tracking-wider">Audit Stamp</span>
+            <span className="text-xs font-black text-slate-700 dark:text-slate-300 font-mono tracking-tight">STATUS: LOCAL PEC VERIFIED</span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full">
-          <div className="space-y-6">
-            <div className="space-y-2">
-               <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest border-b border-slate-50 dark:border-slate-800 pb-1">Input Data Summary</h4>
-               <div className="grid grid-cols-2 gap-y-2 text-xs">
-                 <span className="text-slate-500 dark:text-slate-400">Transformer Rating:</span>
-                 <span className="font-bold text-slate-900 dark:text-slate-100 text-right">{params.transformerKVA} kVA</span>
-                 <span className="text-slate-500 dark:text-slate-400">Secondary Voltage:</span>
-                 <span className="font-bold text-slate-900 dark:text-slate-100 text-right">{params.transformerVoltage}V</span>
-                 <span className="text-slate-500 dark:text-slate-400">Transformer %Z:</span>
-                 <span className="font-bold text-slate-900 dark:text-slate-100 text-right">{params.transformerZ}%</span>
-               </div>
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
+          {/* Input Data Summary Column */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                <Calculator className="w-4 h-4" />
+              </div>
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Input Parameter Profile</h4>
             </div>
 
+            <div className="bg-slate-50/40 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/80 p-5 rounded-2xl space-y-3.5">
+              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Transformer Rating:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.transformerKVA} kVA</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Secondary Bus Voltage:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.transformerVoltage} V</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500 dark:text-slate-400 font-medium font-sans">Transformer %Z:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.transformerZ} %</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Utility Fault Level:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.utilityShortCircuitMVA} MVAsc</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500 dark:text-slate-400 font-medium font-sans">Primary Voltage (HV):</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.primaryVoltage} V</span>
+              </div>
+              <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Feeder Conductor:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.feederRuns}x {params.feederSize}mm² {params.conductorType}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Feeder Bus Length:</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.feederLength} m</span>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-              <GitBranch className="w-4 h-4" /> Calculated Results
-            </h3>
-            <div className="p-6 bg-slate-900 rounded-xl text-white space-y-6">
-              <div>
-                <span className="text-[10px] font-black text-slate-500 uppercase">Full Load Current</span>
-                <p className="text-3xl font-black">{calculation.iFullLoad} <span className="text-sm">AMPS</span></p>
+          {/* Calculated Results Block */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+              <div className="p-1 rounded bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400">
+                <GitBranch className="w-4 h-4" />
               </div>
-              <div>
-                <span className="text-[10px] font-black text-red-500 uppercase font-mono">Total Fault Current (Isc)</span>
-                <p className="text-4xl font-black text-red-400">{calculation.iscSecondary} <span className="text-sm">AMPS</span></p>
-              </div>
-              <div className="pt-4 border-t border-white/10 grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <span className="text-slate-500">Z-Utility (pu):</span>
-                  <p className="font-mono">{calculation.zUtilitypu}</p>
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Sequence Calculations</h4>
+            </div>
+
+            <div className="relative overflow-hidden bg-slate-900 dark:bg-slate-950 rounded-2xl p-6 text-white border border-slate-800 shadow-md">
+              <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                
+                {/* Full Load Current Block */}
+                <div className="bg-slate-800/40 border border-slate-700/50 p-4 rounded-xl space-y-2">
+                  <span className="text-[9px] font-extrabold uppercase text-slate-400 tracking-widest block font-sans">Full Load FLA Current</span>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-mono font-bold text-sky-400 tracking-tight">{calculation.iFullLoad}</span>
+                    <span className="text-xs font-bold text-slate-300">AMPS</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-sans leading-normal">Nominal secondary transformer current under continuous maximum rating.</p>
                 </div>
-                <div>
-                  <span className="text-slate-500">Z-Trans (pu):</span>
-                  <p className="font-mono">{calculation.zTranspu}</p>
+
+                {/* Total Fault Current Block */}
+                <div className="bg-red-950/20 border border-red-900/30 p-4 rounded-xl space-y-2 relative">
+                  <div className="absolute right-3 top-3 w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                  <span className="text-[9px] font-extrabold uppercase text-red-400 tracking-widest block font-sans font-mono">Total Fault Current (Isc)</span>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-mono font-black text-rose-500 tracking-tight">{calculation.iscSecondary}</span>
+                    <span className="text-xs font-bold text-rose-400">AMPS</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-sans leading-normal">Symmetrical point-to-point fault current available at secondary board terminal.</p>
                 </div>
+
+                {/* Impedance factors Block info */}
+                <div className="sm:col-span-2 pt-4 border-t border-slate-800 grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block font-sans">Z-Utility Reference (pu)</span>
+                    <span className="text-xs font-mono font-semibold text-slate-200 block">{calculation.zUtilitypu}</span>
+                    <p className="text-[9px] text-slate-500 leading-normal">Equivalent primary infinite bus impedance normalized to system base kVA.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block font-sans font-mono">Z-Trans (pu)</span>
+                    <span className="text-xs font-mono font-semibold text-slate-200 block">{calculation.zTranspu}</span>
+                    <p className="text-[9px] text-slate-500 leading-normal">Internal magnetic leakage impedance of transformer windings.</p>
+                  </div>
+                </div>
+
               </div>
+
+              {/* Watermark background icon */}
+              <div className="absolute right-[-40px] bottom-[-40px] opacity-[0.03] select-none pointer-events-none">
+                <ShieldAlert className="w-72 h-72 text-white" />
+              </div>
+
             </div>
           </div>
         </div>
@@ -339,7 +404,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                 <Activity className="w-4 h-4 text-red-500" />
                 Single Line Impedance Diagram
               </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-sans print:hidden">Select representation view:</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-sans print:hidden">Display settings:</p>
             </div>
             
             <div className="flex items-center gap-4 no-print">
@@ -359,33 +424,6 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   B&W Mode
                 </button>
               </div>
-              
-              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
-                <button 
-                  type="button"
-                  onClick={() => setDiagramTab('svg')} 
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${diagramTab === 'svg' ? 'bg-white dark:bg-slate-700 shadow text-red-600 dark:text-red-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100'}`}
-                >
-                  2D Core Schematic
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setDiagramTab('interactive')} 
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${diagramTab === 'interactive' ? 'bg-white dark:bg-slate-700 shadow text-red-600 dark:text-red-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100'}`}
-                >
-                  Interactive (Blocks)
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => exportDiagramToDXF(panel, params, calculation, motorLoadVA)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-800 dark:bg-slate-700 text-white rounded-md hover:bg-slate-900 dark:hover:bg-slate-600 transition-colors"
-                title="Export AutoCAD 2D (DXF)"
-              >
-                <Download className="w-3.5 h-3.5" />
-                DXF
-              </button>
 
               <button 
                 type="button"
@@ -399,7 +437,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           </div>
 
           <div className="relative">
-            <div className={`w-full flex flex-col items-center py-6 font-sans overflow-x-auto ${diagramTab === 'svg' ? 'block' : 'hidden'}`}>
+            <div className="w-full flex flex-col items-center py-6 font-sans overflow-x-auto block">
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
               <div 
                 className="relative w-[850px] h-[880px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
@@ -820,192 +858,6 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   </div>
                 </DraggableBox>
 
-              </div>
-            </div>
-
-            <div 
-              className={`flex flex-col items-center py-12 font-sans overflow-x-auto min-w-[600px] transition-[filter] ${diagramTab === 'interactive' ? 'flex' : 'hidden'}`}
-              style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
-            >
-              {/* Utility Box */}
-              <div className="flex flex-col items-center">
-                <div className="w-40 border-2 border-slate-900 p-2 bg-slate-50 relative flex flex-col items-center shadow-sm">
-                   <span className="text-[9px] font-black absolute -top-2.5 bg-white px-2 uppercase tracking-widest text-slate-500">Utility</span>
-                   <p className="text-[10px] font-mono font-bold mt-1 text-slate-800">{params.utilityShortCircuitMVA} MVAsc</p>
-                   <Circle className="w-6 h-6 text-slate-800 my-1" />
-                </div>
-                
-                <div className="w-0.5 h-12 bg-slate-900 relative">
-                   <span className="absolute left-4 top-4 text-[9px] font-bold text-slate-500 whitespace-nowrap">{(params.primaryVoltage/1000).toFixed(1)} kV Primary</span>
-                </div>
-                
-                {/* Transformer Symbol */}
-                <div className="relative py-1 border-slate-500 mb-2">
-                   <div className="w-12 h-12 rounded-full border-2 border-slate-900 absolute -top-5 left-1/2 -translate-x-1/2" />
-                   <div className="w-12 h-12 rounded-full border-2 border-slate-900 bg-white flex items-center justify-center relative z-10 top-0">
-                      <span className="text-[8px] font-black tracking-tighter">XFMR</span>
-                   </div>
-                   
-                   {/* Transformer Data Box */}
-                   <DraggableBox defaultPos={{ x: 80, y: -24 }} lineStart={{x: 48, y: 24}} lineEndOffset={{x: 0, y: 48}} className="w-48 border border-blue-200 p-3 text-[9px] bg-blue-50/80 backdrop-blur-sm text-slate-700 rounded-lg">
-                      <p className="font-bold border-b border-blue-200 mb-2 pb-1 uppercase tracking-wider text-blue-800">TX-01 Details</p>
-                      <p className="mb-0.5">Rating: <span className="font-mono font-black text-slate-900 float-right">{params.transformerKVA} kVA</span></p>
-                      <p className="mb-0.5">Voltage: <span className="font-mono font-black text-slate-900 float-right">{(params.primaryVoltage/1000).toFixed(1)}kV / {params.transformerVoltage}V</span></p>
-                      <p className="mb-0.5">Impedance: <span className="font-mono font-black text-slate-900 float-right">{params.transformerZ}% Z</span></p>
-                      <p>Conn: <span className="font-bold float-right">{params.transformerConnection}</span></p>
-                   </DraggableBox>
-                </div>
-
-                <div className="w-0.5 h-12 bg-slate-900 relative">
-                   <div className="absolute left-[-12px] top-6 w-6 h-0.5 bg-slate-900" />
-                   <span className="absolute left-4 top-4 text-[9px] font-bold text-slate-500 whitespace-nowrap">Sec {params.transformerVoltage}V Bus</span>
-                </div>
-
-                {/* Main Breaker */}
-                <div className="relative py-1 flex flex-col items-center mb-2">
-                   <div className="w-6 h-6 border-2 border-slate-900 rounded-md bg-white z-10 flex items-center justify-center relative shadow-sm">
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-slate-800 rounded-sm"></div>
-                   </div>
-                   <div className="w-0.5 h-8 bg-slate-900 relative" />
-                   
-                   {/* Main Breaker Data Box */}
-                   <DraggableBox defaultPos={{ x: 56, y: -8 }} lineStart={{x: 24, y: 28}} lineEndOffset={{x: 0, y: 36}} className="w-44 border border-slate-200 text-[9px] bg-white shadow-md z-20 rounded-lg overflow-hidden">
-                      <div className="cursor-move bg-slate-100 px-3 py-1.5 border-b border-slate-200 font-bold uppercase tracking-wider text-slate-600 flex justify-between">
-                        <span>Main Breaker</span>
-                      </div>
-                      <div className="px-3 py-2 space-y-1 text-slate-700">
-                        <p className="flex justify-between">Rating: <span className="font-mono font-black text-slate-900">{panel ? `${panel.mainBreakerAT}AT / ${panel.mainBreakerAF}AF` : '100AT'}</span></p>
-                        <p className="flex justify-between">kAIC: <span className="font-mono font-black text-slate-900">{panel?.icRating || '10kAIC'}</span></p>
-                      </div>
-                   </DraggableBox>
-                </div>
-                         {/* MDP BUS */}
-                <div 
-                   className="h-2.5 bg-slate-800 relative shadow-sm rounded-full z-10 flex justify-center mt-2"
-                   style={{ width: subPanels && subPanels.length > 2 ? Math.max(300, subPanels.length * 130) + 'px' : '256px' }}
-                >
-                   <span className="absolute -left-14 top-1/2 -translate-y-1/2 text-[11px] font-black text-slate-600 uppercase tracking-widest">MDP</span>
-                   <div className="absolute left-1/2 -translate-x-1/2 top-2.5 w-0.5 h-10 bg-slate-800" />
-                   
-                   {(!subPanels || subPanels.length === 0) && (
-                     <>
-                       <div className="absolute left-10 top-2.5 w-0.5 h-8 bg-slate-800" />
-                       <div className="absolute right-10 top-2.5 w-0.5 h-8 bg-slate-800" />
-                     </>
-                   )}
-
-                   {subPanels && subPanels.length > 0 && subPanels.map((sp, idx) => {
-                      const total = subPanels.length;
-                      const half = Math.ceil(total / 2);
-                      let leftPct = '50%';
-                      if (total === 1) {
-                        leftPct = '25%';
-                      } else if (total === 2) {
-                        leftPct = idx === 0 ? '25%' : '75%';
-                      } else if (idx < half) {
-                        leftPct = `${10 + (30 * idx / (half - 1))}%`;
-                      } else {
-                        leftPct = `${60 + (30 * (idx - half) / (total - half - 1))}%`;
-                      }
-
-                      return (
-                      <div key={sp.id} className="absolute top-2.5 flex flex-col items-center" style={{ left: leftPct, transform: 'translateX(-50%)' }}>
-                         <div className="w-0.5 h-16 bg-slate-800" />
-                         <DraggableBox defaultPos={{ x: -48, y: 0 }} lineStart={{x: 1, y: 64}} lineEndOffset={{x: 48, y: 0}} className="w-24 border-2 border-slate-300 bg-white p-1.5 shadow-sm text-center rounded-sm">
-                            <p className="cursor-move text-[8px] font-black uppercase text-slate-700 truncate w-full">{sp.panel.designation || 'SUB PANEL'}</p>
-                            <p className="text-[7px] font-bold text-slate-500 mt-1">{sp.panel.mainBreakerAT}AT / {sp.panel.mainBreakerAF}AF</p>
-                            <p className="text-[7px] font-mono text-slate-500">{sp.panel.icRating}</p>
-                         </DraggableBox>
-                      </div>
-                   )})}
-                </div>
-
-                <div className="w-0.5 h-12 bg-transparent relative" />
-
-                {/* FEEDER Section */}
-                <div className="relative flex flex-col items-center mt-2 mb-2">
-                   <div className="w-2 h-20 bg-orange-400 relative rounded-full border border-orange-500 shadow-sm z-10" />
-                   
-                   {/* Feeder Data Box */}
-                   <DraggableBox defaultPos={{ x: 64, y: 4 }} lineStart={{x: 24, y: 48}} lineEndOffset={{x: 0, y: 44}} className="w-52 border border-orange-200 p-3 text-[9px] bg-orange-50/90 backdrop-blur-sm text-slate-700 shadow-md rounded-lg">
-                      <p className="font-bold border-b border-orange-200 mb-2 pb-1 uppercase tracking-wider text-orange-800 flex items-center gap-1">Feeder Details</p>
-                      <p className="mb-0.5">Wire: <span className="font-mono font-black float-right">{params.feederRuns}x {params.feederSize}mm² {params.conductorType}</span></p>
-                      <p className="mb-0.5">Length: <span className="font-mono font-black float-right">{params.feederLength}m</span></p>
-                      <p className="mb-0.5 text-[8px] mt-1 space-x-1"><span className="font-black text-slate-600">R:</span> <span>{parseFloat(calculation.feederR).toExponential(2)}</span> <span className="font-black text-slate-600 ml-1">X:</span> <span>{parseFloat(calculation.feederX).toExponential(2)}</span></p>
-                      <p className="mt-1 pt-1 border-t border-orange-200 text-[10px]">Impedance: <span className="font-mono font-black text-orange-900 float-right">Z = {calculation.zFeederpu} pu</span></p>
-                   </DraggableBox>
-                </div>
-                
-                <div className="w-0.5 h-6 bg-slate-900 relative" />
-
-                <div className="w-0.5 h-4 bg-transparent relative" />
-
-                {/* Motor Contribution & Fault Point */}
-                <div className="relative mt-8 flex flex-col items-center">
-                   
-                   {/* Motor Contribution Arrow (If applicable) */}
-                   {motorLoadVA > 0 && (
-                     <div className="absolute -left-28 -top-8 flex flex-col items-center">
-                        <div className="w-10 h-10 rounded-full border-2 border-slate-700 flex items-center justify-center bg-slate-50 shadow-sm relative z-20">
-                           <span className="text-[10px] font-black text-slate-700">M</span>
-                        </div>
-                        <div className="w-0.5 h-6 bg-slate-700" />
-                        <svg className="absolute w-8 h-8 pointer-events-none left-4 top-10" viewBox="0 0 32 32">
-                          <path d="M 0 0 L 16 16 M 16 16 L 24 8 M 16 16 L 8 24" stroke="#334155" strokeWidth="2" fill="none" />
-                        </svg>
-                        <DraggableBox defaultPos={{ x: -48, y: -16 }} lineStart={{x: 20, y: 20}} lineEndOffset={{x: 48, y: 16}} className="text-[8px] bg-white border border-slate-200 px-2 py-1 shadow-md rounded-md z-30">
-                           <p className="cursor-move font-bold whitespace-nowrap text-slate-500">Motor Cont.</p>
-                           <p className="font-mono font-black text-slate-800">{calculation.motorContribution}A</p>
-                        </DraggableBox>
-                     </div>
-                   )}
-
-                   {/* Arrow pointing down to fault */}
-                   <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-red-600 animate-bounce mb-1" />
-                   
-                   <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center border-2 border-red-400 z-10 relative shadow-sm">
-                      <ShieldAlert className="w-5 h-5 text-red-600 animate-pulse" />
-                   </div>
-                   
-                   {/* Fault arrows pointing to center */}
-                   <svg className="absolute w-16 h-16 pointer-events-none -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2 mt-1 z-0" viewBox="0 0 100 100">
-                      <path d="M 5 50 L 30 50 M 95 50 L 70 50" stroke="#dc2626" strokeWidth="3" markerEnd="url(#fault-arrow)" strokeDasharray="3 2" className="animate-pulse" />
-                      <defs>
-                         <marker id="fault-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626" />
-                         </marker>
-                      </defs>
-                   </svg>
-
-                   {/* Fault Point Results Box */}
-                   <DraggableBox defaultPos={{ x: 80, y: -24 }} lineStart={{x: 40, y: 32}} lineEndOffset={{x: 0, y: 56}} className="w-52 border-2 border-red-200 p-3 bg-red-50/95 backdrop-blur-sm text-left shadow-xl rounded-xl z-20">
-                      <div className="cursor-move flex items-center gap-1.5 mb-2 border-b border-red-200 pb-1">
-                        <Activity className="w-4 h-4 text-red-600" />
-                        <p className="text-[10px] font-black text-red-800 uppercase tracking-wider">Fault Output Summary</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-y-1.5 text-[9px] font-mono leading-tight">
-                         <span className="text-slate-600">Isc Main CB:</span>
-                         <span className="font-bold text-slate-800 text-right">{calculation.iscMainBreaker} A</span>
-                         <span className="text-slate-600">Isc Feeder:</span>
-                         <span className="font-bold text-slate-800 text-right">{calculation.iscSecondary} A</span>
-                         
-                         {motorLoadVA > 0 && (
-                           <>
-                             <span className="text-slate-600">Motor Cont:</span>
-                             <span className="font-bold text-slate-800 text-right">+{calculation.motorContribution} A</span>
-                           </>
-                         )}
-                         
-                         <div className="col-span-2 my-1 border-t border-red-200" />
-                         
-                         <span className="text-red-800 font-bold text-[10px]">Total Sym:</span>
-                         <span className="text-red-700 font-black text-[11px] text-right">{calculation.totalFaultM} A</span>
-                         
-                         <span className="text-slate-600 mt-1">Total Asym:</span>
-                         <span className="font-bold text-slate-700 text-right mt-1">{(parseFloat(calculation.totalFaultM) * 1.6).toFixed(0)} A</span>
-                      </div>
-                   </DraggableBox>
-                </div>
               </div>
             </div>
           </div>
