@@ -17,16 +17,17 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
+      let userCredential;
       if (isLogin) {
         try {
-          await signInWithEmailAndPassword(auth, email, password);
+          userCredential = await signInWithEmailAndPassword(auth, email, password);
         } catch (signInErr: any) {
           const code = signInErr.code || '';
           const msg = signInErr.message || '';
-          if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || msg.includes('auth/invalid-credential')) {
+          if (code === 'auth/invalid-credential' || code === 'auth/member-not-found' || code === 'auth/user-not-found' || msg.includes('auth/invalid-credential')) {
             // Attempt to create the account instead
             try {
-              await createUserWithEmailAndPassword(auth, email, password);
+              userCredential = await createUserWithEmailAndPassword(auth, email, password);
             } catch (createErr: any) {
               throw createErr;
             }
@@ -35,10 +36,20 @@ export default function LoginScreen() {
           }
         }
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      }
+
+      // Ensure user document exists in Firestore immediately after auth
+      if (userCredential?.user) {
+        const userRef = doc(db, "users", userCredential.user.uid);
+        await setDoc(userRef, {
+          email: userCredential.user.email,
+          lastLogin: new Date().toISOString(),
+          isActive: userCredential.user.email?.toLowerCase() === "angeloperfecto31@gmail.com" // Admin is always active
+        }, { merge: true });
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Auth Exception:", err);
       const errorCode = err.code || '';
       const errorMessage = err.message || '';
       
@@ -52,8 +63,10 @@ export default function LoginScreen() {
         setError('Email/Password sign-in is not enabled. Please enable it in the Firebase Console under Authentication.');
       } else if (errorCode === 'auth/internal-error' || errorMessage.includes('auth/internal-error')) {
         setError('A Firebase internal/storage error occurred. If you are viewing this app within an iframe, modern browser sandboxes may block native storage APIs. Please enable third-party cookies or open the application in a new tab to bypass this.');
+      } else if (errorCode === 'auth/argument-error' || errorMessage.includes('auth/argument-error')) {
+        setError('Authentication configuration mismatch. Please try refreshing the page or opening in a new tab.');
       } else {
-        setError(err.message || 'An error occurred during authentication.');
+        setError(errorMessage || 'An error occurred during authentication.');
       }
     } finally {
       setLoading(false);
@@ -63,7 +76,17 @@ export default function LoginScreen() {
   const handleGoogleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const userCredential = await signInWithPopup(auth, provider);
+      
+      // Ensure user document exists in Firestore immediately after Google Login
+      if (userCredential?.user) {
+        const userRef = doc(db, "users", userCredential.user.uid);
+        await setDoc(userRef, {
+          email: userCredential.user.email,
+          lastLogin: new Date().toISOString(),
+          isActive: userCredential.user.email?.toLowerCase() === "angeloperfecto31@gmail.com" // Admin is always active
+        }, { merge: true });
+      }
     } catch (err: any) {
       console.error(err);
       const errorCode = err.code || '';
