@@ -151,6 +151,7 @@ export default function App() {
   );
 
   const [floorPlanImages, setFloorPlanImages] = useState<string[]>([]);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
   const isPostPaymentRedirect = window.location.search.includes("session_id=");
@@ -581,18 +582,13 @@ export default function App() {
   };
 
   const handleExportWord = async () => {
+    setIsExporting(true);
+    // Give React time to render all components visibly
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     try {
-      const getImg = async (id: string, exportContainerId?: string) => {
-        let el: HTMLElement | null = null;
-        if (exportContainerId) {
-          const container = document.getElementById(exportContainerId);
-          if (container) {
-            el = container.querySelector(`[id="${id}"]`) as HTMLElement;
-          }
-        }
-        if (!el) {
-          el = document.getElementById(id);
-        }
+      const getImg = async (id: string) => {
+        const el = document.getElementById(id);
         if (!el) return null;
         try {
           // Reduced pixel ratio from 2 to 1 to handle extremely large DOM elements (e.g., long load schedules) without exceeding canvas memory limits
@@ -600,10 +596,13 @@ export default function App() {
             quality: 1,
             backgroundColor: "#ffffff",
             pixelRatio: 1,
+            width: el.scrollWidth,
+            height: el.scrollHeight,
             skipFonts: true,
             style: {
               opacity: "1",
               visibility: "visible",
+              transform: "none",
             },
           });
         } catch (err) {
@@ -612,29 +611,24 @@ export default function App() {
         }
       };
 
-      // Since the hidden container renders everything, we can grab them by ID.
-      // LoadSchedule has `sld-${panel.designation || 'main'}`
-      // ShortCircuitCalc has `short-circuit-diagram`
-      // VoltageDropCalc has `voltage-drop-diagram`
-      // IlluminationCalc has `illumination-diagram`
       const sldImages: Record<string, string | null> = {};
       const allPanels = [panel, ...subPanels.map((sp) => sp.panel)];
       for (const p of allPanels) {
         const id = `sld-${p?.designation || "main"}`;
-        sldImages[p?.designation || ""] = await getImg(id, "export-container-sld");
+        sldImages[p?.designation || ""] = await getImg(id);
       }
 
       const images = {
         sld: sldImages,
-        isc: await getImg("short-circuit-diagram", "export-container-isc"),
+        isc: await getImg("short-circuit-diagram"),
         vdDiagrams: {} as Record<string, string | null>,
-        illumination: await getImg("illumination-diagram", "export-container-illum"),
+        illumination: await getImg("illumination-diagram"),
         floorPlan: floorPlanImages,
       };
 
       for (const calc of vdCalculations) {
         if (calc?.id) {
-          images.vdDiagrams[calc.id] = await getImg(`vd-diagram-${calc.id}`, "export-container-vd");
+          images.vdDiagrams[calc.id] = await getImg(`vd-diagram-${calc.id}`);
         }
       }
 
@@ -647,6 +641,8 @@ export default function App() {
       alert(
         "There was an issue generating the Word document. Error: " + errorMsg,
       );
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -1118,10 +1114,10 @@ export default function App() {
           </div>
 
           {/* Load Schedule Tab */}
-          <div className={activeTab === "schedule" ? "w-full" : "hidden"}>
+          <div className={activeTab === "schedule" || isExporting ? "w-full" : "hidden"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "schedule" ? { opacity: 1, y: 0 } : {}}
+              animate={activeTab === "schedule" || isExporting ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1201,10 +1197,10 @@ export default function App() {
           </div>
 
           {/* Short Circuit Tab */}
-          <div className={activeTab === "isc" ? "w-full" : "hidden"}>
+          <div className={activeTab === "isc" || isExporting ? "w-full" : "hidden"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "isc" ? { opacity: 1, y: 0 } : {}}
+              animate={activeTab === "isc" || isExporting ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1221,10 +1217,10 @@ export default function App() {
           </div>
 
           {/* Voltage Drop Tab */}
-          <div className={activeTab === "vd" ? "w-full" : "hidden"}>
+          <div className={activeTab === "vd" || isExporting ? "w-full" : "hidden"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "vd" ? { opacity: 1, y: 0 } : {}}
+              animate={activeTab === "vd" || isExporting ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1238,10 +1234,10 @@ export default function App() {
           </div>
 
           {/* Illumination Tab */}
-          <div className={activeTab === "lighting" ? "w-full" : "hidden"}>
+          <div className={activeTab === "lighting" || isExporting ? "w-full" : "hidden"}>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "lighting" ? { opacity: 1, y: 0 } : {}}
+              animate={activeTab === "lighting" || isExporting ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
@@ -1289,89 +1285,14 @@ export default function App() {
           </div>
         </div>
 
-        {/* Hidden Export Container for capturing all diagrams */}
-      <div className="fixed top-0 left-[-9999px] w-[1000px] opacity-0 pointer-events-none flex flex-col gap-8 no-print z-[-10] bg-slate-50 min-h-screen">
-        <div id="export-container-sld">
-          <div className="flex flex-col gap-12 w-full max-w-full">
-            <LoadSchedule
-              panel={panel}
-              setPanel={setPanel}
-              circuits={circuits}
-              setCircuits={setCircuits}
-              availableSubPanels={subPanels}
-              readOnly={true}
-            />
-            {subPanels.map((sp, index) => (
-              <div key={sp.id}>
-                <LoadSchedule
-                  panel={sp.panel}
-                  setPanel={(newPanel) => {
-                    setSubPanels((prev) => {
-                      const currentPanel = prev[index].panel;
-                      const updatedPanel =
-                        typeof newPanel === "function"
-                          ? newPanel(currentPanel)
-                          : newPanel;
-                      if (currentPanel === updatedPanel) return prev;
-                      return prev.map((p, i) =>
-                        i === index ? { ...p, panel: updatedPanel } : p,
-                      );
-                    });
-                  }}
-                  circuits={sp.circuits}
-                  setCircuits={(newCircuits) => {
-                    setSubPanels((prev) => {
-                      const currentCircuits = prev[index].circuits;
-                      const updatedCircuits =
-                        typeof newCircuits === "function"
-                          ? newCircuits(currentCircuits)
-                          : newCircuits;
-                      if (currentCircuits === updatedCircuits) return prev;
-                      return prev.map((p, i) =>
-                        i === index ? { ...p, circuits: updatedCircuits } : p,
-                      );
-                    });
-                  }}
-                  isSubPanel={true}
-                  onRemoveSubPanel={() => {
-                    setSubPanels((prev) => prev.filter((p) => p.id !== sp.id));
-                  }}
-                  readOnly={true}
-                />
-              </div>
-            ))}
-          </div>
+      {isExporting && (
+        <div className="fixed inset-0 z-[9999] bg-white dark:bg-slate-900 flex flex-col items-center justify-center shadow-2xl">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-600 dark:border-indigo-400 mb-6 shadow-sm"></div>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Compiling Report</h2>
+          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-2">Please wait while the documents and diagrams are being generated...</p>
         </div>
-        <div id="export-container-isc">
-          <ShortCircuitCalc
-            panel={panel}
-            circuits={circuits}
-            subPanels={subPanels}
-            params={iscParams}
-            setParams={setIscParams}
-            source={iscSource}
-            setSource={setIscSource}
-          />
-        </div>
-        <div id="export-container-vd">
-          <VoltageDropCalc
-            panel={panel}
-            circuits={circuits}
-            calculations={vdCalculations}
-            setCalculations={setVdCalculations}
-          />
-        </div>
-        <div id="export-container-illum">
-          <IlluminationCalc
-            circuits={circuits}
-            setCircuits={setCircuits}
-            setActiveTab={setActiveTab}
-            params={illumParams}
-            setParams={setIllumParams}
-          />
-        </div>
-        </div>
-        
+      )}
+
         <footer className="w-full bg-white/50 border-t border-slate-200 mt-12 py-8 rounded-2xl no-print">
           <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex flex-col items-center md:items-start">
