@@ -509,7 +509,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         </div>
       </section>
 
-      <section id="illumination-diagram" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-8 panel-container">
+      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl p-8 panel-container">
         <div className="w-full border-b border-slate-100 dark:border-slate-800 pb-4 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
            <div>
               <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter">Lighting Design Report</h3>
@@ -734,7 +734,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                     targetLux={params.targetLux}
                   />
                 ) : (
-                  <div className="w-full h-[320px] bg-slate-100/80 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center p-6 mt-8">
+                  <div id="illumination-diagram" className="w-full h-[320px] bg-slate-100/80 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center p-6 mt-8">
                      <Maximize className="w-10 h-10 text-slate-300 mb-3" />
                      <p className="text-sm font-bold text-slate-600">3D Simulation requires Room Dimensions mode</p>
                      <p className="text-xs text-slate-400 max-w-xs mt-1">Please switch the input toggle above to "Dimensions" and specify the room width and length to boot standard 3D rendering.</p>

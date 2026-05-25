@@ -397,8 +397,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
       {/* Impedance Diagram Visual (ETAP Style) */}
       <div className={isDiagramExpanded ? "fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex p-4 pb-20 items-center justify-center overflow-auto" : ""}>
-        <section id="short-circuit-diagram" className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 dark:border-slate-800 p-8'}`}>
-          <div className="flex items-center justify-between mb-8">
+        <section className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 dark:border-slate-800 p-8'}`}>
+          <div className="flex items-center justify-between mb-8 no-print">
             <div className="flex flex-col gap-1">
               <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
                 <Activity className="w-4 h-4 text-red-500" />
@@ -440,8 +440,9 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             <div className="w-full flex flex-col items-center py-6 font-sans overflow-x-auto block">
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
               <div 
+                id="short-circuit-diagram"
                 className="relative w-[850px] h-[880px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
-                style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
+                style={{ filter: isBWMode ? 'grayscale(100%)' : 'none', backgroundColor: '#ffffff' }}
               >
                 {/* SVG 2D Single Line Impedance Diagram */}
                 <svg

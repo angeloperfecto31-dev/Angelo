@@ -430,7 +430,7 @@ export default function Illumination3DModel({
   }
 
   return (
-    <div className="w-full h-[480px] mt-8 bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 shadow-xl">
+    <div id="illumination-diagram" className="w-full h-[480px] mt-8 bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 shadow-xl">
       
       {/* Heads-Up Display (HUD) Controls Overlay */}
       <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-90 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none">
