@@ -10,6 +10,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +51,8 @@ export default function LoginScreen() {
         setError('Password should be at least 6 characters.');
       } else if (errorCode === 'auth/operation-not-allowed' || errorMessage.includes('auth/operation-not-allowed')) {
         setError('Email/Password sign-in is not enabled. Please enable it in the Firebase Console under Authentication.');
+      } else if (errorCode === 'auth/network-request-failed' || errorMessage.includes('network-request-failed')) {
+        setError("Network connection failed. If you are inside the preview iframe, this is blocked by third-party cookie restrictions or browser shields (e.g. Brave Shields / AdBlockers). Please click 'Open in New Tab' in the top-right of the preview pane or temporarily disable your adblocker/shields.");
       } else {
         setError(err.message || 'An error occurred during authentication.');
       }
@@ -68,6 +71,8 @@ export default function LoginScreen() {
       const errorMessage = err.message || '';
       if (errorCode === 'auth/operation-not-allowed' || errorMessage.includes('auth/operation-not-allowed')) {
         setError('Google Sign-In is not enabled. Please enable it in the Firebase Console under Authentication.');
+      } else if (errorCode === 'auth/network-request-failed' || errorMessage.includes('network-request-failed')) {
+        setError("Google SSO failed: Network request blocked. This usually happens in the preview iframe. Please click 'Open in New Tab' in the top-right corner, or check if Brave Shields or an adblocker is blocking Google authentication endpoints.");
       } else {
         setError(err.message || 'An error occurred during Google sign in.');
       }
@@ -164,6 +169,18 @@ export default function LoginScreen() {
               {isLogin ? 'Sign in to access secure blueprints & reports.' : 'Start computing in compliance with PEC standards today.'}
             </p>
           </div>
+
+          {isIframe && (
+            <div className="bg-indigo-500/10 border border-indigo-500/25 p-4 rounded-xl flex items-start gap-2.5 text-indigo-300">
+              <Zap className="w-4 h-4 mt-0.5 shrink-0 animate-pulse text-yellow-400" />
+              <div className="text-xs font-medium space-y-1">
+                <p className="font-bold text-slate-200">Running inside Preview iframe?</p>
+                <p className="text-slate-400 leading-normal">
+                  If authentication hits a <strong className="text-indigo-400">"network-request-failed"</strong> error, please click the <strong className="text-yellow-400 font-extrabold">"Open in New Tab"</strong> button in the top-right of your preview pane to run standard top-level session authentication.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="bg-slate-900/40 p-6 sm:p-8 rounded-2xl border border-slate-800/60 shadow-2xl backdrop-blur-sm space-y-6">
             <form className="space-y-5" onSubmit={handleSubmit}>

@@ -1,6 +1,226 @@
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ImageRun } from 'docx';
+import { 
+  Document, 
+  Packer, 
+  Paragraph, 
+  TextRun, 
+  HeadingLevel, 
+  Table, 
+  TableRow, 
+  TableCell, 
+  AlignmentType, 
+  WidthType, 
+  BorderStyle, 
+  VerticalAlign, 
+  ImageRun,
+  Math as DocxMath,
+  MathRun,
+  MathFraction,
+  MathSubScript,
+  MathSuperScript,
+  MathSubSuperScript,
+  MathRadical
+} from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
+
+// Helper function to recursively parse LaTeX strings to native Word Math Components
+function parseLatex(str: string): any[] {
+  type Item = 
+    | { type: 'component'; val: any }
+    | { type: 'sub'; target: 'sub' }
+    | { type: 'super'; target: 'super' }
+    | { type: 'group'; val: any[] };
+
+  let pos = 0;
+
+  function parseGroupItems(): any[] {
+    if (pos < str.length && str[pos] === '{') {
+      pos++; // consume '{'
+      let depth = 1;
+      let start = pos;
+      while (pos < str.length) {
+        if (str[pos] === '{') depth++;
+        else if (str[pos] === '}') {
+          depth--;
+          if (depth === 0) {
+            const subStr = str.slice(start, pos);
+            pos++; // consume '}'
+            return parseLatex(subStr);
+          }
+        }
+        pos++;
+      }
+    }
+    // Fallback: parse single character / macro
+    if (pos < str.length) {
+      if (str[pos] === '\\') {
+        pos++;
+        let m = "";
+        while (pos < str.length && /[a-zA-Z]/.test(str[pos])) {
+          m += str[pos++];
+        }
+        if (m === "text") {
+          if (str[pos] === ';') pos++;
+          return parseGroupItems();
+        }
+        return [new MathRun(m === "" ? str[pos++] : m)];
+      }
+      return [new MathRun(str[pos++])];
+    }
+    return [];
+  }
+
+  const items: Item[] = [];
+  while (pos < str.length) {
+    const char = str[pos];
+    if (char === '_') {
+      items.push({ type: 'sub', target: 'sub' });
+      pos++;
+      items.push({ type: 'group', val: parseGroupItems() });
+    } else if (char === '^') {
+      items.push({ type: 'super', target: 'super' });
+      pos++;
+      items.push({ type: 'group', val: parseGroupItems() });
+    } else if (char === '\\') {
+      pos++;
+      let macro = "";
+      while (pos < str.length && /[a-zA-Z]/.test(str[pos])) {
+        macro += str[pos++];
+      }
+      if (macro === "frac") {
+        const num = parseGroupItems();
+        const den = parseGroupItems();
+        items.push({ type: 'component', val: new MathFraction({ numerator: num, denominator: den }) });
+      } else if (macro === "sqrt") {
+        const rad = parseGroupItems();
+        items.push({ type: 'component', val: new MathRadical({ children: rad }) });
+      } else if (macro === "text") {
+        if (str[pos] === ';') pos++;
+        const content = parseGroupItems();
+        content.forEach(c => items.push({ type: 'component', val: c }));
+      } else if (macro === "times") {
+        items.push({ type: 'component', val: new MathRun(" × ") });
+      } else if (macro === "cdot" || macro === "mid") {
+        items.push({ type: 'component', val: new MathRun(" ∙ ") });
+      } else if (macro === "approx") {
+        items.push({ type: 'component', val: new MathRun(" ≈ ") });
+      } else if (macro === "ge" || macro === "geq") {
+        items.push({ type: 'component', val: new MathRun(" ≥ ") });
+      } else if (macro === "le" || macro === "leq") {
+        items.push({ type: 'component', val: new MathRun(" ≤ ") });
+      } else if (macro === "lceil") {
+        items.push({ type: 'component', val: new MathRun("⌈") });
+      } else if (macro === "rceil") {
+        items.push({ type: 'component', val: new MathRun("⌉") });
+      } else if (macro === "Delta") {
+        items.push({ type: 'component', val: new MathRun("Δ") });
+      } else if (macro === "Phi") {
+        items.push({ type: 'component', val: new MathRun("Φ") });
+      } else if (macro === "phi") {
+        items.push({ type: 'component', val: new MathRun("φ") });
+      } else if (macro === "Omega") {
+        items.push({ type: 'component', val: new MathRun("Ω") });
+      } else if (macro === "" || macro === " ") {
+        // escaped char
+        if (pos < str.length) {
+          const esc = str[pos++];
+          if (esc === "%") items.push({ type: 'component', val: new MathRun("%") });
+          else if (esc === "," || esc === " ") items.push({ type: 'component', val: new MathRun(" ") });
+          else items.push({ type: 'component', val: new MathRun(esc) });
+        }
+      } else {
+        items.push({ type: 'component', val: new MathRun(macro) });
+      }
+    } else {
+      // standard character
+      if (char !== '{' && char !== '}') {
+        items.push({ type: 'component', val: new MathRun(char) });
+      }
+      pos++;
+    }
+  }
+
+  // Bind subscripts and superscripts
+  const result: any[] = [];
+  let i = 0;
+  while (i < items.length) {
+    const current = items[i];
+    if (current.type === 'component') {
+      const next1 = i + 1 < items.length ? items[i + 1] : null;
+      const next2 = i + 2 < items.length ? items[i + 2] : null;
+      const next3 = i + 3 < items.length ? items[i + 3] : null;
+      const next4 = i + 4 < items.length ? items[i + 4] : null;
+
+      if (next1?.type === 'sub' && next2?.type === 'group' && next3?.type === 'super' && next4?.type === 'group') {
+        result.push(new MathSubSuperScript({
+          children: [current.val],
+          subScript: next2.val,
+          superScript: next4.val
+        }));
+        i += 5;
+      } else if (next1?.type === 'super' && next2?.type === 'group' && next3?.type === 'sub' && next4?.type === 'group') {
+        result.push(new MathSubSuperScript({
+          children: [current.val],
+          subScript: next4.val,
+          superScript: next2.val
+        }));
+        i += 5;
+      } else if (next1?.type === 'sub' && next2?.type === 'group') {
+        result.push(new MathSubScript({
+          children: [current.val],
+          subScript: next2.val
+        }));
+        i += 3;
+      } else if (next1?.type === 'super' && next2?.type === 'group') {
+        result.push(new MathSuperScript({
+          children: [current.val],
+          superScript: next2.val
+        }));
+        i += 3;
+      } else {
+        result.push(current.val);
+        i++;
+      }
+    } else if (current.type === 'group') {
+      current.val.forEach(c => result.push(c));
+      i++;
+    } else {
+      i++;
+    }
+  }
+
+  return result;
+}
+
+// Splits string by "$" and compiles odd segments into native DocxMath components
+function parseInlineMath(text: string, options: { bold?: boolean, font: string, size: number, color: string }): any[] {
+  if (!text.includes('$')) {
+    return [new TextRun({ text, ...options })];
+  }
+
+  const segments = text.split('$');
+  const runs: any[] = [];
+
+  segments.forEach((seg, idx) => {
+    if (idx % 2 === 0) {
+      if (seg) {
+        runs.push(new TextRun({ text: seg, ...options }));
+      }
+    } else {
+      if (seg) {
+        try {
+          const mathComp = parseLatex(seg);
+          runs.push(new DocxMath({ children: mathComp }));
+        } catch (e) {
+          console.error("Failed to parse LaTeX formula:", seg, e);
+          runs.push(new TextRun({ text: seg, font: "Consolas", size: options.size, color: "DC2626" }));
+        }
+      }
+    }
+  });
+
+  return runs;
+}
 
 export const exportToWord = async (
   panel: PanelConfig,
@@ -82,8 +302,14 @@ export const exportToWord = async (
   };
   
   const createParagraph = (text: string, highlight = false) => {
+    const runs = parseInlineMath(text, {
+      bold: highlight,
+      font: "Segoe UI",
+      size: 22,
+      color: highlight ? "0F766E" : "475569"
+    });
     return new Paragraph({
-      children: [new TextRun({ text, bold: highlight, font: "Segoe UI", size: 22, color: highlight ? "0F766E" : "475569" })],
+      children: runs,
       spacing: { before: 120, after: 120 },
       shading: highlight ? { fill: "F0FDFA" } : undefined,
     });
@@ -98,8 +324,13 @@ export const exportToWord = async (
     ];
     
     textLines.forEach(line => {
+      const runs = parseInlineMath("  " + line, {
+        font: "Segoe UI",
+        size: 20,
+        color: "0F766E"
+      });
       lines.push(new Paragraph({
-        children: [new TextRun({ text: "  " + line, font: "Segoe UI", size: 20, color: "0F766E" })],
+        children: runs,
         spacing: { before: 80, after: 80 }
       }));
     });
@@ -166,6 +397,134 @@ export const exportToWord = async (
     ])
   );
 
+  // --- TABLE OF CONTENTS (Page 2) ---
+  docChildren.push(
+    createHeader("Table of Contents", true)
+  );
+
+  const tocRows: TableRow[] = [];
+  
+  // Header row for TOC
+  tocRows.push(
+    new TableRow({
+      children: [
+        new TableCell({
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "SECTION", bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })],
+              alignment: AlignmentType.CENTER
+            })
+          ],
+          shading: { fill: "1E3A8A" },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 100, bottom: 100, left: 100, right: 100 },
+          width: { size: 15, type: WidthType.PERCENTAGE }
+        }),
+        new TableCell({
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "REPORT DETAILS & COMPLIANCE SCOPE", bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })],
+              alignment: AlignmentType.LEFT
+            })
+          ],
+          shading: { fill: "1E3A8A" },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 100, bottom: 100, left: 150, right: 100 },
+          width: { size: 70, type: WidthType.PERCENTAGE }
+        }),
+        new TableCell({
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "PAGE NO.", bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })],
+              alignment: AlignmentType.CENTER
+            })
+          ],
+          shading: { fill: "1E3A8A" },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 100, bottom: 100, left: 100, right: 100 },
+          width: { size: 15, type: WidthType.PERCENTAGE }
+        })
+      ]
+    })
+  );
+
+  // Helper to add rows to TOC
+  const addTOCEntry = (secNum: string, title: string, details: string, pageNum: string, isEven: boolean) => {
+    const rowFill = isEven ? "F8FAFC" : "FFFFFF";
+    tocRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: secNum, font: "Segoe UI", size: 18, bold: true, color: "1E3A8A" })],
+                alignment: AlignmentType.CENTER
+              })
+            ],
+            shading: { fill: rowFill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 100, right: 100 }
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: title, font: "Segoe UI", size: 19, bold: true, color: "334155" })],
+                spacing: { after: 40 }
+              }),
+              new Paragraph({
+                children: [new TextRun({ text: details, font: "Segoe UI", size: 16, color: "64748B", italics: true })]
+              })
+            ],
+            shading: { fill: rowFill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 150, right: 100 }
+          }),
+          new TableCell({
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: pageNum, font: "Segoe UI", size: 18, bold: true, color: "1E3A8A" })],
+                alignment: AlignmentType.CENTER
+              })
+            ],
+            shading: { fill: rowFill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 100, right: 100 }
+          })
+        ]
+      })
+    );
+  };
+
+  addTOCEntry("1.0", "General Notes & Standard Specifications", "Nominal tensions, conductor rules, standard ampacities, motor branch circuit margins, and DOLE/PEC heights.", "Page 3", false);
+  
+  const panelNames = [panel?.designation || 'Main Panel', ...subPanels.map(sp => sp.panel?.designation || 'Sub Panel')].join(', ');
+  addTOCEntry("2.0", `Electrical Load Schedules & Feeder Sizing Calculations`, `Individual schedules, main feeder calculations, system balancing indices, and PEC standard safety map for panels: ${panelNames}.`, "Page 4", true);
+  
+  addTOCEntry("3.0", "Short Circuit Analysis & Subtransient Fault Sizing", "Per-unit impedance calculation, symmetrical and asymmetrical short circuit current evaluations, utility grids, transformer impedance, and breaker kAIC ratings conformance.", "Page 5", false);
+  addTOCEntry("4.0", "Voltage Drop Calculations & Conductor Thermal Audits", "Combined line descriptions, single-phase and three-phase mathematical formulas, impedance tables, drop percentage compliance checking, and recommended cross sectional upgrades.", "Page 6", true);
+  addTOCEntry("5.0", "Indoor Illumination Sizing & Industrial Ergonomics Quality Report", "Standard Lumen Method calculations, workspace lux target validation, DOLE Rule 1075 working conditions, ASHRAE LPD density checks, and smart photodetector energy dims payback schedules.", "Page 7", false);
+  
+  const hasFloorPlan = images?.floorPlan && Array.isArray(images.floorPlan) && images.floorPlan.length > 0;
+  if (hasFloorPlan) {
+    addTOCEntry("6.0", "Electrical Floor Plan Wiring Diagram & Layout Mapping", "Architectural CAD and electrical circuit routes, device placements, and wiring distribution schemas.", "Page 8", true);
+  }
+
+  const tocTable = new Table({
+    rows: tocRows,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
+      insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+    }
+  });
+
+  docChildren.push(
+    tocTable,
+    new Paragraph({ spacing: { after: 1200 } })
+  );
+
   // GENERAL NOTES AND SPECIFICATIONS
   docChildren.push(createHeader(`General Notes and Specifications`, true));
   const generalNotes = [
@@ -213,15 +572,18 @@ export const exportToWord = async (
     const requiredAmpacity = Math.max(designAmp, cb);
     const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
 
+    const voltageFactorFormula = is3PH ? "V \\times \\sqrt{3}" : "V";
+    const designAmpFormula = "I_{\\text{feeder}} \\times 1.25";
+
     docChildren.push(
       createSubHeader(`A. Sizing Computations Criteria (Main Feeder)`),
       createParagraph(`• Source System Configuration: ${p.system}`),
-      createParagraph(`• Secondary Nominal Voltage: ${p.voltage} V AC`),
-      createParagraph(`• Accumulated Nominal Load: ${totalVA.toFixed(2)} VA (${(totalVA / 1000).toFixed(2)} kVA)`),
-      createParagraph(`• Feeder Continuous Load Current (I_feeder) = Connected Load / Voltage Factor = ${mainCurrent.toFixed(2)} A`),
-      createParagraph(`• Minimum Design Ampacity (125% factor) = I_feeder × 1.25 = ${designAmp.toFixed(2)} A`),
-      createParagraph(`• Sized Main Circuit Breaker Rating (Overcurrent Protection): ${cb} Amperes Frame / Amperes Trip (AF/AT)`),
-      createParagraph(`• Sized Main Conductor Ground Wire Feed: ${wire.size} mm² Copper THHN/THWN Conductors`),
+      createParagraph(`• Secondary Nominal Voltage: $V = ${p.voltage}\\text{ V AC}$`),
+      createParagraph(`• Accumulated Nominal Load: $S_{\\text{nominal}} = ${totalVA.toFixed(2)}\\text{ VA}$ ($${(totalVA / 1000).toFixed(2)}\\text{ kVA}$)`),
+      createParagraph(`• Feeder Continuous Load Current: $I_{\\text{feeder}} = \\frac{S_{\\text{nominal}}}{${voltageFactorFormula}} = ${mainCurrent.toFixed(2)}\\text{ A}$`),
+      createParagraph(`• Minimum Design Ampacity (125% factor): $I_{\\text{design}} = ${designAmpFormula} = ${designAmp.toFixed(2)}\\text{ A}$`),
+      createParagraph(`• Sized Main Circuit Breaker Rating (Overcurrent Protection): $I_{\\text{breaker}} = ${cb}\\text{ A}$ Frame / Amperes Trip (AF/AT)`),
+      createParagraph(`• Sized Main Conductor Ground Wire Feed: $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ Copper THHN/THWN Conductors`),
       
       new Paragraph({ spacing: { after: 150 } }),
       createSubHeader(`B. PEC 2017 & Visual Safety Sizing Reference Map:`),
@@ -244,11 +606,11 @@ export const exportToWord = async (
 
       docChildren.push(
         createSubHeader(`C. Phase Balance Matrix (${p.designation || 'Main'})`),
-        createParagraph(`• Phase A (Line R) Conn. Load: ${phaseLoads.R.toFixed(1)} VA`),
-        createParagraph(`• Phase B (Line Y) Conn. Load: ${phaseLoads.Y.toFixed(1)} VA`),
-        createParagraph(`• Phase C (Line B) Conn. Load: ${phaseLoads.B.toFixed(1)} VA`),
-        createParagraph(`• Average Phase Power Load: ${avgPhaseVA.toFixed(1)} VA`),
-        createParagraph(`• Maximum Calculated Phase Imbalance: ${phaseImbalance.toFixed(2)}%`, phaseImbalance > 15),
+        createParagraph(`• Phase A (Line R) Connected Load: $S_{\\text{phase,R}} = ${phaseLoads.R.toFixed(1)}\\text{ VA}$`),
+        createParagraph(`• Phase B (Line Y) Connected Load: $S_{\\text{phase,Y}} = ${phaseLoads.Y.toFixed(1)}\\text{ VA}$`),
+        createParagraph(`• Phase C (Line B) Connected Load: $S_{\\text{phase,B}} = ${phaseLoads.B.toFixed(1)}\\text{ VA}$`),
+        createParagraph(`• Average Phase Power Load: $S_{\\text{phase,avg}} = \\frac{S_{\\text{phase,R}} + S_{\\text{phase,Y}} + S_{\\text{phase,B}}}{3} = ${avgPhaseVA.toFixed(1)}\\text{ VA}$`),
+        createParagraph(`• Maximum Calculated Phase Imbalance: $f_{\\text{imbalance}} = \\frac{\\max(|S_{\\text{phase}} - S_{\\text{phase,avg}}|)}{S_{\\text{phase,avg}}} \\times 100\\% = ${phaseImbalance.toFixed(2)}\\%$`, phaseImbalance > 15),
         new Paragraph({ spacing: { after: 150 } })
       );
     }
@@ -316,11 +678,11 @@ export const exportToWord = async (
     const maxPhaseVA = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
     const imbalanceVal = is3PH ? (maxPhaseVA - Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) / (avgLoads > 0 ? avgLoads : 1) * 100 : 0;
     const findingsLines = [
-      `Overall continuous feeder capacity exhibits a total rating of ${(totalVA / 1000).toFixed(2)} kVA, requiring a minimum overcurrent protective device of ${cb}AT.`,
+      `Overall continuous feeder capacity exhibits a total rating of $S_{\\text{total}} = ${(totalVA / 1000).toFixed(2)}\\text{ kVA}$, requiring a minimum overcurrent protective device of $I_{\\text{OCPD}} = ${cb}\\text{ AT}$.`,
       is3PH 
-        ? `Phase balancing is maintained at highly optimal levels with an imbalance deviation of ${imbalanceVal.toFixed(2)}% (under the standard 15% maximum phase discrepancy limit).`
+        ? `Phase balancing is maintained at highly optimal levels with an imbalance deviation of $f_{\\text{imbalance}} = ${imbalanceVal.toFixed(2)}\\%$ (under the standard $15\\%$ maximum phase discrepancy limit).`
         : `Single Phase circuits display solid protective OCPD coordination matching PEC requirements.`,
-      `Verified Conductor Ampacity: Sized feeder of ${wire.size} mm² Cu conductor boasts a maximum thermic ampacity threshold matching PEC tables comfortably exceeding OCPD rating. Conformance status: OK.`
+      `Verified Conductor Ampacity: Sized feeder of $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ Cu conductor boasts a maximum thermic ampacity threshold matching PEC tables comfortably exceeding OCPD rating. Conformance status: OK.`
     ];
     docChildren.push(new Paragraph({ spacing: { before: 200 } }));
     docChildren.push(createCallout("🔍 LOAD SCHEDULE KEY FINDINGS & CONFORMANCE SAFETY AUDIT", findingsLines));
@@ -419,32 +781,31 @@ export const exportToWord = async (
   docChildren.push(
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`C. Step-by-Step Per-Unit Impedance & Symmetrical Calculations`),
-    createParagraph(`1. Transformer Full Load Amperes (FLA) = Rating kVA / (Voltage × √3)`),
-    createParagraph(`   FLA = (${baseKVA} × 1000) / (${params.transformerVoltage} × 1.732) = ${iFullLoad.toFixed(2)} Amperes`),
-    createParagraph(`2. Utility Source Grid Impedance (Z_util_pu) = Base kVA / (Utility Symmetrical MVA × 1000)`),
-    createParagraph(`   Z_util_pu = ${baseKVA} / (${params.utilityShortCircuitMVA} × 1000) = ${zUtilitypu.toFixed(6)} per-unit`),
-    createParagraph(`3. Transformer Inductive Impedance (Z_trans_pu) = Percent Z / 100`),
-    createParagraph(`   Z_trans_pu = ${params.transformerZ}% / 100 = ${zTranspu.toFixed(6)} per-unit`),
-    createParagraph(`4. Feeder Conductor Impedance Sizing Decay:`),
-    createParagraph(`   Conductor R = ${feederR.toFixed(5)} Ω, Conductor X = ${feederX.toFixed(5)} Ω, Magnitude Z = ${feederZ.toFixed(5)} Ω`),
-    createParagraph(`   Z_feeder_pu = Z_feeder_ohms × (Base kVA / 1000) / (Secondary kV²)`),
-    createParagraph(`   Z_feeder_pu = ${feederZ.toFixed(5)} × (${baseKVA / 1000}) / (${baseKV * baseKV}) = ${zFeederpu.toFixed(6)} per-unit`),
-    createParagraph(`5. Combined System Impedance (Z_total_pu) = Z_util_pu + Z_trans_pu + Z_feeder_pu = ${totalZpu.toFixed(6)} per-unit`),
+    createParagraph(`1. Transformer Full Load Amperes: $I_{\\text{FLA}} = \\frac{S_{\\text{transformer, kVA}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}}$`),
+    createParagraph(`   $I_{\\text{FLA}} = \\frac{${baseKVA} \\times 1000}{${params.transformerVoltage} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}$`),
+    createParagraph(`2. Utility Source Grid Impedance: $Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000}$`),
+    createParagraph(`   $Z_{\\text{util, pu}} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}$`),
+    createParagraph(`3. Transformer Inductive Impedance: $Z_{\\text{trans, pu}} = \\frac{\\%Z_{\\text{transformer}}}{100}$`),
+    createParagraph(`   $Z_{\\text{trans, pu}} = \\frac{${params.transformerZ}\\%}{100} = ${zTranspu.toFixed(6)}\\text;{ pr. u.}$`),
+    createParagraph(`4. Feeder Conductor Impedance Sizing Decay: $Z_{\\text{feeder}} = R + jX = ${feederR.toFixed(5)} + j${feederX.toFixed(5)}\\,\\Omega$`),
+    createParagraph(`   Conductor Resistance $R = ${feederR.toFixed(5)}\\,\\Omega$, Reactance $X = ${feederX.toFixed(5)}\\,\\Omega$, Magnitude $|Z_{\\text{feeder}}| = \\sqrt{R^2 + X^2} = ${feederZ.toFixed(5)}\\,\\Omega$`),
+    createParagraph(`   Per-unit Feeder Impedance: $Z_{\\text{feeder, pu}} = Z_{\\text{feeder, } \\Omega} \\times \\frac{S_{\\text{base, kVA}} / 1000}{V_{\\text{base, kV}}^2}$`),
+    createParagraph(`   $Z_{\\text{feeder, pu}} = ${feederZ.toFixed(5)} \\times \\frac{${baseKVA / 1000}}{${(baseKV * baseKV).toFixed(6)}} = ${zFeederpu.toFixed(6)}\\text{ pr. u.}$`),
+    createParagraph(`5. Combined System Impedance: $Z_{\\text{total, pu}} = Z_{\\text{util, pu}} + Z_{\\text{trans, pu}} + Z_{\\text{feeder, pu}} = ${totalZpu.toFixed(6)}\\text{ pr. u.}$`),
 
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`D. Ultimate Symmetrical and Asymmetrical Fault Current Results`),
-    createParagraph(`• Symmetrical Fault Current at Transformer Terminals (I_sc Main Breaker)`),
-    createParagraph(`  I_sc Main = FLA / (Z_util_pu + Z_trans_pu) = ${iscMainBreaker.toFixed(2)} Amperes Symmetrical`, true),
-    createParagraph(`• Symmetrical Fault Current at Distribution Panelboard Terminals (I_sc Panel)`),
-    createParagraph(`  I_sc Panel = FLA / Z_total_pu = ${iscFaultPoint.toFixed(2)} Amperes Symmetrical`),
-    createParagraph(`• Subtransient Rotational Motor Feedback Contribution`),
-    createParagraph(`  Motor Load Current = ${(scMotorLoadVA / (Math.sqrt(3) * params.transformerVoltage)).toFixed(2)}A, Transient Injection Factor = 4.0`),
-    createParagraph(`  I_motor = ${motorContribution.toFixed(2)} Amperes Symmetrical`),
-    createParagraph(`• Symmetrical Combined Symmetrical Short Circuit Current (Isc Combined)`),
-    createParagraph(`  Isc Combined Symmetrical = I_sc Panel + I_motor = ${combinedSymmetricalCurrent.toFixed(2)} Amperes Symmetrical`, true),
-    createParagraph(`• Ultimate Asymmetrical Combined Short Circuit Current (Isc Combined Asym)`),
-    createParagraph(`  Isc Combined Asym = Combined Symmetrical × Asymmetric Margin (1.25 factor)`),
-    createParagraph(`  Isc Combined Asym = ${combinedSymmetricalCurrent.toFixed(2)} × 1.25 = ${combinedAsymmetricalCurrent.toFixed(2)} Amperes Asymmetrical`, true),
+    createParagraph(`• Symmetrical Fault Current at Transformer Terminals: $I_{\\text{sc, Main}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{util, pu}} + Z_{\\text{trans, pu}}}$`),
+    createParagraph(`  $I_{\\text{sc, Main}} = \\frac{${iFullLoad.toFixed(2)}}{${zUtilitypu.toFixed(6)} + ${zTranspu.toFixed(6)}} = ${iscMainBreaker.toFixed(2)}\\text{ A Symmetrical}$`, true),
+    createParagraph(`• Symmetrical Fault Current at Distribution Panelboard Terminals: $I_{\\text{sc, Panel}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{total, pu}}}$`),
+    createParagraph(`  $I_{\\text{sc, Panel}} = \\frac{${iFullLoad.toFixed(2)}}{${totalZpu.toFixed(6)}} = ${iscFaultPoint.toFixed(2)}\\text{ A Symmetrical}$`),
+    createParagraph(`• Subtransient Rotational Motor Feedback Contribution:`),
+    createParagraph(`  Motor Load Current $I_{\\text{motor, FLA}} = \\frac{\\text{Motor VA}_{\\text{total}}}{V_{\\text{secondary}} \\times \\sqrt{3}} = ${(scMotorLoadVA / (Math.sqrt(3) * params.transformerVoltage)).toFixed(2)}\\text{ A}$, Transient Injection Factor = $4.0$`),
+    createParagraph(`  $I_{\\text{motor}} = I_{\\text{motor, FLA}} \\times 4.0 = ${motorContribution.toFixed(2)}\\text{ A Symmetrical}$`),
+    createParagraph(`• Combined Symmetrical Short Circuit Current (Total Symmetrical Fault): $I_{\\text{sc, sym}} = I_{\\text{sc, Panel}} + I_{\\text{motor}}$`),
+    createParagraph(`  $I_{\\text{sc, sym}} = ${iscFaultPoint.toFixed(2)} + ${motorContribution.toFixed(2)} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A Symmetrical}$`, true),
+    createParagraph(`• Ultimate Asymmetrical Combined Short Circuit Current (Total Asymmetrical Fault): $I_{\\text{sc, asym}} = I_{\\text{sc, sym}} \\times 1.25$`),
+    createParagraph(`  $I_{\\text{sc, asym}} = ${combinedSymmetricalCurrent.toFixed(2)} \\times 1.25 = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A Asymmetrical}$`, true),
     
     new Paragraph({ spacing: { before: 200 } }),
     createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): Requires that OCPDs intended to interrupt fault currents have an interrupting rating (kAIC) greater than or equal to the maximum design symmetrical/asymmetrical fault currents at the terminals."),
@@ -458,14 +819,14 @@ export const exportToWord = async (
   const isSafe_22kA = breakingkAIC < 22.0;
   
   const scFindings = [
-    `Computed Symmetrical Fault current at distribution board terminals equals ${combinedSymmetricalCurrent.toFixed(2)} Amperes. Factoring 25% starting offset yields a maximum Asymmetrical limit of ${combinedAsymmetricalCurrent.toFixed(2)} Amperes (${breakingkAIC.toFixed(2)} kAIC).`,
+    `Computed Symmetrical Fault current at distribution board terminals is $I_{\\text{sc, sym}} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A}$. Factoring a $25\\\%$ DC offset margin yields a maximum asymmetrical limit of $I_{\\text{sc, asym}} = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A}$ ($${breakingkAIC.toFixed(2)}\\text{ kAIC}$).`,
     `Standard Commercial Circuit Breaker kAIC Ratings Safety Evaluation:`,
-    `  - Service entrance main panels MUST possess a safety withstand rating of at least ${breakingkAIC > 10 ? '22 kAIC' : '10 kAIC'} to prevent destruction.`,
+    `  - Service entrance main panels MUST possess a safety withstand interrupting capacity of at least $I_{\\text{withstand}} \\ge ${breakingkAIC > 10 ? '22' : '10'}\\text{ kAIC}$ to prevent destruction.`,
     isSafe_10kA 
-      ? `  - Active panels with the standard 10 kAIC breaker class are FULLY COMPLIANT and protected against calculated electrical thermal explosion risks. Conformance Status: PASSED.`
+      ? `  - Active panels with the standard $10\\text{ kAIC}$ breaker class are FULLY COMPLIANT and protected against calculated electrical thermal explosion risks. Conformance Status: PASSED.`
       : isSafe_22kA
-        ? `  - Standard 10 kAIC OCPDs are INSUFFICIENT. Sizing MUST deploy minimum 22 kAIC breaker units. Service entrance conformance: Compliant with 22 kAIC specifications.`
-        : `  - High-stress fault zone requires minimum 30/35 kAIC breaker configurations. Conformance status: Critical action required - upgrade panels to 35 kAIC standard.`
+        ? `  - Standard $10\\text{ kAIC}$ OCPDs are INSUFFICIENT. Sizing MUST deploy minimum $22\\text{ kAIC}$ breaker units. Service entrance conformance: Compliant with $22\\text{ kAIC}$ specifications.`
+        : `  - High-stress fault zone requires minimum $30 / 35\\text{ kAIC}$ breaker configurations. Conformance status: Critical action required - upgrade panels to $35\\text{ kAIC}$ standard.`
   ];
   docChildren.push(createCallout("🔍 SHORT CIRCUIT FAULT MITIGATION SAFETY & AUDIT FINDINGS", scFindings));
 
@@ -485,10 +846,10 @@ export const exportToWord = async (
     
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`B. Voltage Drop Sizing Calculations Formulas Matrix`),
-    createParagraph(`1-Phase System Voltage Drop: VD (Volts) = (2 × R_ohms × Length × Load_A) / 1000`),
-    createParagraph(`3-Phase System Voltage Drop: VD (Volts) = (√3 × R_ohms × Length × Load_A) / 1000`),
-    createParagraph(`Effective System Percentage Loss (%) = (Voltage Drop / Nominal Source Voltage) × 100`),
-    createParagraph(`* R_ohms represents standard copper conductor AC internal resistance values looking up values in WIRE_IMPEDANCE_TABLE (Ω/km)`),
+    createParagraph(`1-Phase System Voltage Drop: $V_{\\text{drop, 1}\\phi} = \\frac{2 \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}$`),
+    createParagraph(`3-Phase System Voltage Drop: $V_{\\text{drop, 3}\\phi} = \\frac{\\sqrt{3} \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}$`),
+    createParagraph(`Effective System Percentage Loss (\\%): $V_{\\text{drop, \\%}} = \\left(\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}\\right) \\times 100\\%$`),
+    createParagraph(`* $R_{\\text{ohms}}$ represents standard copper conductor AC internal resistance values $(\\Omega/\\text{km})$ from the standard table.`),
     new Paragraph({ spacing: { after: 150 } })
   );
 
@@ -577,11 +938,11 @@ export const exportToWord = async (
 
     const vdFindings = [
       `A total of ${totalLinesChecked} feeder and branch circuit routes were modeled and audited.`,
-      `Safety Conformance Status: ${complianceCount} of ${totalLinesChecked} conductors satisfy the PEC recommended 3.0% maximum voltage drop limit.`,
-      `Critical Operating Drop Node: Farthest point found at "${criticalLabel}" displaying an electric voltage drop of ${maxVDPercentage.toFixed(2)}%.`,
+      `Safety Conformance Status: ${complianceCount} of ${totalLinesChecked} conductors satisfy the PEC recommended $3.0\\%$ maximum voltage drop limit.`,
+      `Critical Operating Drop Node: Farthest point found at "${criticalLabel}" displaying an electric voltage drop of $V_{\\text{drop, max}} = ${maxVDPercentage.toFixed(2)}\\%$.`,
       isSystemSuccess
         ? `Feeder Voltage Drop Conformance: ALL CIRCUITS ARE COMPLIANT. Current conductors and sizing configurations are highly optimized for voltage stability and minimal thermal loss. Conformance rating: PASSED.`
-        : `Feeder Voltage Drop ALERT: Certain routes exceed standard 3.0% recommendations. It is strictly recommended to increase the conductor cross-section area (e.g. step up from 3.5mm² to 5.5mm² or higher) on affected distribution feeders to curtail drop levels.`
+        : `Feeder Voltage Drop ALERT: Certain routes exceed the standard $3.0\\%$ limit. It is recommended to increase the conductor cross-sectional area (e.g., from $3.5\\text{ mm}^2$ to $5.5\\text{ mm}^2$ or larger) to reduce voltage drop.`
     ];
     docChildren.push(new Paragraph({ spacing: { before: 200 } }));
     docChildren.push(createCallout("🔍 FEEDER VOLTAGE DROP KEY FINDINGS & RECOMMENDED MITIGATIONS", vdFindings));
@@ -608,10 +969,10 @@ export const exportToWord = async (
     createParagraph("• ASHRAE 90.1 standard: Slashes high utility energy fees by establishing maximum limits on Lighting Power Density (LPD, W/m²) across building architectures."),
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`B. Core Prototypal Formulas`),
-    createParagraph(`1. Expected Ambient Lumens (L_req) = (Target Lux × Floor Area) / (CU × MF)`),
-    createParagraph(`2. Quantity of Luminaires Sized = Expected Ambient Lumens (L_req) / Solid Lumens per Luminaire`),
-    createParagraph(`3. Lighting Power Density (LPD) = Sized Quantity × Fixture Wattage (W) / Floor Area (m²)`),
-    createParagraph(`* CU (Coefficient of Utilization) derived from room cavity geometric ratios (RCR). MF (Maintenance Factor) represents dust/depreciation losses (assumed standard clean 0.80).`),
+    createParagraph(`1. Required Luminous Flux: $\\Phi_{\\text{req}} = \\frac{E_{\\text{target}} \\times A_{\\text{floor}}}{CU \\times MF}\\text{ lm}$`),
+    createParagraph(`2. Sized Luminaire Quantity: $N_{\\text{fixtures}} = \\left\\lceil \\frac{\\Phi_{\\text{req}}}{\\Phi_{\\text{luminaire}}} \\right\\rceil$`),
+    createParagraph(`3. Lighting Power Density (LPD): $LPD = \\frac{N_{\\text{fixtures}} \\times P_{\\text{fixture}}}{A_{\\text{floor}}}\\text{ W/m}^2$`),
+    createParagraph(`* $CU$ (Coefficient of Utilization) is derived from room geometric cavity ratios (RCR). $MF$ (Maintenance Factor) represents dust/dirt depreciation losses (assumed standard value of $0.80$).`),
     new Paragraph({ spacing: { after: 150 } })
   );
 
@@ -691,18 +1052,18 @@ export const exportToWord = async (
 
   docChildren.push(
     createSubHeader(`D. Current Under-Process Room Analysis`),
-    createParagraph(`• Floor Cavity Layout Area: ${roomArea} m²`),
-    createParagraph(`• Task Required Lux Height: ${targetLux} lx`),
-    createParagraph(`• Fixture Nominal Light Rating: ${lumensPerFix} lm`),
-    createParagraph(`• Coefficient of Utilization (CU) Geometric Factor: ${cu.toFixed(2)}`),
-    createParagraph(`• Sized Fixture Mount Quantity: ${qty} units (${(qty * lumensPerFix / roomArea).toFixed(0)} Average Achieved Lux)`),
+    createParagraph(`• Floor Cavity Layout Area: $A_{\\text{floor}} = ${roomArea}\\text{ m}^2$`),
+    createParagraph(`• Task Required Illuminance: $E_{\\text{target}} = ${targetLux}\\text{ lx}$`),
+    createParagraph(`• Luminaire Rated Luminous Flux: $\\Phi_{\\text{luminaire}} = ${lumensPerFix}\\text{ lm}$`),
+    createParagraph(`• Coefficient of Utilization (CU) Geometric Factor: $CU = ${cu.toFixed(2)}$`),
+    createParagraph(`• Sized Fixture Mount Quantity: $N_{\\text{fixtures}} = ${qty}\\text{ units}$ (Average Achieved Illuminance $E_{\\text{achieved}} = \\frac{N_{\\text{fixtures}} \\times \\Phi_{\\text{luminaire}}}{A_{\\text{floor}}} = ${(qty * lumensPerFix / roomArea).toFixed(0)}\\text{ lx}$)`),
     
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`E. Ergonomics Audit - Uniformity, Glare & Sensory Smart Integrations`),
-    createParagraph(`• POINT-BY-POINT UNIFORMITY INDEX (U0 = E_min / E_avg): Calculated uniformity is targeted for 0.40 or above (exhibiting stable, high-quality, and shadow-free lighting comfort).`),
-    createParagraph(`• GLARE ANALYSIS (UGR): Sized space conforms to comfortable glare ratings (typical values kept under standard limit of 19.0 to eliminate severe visual fatigue constraints in workspaces).`),
-    createParagraph(`• INTERCONNECTED PHOTOELECTRIC SENSORS: Incorporating daylight harvesting sensors automatically regulates artificial LED lumens during high exterior sunlight conditions, delivering an estimated energy drop of up to 35% across daylight hours.`),
-    createParagraph(`• SYSTEM LIGHT POWER DENSITY (LPD): Calculated active room LPD is ${(qty * 36 / roomArea).toFixed(2)} W/m², aligning below standard energy limits. Status: Compliant.`),
+    createParagraph(`• POINT-BY-POINT UNIFORMITY INDEX: Target uniformity is $U_0 = \\frac{E_{\\text{min}}}{E_{\\text{avg}}} \\ge 0.40$ (to achieve uniform, shadow-free illumination).`),
+    createParagraph(`• GLARE ANALYSIS (Unified Glare Rating): Configured arrays conform to standard guidelines yielding $UGR < 19.0$ to minimize visual discomfort.`),
+    createParagraph(`• DAYLIGHT HARVESTING SENSORS: Automatic photocell controllers regulate lamp outputs to produce an estimated energy reduction of $\\Delta P_{\\text{dim}} \\approx 35\\%$.`),
+    createParagraph(`• SYSTEM LIGHTING POWER DENSITY (LPD): Sized active room LPD is $LPD = ${(qty * 36 / roomArea).toFixed(2)}\\text{ W/m}^2$, which is compliant with the maximum standards.`),
     
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`F. Solar Smart Financing Payback Sizing Forecast`),
@@ -754,9 +1115,9 @@ export const exportToWord = async (
   }));
 
   const illumFindings = [
-    `Total active lighting infrastructure wattage scales to ${totalSizedWattage} Watts. Sized spacing ensures average lux is aligned with the targeted ${targetLux} lx task limit comfortably.`,
-    `Integrated Smart Lighting systems save 35% of energy during peak daylight. This drops operational electricity charges from ₱${annualCostStandard.toLocaleString('en-US', {maximumFractionDigits: 0})} down to ₱${annualCostSmart.toLocaleString('en-US', {maximumFractionDigits: 0})} per year.`,
-    `Project Net Amortization Period: Sizable smart photoelectric fixtures amortize standard investment costs in an estimated ${returnInvestmentYears.toFixed(1)} years through utility savings. Conformance Status: OPTIMIZED.`
+    `Total active lighting infrastructure wattage is $P_{\\text{total}} = ${totalSizedWattage}\\text{ W}$. Sized spacing ensures average lux is aligned with the targeted $E_{\\text{target}} = ${targetLux}\\text{ lx}$ task limit comfortably.`,
+    `Integrated Smart Industrial Photoelectric dimming systems save $35\\%$ of energy during peak daylight. This drops operational electricity charges from $\\text{₱}${annualCostStandard.toLocaleString('en-US', {maximumFractionDigits: 0})}$ down to $\\text{₱}${annualCostSmart.toLocaleString('en-US', {maximumFractionDigits: 0})}$ per year, yielding annual cost savings of $\\Delta \\text{Cost} = \\text{₱}${annualSavingsPrj.toLocaleString('en-US', {maximumFractionDigits: 0})}$.`,
+    `Project Net Amortization Period: Smart photoelectric structures pay back capital costs in an estimated $ROI = ${returnInvestmentYears.toFixed(1)}\\text{ years}$ through efficiency savings. Conformance Status: OPTIMIZED.`
   ];
   docChildren.push(new Paragraph({ spacing: { before: 200 } }));
   docChildren.push(createCallout("🔍 LIGHTING ENVIRONMENTAL ERGONOMICS & DECARBONIZATION AUDIT", illumFindings));

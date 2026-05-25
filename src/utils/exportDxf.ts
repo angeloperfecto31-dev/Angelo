@@ -5,7 +5,7 @@ export const exportDiagramToDXF = (panel: any, params: any, calculation: any, mo
   
   d.setUnits('Millimeters');
   
-  const SVG_HEIGHT = 720;
+  const SVG_HEIGHT = 880;
   const SVG_WIDTH = 850;
   
   const convertY = (y: number) => SVG_HEIGHT - y;
@@ -41,97 +41,164 @@ export const exportDiagramToDXF = (panel: any, params: any, calculation: any, mo
   };
   
   // Headers
-  addText("I. System Single Line Diagram", 180 - 70, 30, 13, 'TITLES');
+  addText("I. System Single Line Diagram", 185 - 100, 30, 13, 'TITLES');
   addLine(80, 40, 280, 40, 'TITLES');
   
-  addText("II. Sequence Impedance Model", 560 - 70, 30, 13, 'WARNINGS');
+  addText("II. Sequence Impedance Model", 565 - 100, 30, 13, 'WARNINGS');
   addLine(460, 40, 660, 40, 'WARNINGS');
   
   // ROW 1: UTILITY
-  addCircle(180, 90, 22, 'LINES');
-  addLine(166, 90, 194, 90, 'LINES'); // simple generator mark
-  addText("UTILITY INF. BUS", 180 - 30, 125, 10, 'TITLES');
+  addCircle(180, 80, 22, 'LINES');
+  addLine(166, 80, 194, 80, 'LINES');
+  addText("UTILITY SERVICE ENTRANCE", 180 - 70, 115, 10, 'TITLES');
   
-  addLine(210, 90, 510, 90, 'DASHED');
+  addLine(210, 80, 510, 80, 'DASHED');
   
-  addLine(510, 90, 610, 90, 'LINES');
-  addText("Infinite Bus (V = 1.0 pu)", 560 - 50, 75, 10, 'TITLES');
+  addLine(510, 80, 610, 80, 'LINES');
+  addText("Infinite Bus (V = 1.0 pu)", 560 - 70, 65, 10, 'TITLES');
   
-  addLine(560, 90, 560, 120, 'LINES');
+  addLine(560, 80, 560, 120, 'LINES');
   addRect(545, 120, 30, 35, 'LINES');
   addText("Zu", 560 - 5, 140, 10, 'VALUES');
-  addLine(560, 155, 560, 185, 'LINES');
+  addLine(560, 155, 560, 180, 'LINES');
   
   // PRIMARY TO SECONDARY BUS CONNECTORS
-  addLine(180, 112, 180, 190, 'LINES');
+  addLine(180, 102, 180, 180, 'LINES');
   
-  // ROW 2: TRANSFORMER
-  addCircle(180, 212, 20, 'LINES');
-  addCircle(180, 232, 20, 'LINES');
-  addText("TX-01 TRANSFORMER", 180 - 45, 270, 10, 'TITLES');
+  // --- FAULT 1: PRIMARY SIDE ---
+  addLine(80, 180, 280, 180, 'LINES'); // Primary Bus (HV)
+  addText("PRIMARY BUS (HV)", 285, 177, 10, 'TITLES');
+  addText(`${params.primaryVoltage} V`, 285, 190, 8, 'VALUES');
   
-  addLine(210, 212, 510, 212, 'DASHED');
+  // Fault 1 Starburst represented by circles in DXF
+  addCircle(120, 180, 12, 'WARNINGS');
+  addText("Fault 1", 120 - 15, 165, 8, 'WARNINGS');
+  addText(`Isc1=${calculation.iscFault1}A`, 120 - 25, 198, 8, 'WARNINGS');
   
-  addRect(545, 185, 30, 35, 'LINES');
-  addText("Zt", 560 - 5, 205, 10, 'VALUES');
-  addLine(560, 220, 560, 280, 'LINES');
+  addCircle(560, 180, 5, 'WARNINGS');
+  addLine(560, 180, 500, 180, 'WARNINGS');
+  addLine(500, 180, 480, 170, 'WARNINGS'); // switch symbol
+  addLine(480, 180, 450, 180, 'WARNINGS');
+  // F1 grounding triangles representation
+  addLine(450, 175, 450, 185, 'WARNINGS');
+  addLine(446, 178, 446, 182, 'WARNINGS');
+  addLine(442, 180, 442, 180, 'WARNINGS');
+  
+  addLine(285, 180, 500, 180, 'DASHED');
+  
+  // ROW 2: PRIMARY PROTECTIVE / SWITCH
+  addLine(180, 180, 180, 205, 'LINES');
+  addLine(180, 205, 192, 218, 'LINES');
+  addLine(180, 225, 180, 250, 'LINES');
+  addText("LBS / HV FUSE", 195, 215, 8, 'TITLES');
+  
+  // ROW 3: TRANSFORMER
+  addCircle(180, 275, 18, 'LINES');
+  addCircle(180, 295, 18, 'LINES');
+  addText("TX-01 SUBSTATION", 180 - 45, 328, 9, 'TITLES');
+  addText(`${params.transformerKVA} kVA`, 180 - 25, 340, 8, 'VALUES');
+  
+  addLine(205, 285, 510, 285, 'DASHED');
+  
+  addLine(560, 180, 560, 265, 'LINES');
+  addRect(545, 265, 30, 35, 'LINES');
+  addText("Zt", 560 - 5, 285, 10, 'VALUES');
+  addLine(560, 300, 560, 390, 'LINES');
   
   // SECONDARY BUS WORKWAY
-  addLine(180, 252, 180, 300, 'LINES');
+  addLine(180, 313, 180, 360, 'LINES');
   
-  // ROW 3: MAIN BREAKER & MDP BUS
-  addRect(171, 300, 18, 26, 'LINES');
-  addText(panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A', 200, 317, 10, 'VALUES');
+  // ROW 4: MAIN BREAKER
+  addRect(171, 360, 18, 26, 'LINES');
+  addText(panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A', 200, 377, 8, 'VALUES');
   
-  addLine(180, 326, 180, 350, 'LINES');
+  addLine(180, 386, 180, 420, 'LINES');
   
-  addLine(80, 350, 280, 350, 'LINES'); // MDP Bus
-  addText("MAIN MDP BUS", 285, 347, 10, 'TITLES');
-  addText(`${calculation.iscMainBreaker} A (Isc Symmetrical)`, 285, 360, 10, 'WARNINGS');
+  // --- FAULT 2: SECONDARY MDP BUS ---
+  addLine(80, 420, 280, 420, 'LINES'); // MDP Bus
+  addText("MAIN MDP BUSBAR", 285, 417, 10, 'TITLES');
+  addText(`${params.transformerVoltage} V (Dyn11 Wye-G)`, 285, 430, 8, 'VALUES');
   
-  addLine(285, 350, 510, 350, 'DASHED');
+  addCircle(120, 420, 14, 'WARNINGS');
+  addText("Fault 2", 120 - 15, 402, 8, 'WARNINGS');
+  addText(`Isc2=${calculation.iscFault2}A`, 120 - 25, 442, 8, 'WARNINGS');
   
-  addCircle(560, 280, 5, 'WARNINGS');
-  addText("MDP MAIN BUS NODE", 575, 284, 10, 'TITLES');
-  addText(`Isc = ${calculation.iscMainBreaker}A`, 575, 296, 10, 'WARNINGS');
+  addCircle(560, 390, 6, 'WARNINGS');
+  addText("MDP NODE (Node 2)", 575, 386, 10, 'TITLES');
+  addText(`Isc2 = ${calculation.iscFault2} A`, 575, 398, 8, 'VALUES');
   
-  // FEEDER CONDUCTOR WORKWAY
-  addLine(180, 352, 180, 400, 'LINES');
+  addLine(560, 390, 500, 390, 'WARNINGS');
+  addLine(500, 390, 480, 380, 'WARNINGS'); // switch symbol
+  addLine(480, 390, 450, 390, 'WARNINGS');
+  // F2 grounding triangles
+  addLine(450, 385, 450, 395, 'WARNINGS');
+  addLine(446, 388, 446, 392, 'WARNINGS');
+  addLine(442, 390, 442, 390, 'WARNINGS');
   
-  // ROW 4: FEEDER SEGMENT
-  addLine(180, 400, 180, 480, 'VALUES'); // Feeder cable
-  addText("FEEDER CABLE", 180 + 10, 445, 10, 'VALUES');
+  addLine(285, 420, 500, 390, 'DASHED');
   
-  addLine(210, 440, 510, 440, 'DASHED');
+  // ROW 5: BRANCH BREAKER & FEEDER CABLE
+  addLine(180, 422, 180, 450, 'LINES');
+  addRect(173, 450, 14, 20, 'LINES');
+  addLine(180, 470, 180, 580, 'VALUES'); // Feeder cable
+  addText("FEEDER CABLE", 185, 525, 9, 'VALUES');
+  addText(`${params.feederRuns}x ${params.feederSize}mm2`, 185, 540, 8, 'VALUES');
   
-  addLine(560, 285, 560, 380, 'LINES');
-  addRect(545, 380, 30, 35, 'LINES');
-  addText("Zcab", 560 - 10, 400, 10, 'VALUES');
-  addLine(560, 415, 560, 520, 'LINES');
+  addLine(205, 520, 510, 520, 'DASHED');
   
-  // FEEDER TO FAULT POINT CONNECTORS
-  addLine(180, 480, 180, 520, 'LINES');
+  addLine(560, 390, 560, 475, 'LINES');
+  addRect(545, 475, 30, 35, 'LINES');
+  addText("Zcab", 560 - 10, 495, 10, 'VALUES');
+  addLine(560, 510, 560, 620, 'LINES');
   
-  // ROW 5: FAULT POINT AND SYSTEM GROUND
-  // Starburst roughly represented by a circle here in DXF
-  addCircle(180, 540, 25, 'WARNINGS');
-  addText("Isc", 180 - 10, 545, 10, 'WARNINGS');
-  addText("LINE FAULT POINT B", 180 - 45, 595, 10, 'WARNINGS');
+  // --- FAULT 3: Remote Panel BOARD BUS ---
+  addLine(80, 580, 280, 580, 'LINES'); // Remote Panel board Bus
+  addText(`DISTRIBUTION PANELBOARD (${panel?.designation || 'PANEL A'})`, 285, 577, 10, 'TITLES');
   
-  addLine(220, 540, 510, 530, 'DASHED');
+  addCircle(120, 580, 15, 'WARNINGS');
+  addText("Fault 3", 120 - 15, 562, 8, 'WARNINGS');
+  addText(`Isc3=${calculation.iscFault3}A`, 120 - 25, 602, 8, 'WARNINGS');
   
-  addLine(560, 465, 560, 505, 'LINES');
+  addCircle(560, 620, 6, 'WARNINGS');
+  addText("PANEL NODE (Node 3)", 575, 616, 10, 'TITLES');
+  addText(`Isc3 = ${calculation.iscFault3} A`, 575, 628, 8, 'VALUES');
   
-  // Grounding symbol
-  addLine(530, 505, 590, 505, 'WARNINGS');
-  addLine(540, 513, 580, 513, 'WARNINGS');
-  addLine(550, 521, 570, 521, 'WARNINGS');
+  addLine(560, 620, 500, 620, 'WARNINGS');
+  addLine(500, 620, 480, 610, 'WARNINGS'); // Switch symbol
+  addLine(480, 620, 450, 620, 'WARNINGS');
+  // F3 grounding triangles
+  addLine(450, 615, 450, 625, 'WARNINGS');
+  addLine(446, 618, 446, 622, 'WARNINGS');
+  addLine(442, 620, 442, 620, 'WARNINGS');
   
-  addText("SYSTEM SHORT CIRCUITED NODE", 560 - 80, 540, 10, 'WARNINGS');
-  addText(`Total Equiv Sym Isc = ${calculation.totalFaultM} A`, 560 - 80, 555, 10, 'WARNINGS');
+  addLine(285, 580, 500, 620, 'DASHED');
   
-  // LABELS
-  // 1. Grid Supply Detail Box
+  // ROW 6: MOTOR FEEDBACK (IF MOTOR LOAD EXISTS)
+  if (motorLoadVA > 0) {
+    addLine(180, 580, 180, 630, 'LINES');
+    addCircle(180, 648, 18, 'LINES');
+    addText("M", 180 - 5, 652, 10, 'LINES');
+    addText(`Motor feedback +${calculation.motorContribution}A`, 180 - 45, 680, 8, 'VALUES');
+    
+    addLine(560, 620, 620, 620, 'LINES');
+    addRect(620, 602, 22, 35, 'LINES');
+    addText("Zm", 625, 620, 8, 'VALUES');
+    addLine(642, 620, 690, 620, 'LINES');
+    addCircle(705, 620, 15, 'LINES');
+    addText("Em", 700, 624, 8, 'VALUES');
+  }
+  
+  // STANDARD FOOTER DETAILS in Philippine practices
+  addRect(40, 740, 770, 110, 'DASHED');
+  addText("PHILIPPINE ELECTRICAL CODE (PEC) DESIGN COMPLIANCE BLOCK", 60, 762, 10, 'TITLES');
+  addText(`Utility Strength: ${params.utilityShortCircuitMVA} MVA s.c. | Secondary Voltage: 3-Phase ${params.transformerVoltage} V, 60 Hz`, 60, 780, 8, 'VALUES');
+  addText(`Fault 1 (HV Utility Bus): ${calculation.iscFault1} Amps | Symmetrical Primary protection evaluated`, 60, 795, 8, 'VALUES');
+  addText(`Fault 2 (LV Secondary Bus): ${calculation.iscFault2} Amps | Air / Molded Case Circuit Breaker layout`, 60, 810, 8, 'VALUES');
+  addText(`Fault 3 (Remote Board Bus): ${calculation.iscFault3} Amps (incl. ${calculation.motorContribution}A motor feedback) | PEC 1.10.1.24 Compliant`, 60, 825, 8, 'VALUES');
+  addText("PEC APPROVED CONFIG | SYSTEM POWER GRID DIAGRAM", 60, 840, 8, 'TITLES');
+  
+  // Labelling Draggable Boxes
+  // 1. Grid Supply Box
   addRect(20, 65, 120, 40, 'DASHED');
   addText("Grid Supply", 25, 75, 8, 'TITLES');
   addText(`${params.utilityShortCircuitMVA} MVAsc`, 25, 85, 8, 'VALUES');
@@ -140,52 +207,62 @@ export const exportDiagramToDXF = (panel: any, params: any, calculation: any, mo
   // 2. Utility Impedance Box
   addRect(630, 112, 130, 40, 'DASHED');
   addText("Utility Impedance", 635, 122, 8, 'TITLES');
-  addText("Z_utility:", 635, 132, 8, 'TITLES');
   addText(`${calculation.zUtilitypu} pu`, 635, 142, 8, 'VALUES');
   
-  // 3. Transformer Spec Box
-  addRect(20, 188, 120, 40, 'DASHED');
-  addText("TX-01 Spec", 25, 198, 8, 'TITLES');
-  addText(`${params.transformerKVA} kVA`, 25, 208, 8, 'VALUES');
-  addText(`%Z = ${params.transformerZ}%`, 25, 218, 8, 'VALUES');
+  // 3. Fault 1 Outputs Box
+  addRect(20, 145, 120, 40, 'DASHED');
+  addText("Fault 1 (Pri HV)", 25, 155, 8, 'TITLES');
+  addText(`${calculation.iscFault1} A`, 25, 175, 8, 'WARNINGS');
   
-  // 4. Transformer Impedance Box
-  addRect(630, 178, 130, 40, 'DASHED');
-  addText("XFMR Impedance", 635, 188, 8, 'TITLES');
-  addText(`${calculation.zTranspu} pu`, 635, 208, 8, 'VALUES');
+  // 4. Transformer Spec Box
+  addRect(20, 245, 120, 45, 'DASHED');
+  addText("TX-01 Spec", 25, 255, 8, 'TITLES');
+  addText(`${params.transformerKVA} kVA`, 25, 265, 8, 'VALUES');
+  addText(`%Z = ${params.transformerZ}%`, 25, 275, 8, 'VALUES');
   
-  // 5. Conductor Spec Box
-  addRect(20, 398, 140, 45, 'DASHED');
-  addText("Conductor Spec", 25, 408, 8, 'TITLES');
-  addText(`${params.feederRuns} Runs x ${params.feederSize} mm²`, 25, 418, 8, 'VALUES');
-  addText(`Length: ${params.feederLength} meters`, 25, 438, 8, 'VALUES');
+  // 5. Transformer Impedance Box
+  addRect(630, 245, 130, 40, 'DASHED');
+  addText("XFMR Impedance", 635, 255, 8, 'TITLES');
+  addText(`${calculation.zTranspu} pu`, 635, 275, 8, 'VALUES');
   
-  // 6. Conductor Impedance Box
-  addRect(630, 372, 140, 45, 'DASHED');
-  addText("Feeder Impedance", 635, 382, 8, 'TITLES');
-  addText(`R=${calculation.feederR} X=${calculation.feederX}`, 635, 392, 8, 'VALUES');
-  addText(`${calculation.zFeederpu} pu`, 635, 412, 8, 'VALUES');
+  // 6. Fault 2 Outputs Box
+  addRect(20, 380, 120, 40, 'DASHED');
+  addText("Fault 2 (Secondary)", 25, 390, 8, 'TITLES');
+  addText(`${calculation.iscFault2} A`, 25, 410, 8, 'WARNINGS');
   
-  // 7. Fault Outputs Box
-  addRect(20, 505, 140, 55, 'DASHED');
-  addText("Fault Outputs", 25, 515, 8, 'TITLES');
-  addText(`${calculation.iscSecondary} A`, 25, 535, 8, 'VALUES');
-  addText(`Total: ${calculation.totalFaultM} A`, 25, 555, 8, 'WARNINGS');
+  // 7. Conductor Conductor Info Box
+  addRect(20, 480, 140, 45, 'DASHED');
+  addText("Conductor Spec", 25, 490, 8, 'TITLES');
+  addText(`${params.feederRuns} Runs x ${params.feederSize} mm2`, 25, 500, 8, 'VALUES');
+  addText(`Length: ${params.feederLength} meters`, 25, 515, 8, 'VALUES');
   
-  // 8. Impedance Total Box
-  addRect(630, 510, 140, 40, 'DASHED');
-  addText("Total Equivalent Z", 635, 520, 8, 'TITLES');
-  addText(`${calculation.ztotalpu} pu`, 635, 540, 8, 'VALUES');
+  // 8. Conductor Impedance Box
+  addRect(630, 460, 140, 45, 'DASHED');
+  addText("Feeder Impedance", 635, 470, 8, 'TITLES');
+  addText(`R=${calculation.feederR} X=${calculation.feederX}`, 635, 480, 8, 'VALUES');
+  addText(`${calculation.zFeederpu} pu`, 635, 500, 8, 'VALUES');
+  
+  // 9. Fault 3 Outputs Box
+  addRect(20, 560, 140, 55, 'DASHED');
+  addText("Fault 3 (Remote)", 25, 570, 8, 'TITLES');
+  addText(`Total: ${calculation.totalFaultM} A`, 25, 595, 8, 'WARNINGS');
+  
+  // 10. Impedance Total Box
+  addRect(630, 580, 140, 40, 'DASHED');
+  addText("Total Equivalent Z", 635, 590, 8, 'TITLES');
+  addText(`${calculation.ztotalpu || (parseFloat(calculation.zUtilitypu) + parseFloat(calculation.zTranspu) + parseFloat(calculation.zFeederpu)).toFixed(5)} pu`, 635, 610, 8, 'VALUES');
 
   const dxfString = d.toDxfString();
   
   const blob = new Blob([dxfString], { type: 'application/dxf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
+  const designation = panel?.designation || 'PANEL_A';
   a.href = url;
-  a.download = `ShortCircuit_Diagram_${panel.designation}.dxf`;
+  a.download = `ShortCircuit_Diagram_${designation}.dxf`;
   document.body.appendChild(a);
   a.click();
+  document.body.appendChild(a);
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };

@@ -18,7 +18,11 @@ export function Auth() {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.error('Login error:', error);
-      alert('Login failed: ' + error.message);
+      if (error.code === 'auth/network-request-failed' || error.message?.includes('network-request-failed')) {
+        alert("Authentication failed: Network request blocked.\n\nSince the application is running inside a sandbox/preview iframe, modern browsers restrict third-party authentication context.\n\nPlease click the 'Open in New Tab' button in the top-right of the preview pane to sign in properly.");
+      } else {
+        alert('Login failed: ' + error.message);
+      }
     }
   };
 

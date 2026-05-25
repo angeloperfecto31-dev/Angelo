@@ -183,6 +183,9 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
     
     const multiplier = 1 / totalZpu;
 
+    // Fault 1 (HV side or Primary Service Entrance)
+    const fault1Isc = (params.utilityShortCircuitMVA * 1000000) / (Math.sqrt(3) * params.primaryVoltage);
+
     return {
       fla: iFullLoad.toFixed(2),
       iFullLoad: iFullLoad.toFixed(2),
@@ -195,7 +198,10 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       zFeederpu: zFeederpu.toFixed(5),
       zUtilitypu: zUtilitypu.toFixed(5),
       zTranspu: zTranspu.toFixed(5),
-      multiplier: multiplier.toFixed(2)
+      multiplier: multiplier.toFixed(2),
+      iscFault1: fault1Isc.toFixed(2),
+      iscFault2: iscMainBreaker.toFixed(2),
+      iscFault3: (iscFaultPoint + motorContribution).toFixed(2)
     };
   }, [params, motorLoadVA]);
 
@@ -396,12 +402,12 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             <div className={`w-full flex flex-col items-center py-6 font-sans overflow-x-auto ${diagramTab === 'svg' ? 'block' : 'hidden'}`}>
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
               <div 
-                className="relative w-[850px] h-[720px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
+                className="relative w-[850px] h-[880px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
                 style={{ filter: isBWMode ? 'grayscale(100%)' : 'none' }}
               >
                 {/* SVG 2D Single Line Impedance Diagram */}
                 <svg
-                  viewBox="0 0 850 720"
+                  viewBox="0 0 850 880"
                   className="absolute top-0 left-0 w-full h-full font-sans text-slate-800 dark:text-slate-100 pointer-events-none"
                 >
                   <defs>
@@ -440,135 +446,234 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
                   {/* ROW 1: UTILITY */}
                   {/* Left Column Symbol (Utility generator circle) */}
-                  <circle cx="180" cy="90" r="22" className="sld-line sld-symbol-bg" />
-                  <path d="M 166,90 Q 173,78 180,90 T 194,90" className="sld-line" strokeWidth="2" />
-                  <text x="180" y="125" className="sld-text-lbl" textAnchor="middle" style={{ fontWeight: 'bold' }}>UTILITY INF. BUS</text>
+                  <circle cx="180" cy="80" r="22" className="sld-line sld-symbol-bg" />
+                  <path d="M 166,80 Q 173,68 180,80 T 194,80" className="sld-line" strokeWidth="2" />
+                  <text x="180" y="115" className="sld-text-lbl" textAnchor="middle" style={{ fontWeight: 'bold' }}>UTILITY SERVICE ENTRANCE</text>
 
                   {/* Divider Dash linking Left and Right */}
-                  <line x1="210" y1="90" x2="510" y2="90" className="sld-dash" />
+                  <line x1="210" y1="80" x2="510" y2="80" className="sld-dash" />
 
                   {/* Right Column Index Reference Bar (Infinite Bus) */}
-                  <line x1="510" y1="90" x2="610" y2="90" className="sld-line" strokeWidth="6" />
-                  <text x="560" y="75" className="sld-text-title" textAnchor="middle">Infinite Bus (V = 1.0 pu)</text>
+                  <line x1="510" y1="80" x2="610" y2="80" className="sld-line" strokeWidth="6" />
+                  <text x="560" y="65" className="sld-text-title" textAnchor="middle">Infinite Bus (V = 1.0 pu)</text>
 
                   {/* Right Column Utility Impedance Series Reactor */}
-                  <line x1="560" y1="90" x2="560" y2="120" className="sld-line" />
+                  <line x1="560" y1="80" x2="560" y2="120" className="sld-line" />
                   <rect x="545" y="120" width="30" height="35" className="sld-shape-tx-blue" strokeWidth="2" rx="3" />
                   <text x="560" y="141" className="sld-text-val" textAnchor="middle" style={{ fill: '#3b82f6' }}>Zu</text>
-                  <line x1="560" y1="155" x2="560" y2="185" className="sld-line" />
-
+                  <line x1="560" y1="155" x2="560" y2="180" className="sld-line" />
 
                   {/* PRIMARY TO SECONDARY BUS CONNECTORS */}
-                  <line x1="180" y1="112" x2="180" y2="190" className="sld-line" />
+                  <line x1="180" y1="102" x2="180" y2="180" className="sld-line" strokeWidth="2" />
 
+                  {/* ----------------- FAULT 1: PRIMARY SIDE ----------------- */}
+                  {/* Primary Service Busbar - Horizontal line at y=180 */}
+                  <line x1="80" y1="180" x2="280" y2="180" className="sld-line" strokeWidth="4" />
+                  <text x="285" y="177" className="sld-text-title" fill="#d97706">PRIMARY BUS (HV)</text>
+                  <text x="285" y="190" className="sld-text-val" style={{ fill: '#d97706' }}>{params.primaryVoltage} V</text>
+                  
+                  {/* Fault 1 Starburst Symbol at x=120, y=180 */}
+                  <g transform="translate(120,180)">
+                    <path
+                      d="M -15,0 L -5,5 L -7,12 L -1,5 L 5,14 L 4,4 L 14,0 L 4,-4 L 6,-12 L -1,-5 L -7,-12 L -4,-4 Z"
+                      className="sld-line"
+                      fill="#fffbeb"
+                      stroke="#ea580c"
+                      strokeWidth="1.5"
+                    />
+                    <circle cx="0" cy="0" r="2" fill="#d97706" />
+                  </g>
+                  <text x="120" y="165" className="sld-text-val" textAnchor="middle" style={{ fill: '#d97706', fontSize: '9px' }}>Fault 1</text>
+                  <text x="120" y="198" className="sld-text-val" textAnchor="middle" style={{ fill: '#d97706', fontSize: '8px' }}>Isc1={calculation.iscFault1}A</text>
 
-                  {/* ROW 2: TRANSFORMER */}
+                  {/* Right Column Node 1: Primary Bus Node at y=180 */}
+                  <circle cx="560" cy="180" r="5" fill="#d97706" />
+                  {/* Fault 1 Switch/Grounding Branch on Impedance Model */}
+                  <line x1="560" y1="180" x2="500" y2="180" className="sld-line" strokeWidth="1.5" style={{ stroke: '#d97706' }} />
+                  {/* Closed Fault Switch Symbol */}
+                  <line x1="500" y1="180" x2="480" y2="170" className="sld-line" strokeWidth="1.5" style={{ stroke: '#d97706' }} />
+                  <line x1="480" y1="180" x2="450" y2="180" className="sld-line" strokeWidth="1.5" style={{ stroke: '#d97706' }} />
+                  {/* F1 Grounding Triangle */}
+                  <line x1="450" y1="175" x2="450" y2="185" stroke="#d97706" strokeWidth="2.5" />
+                  <line x1="446" y1="178" x2="446" y2="182" stroke="#d97706" strokeWidth="2" />
+                  <line x1="442" y1="180" x2="442" y2="180" stroke="#d97706" strokeWidth="1.5" />
+                  <text x="475" y="162" className="sld-text-val" textAnchor="middle" style={{ fill: '#d97706', fontSize: '9px' }}>F1 Ground</text>
+
+                  {/* Link SLD and Impedance primary bus */}
+                  <line x1="285" y1="180" x2="500" y2="180" className="sld-dash" />
+
+                  {/* ROW 2: PRIMARY PROTECTIVE / SWITCH */}
+                  {/* Primary Switch symbol vertically down on SLD at y=210 */}
+                  <line x1="180" y1="180" x2="180" y2="205" className="sld-line" />
+                  <line x1="180" y1="205" x2="192" y2="218" className="sld-line" strokeWidth="2" />
+                  <line x1="180" y1="225" x2="180" y2="250" className="sld-line" />
+                  <text x="195" y="215" className="sld-text-lbl text-[8px]">LBS / HV FUSE</text>
+
+                  {/* ROW 3: TRANSFORMER */}
                   {/* Left Column Transformer Symbol (Overlap Circles) */}
-                  <circle cx="180" cy="212" r="20" className="sld-line sld-symbol-bg" />
-                  <circle cx="180" cy="232" r="20" className="sld-line" fill="none" />
-                  <text x="180" y="270" className="sld-text-lbl" textAnchor="middle" style={{ fontWeight: 'bold' }}>TX-01 TRANSFORMER</text>
+                  <circle cx="180" cy="275" r="18" className="sld-line sld-symbol-bg" />
+                  <circle cx="180" cy="295" r="18" className="sld-line" fill="none" />
+                  <text x="180" y="328" className="sld-text-lbl" textAnchor="middle" style={{ fontWeight: 'bold' }}>TX-01 SUBSTATION</text>
+                  <text x="180" y="340" className="sld-text-lbl" textAnchor="middle" style={{ fontSize: '8px' }}>{params.transformerKVA}kVA {params.transformerConnection}</text>
 
                   {/* Divider Dash linking Left and Right */}
-                  <line x1="210" y1="212" x2="510" y2="212" className="sld-dash" />
+                  <line x1="205" y1="285" x2="510" y2="285" className="sld-dash" />
 
                   {/* Right Column Transformer impedance series block */}
-                  <rect x="545" y="185" width="30" height="35" className="sld-shape-tx-green" strokeWidth="2" rx="3" />
-                  <text x="560" y="206" className="sld-text-val" textAnchor="middle" style={{ fill: '#4ade80' }}>Zt</text>
-                  <line x1="560" y1="220" x2="560" y2="280" className="sld-line" strokeWidth="2" />
-
+                  <line x1="560" y1="180" x2="560" y2="265" className="sld-line" />
+                  <rect x="545" y="265" width="30" height="35" className="sld-shape-tx-green" strokeWidth="2" rx="3" />
+                  <text x="560" y="286" className="sld-text-val" textAnchor="middle" style={{ fill: '#16a34a' }}>Zt</text>
+                  <line x1="560" y1="300" x2="560" y2="390" className="sld-line" strokeWidth="2" />
 
                   {/* SECONDARY BUS WORKWAY */}
-                  <line x1="180" y1="252" x2="180" y2="300" className="sld-line" />
+                  <line x1="180" y1="313" x2="180" y2="360" className="sld-line" />
 
+                  {/* ROW 4: MAIN BREAKER */}
+                  <rect x="171" y="360" width="18" height="26" rx="2" className="sld-line sld-symbol-bg" />
+                  <line x1="171" y1="373" x2="189" y2="373" className="sld-line" strokeWidth="1.5" />
+                  <text x="200" y="377" className="sld-text-val">{panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A'}</text>
 
-                  {/* ROW 3: MAIN BREAKER & MDP BUS */}
-                  {/* Left Column Main Breaker Rectangle */}
-                  <rect x="171" y="300" width="18" height="26" rx="2" className="sld-line sld-symbol-bg" />
-                  <line x1="171" y1="313" x2="189" y2="313" className="sld-line" strokeWidth="1.5" />
-                  <text x="200" y="317" className="sld-text-val">{panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A'}</text>
+                  <line x1="180" y1="386" x2="180" y2="420" className="sld-line" />
 
-                  <line x1="180" y1="326" x2="180" y2="350" className="sld-line" />
+                  {/* ----------------- FAULT 2: SECONDARY MDP BUS ----------------- */}
+                  {/* Secondary Main Distribution Panel (MDP) Busbar at y=420 */}
+                  <line x1="80" y1="420" x2="280" y2="420" className="sld-line" strokeWidth="5" />
+                  <text x="285" y="417" className="sld-text-title" fill="#b91c1c">MAIN MDP BUSBAR</text>
+                  <text x="285" y="430" className="sld-text-val" style={{ fill: '#b91c1c' }}>{params.transformerVoltage} V (Dyn11 Wye-G)</text>
 
-                  {/* MDP Horizontal Copper BUS BAR */}
-                  <line x1="80" y1="350" x2="280" y2="350" className="sld-line" strokeWidth="5" />
-                  <text x="285" y="347" className="sld-text-title">MAIN MDP BUS</text>
-                  <text x="285" y="360" className="sld-text-val" style={{ fill: '#ef4444' }}>{calculation.iscMainBreaker} A (Isc Symmetrical)</text>
-
-                  {/* Divider Dash linking Left and Right */}
-                  <line x1="285" y1="350" x2="510" y2="350" className="sld-dash" />
-
-                  {/* Right Column MDP node */}
-                  <circle cx="560" cy="280" r="5" fill="#dc2626" />
-                  <text x="575" y="284" className="sld-text-lbl" style={{ fontWeight: 'bold' }}>MDP MAIN BUS NODE</text>
-                  <text x="575" y="296" className="sld-text-val" style={{ fill: '#dc2626' }}>Isc = {calculation.iscMainBreaker}A</text>
-
-
-                  {/* FEEDER CONDUCTOR WORKWAY */}
-                  <line x1="180" y1="352" x2="180" y2="400" className="sld-line" />
-
-
-                  {/* ROW 4: FEEDER SEGMENT */}
-                  {/* Left Column Segment Line representing conductor feeder */}
-                  <line x1="180" y1="400" x2="180" y2="480" className="sld-line" strokeWidth="3" style={{ stroke: '#ea580c' }} />
-                  <text x="180" y="445" className="sld-text-val" style={{ fill: '#ea580c' }} textAnchor="middle">★ FEEDER CABLE ★</text>
-
-                  {/* Divider Dash linking Left and Right */}
-                  <line x1="210" y1="440" x2="510" y2="440" className="sld-dash" />
-
-                  {/* Right Column Feeder Line impedance series block */}
-                  <line x1="560" y1="285" x2="560" y2="380" className="sld-line" />
-                  <rect x="545" y="380" width="30" height="35" className="sld-shape-tx-orange" strokeWidth="2" rx="3" />
-                  <text x="560" y="401" className="sld-text-val" textAnchor="middle" style={{ fill: '#ea580c' }}>Zcab</text>
-                  <line x1="560" y1="415" x2="560" y2="520" className="sld-line" strokeWidth="2" />
-
-
-                  {/* FEEDER TO FAULT POINT CONNECTORS */}
-                  <line x1="180" y1="480" x2="180" y2="520" className="sld-line" strokeWidth="2" />
-
-
-                  {/* ROW 5: FAULT POINT AND SYSTEM GROUND */}
-                  {/* Left Column Starburst / Explosion Fault Symbol */}
-                  <g transform="translate(180,540)">
+                  {/* Fault 2 Starburst Symbol at x=120, y=420 */}
+                  <g transform="translate(120,420)">
                     <path
-                      d="M -35,0 L -12,12 L -15,25 L -2,10 L 12,28 L 10,8 L 30,0 L 8,-8 L 12,-25 L -1,-10 L -15,-28 L -10,-8 Z"
+                      d="M -22,0 L -7,7 L -9,15 L -1,6 L 7,16 L 6,5 L 18,0 L 5,-5 L 7,-15 L -1,-6 L -9,-16 L -6,-5 Z"
                       className="sld-line"
                       fill="#fef2f2"
                       stroke="#dc2626"
-                      strokeWidth="2.5"
+                      strokeWidth="2"
                     />
-                    <path
-                      d="M -20,0 L -7,7 L -9,15 L -1,6 L 7,16 L 6,5 L 18,0 L 5,-5 L 7,-15 L -1,-6 L -9,-16 L -6,-5 Z"
-                      fill="#ef4444"
-                    />
-                    <text x="0" y="3" className="sld-text-val" fill="white" textAnchor="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>Isc</text>
+                    <circle cx="0" cy="0" r="3.5" fill="#dc2626" />
                   </g>
-                  <text x="180" y="595" className="sld-text-title" textAnchor="middle" fill="#dc2626">LINE FAULT POINT B</text>
+                  <text x="120" y="402" className="sld-text-val" textAnchor="middle" style={{ fill: '#dc2626', fontSize: '10px' }}>Fault 2 (Secondary)</text>
+                  <text x="120" y="442" className="sld-text-val" textAnchor="middle" style={{ fill: '#dc2626', fontSize: '9px', fontWeight: 'bold' }}>Isc2={calculation.iscFault2}A</text>
 
-                  {/* Divider Dash linking Left and Right */}
-                  <line x1="220" y1="540" x2="510" y2="530" className="sld-dash" />
+                  {/* Right Column Node 2: Secondary MDP Node at y=390 */}
+                  <circle cx="560" cy="390" r="6" fill="#dc2626" />
+                  <text x="575" y="386" className="sld-text-lbl" style={{ fontWeight: 'bold' }}>MDP NODE (Node 2)</text>
+                  <text x="575" y="398" className="sld-text-val" style={{ fill: '#dc2626' }}>Isc2 = {calculation.iscFault2} A</text>
 
-                  {/* Right Column Impedance equivalents ground system */}
-                  <line x1="560" y1="465" x2="560" y2="505" className="sld-line" />
+                  {/* Fault 2 Switch/Grounding Branch on Impedance Model */}
+                  <line x1="560" y1="390" x2="500" y2="390" className="sld-line" strokeWidth="1.5" style={{ stroke: '#dc2626' }} />
+                  {/* Closed Fault Switch Symbol */}
+                  <line x1="500" y1="390" x2="480" y2="380" className="sld-line" strokeWidth="1.5" style={{ stroke: '#dc2626' }} />
+                  <line x1="480" y1="390" x2="450" y2="390" className="sld-line" strokeWidth="1.5" style={{ stroke: '#dc2626' }} />
+                  {/* F2 Grounding Triangle */}
+                  <line x1="450" y1="385" x2="450" y2="395" stroke="#dc2626" strokeWidth="2.5" />
+                  <line x1="446" y1="388" x2="446" y2="392" stroke="#dc2626" strokeWidth="2" />
+                  <line x1="442" y1="390" x2="442" y2="390" stroke="#dc2626" strokeWidth="1.5" />
+                  <text x="475" y="372" className="sld-text-val" textAnchor="middle" style={{ fill: '#dc2626', fontSize: '9px' }}>F2 Ground</text>
+
+                  {/* Link SLD and Impedance main bus */}
+                  <line x1="285" y1="420" x2="500" y2="390" className="sld-dash" />
+
+                  {/* ROW 5: BRANCH BREAKER & FEEDER CABLE */}
+                  <line x1="180" y1="422" x2="180" y2="450" className="sld-line" />
                   
-                  {/* Fault point grounding block */}
-                  <g transform="translate(560,505)">
-                    <line x1="-30" y1="0" x2="30" y2="0" stroke="#dc2626" strokeWidth="4" />
-                    <line x1="-20" y1="8" x2="20" y2="8" stroke="#dc2626" strokeWidth="3" />
-                    <line x1="-10" y1="16" x2="10" y2="16" stroke="#dc2626" strokeWidth="2" />
-                    
-                    {/* Lightning arrow pointing down into ground */}
-                    <path d="M 0,-40 L -7,-15 L 2,-15 L -3,8 Z" fill="#ef4444" stroke="#dc2626" strokeWidth="1" />
-                  </g>
-                  <text x="560" y="540" className="sld-text-title" textAnchor="middle" fill="#dc2626">SYSTEM SHORT CIRCUITED NODE</text>
-                  <text x="560" y="555" className="sld-text-val" textAnchor="middle" fill="#b91c1c">Total Equiv Sym Isc = {calculation.totalFaultM} A</text>
+                  {/* Feeder Molded Case Breaker box */}
+                  <rect x="173" y="450" width="14" height="20" rx="1" className="sld-line sld-symbol-bg" />
+                  <line x1="173" y1="460" x2="187" y2="460" className="sld-line" />
 
+                  <line x1="180" y1="470" x2="180" y2="580" className="sld-line" strokeWidth="3" style={{ stroke: '#ea580c' }} />
+                  <text x="180" y="525" className="sld-text-val" style={{ fill: '#ea580c' }} textAnchor="middle">★ FEEDER CABLE ★</text>
+                  <text x="180" y="540" className="sld-text-lbl" style={{ stroke: 'none', fill: '#9a3412', fontSize: '8px' }} textAnchor="middle">
+                    {params.feederRuns}x {params.feederSize}mm² {params.conductorType} ({params.feederLength}m)
+                  </text>
+
+                  {/* Divider line linking */}
+                  <line x1="205" y1="520" x2="510" y2="520" className="sld-dash" />
+
+                  {/* Zcab Reactor (Feeder Impedance) */}
+                  <line x1="560" y1="390" x2="560" y2="475" className="sld-line" />
+                  <rect x="545" y="475" width="30" height="35" className="sld-shape-tx-orange" strokeWidth="2" rx="3" />
+                  <text x="560" y="496" className="sld-text-val" textAnchor="middle" style={{ fill: '#ea580c' }}>Zcab</text>
+                  <line x1="560" y1="510" x2="560" y2="620" className="sld-line" strokeWidth="2" />
+
+                  {/* ----------------- FAULT 3: Remote Panel BOARD BUS ----------------- */}
+                  {/* Remote Panel board Busbar at y=580 */}
+                  <line x1="80" y1="580" x2="280" y2="580" className="sld-line" strokeWidth="5" />
+                  <text x="285" y="577" className="sld-text-title" fill="#a16207">DISTRIBUTION PANELBOARD ({panel?.designation || 'PANEL A'})</text>
+                  <text x="285" y="590" className="sld-text-val" style={{ fill: '#a16207' }}>Sec Bus Fault point</text>
+
+                  {/* Fault 3 Starburst Symbol at x=120, y=580 */}
+                  <g transform="translate(120,580)">
+                    <path
+                      d="M -26,0 L -9,9 L -11,19 L -1,8 L 9,21 L 8,7 L 24,0 L 7,-7 L 9,-21 L -1,-8 L -11,-21 L -8,-7 Z"
+                      className="sld-line"
+                      fill="#fffbeb"
+                      stroke="#d97706"
+                      strokeWidth="2"
+                    />
+                    <circle cx="0" cy="0" r="4" fill="#d97706" />
+                  </g>
+                  <text x="120" y="562" className="sld-text-val" textAnchor="middle" style={{ fill: '#d97706', fontSize: '10px' }}>Fault 3 (Remote Panel)</text>
+                  <text x="120" y="602" className="sld-text-val" textAnchor="middle" style={{ fill: '#d97706', fontSize: '9px', fontWeight: 'bold' }}>Isc3={calculation.iscFault3}A</text>
+
+                  {/* Right Column Node 3: Remote Node at y=620 */}
+                  <circle cx="560" cy="620" r="6" fill="#dc2626" />
+                  <text x="575" y="616" className="sld-text-lbl" style={{ fontWeight: 'bold' }}>PANEL NODE (Node 3)</text>
+                  <text x="575" y="628" className="sld-text-val" style={{ fill: '#dc2626' }}>Isc3 = {calculation.iscFault3} A</text>
+
+                  {/* Fault 3 Switch/Grounding Branch on Impedance Model */}
+                  <line x1="560" y1="620" x2="500" y2="620" className="sld-line" strokeWidth="1.5" style={{ stroke: '#d97706' }} />
+                  {/* Closed Fault Switch Symbol */}
+                  <line x1="500" y1="620" x2="480" y2="610" className="sld-line" strokeWidth="1.5" style={{ stroke: '#d97706' }} />
+                  <line x1="480" y1="620" x2="450" y2="620" className="sld-line" strokeWidth="1.5" style={{ stroke: '#d97706' }} />
+                  {/* F3 Grounding Triangle */}
+                  <line x1="450" y1="615" x2="450" y2="625" stroke="#d97706" strokeWidth="2.5" />
+                  <line x1="446" y1="618" x2="446" y2="622" stroke="#d97706" strokeWidth="2" />
+                  <line x1="442" y1="620" x2="442" y2="620" stroke="#d97706" strokeWidth="1.5" />
+                  <text x="475" y="602" className="sld-text-val" textAnchor="middle" style={{ fill: '#d97706', fontSize: '9px' }}>F3 Ground</text>
+
+                  {/* Link SLD and Impedance board bus */}
+                  <line x1="285" y1="580" x2="500" y2="620" className="sld-dash" />
+
+                  {/* ROW 6: MOTOR FEEDBACK (IF MOTOR LOAD EXISTS) */}
+                  {motorLoadVA > 0 && (
+                    <>
+                      {/* Left Column Wires branching off from panel bus to motor */}
+                      <line x1="180" y1="580" x2="180" y2="630" className="sld-line" />
+                      <circle cx="180" cy="648" r="18" className="sld-line sld-symbol-bg" />
+                      <text x="180" y="652" className="sld-text-val" textAnchor="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>M</text>
+                      <text x="180" y="680" className="sld-text-lbl" textAnchor="middle">Motor Feedback</text>
+                      <text x="180" y="692" className="sld-text-val" textAnchor="middle" style={{ fontSize: '8px', fill: '#ea580c' }}>+ {calculation.motorContribution} a</text>
+
+                      {/* Right Column Motor Winding Backfeed Wires at Node 3 */}
+                      <line x1="560" y1="620" x2="620" y2="620" className="sld-line" strokeWidth="1.5" style={{ stroke: '#3b82f6' }} />
+                      {/* Reactance of Motors Block */}
+                      <rect x="620" y="602" width="22" height="35" className="sld-shape-tx-blue" strokeWidth="1.5" rx="2" />
+                      <text x="631" y="623" className="sld-text-val text-[8px]" textAnchor="middle">Zm</text>
+                      <line x1="642" y1="620" x2="690" y2="620" className="sld-line" strokeWidth="1.5" style={{ stroke: '#3b82f6' }} />
+                      
+                      {/* Motor source representation */}
+                      <circle cx="705" cy="620" r="15" className="sld-line sld-symbol-bg" style={{ stroke: '#3b82f6' }} />
+                      <text x="705" y="624" className="sld-text-val" textAnchor="middle" style={{ fill: '#3b82f6', fontSize: '10px' }}>E_m</text>
+                      <text x="705" y="648" className="sld-text-lbl" textAnchor="middle" style={{ fontSize: '8px' }}>Motor Backfeed</text>
+                    </>
+                  )}
+
+                  {/* STANDARD FOOTER DETAILS in Philippine practices */}
+                  <rect x="40" y="740" width="770" height="110" fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="2 2" rx="5" />
+                  <text x="60" y="762" className="sld-text-title" style={{ fill: '#0f172a', fontSize: '12px' }}>PHILIPPINE ELECTRICAL CODE (PEC) DESIGN COMPLIANCE BLOCK</text>
+                  <text x="60" y="780" className="sld-text-lbl text-[9px]">Utility Strength: {params.utilityShortCircuitMVA} MVA s.c. | Secondary Voltage: 3-Phase {params.transformerVoltage} V, 60 Hz</text>
+                  <text x="60" y="795" className="sld-text-lbl text-[9px]">Fault 1 (HV Utility Bus): {calculation.iscFault1} Amps | Symmetrical Primary protection evaluated</text>
+                  <text x="60" y="810" className="sld-text-lbl text-[9px]">Fault 2 (LV Secondary Bus): {calculation.iscFault2} Amps | Air / Molded Case Circuit Breaker layout</text>
+                  <text x="60" y="825" className="sld-text-lbl text-[9px]">Fault 3 (Remote Board Bus): {calculation.iscFault3} Amps (incl. {calculation.motorContribution}A motor feedback) | PEC 1.10.1.24 Compliant</text>
+                  <text x="60" y="840" className="sld-text-lbl text-[9px]" style={{ fill: '#0f766e', fontWeight: 'bold' }}>PEC APPROVED CONFIG | SYSTEM POWER GRID DIAGRAM</text>
                 </svg>
 
                 {/* INTERACTIVE DRAGGABLE LABELS FOR SVG */}
                 {/* 1. Grid Supply Detail Box */}
                 <DraggableBox 
                   defaultPos={{ x: 20, y: 65 }} 
-                  lineStart={{ x: 158, y: 90 }} 
+                  lineStart={{ x: 158, y: 80 }} 
                   lineEndOffset={{ x: 130, y: 25 }}
                   className="w-32 border border-slate-200 bg-slate-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
@@ -593,10 +698,25 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   </div>
                 </DraggableBox>
 
-                {/* 3. Transformer Spec Box */}
+                {/* 3. Fault 1 Outputs Box */}
                 <DraggableBox
-                  defaultPos={{ x: 20, y: 188 }}
-                  lineStart={{ x: 160, y: 222 }}
+                  defaultPos={{ x: 20, y: 145 }}
+                  lineStart={{ x: 120, y: 180 }}
+                  lineEndOffset={{ x: 130, y: 15 }}
+                  className="w-36 border border-amber-200 bg-amber-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
+                >
+                  <div className="select-none pointer-events-none text-[9px]">
+                    <div className="font-bold text-amber-800 uppercase tracking-widest text-[8px] mb-0.5">Fault 1 (Primary HV)</div>
+                    <div className="text-slate-600">Symmetrical Isc:</div>
+                    <div className="font-mono font-black text-amber-900 text-[10px]">{calculation.iscFault1} A</div>
+                    <div className="text-slate-500 text-[7.5px] mt-0.5">At @ {params.primaryVoltage}V Service Entrance</div>
+                  </div>
+                </DraggableBox>
+
+                {/* 4. Transformer Spec Box */}
+                <DraggableBox
+                  defaultPos={{ x: 20, y: 245 }}
+                  lineStart={{ x: 162, y: 285 }}
                   lineEndOffset={{ x: 130, y: 32 }}
                   className="w-32 border border-emerald-200 bg-emerald-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
@@ -608,10 +728,10 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   </div>
                 </DraggableBox>
 
-                {/* 4. Transformer Impedance Box */}
+                {/* 5. Transformer Impedance Box */}
                 <DraggableBox
-                  defaultPos={{ x: 630, y: 178 }}
-                  lineStart={{ x: 575, y: 202 }}
+                  defaultPos={{ x: 630, y: 245 }}
+                  lineStart={{ x: 575, y: 282 }}
                   lineEndOffset={{ x: 0, y: 25 }}
                   className="w-44 border border-emerald-200 bg-emerald-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
@@ -622,10 +742,25 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   </div>
                 </DraggableBox>
 
-                {/* 5. Conductor Conductor Info Box */}
+                {/* 6. Fault 2 Outputs Box */}
                 <DraggableBox
-                  defaultPos={{ x: 20, y: 398 }}
-                  lineStart={{ x: 176, y: 440 }}
+                  defaultPos={{ x: 20, y: 380 }}
+                  lineStart={{ x: 120, y: 420 }}
+                  lineEndOffset={{ x: 130, y: 20 }}
+                  className="w-36 border border-red-200 bg-red-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
+                >
+                  <div className="select-none pointer-events-none text-[9px]">
+                    <div className="font-bold text-red-800 uppercase tracking-widest text-[8px] mb-0.5">Fault 2 (Secondary)</div>
+                    <div className="text-slate-600">Symmetrical Isc:</div>
+                    <div className="font-mono font-black text-red-700 text-[10px]">{calculation.iscFault2} A</div>
+                    <div className="text-slate-500 text-[7.5px] mt-0.5">At Main Distribution Panel Bus</div>
+                  </div>
+                </DraggableBox>
+
+                {/* 7. Conductor Info Box */}
+                <DraggableBox
+                  defaultPos={{ x: 20, y: 480 }}
+                  lineStart={{ x: 176, y: 520 }}
                   lineEndOffset={{ x: 130, y: 32 }}
                   className="w-36 border border-orange-200 bg-orange-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
@@ -637,10 +772,10 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   </div>
                 </DraggableBox>
 
-                {/* 6. Conductor Impedance Box */}
+                {/* 8. Conductor Impedance Box */}
                 <DraggableBox
-                  defaultPos={{ x: 630, y: 372 }}
-                  lineStart={{ x: 575, y: 397 }}
+                  defaultPos={{ x: 630, y: 460 }}
+                  lineStart={{ x: 575, y: 492 }}
                   lineEndOffset={{ x: 0, y: 32 }}
                   className="w-44 border border-orange-200 bg-orange-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
@@ -652,28 +787,28 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   </div>
                 </DraggableBox>
 
-                {/* 7. Fault Outputs Box */}
+                {/* 9. Fault 3 Outputs Box */}
                 <DraggableBox
-                  defaultPos={{ x: 20, y: 505 }}
-                  lineStart={{ x: 155, y: 540 }}
-                  lineEndOffset={{ x: 130, y: 32 }}
-                  className="w-36 border border-red-200 bg-red-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
+                  defaultPos={{ x: 20, y: 560 }}
+                  lineStart={{ x: 120, y: 580 }}
+                  lineEndOffset={{ x: 130, y: 15 }}
+                  className="w-36 border border-yellow-200 bg-yellow-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
                   <div className="select-none pointer-events-none text-[9px]">
-                    <div className="font-bold text-red-800 uppercase tracking-widest text-[8px] mb-0.5">Fault Outputs</div>
-                    <div className="text-slate-500">Symmetrical Isc:</div>
-                    <div className="font-mono font-bold text-red-700 text-[10px]">{calculation.iscSecondary} A</div>
+                    <div className="font-bold text-yellow-800 uppercase tracking-widest text-[8px] mb-0.5">Fault 3 (Remote Bus)</div>
+                    <div className="text-slate-600">Symmetrical Isc:</div>
+                    <div className="font-mono font-black text-yellow-700 text-[10px]">{calculation.iscFault3} A</div>
                     {motorLoadVA > 0 && (
-                      <div className="text-red-600/80 text-[8px]">Motor feedback: +{calculation.motorContribution}A</div>
+                      <div className="text-red-600/80 text-[7.5px]">Motor backfeed: +{calculation.motorContribution}A</div>
                     )}
-                    <div className="mt-1 pt-1 border-t border-red-200 font-bold text-slate-900">Total: {calculation.totalFaultM} A</div>
+                    <div className="mt-1 pt-1 border-t border-yellow-200 font-bold text-slate-900">Total: {calculation.totalFaultM} A</div>
                   </div>
                 </DraggableBox>
 
-                {/* 8. Impedance Total Box */}
+                {/* 10. Impedance Total Box */}
                 <DraggableBox
-                  defaultPos={{ x: 630, y: 475 }}
-                  lineStart={{ x: 575, y: 520 }}
+                  defaultPos={{ x: 630, y: 580 }}
+                  lineStart={{ x: 575, y: 620 }}
                   lineEndOffset={{ x: 0, y: 37 }}
                   className="w-44 border border-red-200 bg-red-50/95 backdrop-blur-xs p-2 shadow-sm rounded-lg text-left"
                 >
