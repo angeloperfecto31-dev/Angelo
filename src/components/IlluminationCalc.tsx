@@ -361,33 +361,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       loadType: LoadType.LIGHTING
     };
     
-    if (onSnapshotCapture) {
-      const el = document.getElementById("illumination-diagram");
-      if (el) {
-        try {
-          const dataUrl = await toPng(el, {
-            quality: 1,
-            backgroundColor: "#ffffff",
-            pixelRatio: 1,
-            width: el.scrollWidth,
-            height: el.scrollHeight,
-            skipFonts: true,
-            style: {
-              opacity: "1",
-              visibility: "visible",
-              transform: "none",
-            },
-          });
-          onSnapshotCapture(newCircuit.id, dataUrl, lpdLimitInfo.roomName);
-        } catch (err) {
-          console.warn("Failed to capture illumination state", err);
-        }
-      }
-    }
-
-    setCircuits([...circuits, newCircuit]);
-    
-    // Add to local Saved Rooms table
+    // Create local Saved Rooms table entry 
     const newSavedRoom = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
@@ -402,6 +376,34 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       fixtureWattage: activeFixture.wattage,
       fixtureLumens: activeFixture.lumens
     };
+
+    if (onSnapshotCapture) {
+      const el = document.getElementById("illumination-diagram");
+      if (el) {
+        try {
+          const dataUrl = await toPng(el, {
+            quality: 1,
+            backgroundColor: "#ffffff",
+            pixelRatio: 1,
+            width: 1000,
+            height: 550,
+            skipFonts: true,
+            style: {
+              opacity: "1",
+              visibility: "visible",
+              transform: "none",
+              width: "1000px",
+              height: "550px",
+            },
+          });
+          onSnapshotCapture(newSavedRoom.id, dataUrl, lpdLimitInfo.roomName);
+        } catch (err) {
+          console.warn("Failed to capture illumination state", err);
+        }
+      }
+    }
+
+    setCircuits([...circuits, newCircuit]);
     
     setParams({
       ...params,

@@ -607,8 +607,11 @@ export default function App() {
           let height = el.scrollHeight;
           
           if (id === "short-circuit-diagram") {
-            width = 850;
-            height = 880;
+            width = 1050;
+            height = 950;
+          } else if (id === "illumination-diagram") {
+            width = 1000;
+            height = 550;
           }
           
           return await toPng(el, {
@@ -626,8 +629,8 @@ export default function App() {
               top: "0",
               margin: "0",
               position: "relative",
-              width: id === "short-circuit-diagram" ? "850px" : undefined,
-              height: id === "short-circuit-diagram" ? "880px" : undefined,
+              width: id === "short-circuit-diagram" ? "1050px" : id === "illumination-diagram" ? "1000px" : undefined,
+              height: id === "short-circuit-diagram" ? "950px" : id === "illumination-diagram" ? "550px" : undefined,
             },
           });
         } catch (err) {

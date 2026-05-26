@@ -1122,7 +1122,16 @@ export const exportToWord = async (
   docChildren.push(new Paragraph({ spacing: { before: 200 } }));
   docChildren.push(createCallout("🔍 LIGHTING ENVIRONMENTAL ERGONOMICS & DECARBONIZATION AUDIT", illumFindings));
 
-  if (images?.illumSnapshots && Object.keys(images.illumSnapshots).length > 0) {
+  if (images?.illumSnapshots && Object.keys(images.illumSnapshots).length > 0 && illumParams?.savedRooms && illumParams.savedRooms.length > 0) {
+    docChildren.push(createSubHeader(`3D False-Color Rendering Diagrams (Saved Rooms)`));
+    for (const room of illumParams.savedRooms) {
+      const imgBase64 = images.illumSnapshots[room.id];
+      if (imgBase64 && typeof imgBase64 === 'string') {
+        docChildren.push(createParagraph(`Calculated Environment: ${room.roomName}`));
+        await addImageToDoc(imgBase64);
+      }
+    }
+  } else if (images?.illumSnapshots && Object.keys(images.illumSnapshots).length > 0) {
     docChildren.push(createSubHeader(`3D False-Color Rendering Diagrams (Load Schedule Circuits)`));
     for (const [circuitId, imgBase64] of Object.entries(images.illumSnapshots)) {
       if (imgBase64 && typeof imgBase64 === 'string') {

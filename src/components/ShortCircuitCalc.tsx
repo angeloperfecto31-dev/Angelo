@@ -436,13 +436,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             </div>
           </div>
 
-          <div className="relative">
-            <div className="w-full flex flex-col items-center justify-center py-6 font-sans overflow-x-auto">
+          <div className="relative w-full overflow-x-auto flex flex-col items-center justify-center py-6 block overflow-x-auto font-sans">
+            <div id="short-circuit-diagram" className="relative w-[1050px] h-[950px] bg-white transition-[filter]" style={{ filter: isBWMode ? 'grayscale(100%)' : 'none', minWidth: '1050px' }}>
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
               <div 
-                id="short-circuit-diagram"
-                className="relative w-[850px] h-[880px] shrink-0 overflow-visible select-none pointer-events-auto transition-[filter]"
-                style={{ filter: isBWMode ? 'grayscale(100%)' : 'none', backgroundColor: '#ffffff' }}
+                className="relative w-[850px] h-[880px] shrink-0 overflow-visible select-none pointer-events-auto ml-[150px] mt-[30px]"
               >
                 {/* SVG 2D Single Line Impedance Diagram */}
                 <svg

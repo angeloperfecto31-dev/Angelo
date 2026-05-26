@@ -430,9 +430,10 @@ export default function Illumination3DModel({
   }
 
   return (
-    <div id="illumination-diagram" className="w-full h-[480px] mt-8 bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 shadow-xl">
-      
-      {/* Heads-Up Display (HUD) Controls Overlay */}
+    <div className="w-full overflow-x-auto mt-8 relative pb-2 drop-shadow-md">
+      <div id="illumination-diagram" className="min-w-[950px] w-full max-w-full h-[550px] bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 mx-auto">
+        
+        {/* Heads-Up Display (HUD) Controls Overlay */}
       <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-90 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none">
         <div className="flex flex-col gap-1.5 bg-slate-900/90 px-4 py-3 border border-slate-800 rounded-xl backdrop-blur-md">
           <span className="text-white text-xs font-bold font-mono tracking-tight flex items-center gap-1.5">
@@ -504,6 +505,7 @@ export default function Illumination3DModel({
 
       {/* Actual mounted canvas shell */}
       <div ref={containerRef} className="w-full h-full" />
+      </div>
     </div>
   );
 }
