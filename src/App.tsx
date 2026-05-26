@@ -599,18 +599,9 @@ export default function App() {
       const getImg = async (id: string) => {
         const el = document.getElementById(id);
         if (!el) return null;
-
-        // Temporarily disable dark mode on the root element.
-        // This ensures the captured diagram card renders in pristine light mode (black on white)
-        // instead of getting partially or completely obscured by dark background theme overrides.
-        const wasDark = document.documentElement.classList.contains("dark");
-        if (wasDark) {
-          document.documentElement.classList.remove("dark");
-        }
-
         try {
           const isSld = id.startsWith("sld-");
-          const pRatio = 1.5;
+          const pRatio = isSld ? 1 : 1.5;
           
           let width = el.scrollWidth;
           let height = el.scrollHeight;
@@ -618,24 +609,9 @@ export default function App() {
           if (id === "short-circuit-diagram") {
             width = 850;
             height = 880;
-          } else if (isSld) {
-            const svgEl = el.querySelector("svg");
-            width = 900;
-            if (svgEl) {
-              const viewBox = svgEl.getAttribute("viewBox");
-              if (viewBox) {
-                const parts = viewBox.split(" ");
-                if (parts.length === 4) {
-                  const vbWidth = parseFloat(parts[2]);
-                  const vbHeight = parseFloat(parts[3]);
-                  // Scale height proportionally to width 900, plus 180px for the card header/padding
-                  height = (vbHeight / vbWidth) * width + 180;
-                }
-              }
-            }
           }
           
-          const result = await toPng(el, {
+          return await toPng(el, {
             quality: 1,
             backgroundColor: "#ffffff",
             pixelRatio: pRatio,
@@ -650,20 +626,12 @@ export default function App() {
               top: "0",
               margin: "0",
               position: "relative",
-              width: id === "short-circuit-diagram" ? "850px" : (isSld ? "900px" : undefined),
-              height: id === "short-circuit-diagram" ? "880px" : (isSld ? `${height}px` : undefined),
+              width: id === "short-circuit-diagram" ? "850px" : undefined,
+              height: id === "short-circuit-diagram" ? "880px" : undefined,
             },
           });
-
-          if (wasDark) {
-            document.documentElement.classList.add("dark");
-          }
-          return result;
         } catch (err) {
           console.warn(`Failed to capture image for element ${id}:`, err);
-          if (wasDark) {
-            document.documentElement.classList.add("dark");
-          }
           return null;
         }
       };
