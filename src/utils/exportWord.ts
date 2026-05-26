@@ -245,8 +245,8 @@ export const exportToWord = async (
         img.src = dataUrl; 
       });
       
-      const maxWidth = 590;
-      const maxHeight = 800;
+      const maxWidth = 500;
+      const maxHeight = 700;
       const ratio = img.height / img.width;
       
       let docWidth = maxWidth;

@@ -17,7 +17,6 @@ interface SceneProps {
   lpdValue?: number;
   lpdLimit?: number;
   targetLux: number;
-  isExporting?: boolean;
 }
 
 export default function Illumination3DModel({ 
@@ -34,8 +33,7 @@ export default function Illumination3DModel({
   isLpdCompliant = true,
   lpdValue = 0,
   lpdLimit = 0,
-  targetLux,
-  isExporting = false
+  targetLux
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -432,10 +430,10 @@ export default function Illumination3DModel({
   }
 
   return (
-    <div id="illumination-diagram" className={`w-full ${isExporting ? 'h-auto overflow-hidden !important bg-slate-50 flex flex-col p-4 text-slate-800' : 'h-[480px] mt-8 bg-slate-950 overflow-hidden relative'} rounded-2xl border-2 border-slate-800 shadow-xl overflow-hidden`} style={isExporting ? { overflow: 'hidden !important' } : {}}>
+    <div id="illumination-diagram" className="w-full h-[480px] mt-8 bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 shadow-xl">
       
       {/* Heads-Up Display (HUD) Controls Overlay */}
-      <div className={`${isExporting ? 'flex flex-col gap-3 md:flex-row md:items-start md:justify-between w-full text-slate-800 mb-4' : 'absolute top-4 left-4 z-10 text-white opacity-90 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none'} font-black text-xs tracking-wider uppercase flex flex-col gap-3`}>
+      <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-90 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none">
         <div className="flex flex-col gap-1.5 bg-slate-900/90 px-4 py-3 border border-slate-800 rounded-xl backdrop-blur-md">
           <span className="text-white text-xs font-bold font-mono tracking-tight flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
@@ -474,7 +472,7 @@ export default function Illumination3DModel({
       </div>
 
       {/* Floating Detailed Adequacy Note Panel */}
-      <div className={`${isExporting ? 'block text-slate-800 bg-white border-slate-200 mt-4 mb-4 shadow-sm' : 'absolute left-4 bottom-4 bg-slate-900/95 border-slate-800 text-white shadow-lg pointer-events-auto'} border p-4 rounded-xl z-10 text-[10px] max-w-[340px] backdrop-blur-md space-y-1.5`}>
+      <div className="absolute left-4 bottom-4 bg-slate-900/95 border border-slate-800 p-4 rounded-xl text-white z-10 text-[10px] max-w-[340px] pointer-events-auto backdrop-blur-md shadow-lg space-y-1.5">
         <div className="font-extrabold text-cyan-400 uppercase tracking-wider text-[10px]">Real-term Assessment Notes</div>
         <div className="text-slate-200 font-medium normal-case leading-relaxed">
           {complianceMessage}
@@ -486,7 +484,7 @@ export default function Illumination3DModel({
       </div>
 
       {showFalseColor && (
-        <div className={`${isExporting ? 'block text-slate-800 bg-white border-slate-200 mb-4 shadow-sm' : 'absolute right-4 bottom-4 bg-slate-900/95 border-slate-700/80 text-white shadow-lg'} p-3.5 rounded-xl border z-10 text-[10px] space-y-2 backdrop-blur-md max-w-[220px]`}>
+        <div className="absolute right-4 bottom-4 bg-slate-900/95 border border-slate-700/80 p-3.5 rounded-xl text-white z-10 text-[10px] space-y-2 backdrop-blur-md shadow-lg max-w-[220px]">
           <div className="font-extrabold border-b border-white/10 pb-1 mb-1 uppercase tracking-widest text-[#fbbf24] text-[9px]">False Color Lux Index</div>
           <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ffffff] border border-slate-700 shrink-0"></div><span className="font-medium text-slate-200">&gt; {Math.round(targetLux * 2.5)} Lux (Overlit / Bright)</span></div>
           <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#ff0000] shrink-0"></div><span className="font-medium text-slate-200">{Math.round(targetLux * 1.67)} - {Math.round(targetLux * 2.5)} Lux (Task Area / High)</span></div>
@@ -505,7 +503,7 @@ export default function Illumination3DModel({
       )}
 
       {/* Actual mounted canvas shell */}
-      <div ref={containerRef} className={`w-full ${isExporting ? 'h-[480px] shrink-0 border border-slate-300 rounded-lg overflow-hidden' : 'h-full absolute top-0 left-0 -z-10'}`} />
+      <div ref={containerRef} className="w-full h-full" />
     </div>
   );
 }

@@ -34,10 +34,9 @@ export interface IlluminationCalcProps {
   params: IlluminationParams;
   setParams: React.Dispatch<React.SetStateAction<IlluminationParams>>;
   onSnapshotCapture?: (circuitId: string, image: string, roomName: string) => void;
-  isExporting?: boolean;
 }
 
-export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams, onSnapshotCapture, isExporting }: IlluminationCalcProps) {
+export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams, onSnapshotCapture }: IlluminationCalcProps) {
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
 
@@ -377,7 +376,6 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
               opacity: "1",
               visibility: "visible",
               transform: "none",
-              overflow: "hidden !important",
             },
           });
           onSnapshotCapture(newCircuit.id, dataUrl, lpdLimitInfo.roomName);
@@ -760,7 +758,6 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                     lpdValue={energyAudit.lpd}
                     lpdLimit={lpdLimitInfo.limit}
                     targetLux={params.targetLux}
-                    isExporting={isExporting}
                   />
                 ) : (
                   <div id="illumination-diagram" className="w-full h-[320px] bg-slate-100/80 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center p-6 mt-8">

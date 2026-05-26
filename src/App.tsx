@@ -626,7 +626,6 @@ export default function App() {
               top: "0",
               margin: "0",
               position: "relative",
-              overflow: "hidden !important",
               width: id === "short-circuit-diagram" ? "850px" : undefined,
               height: id === "short-circuit-diagram" ? "880px" : undefined,
             },
@@ -1275,7 +1274,6 @@ export default function App() {
                 params={illumParams}
                 setParams={setIllumParams}
                 onSnapshotCapture={handleAddIllumSnapshot}
-                isExporting={isExporting}
               />
             </motion.div>
           </div>
