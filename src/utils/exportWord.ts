@@ -786,7 +786,7 @@ export const exportToWord = async (
     createParagraph(`2. Utility Source Grid Impedance: $Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000}$`),
     createParagraph(`   $Z_{\\text{util, pu}} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}$`),
     createParagraph(`3. Transformer Inductive Impedance: $Z_{\\text{trans, pu}} = \\frac{\\%Z_{\\text{transformer}}}{100}$`),
-    createParagraph(`   $Z_{\\text{trans, pu}} = \\frac{${params.transformerZ}\\%}{100} = ${zTranspu.toFixed(6)}\\text;{ pr. u.}$`),
+    createParagraph(`   $Z_{\\text{trans, pu}} = \\frac{${params.transformerZ}\\%}{100} = ${zTranspu.toFixed(6)}\\text{ pr. u.}$`),
     createParagraph(`4. Feeder Conductor Impedance Sizing Decay: $Z_{\\text{feeder}} = R + jX = ${feederR.toFixed(5)} + j${feederX.toFixed(5)}\\,\\Omega$`),
     createParagraph(`   Conductor Resistance $R = ${feederR.toFixed(5)}\\,\\Omega$, Reactance $X = ${feederX.toFixed(5)}\\,\\Omega$, Magnitude $|Z_{\\text{feeder}}| = \\sqrt{R^2 + X^2} = ${feederZ.toFixed(5)}\\,\\Omega$`),
     createParagraph(`   Per-unit Feeder Impedance: $Z_{\\text{feeder, pu}} = Z_{\\text{feeder, } \\Omega} \\times \\frac{S_{\\text{base, kVA}} / 1000}{V_{\\text{base, kV}}^2}$`),
@@ -848,7 +848,7 @@ export const exportToWord = async (
     createSubHeader(`B. Voltage Drop Sizing Calculations Formulas Matrix`),
     createParagraph(`1-Phase System Voltage Drop: $V_{\\text{drop, 1}\\phi} = \\frac{2 \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}$`),
     createParagraph(`3-Phase System Voltage Drop: $V_{\\text{drop, 3}\\phi} = \\frac{\\sqrt{3} \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}$`),
-    createParagraph(`Effective System Percentage Loss (\\%): $V_{\\text{drop, \\%}} = \\left(\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}\\right) \\times 100\\%$`),
+    createParagraph(`Effective System Percentage Loss (\\%): $V_{\\text{drop, \\%}} = (\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}) \\times 100\\%$`),
     createParagraph(`* $R_{\\text{ohms}}$ represents standard copper conductor AC internal resistance values $(\\Omega/\\text{km})$ from the standard table.`),
     new Paragraph({ spacing: { after: 150 } })
   );
@@ -970,7 +970,7 @@ export const exportToWord = async (
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`B. Core Prototypal Formulas`),
     createParagraph(`1. Required Luminous Flux: $\\Phi_{\\text{req}} = \\frac{E_{\\text{target}} \\times A_{\\text{floor}}}{CU \\times MF}\\text{ lm}$`),
-    createParagraph(`2. Sized Luminaire Quantity: $N_{\\text{fixtures}} = \\left\\lceil \\frac{\\Phi_{\\text{req}}}{\\Phi_{\\text{luminaire}}} \\right\\rceil$`),
+    createParagraph(`2. Sized Luminaire Quantity: $N_{\\text{fixtures}} = \\lceil \\frac{\\Phi_{\\text{req}}}{\\Phi_{\\text{luminaire}}} \\rceil$`),
     createParagraph(`3. Lighting Power Density (LPD): $LPD = \\frac{N_{\\text{fixtures}} \\times P_{\\text{fixture}}}{A_{\\text{floor}}}\\text{ W/m}^2$`),
     createParagraph(`* $CU$ (Coefficient of Utilization) is derived from room geometric cavity ratios (RCR). $MF$ (Maintenance Factor) represents dust/dirt depreciation losses (assumed standard value of $0.80$).`),
     new Paragraph({ spacing: { after: 150 } })
