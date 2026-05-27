@@ -384,13 +384,9 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     }
 
     if (!mcbP) {
-      if (panel.system.includes('3PH')) {
-        mcbP = 3;
-      } else {
-        mcbP = 1;
-        if (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR) {
-          mcbP = 2;
-        }
+      mcbP = 1;
+      if (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR) {
+        mcbP = 2; // Default to 2-Pole for motors/AC regardless of panel type, user can override to 3
       }
     }
 
@@ -564,85 +560,70 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   }, [circuits]);
   
   const mainCurrent = useMemo(() => {
-    let rCont = 0, yCont = 0, bCont = 0;
-    let rNonCont = 0, yNonCont = 0, bNonCont = 0;
-    
-    // Track largest motor VA across the panel
-    let largestMotorVAR = 0;
-    let largestMotorVAY = 0;
-    let largestMotorVAB = 0;
-    let largestMotorVAFull = 0;
+    let lightingReceptacleVA = 0;
+    let motorVAs: number[] = [];
+
+    let phaseVAs = { R: 0, Y: 0, B: 0 };
+    let motorPhaseVAs = { R: 0, Y: 0, B: 0 };
 
     circuits.forEach(c => {
-       const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
        const perPhaseVA = c.loadVA / c.phases.length;
-
-       // Per PDF: 125% * Continuous Load + 100% * Non-Continuous Load
-       // Treating Lighting as continuous. Motors participate via the 100% + "largest motor + 25%" rule.
-       const isCont = c.loadType === LoadType.LIGHTING;
+       const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
        
-       if (isMotor && c.loadVA > largestMotorVAFull) {
-          largestMotorVAFull = c.loadVA;
-       }
-
        c.phases.forEach(p => {
-          if (p === 'R') { 
-            isCont ? rCont += perPhaseVA : rNonCont += perPhaseVA; 
-          }
-          if (p === 'Y') { 
-            isCont ? yCont += perPhaseVA : yNonCont += perPhaseVA; 
-          }
-          if (p === 'B') { 
-            isCont ? bCont += perPhaseVA : bNonCont += perPhaseVA; 
-          }
+         if (p === 'R') { phaseVAs.R += perPhaseVA; if (isMotor) motorPhaseVAs.R += perPhaseVA; }
+         if (p === 'Y') { phaseVAs.Y += perPhaseVA; if (isMotor) motorPhaseVAs.Y += perPhaseVA; }
+         if (p === 'B') { phaseVAs.B += perPhaseVA; if (isMotor) motorPhaseVAs.B += perPhaseVA; }
        });
-    });
 
-    // Cleanly add 25% of the largest motor to the phases it lands on
-    circuits.forEach(c => {
-       if (c.loadVA === largestMotorVAFull && (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR)) {
-          const perPhaseMaxMotorVA = c.loadVA / c.phases.length;
-          c.phases.forEach(p => {
-             if (p === 'R' && largestMotorVAR === 0) largestMotorVAR = perPhaseMaxMotorVA;
-             if (p === 'Y' && largestMotorVAY === 0) largestMotorVAY = perPhaseMaxMotorVA;
-             if (p === 'B' && largestMotorVAB === 0) largestMotorVAB = perPhaseMaxMotorVA;
-          });
+       if (isMotor) {
+          motorVAs.push(c.loadVA);
+       } else {
+          lightingReceptacleVA += c.loadVA;
        }
     });
 
+    // Step 1: Demand Factors for General Lighting & Receptacles
+    let lightingReceptacleDemand = lightingReceptacleVA;
+    if (lightingReceptacleVA > 120000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (120000 - 3000) * 0.35 + (lightingReceptacleVA - 120000) * 0.25;
+    } else if (lightingReceptacleVA > 3000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
+    }
+
+    // Step 2: Motor Loads (PEC 4.30.2.4 & 4.40.4.1) Largest motor at 125%, others at 100%
+    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
+    
+    // We compute total based on the highest individual phase projected to 3 phases, to protect against imbalance
     let maxDesignAmp = 0;
     let maxBaseAmp = 0;
 
     if (panel.system.includes('3PH')) {
-      const lineToLineV = panel.voltage;
-      const factor = lineToLineV * Math.sqrt(3);
-
-      const computedR = (rCont * 1.25) + rNonCont + (largestMotorVAR * 0.25);
-      const computedY = (yCont * 1.25) + yNonCont + (largestMotorVAY * 0.25);
-      const computedB = (bCont * 1.25) + bNonCont + (largestMotorVAB * 0.25);
-
-      const highestPhaseDesignVA = Math.max(computedR, computedY, computedB);
-      // For unbalanced 3-phase, sizing is based on highest phase projected to 3-phase total
-      const totalDemandVA = highestPhaseDesignVA * 3;
-      maxDesignAmp = totalDemandVA / factor;
-
-      const baseR = rCont + rNonCont;
-      const baseY = yCont + yNonCont;
-      const baseB = bCont + bNonCont;
-      const highestPhaseBaseVA = Math.max(baseR, baseY, baseB);
-      maxBaseAmp = (highestPhaseBaseVA * 3) / factor;
-    } else {
-      const lineToLineV = panel.voltage;
+      const highestPhaseBaseVA = Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B);
+      // To apply demand factors fairly while respecting phase imbalance, we calculate effective total base VA:
+      const effectiveTotalBaseVA = highestPhaseBaseVA * 3;
       
-      const totalDesignVA = 
-        (rCont + yCont + bCont) * 1.25 + 
-        (rNonCont + yNonCont + bNonCont) + 
-        (largestMotorVAR + largestMotorVAY + largestMotorVAB) * 0.25;
-        
-      maxDesignAmp = totalDesignVA / lineToLineV;
+      const factor = panel.voltage * Math.sqrt(3);
+      maxBaseAmp = effectiveTotalBaseVA / factor;
 
-      const totalBaseVA = (rCont + yCont + bCont) + (rNonCont + yNonCont + bNonCont);
-      maxBaseAmp = totalBaseVA / lineToLineV;
+      // For design amp, we use the panel total demand logic. 
+      // If the user's rule dictates applying demand factors to the exact total:
+      const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+      
+      // But we must also account for unbalance in the design amp. 
+      // Ratio of unbalance:
+      const unbalanceRatio = motorVAs.length + lightingReceptacleVA > 0 ? (effectiveTotalBaseVA / (motorVAs.reduce((a, b) => a + b, 0) + lightingReceptacleVA)) : 1;
+      
+      // Net computed load considering unbalance:
+      maxDesignAmp = (totalNetComputedVA * Math.max(1, unbalanceRatio)) / factor;
+    } else {
+      const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+      const totalBaseVA = lightingReceptacleVA + motorVAs.reduce((a,b) => a+b, 0);
+
+      maxBaseAmp = totalBaseVA / panel.voltage;
+      maxDesignAmp = totalNetComputedVA / panel.voltage;
     }
 
     return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
@@ -762,9 +743,6 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
               onChange={e => {
                 const newSystem = e.target.value as any;
                 setPanel({...panel, system: newSystem, voltage: SYSTEM_VOLTAGES[newSystem as keyof typeof SYSTEM_VOLTAGES]});
-                if (newSystem === '230V, 3PH, 3W' || newSystem === '400V/230V, 3PH, 4W') {
-                  setCircuits(circuits.map(c => ({...c, mcbP: 3})));
-                }
               }} 
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
