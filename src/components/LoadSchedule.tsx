@@ -564,52 +564,95 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   }, [circuits]);
   
   const mainCurrent = useMemo(() => {
-    let lightingReceptacleVA = 0;
-    let motorVAs: number[] = [];
+    let rCont = 0, yCont = 0, bCont = 0;
+    let rNonCont = 0, yNonCont = 0, bNonCont = 0;
+    
+    // Track largest motor VA across the panel
+    let largestMotorVAR = 0;
+    let largestMotorVAY = 0;
+    let largestMotorVAB = 0;
+    let largestMotorVAFull = 0;
 
     circuits.forEach(c => {
-       if (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR) {
-          motorVAs.push(c.loadVA);
-       } else {
-          lightingReceptacleVA += c.loadVA;
+       const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
+       const perPhaseVA = c.loadVA / c.phases.length;
+
+       // Per PDF: 125% * Continuous Load + 100% * Non-Continuous Load
+       // Treating Lighting as continuous. Motors participate via the 100% + "largest motor + 25%" rule.
+       const isCont = c.loadType === LoadType.LIGHTING;
+       
+       if (isMotor && c.loadVA > largestMotorVAFull) {
+          largestMotorVAFull = c.loadVA;
+       }
+
+       c.phases.forEach(p => {
+          if (p === 'R') { 
+            isCont ? rCont += perPhaseVA : rNonCont += perPhaseVA; 
+          }
+          if (p === 'Y') { 
+            isCont ? yCont += perPhaseVA : yNonCont += perPhaseVA; 
+          }
+          if (p === 'B') { 
+            isCont ? bCont += perPhaseVA : bNonCont += perPhaseVA; 
+          }
+       });
+    });
+
+    // Cleanly add 25% of the largest motor to the phases it lands on
+    circuits.forEach(c => {
+       if (c.loadVA === largestMotorVAFull && (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR)) {
+          const perPhaseMaxMotorVA = c.loadVA / c.phases.length;
+          c.phases.forEach(p => {
+             if (p === 'R' && largestMotorVAR === 0) largestMotorVAR = perPhaseMaxMotorVA;
+             if (p === 'Y' && largestMotorVAY === 0) largestMotorVAY = perPhaseMaxMotorVA;
+             if (p === 'B' && largestMotorVAB === 0) largestMotorVAB = perPhaseMaxMotorVA;
+          });
        }
     });
 
-    // Step 1: Demand Factors for General Lighting & Receptacles
-    let lightingReceptacleDemand = lightingReceptacleVA;
-    if (lightingReceptacleVA > 120000) {
-      lightingReceptacleDemand = 3000 * 1.0 + (120000 - 3000) * 0.35 + (lightingReceptacleVA - 120000) * 0.25;
-    } else if (lightingReceptacleVA > 3000) {
-      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
-    }
+    let maxDesignAmp = 0;
+    let maxBaseAmp = 0;
 
-    // Step 1: Motor Loads (PEC 4.30.2.4 & 4.40.4.1) Largest motor at 125%, others at 100%
-    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
-    const totalMotorDemand = motorVAs.reduce((acc, val) => acc + val, 0) + (largestMotor * 0.25);
-
-    // Total Net Computed Load
-    const netComputedLoadVA = lightingReceptacleDemand + totalMotorDemand;
-
-    let lineCurrent = 0;
     if (panel.system.includes('3PH')) {
       const lineToLineV = panel.voltage;
       const factor = lineToLineV * Math.sqrt(3);
-      lineCurrent = netComputedLoadVA / factor;
+
+      const computedR = (rCont * 1.25) + rNonCont + (largestMotorVAR * 0.25);
+      const computedY = (yCont * 1.25) + yNonCont + (largestMotorVAY * 0.25);
+      const computedB = (bCont * 1.25) + bNonCont + (largestMotorVAB * 0.25);
+
+      const highestPhaseDesignVA = Math.max(computedR, computedY, computedB);
+      // For unbalanced 3-phase, sizing is based on highest phase projected to 3-phase total
+      const totalDemandVA = highestPhaseDesignVA * 3;
+      maxDesignAmp = totalDemandVA / factor;
+
+      const baseR = rCont + rNonCont;
+      const baseY = yCont + yNonCont;
+      const baseB = bCont + bNonCont;
+      const highestPhaseBaseVA = Math.max(baseR, baseY, baseB);
+      maxBaseAmp = (highestPhaseBaseVA * 3) / factor;
     } else {
-      lineCurrent = netComputedLoadVA / panel.voltage;
+      const lineToLineV = panel.voltage;
+      
+      const totalDesignVA = 
+        (rCont + yCont + bCont) * 1.25 + 
+        (rNonCont + yNonCont + bNonCont) + 
+        (largestMotorVAR + largestMotorVAY + largestMotorVAB) * 0.25;
+        
+      maxDesignAmp = totalDesignVA / lineToLineV;
+
+      const totalBaseVA = (rCont + yCont + bCont) + (rNonCont + yNonCont + bNonCont);
+      maxBaseAmp = totalBaseVA / lineToLineV;
     }
 
-    return lineCurrent;
+    return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
   }, [circuits, panel]);
 
   const mainFeeder = useMemo(() => {
-    // Determine the sizing amp based on Standard Design Rule 
-    // Single Phase (Dwelling typically) uses a 1.25 safety margin on Line Current as per PDF Example A. 
-    // For 3 Phase Commercial, we use the Line Current directly (Example B).
-    const designAmp = panel.system.includes('3PH') ? mainCurrent : mainCurrent * 1.25;
+    // The design ampacity correctly incorporates Continuous (125%) + Non-Continuous (100%) + Largest Motor (25%)
+    const designAmp = mainCurrent.designAmp; 
     
-    // Minimum main breaker sizes are standard, usually not lower than 30A for typical panels.
-    // Also ensuring it's not less than the maximum branch breaker
+    // Minimum main breaker sizes are standard, and it must not be less than the maximum branch breaker
     const maxBranchAT = Math.max(0, ...circuits.map(c => c.mcbAT));
     const calculatedCb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
     const cb = Math.max(calculatedCb, STANDARD_CB_RATINGS.find(r => r >= maxBranchAT) || calculatedCb, 30);
@@ -948,7 +991,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                     <td className="px-1 py-6 text-center text-indigo-500 print:text-slate-900 truncate">-</td>
                   </>
                 ) : (
-                  <td className="px-1 py-6 text-center text-yellow-400 print:text-slate-900 truncate">{mainCurrent.toFixed(2)} A</td>
+                  <td className="px-1 py-6 text-center text-yellow-400 print:text-slate-900 truncate">{mainCurrent.baseAmp.toFixed(2)} A</td>
                 )}
                 <td colSpan={7} className="px-4 py-6">
                   <div className="uppercase opacity-70 flex flex-col gap-1 items-end" style={{ fontSize: tableFontSize - 2 }}>
@@ -975,7 +1018,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       <section className="bg-slate-900 p-8 rounded-2xl text-white flex justify-between items-center print:bg-white print:text-slate-900 print:border-2 print:border-slate-800 sm:p-6">
         <div>
           <h4 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 print:text-slate-500">Max Demand Current</h4>
-          <p className="text-5xl font-black text-yellow-400 print:text-slate-900 md:text-3xl">{mainCurrent.toFixed(1)}<span className="text-lg ml-2">AMPS</span></p>
+          <p className="text-5xl font-black text-yellow-400 print:text-slate-900 md:text-3xl">{mainCurrent.baseAmp.toFixed(1)}<span className="text-lg ml-2">AMPS</span></p>
         </div>
         <div className="p-4 bg-white/10 rounded-2xl print:border print:border-slate-200"><Calculator className="w-8 h-8" /></div>
       </section>
@@ -1054,25 +1097,25 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <h3 className="font-bold text-slate-900 mb-2">2. Single-Phase vs Three-Phase Current (Ampacity)</h3>
             <p className="mb-2">The total design current depends on the system type (1-Phase vs 3-Phase). Based on PEC 2017 Part 1.</p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>{`For 1-Phase: I = Total VA / Voltage`}</span>
-              <span>{`For 3-Phase: I = (Max Phase VA × 3) / (Voltage × √3)`}</span>
+              <span>{`For 1-Phase: I = Total Base VA / Voltage`}</span>
+              <span>{`For 3-Phase: I = (Max Base Phase VA × 3) / (Voltage × √3)`}</span>
             </div>
             <p className="mt-2 text-indigo-600 font-bold">
-              Calculated Main Current: {mainCurrent.toFixed(2)} Amperes 
+              Calculated Main Current: {mainCurrent.baseAmp.toFixed(2)} Amperes 
               ({panel.system.includes('3PH') ? 'Three-Phase' : 'Single-Phase'}, {panel.voltage}V)
             </p>
           </div>
 
           <div>
             <h3 className="font-bold text-slate-900 mb-2">3. Main Breaker Ampacity (AT) & Wire Sizing</h3>
-            <p className="mb-2">According to PEC Article 2.10 and Article 2.40, the overcurrent protection (Circuit Breaker) rating and wire ampacity must be at least 125% of the continuous load.</p>
+            <p className="mb-2">According to PEC Article 2.10 and Article 2.40, the overcurrent protection (Circuit Breaker) rating and wire ampacity must follow continuous load multiplier rules.</p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>Design Current = I × 1.25</span>
+              <span>Design Current incorporates Demand Factors (125% for Continuous Loads, 100% for Non-Continuous) + 25% for the largest Motor.</span>
               <span>Circuit Breaker Rating (AT) ≥ Design Current (Next Standard Size)</span>
               <span>Wire Ampacity ≥ Max(Design Current, Circuit Breaker Rating)</span>
             </div>
             <div className="mt-2 text-indigo-600 font-bold flex flex-col gap-1">
-              <span>Design Current: {(mainCurrent * 1.25).toFixed(2)} Amperes</span>
+              <span>Design Current: {mainCurrent.designAmp.toFixed(2)} Amperes</span>
               <span>Selected Main Breaker: {mainFeeder.cb} AT</span>
               <span>Selected Main Wire: {formatWireSize(mainFeeder.wire.size)} mm² THHN (Ampacity: {mainFeeder.wire.ampacity} A)</span>
               <span>Selected Main Conduit: {mainFeeder.conduitSize} PVC</span>
