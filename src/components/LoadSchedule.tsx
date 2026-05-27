@@ -419,7 +419,9 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     // Calculate the minimum required CB rating based on the load
     let requiredMcbAT = 15;
-    if (c.loadType === LoadType.AIR_CON) {
+    if (c.loadType === LoadType.CONVENIENCE_OUTLET) {
+       requiredMcbAT = Math.max(20, STANDARD_CB_RATINGS.find(r => r >= designLoadA) || 20);
+    } else if (c.loadType === LoadType.AIR_CON) {
        const flc = loadA;
        const limit175 = flc * 1.75;
        const limit225 = flc * 2.25;
@@ -510,7 +512,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       if (c.id === id) {
         const merged = { ...c, ...updates };
         // Trigger recalculation if load parameters OR the circuit breaker itself changes
-        if ('wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates) {
+        if ('wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates) {
           return { ...merged, ...calculateCircuit(merged) } as Circuit;
         }
         return merged;

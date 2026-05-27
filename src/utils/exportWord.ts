@@ -1136,8 +1136,8 @@ export const exportToWord = async (
     for (const [circuitId, imgBase64] of Object.entries(images.illumSnapshots)) {
       if (imgBase64 && typeof imgBase64 === 'string') {
         const circuitMatch = circuits.find(c => c.id === circuitId);
-        if (circuitMatch && circuitMatch.roomName) {
-           docChildren.push(createParagraph(`Calculated Environment: ${circuitMatch.roomName}`));
+        if (circuitMatch && circuitMatch.description) {
+           docChildren.push(createParagraph(`Calculated Environment: ${circuitMatch.description}`));
         }
         await addImageToDoc(imgBase64);
       }
