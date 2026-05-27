@@ -6,6 +6,7 @@ import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
 import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2, Sun, Moon } from "lucide-react";
+import electricalPhLogo from './assets/images/electrical_ph_logo_1779853368405.png';
 import {
   Zap,
   Layout,
@@ -683,8 +684,8 @@ export default function App() {
           {/* Logo and Brand */}
           <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800/50 bg-slate-900/50">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-400 rounded-lg shadow-sm">
-                <Zap className="w-5 h-5 text-yellow-900" />
+              <div className="w-9 h-9 rounded-lg overflow-hidden shadow-sm">
+                <img src={electricalPhLogo} alt="ElectricalPH Logo" className="w-full h-full object-cover" />
               </div>
               <div>
                 <span className="font-black text-white tracking-tight text-lg">
@@ -771,8 +772,8 @@ export default function App() {
         {/* Mobile Navbar */}
         <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sticky top-0 z-20 shrink-0 shadow-sm no-print">
            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-yellow-400 rounded-md">
-                <Zap className="w-4 h-4 text-yellow-900" />
+              <div className="w-7 h-7 rounded-md overflow-hidden">
+                <img src={electricalPhLogo} alt="ElectricalPH Logo" className="w-full h-full object-cover" />
               </div>
               <span className="font-extrabold text-slate-900 dark:text-white text-lg tracking-tight">ElectricalPH</span>
            </div>
@@ -1327,8 +1328,8 @@ export default function App() {
           <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex flex-col items-center md:items-start">
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 bg-yellow-400 rounded flex items-center justify-center">
-                  <Zap className="w-4 h-4 text-yellow-900" />
+                <div className="w-6 h-6 rounded overflow-hidden flex items-center justify-center">
+                  <img src={electricalPhLogo} alt="ElectricalPH Logo" className="w-full h-full object-cover" />
                 </div>
                 <span className="font-bold text-slate-900">
                   ElectricalPH
