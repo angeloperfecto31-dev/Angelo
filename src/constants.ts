@@ -18,7 +18,7 @@ export const WIRE_AMPACITY_TABLE = [
   { size: 150, ampacity: 285 },
 ];
 
-export const STANDARD_CB_RATINGS = [15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 400];
+export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 400, 450, 500, 600, 700, 800, 1000];
 
 export const SYSTEM_VOLTAGES = {
   '230V, 1PH, 2W': 230,
@@ -238,7 +238,8 @@ export const LOAD_PRESETS: LoadPreset[] = [
     category: "Air Conditioning (PEC 2017 Based)",
     items: [
       { description: "Window Type ACU - 0.5 HP", wattage: 1127, loadType: "AC", label: "4.9A FLC @ 230V" },
-      { description: "Window Type ACU - 1.0 HP", wattage: 1840, loadType: "AC", label: "8.0A FLC @ 230V" },
+      { description: "Window Type ACU - 0.75 HP", wattage: 1587, loadType: "AC", label: "6.9A FLC @ 230V" },
+      { description: "Window/Split ACU - 1.0 HP", wattage: 1840, loadType: "AC", label: "8.0A FLC @ 230V" },
       { description: "Split Type ACU - 1.5 HP", wattage: 2300, loadType: "AC", label: "10.0A FLC @ 230V" },
       { description: "Split Type ACU - 2.0 HP", wattage: 2760, loadType: "AC", label: "12.0A FLC @ 230V" },
       { description: "Package ACU - 3.0 HP", wattage: 3910, loadType: "AC", label: "17.0A FLC @ 230V" },
@@ -286,13 +287,18 @@ export const LOAD_PRESETS: LoadPreset[] = [
   {
     category: "Motor Loads (PEC 2017 Based)",
     items: [
-      { description: "Exhaust Fan - 1/6 HP", wattage: 506, loadType: "M", label: "2.2A FLC @ 230V (125W Motor)" },
-      { description: "Small Fan Motor - 1/4 HP", wattage: 667, loadType: "M", label: "2.9A FLC @ 230V (186W Motor)" },
-      { description: "Ceiling Fan - 1/3 HP", wattage: 828, loadType: "M", label: "3.6A FLC @ 230V (250W Motor)" },
-      { description: "Wall Fan - 1/2 HP", wattage: 1127, loadType: "M", label: "4.9A FLC @ 230V (373W Motor)" },
-      { description: "Industrial Fan - 3/4 HP", wattage: 1587, loadType: "M", label: "6.9A FLC @ 230V (560W Motor)" },
-      { description: "Heavy Duty Motor - 7.5 HP", wattage: 9200, loadType: "M", label: "40.0A FLC @ 230V (5595W Motor)" },
-      { description: "Industrial Motor - 10 HP", wattage: 11500, loadType: "M", label: "50.0A FLC @ 230V (7460W Motor)" },
+      { description: "Fan Motor - 1/6 HP", wattage: 506, loadType: "M", label: "2.2A FLC @ 230V" },
+      { description: "Small Motor - 1/4 HP", wattage: 667, loadType: "M", label: "2.9A FLC @ 230V" },
+      { description: "Small Motor - 1/3 HP", wattage: 828, loadType: "M", label: "3.6A FLC @ 230V" },
+      { description: "Medium Motor - 1/2 HP", wattage: 1127, loadType: "M", label: "4.9A FLC @ 230V" },
+      { description: "Medium Motor - 3/4 HP", wattage: 1587, loadType: "M", label: "6.9A FLC @ 230V" },
+      { description: "Standard Motor - 1 HP", wattage: 1840, loadType: "M", label: "8.0A FLC @ 230V" },
+      { description: "Standard Motor - 1.5 HP", wattage: 2300, loadType: "M", label: "10.0A FLC @ 230V" },
+      { description: "Standard Motor - 2 HP", wattage: 2760, loadType: "M", label: "12.0A FLC @ 230V" },
+      { description: "Large Motor - 3 HP", wattage: 3910, loadType: "M", label: "17.0A FLC @ 230V" },
+      { description: "Large Motor - 5 HP", wattage: 6440, loadType: "M", label: "28.0A FLC @ 230V" },
+      { description: "Heavy Duty Motor - 7.5 HP", wattage: 9200, loadType: "M", label: "40.0A FLC @ 230V" },
+      { description: "Industrial Motor - 10 HP", wattage: 11500, loadType: "M", label: "50.0A FLC @ 230V" },
     ]
   },
   {

@@ -564,33 +564,83 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   }, [circuits]);
   
   const mainCurrent = useMemo(() => {
-    // Determine Phase Load Contribution separating Continuous vs Non-Continuous
     let rCont = 0, yCont = 0, bCont = 0;
     let rNonCont = 0, yNonCont = 0, bNonCont = 0;
     
+    // Track largest motor VA across the panel
+    let largestMotorVAR = 0;
+    let largestMotorVAY = 0;
+    let largestMotorVAB = 0;
+    let largestMotorVAFull = 0;
+
     circuits.forEach(c => {
-       const isCont = c.loadType === LoadType.LIGHTING || c.loadType === LoadType.AIR_CON; // loads expected to run 3+ hours
+       const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
        const perPhaseVA = c.loadVA / c.phases.length;
+
+       // Per PDF: 125% * Continuous Load + 100% * Non-Continuous Load
+       // Treating Lighting as continuous, while Motors participate via the "largest motor + 25%" rule.
+       const isCont = c.loadType === LoadType.LIGHTING;
+       
+       if (isMotor && c.loadVA > largestMotorVAFull) {
+          largestMotorVAFull = c.loadVA;
+       }
+
        c.phases.forEach(p => {
-          if (p === 'R') { isCont ? rCont += perPhaseVA : rNonCont += perPhaseVA; }
-          if (p === 'Y') { isCont ? yCont += perPhaseVA : yNonCont += perPhaseVA; }
-          if (p === 'B') { isCont ? bCont += perPhaseVA : bNonCont += perPhaseVA; }
+          if (p === 'R') { 
+            isCont ? rCont += perPhaseVA : rNonCont += perPhaseVA; 
+            if (isMotor && c.loadVA === largestMotorVAFull) {
+               // We will just re-eval at the end to ensure we don't accidentally add multiple if they happen to equal largestMotorVAFull
+            }
+          }
+          if (p === 'Y') { 
+            isCont ? yCont += perPhaseVA : yNonCont += perPhaseVA; 
+          }
+          if (p === 'B') { 
+            isCont ? bCont += perPhaseVA : bNonCont += perPhaseVA; 
+          }
        });
     });
 
+    // To cleanly add 25% of the largest motor, we just find the motor having `largestMotorVAFull`,
+    // divided by its phases
+    circuits.forEach(c => {
+       if (c.loadVA === largestMotorVAFull && (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR)) {
+          const perPhaseMaxMotorVA = c.loadVA / c.phases.length;
+          // Apply to the phases it actually lands on
+          c.phases.forEach(p => {
+             if (p === 'R' && largestMotorVAR === 0) largestMotorVAR = perPhaseMaxMotorVA;
+             if (p === 'Y' && largestMotorVAY === 0) largestMotorVAY = perPhaseMaxMotorVA;
+             if (p === 'B' && largestMotorVAB === 0) largestMotorVAB = perPhaseMaxMotorVA;
+          });
+       }
+    });
+
+    let maxAmp = 0;
+
     if (panel.system.includes('3PH')) {
-      const maxR = (rCont * 1.25) + rNonCont;
-      const maxY = (yCont * 1.25) + yNonCont;
-      const maxB = (bCont * 1.25) + bNonCont;
-      const maxPhaseTotal = Math.max(maxR, maxY, maxB);
-      // Determine the maximum demand current based on the highest loaded phase per PEC 2017
-      return (maxPhaseTotal * 3) / (panel.voltage * Math.sqrt(3));
+      const lineToLineV = panel.voltage;
+      const factor = lineToLineV * Math.sqrt(3);
+
+      const computedR = (rCont * 1.25) + rNonCont + (largestMotorVAR * 0.25);
+      const computedY = (yCont * 1.25) + yNonCont + (largestMotorVAY * 0.25);
+      const computedB = (bCont * 1.25) + bNonCont + (largestMotorVAB * 0.25);
+
+      const highestPhaseVA = Math.max(computedR, computedY, computedB);
+      // For unbalanced 3-phase, sizing is based on highest phase projected to 3-phase total
+      const totalDemandVA = highestPhaseVA * 3;
+      maxAmp = totalDemandVA / factor;
+    } else {
+      const lineToLineV = panel.voltage;
+      const totalCont = rCont + yCont + bCont; 
+      const totalNonCont = rNonCont + yNonCont + bNonCont;
+      
+      const totalLargestMotorVA = largestMotorVAR + largestMotorVAY + largestMotorVAB; 
+      
+      const totalDemandVA = (totalCont * 1.25) + totalNonCont + (totalLargestMotorVA * 0.25);
+      maxAmp = totalDemandVA / lineToLineV;
     }
-    
-    // For single phase
-    const totalCont = rCont + yCont + bCont; 
-    const totalNonCont = rNonCont + yNonCont + bNonCont;
-    return ((totalCont * 1.25) + totalNonCont) / panel.voltage;
+
+    return maxAmp;
   }, [circuits, panel]);
 
   const mainFeeder = useMemo(() => {
