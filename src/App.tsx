@@ -1277,6 +1277,7 @@ export default function App() {
                 params={illumParams}
                 setParams={setIllumParams}
                 onSnapshotCapture={handleAddIllumSnapshot}
+                snapshots={illumSnapshots}
               />
             </motion.div>
           </div>

@@ -34,9 +34,10 @@ export interface IlluminationCalcProps {
   params: IlluminationParams;
   setParams: React.Dispatch<React.SetStateAction<IlluminationParams>>;
   onSnapshotCapture?: (circuitId: string, image: string, roomName: string) => void;
+  snapshots?: Record<string, string>;
 }
 
-export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams, onSnapshotCapture }: IlluminationCalcProps) {
+export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
 
@@ -361,6 +362,14 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       loadType: LoadType.LIGHTING
     };
     
+    setCircuits([...circuits, newCircuit]);
+  };
+
+  const handleAddToIlluminationTable = async () => {
+    const estimatedWattage = activeFixture.wattage;
+    const totalVA = estimatedWattage * calculation.fixtures;
+    const newNo = (params.savedRooms || []).length > 0 ? Math.max(...(params.savedRooms || []).map(r => r.circuitNo || 0)) + 1 : 1;
+    
     // Create local Saved Rooms table entry 
     const newSavedRoom = {
       id: crypto.randomUUID(),
@@ -402,8 +411,6 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         }
       }
     }
-
-    setCircuits([...circuits, newCircuit]);
     
     setParams({
       ...params,
@@ -702,13 +709,22 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                     </div>
                  </div>
                  {circuits && setCircuits && (
-                   <button 
-                     type="button"
-                     onClick={handleAddToSchedule}
-                     className="w-full mt-6 bg-amber-400 hover:bg-amber-300 text-amber-950 font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-900"
-                   >
-                     <Link className="w-4 h-4" /> Add to Load Schedule
-                   </button>
+                   <div className="flex flex-col gap-2 mt-6">
+                     <button 
+                       type="button"
+                       onClick={handleAddToIlluminationTable}
+                       className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+                     >
+                       <Plus className="w-4 h-4" /> Add to Illumination Table
+                     </button>
+                     <button 
+                       type="button"
+                       onClick={handleAddToSchedule}
+                       className="w-full bg-amber-400 hover:bg-amber-300 text-amber-950 font-bold py-3 px-4 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+                     >
+                       <Link className="w-4 h-4" /> Add to Load Schedule
+                     </button>
+                   </div>
                  )}
                </div>
                
@@ -1236,6 +1252,28 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {/* Saved Room 3D CAD Representations Grid */}
+      {params.savedRooms && params.savedRooms.length > 0 && snapshots && Object.keys(snapshots).length > 0 && (
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 overflow-hidden mt-6 no-print">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-slate-800">Saved Room 3D CAD Representations</h3>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {params.savedRooms.map((room) => snapshots[room.id] ? (
+              <div key={room.id} className="border-2 border-slate-800 rounded-xl overflow-hidden bg-slate-950 flex flex-col shadow border">
+                <div className="bg-slate-900 border-b border-slate-800 p-3 text-center text-white text-xs font-bold uppercase tracking-wider flex items-center justify-between">
+                  <span>{room.roomName}</span>
+                  <span className="text-indigo-400">{room.targetLux} LUX required</span>
+                </div>
+                <div className="p-2 flex justify-center items-center w-full min-h-[300px]">
+                   <img src={snapshots[room.id]} alt={`3D CAD mapping for ${room.roomName}`} className="w-full h-auto rounded drop-shadow object-contain filter" />
+                </div>
+              </div>
+            ) : null)}
           </div>
         </section>
       )}
