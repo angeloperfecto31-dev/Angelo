@@ -564,88 +564,56 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   }, [circuits]);
   
   const mainCurrent = useMemo(() => {
-    let rCont = 0, yCont = 0, bCont = 0;
-    let rNonCont = 0, yNonCont = 0, bNonCont = 0;
-    
-    // Track largest motor VA across the panel
-    let largestMotorVAR = 0;
-    let largestMotorVAY = 0;
-    let largestMotorVAB = 0;
-    let largestMotorVAFull = 0;
+    let lightingReceptacleVA = 0;
+    let motorVAs: number[] = [];
 
     circuits.forEach(c => {
-       const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
-       const perPhaseVA = c.loadVA / c.phases.length;
-
-       // Per PDF: 125% * Continuous Load + 100% * Non-Continuous Load
-       // Treating Lighting as continuous, while Motors participate via the "largest motor + 25%" rule.
-       const isCont = c.loadType === LoadType.LIGHTING;
-       
-       if (isMotor && c.loadVA > largestMotorVAFull) {
-          largestMotorVAFull = c.loadVA;
-       }
-
-       c.phases.forEach(p => {
-          if (p === 'R') { 
-            isCont ? rCont += perPhaseVA : rNonCont += perPhaseVA; 
-            if (isMotor && c.loadVA === largestMotorVAFull) {
-               // We will just re-eval at the end to ensure we don't accidentally add multiple if they happen to equal largestMotorVAFull
-            }
-          }
-          if (p === 'Y') { 
-            isCont ? yCont += perPhaseVA : yNonCont += perPhaseVA; 
-          }
-          if (p === 'B') { 
-            isCont ? bCont += perPhaseVA : bNonCont += perPhaseVA; 
-          }
-       });
-    });
-
-    // To cleanly add 25% of the largest motor, we just find the motor having `largestMotorVAFull`,
-    // divided by its phases
-    circuits.forEach(c => {
-       if (c.loadVA === largestMotorVAFull && (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR)) {
-          const perPhaseMaxMotorVA = c.loadVA / c.phases.length;
-          // Apply to the phases it actually lands on
-          c.phases.forEach(p => {
-             if (p === 'R' && largestMotorVAR === 0) largestMotorVAR = perPhaseMaxMotorVA;
-             if (p === 'Y' && largestMotorVAY === 0) largestMotorVAY = perPhaseMaxMotorVA;
-             if (p === 'B' && largestMotorVAB === 0) largestMotorVAB = perPhaseMaxMotorVA;
-          });
+       if (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR) {
+          motorVAs.push(c.loadVA);
+       } else {
+          lightingReceptacleVA += c.loadVA;
        }
     });
 
-    let maxAmp = 0;
+    // Step 1: Demand Factors for General Lighting & Receptacles
+    let lightingReceptacleDemand = lightingReceptacleVA;
+    if (lightingReceptacleVA > 120000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (120000 - 3000) * 0.35 + (lightingReceptacleVA - 120000) * 0.25;
+    } else if (lightingReceptacleVA > 3000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
+    }
 
+    // Step 1: Motor Loads (PEC 4.30.2.4 & 4.40.4.1) Largest motor at 125%, others at 100%
+    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
+    const totalMotorDemand = motorVAs.reduce((acc, val) => acc + val, 0) + (largestMotor * 0.25);
+
+    // Total Net Computed Load
+    const netComputedLoadVA = lightingReceptacleDemand + totalMotorDemand;
+
+    let lineCurrent = 0;
     if (panel.system.includes('3PH')) {
       const lineToLineV = panel.voltage;
       const factor = lineToLineV * Math.sqrt(3);
-
-      const computedR = (rCont * 1.25) + rNonCont + (largestMotorVAR * 0.25);
-      const computedY = (yCont * 1.25) + yNonCont + (largestMotorVAY * 0.25);
-      const computedB = (bCont * 1.25) + bNonCont + (largestMotorVAB * 0.25);
-
-      const highestPhaseVA = Math.max(computedR, computedY, computedB);
-      // For unbalanced 3-phase, sizing is based on highest phase projected to 3-phase total
-      const totalDemandVA = highestPhaseVA * 3;
-      maxAmp = totalDemandVA / factor;
+      lineCurrent = netComputedLoadVA / factor;
     } else {
-      const lineToLineV = panel.voltage;
-      const totalCont = rCont + yCont + bCont; 
-      const totalNonCont = rNonCont + yNonCont + bNonCont;
-      
-      const totalLargestMotorVA = largestMotorVAR + largestMotorVAY + largestMotorVAB; 
-      
-      const totalDemandVA = (totalCont * 1.25) + totalNonCont + (totalLargestMotorVA * 0.25);
-      maxAmp = totalDemandVA / lineToLineV;
+      lineCurrent = netComputedLoadVA / panel.voltage;
     }
 
-    return maxAmp;
+    return lineCurrent;
   }, [circuits, panel]);
 
   const mainFeeder = useMemo(() => {
-    const designAmp = mainCurrent; // Already has 1.25 factored in for continuous loads
-    const cb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+    // Determine the sizing amp based on Standard Design Rule 
+    // Single Phase (Dwelling typically) uses a 1.25 safety margin on Line Current as per PDF Example A. 
+    // For 3 Phase Commercial, we use the Line Current directly (Example B).
+    const designAmp = panel.system.includes('3PH') ? mainCurrent : mainCurrent * 1.25;
+    
+    // Minimum main breaker sizes are standard, usually not lower than 30A for typical panels.
+    // Also ensuring it's not less than the maximum branch breaker
+    const maxBranchAT = Math.max(0, ...circuits.map(c => c.mcbAT));
+    const calculatedCb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+    const cb = Math.max(calculatedCb, STANDARD_CB_RATINGS.find(r => r >= maxBranchAT) || calculatedCb, 30);
+    
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
     const wire = getWireForBreaker(cb, designAmp);
     const groundSize = getGroundWireForWireSize(wire.size);
