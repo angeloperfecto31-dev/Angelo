@@ -415,12 +415,18 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       loadA = va / (v * Math.sqrt(3));
     }
     
-    const designLoadA = loadA * 1.25;
+    // PDF Rule: Apply 125% for continuous loads (Lighting, AC, Motors for wire ampacity)
+    const isContinuous = c.loadType === LoadType.LIGHTING || c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
+    const designLoadA = isContinuous ? loadA * 1.25 : loadA;
     
     // Calculate the minimum required CB rating based on the load
     let requiredMcbAT = 15;
     if (c.loadType === LoadType.CONVENIENCE_OUTLET) {
        requiredMcbAT = Math.max(20, STANDARD_CB_RATINGS.find(r => r >= designLoadA) || 20);
+    } else if (c.loadType === LoadType.MOTOR) {
+       // PDF Rule: 250% of FLC for AC polyphase motors (Branch Circuit Protection)
+       const motorBranchProtection = loadA * 2.50;
+       requiredMcbAT = STANDARD_CB_RATINGS.find(r => r >= motorBranchProtection) || 15;
     } else if (c.loadType === LoadType.AIR_CON) {
        const flc = loadA;
        const limit175 = flc * 1.75;
@@ -558,15 +564,37 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   }, [circuits]);
   
   const mainCurrent = useMemo(() => {
+    // Determine Phase Load Contribution separating Continuous vs Non-Continuous
+    let rCont = 0, yCont = 0, bCont = 0;
+    let rNonCont = 0, yNonCont = 0, bNonCont = 0;
+    
+    circuits.forEach(c => {
+       const isCont = c.loadType === LoadType.LIGHTING || c.loadType === LoadType.AIR_CON; // loads expected to run 3+ hours
+       const perPhaseVA = c.loadVA / c.phases.length;
+       c.phases.forEach(p => {
+          if (p === 'R') { isCont ? rCont += perPhaseVA : rNonCont += perPhaseVA; }
+          if (p === 'Y') { isCont ? yCont += perPhaseVA : yNonCont += perPhaseVA; }
+          if (p === 'B') { isCont ? bCont += perPhaseVA : bNonCont += perPhaseVA; }
+       });
+    });
+
     if (panel.system.includes('3PH')) {
+      const maxR = (rCont * 1.25) + rNonCont;
+      const maxY = (yCont * 1.25) + yNonCont;
+      const maxB = (bCont * 1.25) + bNonCont;
+      const maxPhaseTotal = Math.max(maxR, maxY, maxB);
       // Determine the maximum demand current based on the highest loaded phase per PEC 2017
-      return (maxPhaseLoad * 3) / (panel.voltage * Math.sqrt(3));
+      return (maxPhaseTotal * 3) / (panel.voltage * Math.sqrt(3));
     }
-    return (totalVA) / panel.voltage;
-  }, [totalVA, panel, maxPhaseLoad]);
+    
+    // For single phase
+    const totalCont = rCont + yCont + bCont; 
+    const totalNonCont = rNonCont + yNonCont + bNonCont;
+    return ((totalCont * 1.25) + totalNonCont) / panel.voltage;
+  }, [circuits, panel]);
 
   const mainFeeder = useMemo(() => {
-    const designAmp = mainCurrent * 1.25;
+    const designAmp = mainCurrent; // Already has 1.25 factored in for continuous loads
     const cb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
     const wire = getWireForBreaker(cb, designAmp);
