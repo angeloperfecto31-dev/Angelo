@@ -647,7 +647,7 @@ export const exportToWord = async (
     );
   };
 
-  addTOCEntry("1.0", "General Notes & Standard Specifications", "Nominal tensions, conductor rules, standard ampacities, motor branch circuit margins, and DOLE/PEC heights.", "Page 3", false);
+  addTOCEntry("1.0", "General Notes & Standard Specifications", "Load aggregation rules, conductor ampacities, overcurrent protection sizing, interrupting ratings, and voltage drop limits.", "Page 3", false);
   
   const panelNames = [panel?.designation || 'Main Panel', ...subPanels.map(sp => sp.panel?.designation || 'Sub Panel')].join(', ');
   addTOCEntry("2.0", `Electrical Load Schedules & Feeder Sizing Calculations`, `Individual schedules, main feeder calculations, system balancing indices, and PEC standard safety map for panels: ${panelNames}.`, "Page 4", true);
@@ -684,14 +684,11 @@ export const exportToWord = async (
   // GENERAL NOTES AND SPECIFICATIONS
   docChildren.push(createHeader(`General Notes and Specifications`, true));
   const generalNotes = [
-    "1. SYSTEM NOMINAL TENSION (PEC Article 2.20 / Section 2.20.1.5): Sizing procedures conform to standard multi-wire systems. Service inputs are provided at designated standards (e.g., 230V Single-Phase or 230V/400V Three-Phase Three/Four-wire conductors) sourced from utility secondary terminals.",
-    "2. CONDUCTOR STANDARDS (PEC Article 3.10): Conductors shall consist of 99.9% pure annealed copper THHN or THWN-2 thermoplastic high heat-resistant nylon-coated insulating material. Rated wire capacity is 600 Volts. Sizing calculations adhere to standard ambient temperatures of 30°C and correction factors thereof.",
-    "3. SMALL CONDUCTOR LIMITS (PEC Section 2.40.1.4 / Table 2.40.4(D)): Circuits feeding general branch lights or standard wall socket convenience outlets shall deploy a minimum copper conductor diameter of 3.5 mm² (No. 12 AWG) backed by a 20AT circuit breaker protection, or 2.0 mm² (No. 14 AWG) protected strictly by a 15AT breaker.",
-    "4. MOTOR SIZING STANDARDS (PEC Article 4.30): Branch conductors carrying isolated AC motor loads shall exhibit an ampacity of not less than 125% of the motor full load current (FLC) (Section 4.30.2.2). The protecting inverse-time circuit breaker is sized at 150% to 250% of nominal FLC to withstand massive initial magnetic starting stress without nuisance tripping.",
-    "5. AIR CONDITIONING LOADS (PEC Article 4.40): Hermetic motor-compressor branch-circuit wires are sized for 125% of the compressor current. Overcurrent circuit breakers are matched for 175% to 225% of the compressor nameplate rating.",
-    "6. CONDUIT AND RACEWAYS (PEC Chapter 3): Conduits embedded in structural slab or masonry must utilize thick-wall Schedule 40 Polyvinyl Chloride (uPVC); exposed vertical runs in commercial premises typically transition to electrical metallic tubing (EMT) or Rigid Metal Conduit (RMC). Sizing follows Article 3.10 fill ratios.",
-    "7. GROUNDING INFRASTRUCTURE (PEC Article 2.50): Solitary structural systems must tie to a dedicated ground rod network. Equipment grounding conductors (EGC) are insulated in green and wire diameters size strictly in accordance with PEC Table 2.50.6.13.",
-    "8. OCCUPATIONAL SAFETY HEIGHTS (PEC/DOLE regulations): Panels and distribution nodes are located 1.50 meters above floor level. Wall switches are located at 1.37 meters, and standard receptacle plugs sit at 0.30 meters from finished floors."
+    "1. SYSTEM SIZING METHODOLOGY (PEC Article 2.20): Aggregate load estimations, branch circuit calculations, and primary sub-feeder sizing conform to professional load schedules and Philippine Electrical Code guidelines.",
+    "2. WIRE AMPACITY CRITERIA (PEC Table 3.10.1.16): Feeder and branch copper conductors utilize THHN/THWN-2 insulation rated at standard 75°C/90°C thermal ampacities, safely accounting for correction factor parameters.",
+    "3. OVERCURRENT PROTECTION DESIGN (PEC Section 2.40.1.6): Standard continuous ampacity ratings are enforced for branch circuit breakers to secure correct electrical coordination and circuit containment.",
+    "4. HIGH-FAULT ANALYSIS MANDATES (PEC Section 1.10.1.9): System equipment must handle potential symmetrical or asymmetrical fault currents. Breakers are specified with appropriate kAIC interrupting ratings.",
+    "5. VOLTAGE DROP LIMIT PRESERVATIONS (PEC Section 2.10.1.19 / Section 2.15.1.2): Sizing ensures that voltage drops are limited to 3% for individual branch or feeder runs, and 5% cumulatively, preventing operational instability."
   ];
 
   generalNotes.forEach(note => docChildren.push(createParagraph(note)));
@@ -747,10 +744,9 @@ export const exportToWord = async (
       
       new Paragraph({ spacing: { after: 150 } }),
       createSubHeader(`B. PEC 2017 & Visual Safety Sizing Reference Map:`),
-      createParagraph("• PEC Article 2.20 (Branch-Circuit, Feeder, and Service Calculations): Standards for branch-circuit loads (general lighting, receptacles, and heavy appliance loads) to verify safe and reliable power distribution sizing."),
-      createParagraph("• PEC Article 2.40 (Overcurrent Protection / Small Conductor Limit): Enforces standard overcurrent limits Table 2.40.4(D) limiting overcurrent devices to 15A for 2.0 mm² wire, 20A for 3.5 mm² wire, and 30A for 5.5 mm² wire."),
-      createParagraph("• PEC Article 4.40 (Air-Conditioning and Refrigerating Equipment): Feeder/branch capacity sized at 125% of FLC compressor currents, with protecting inverse-time breaker sized at 175% to 225% to withhold starting transients."),
-      createParagraph("• PEC Article 4.30 (Motors, Motor Circuits, and Controllers): Conductor ampacity rated for 125% of motor full load current (FLC) with branch protective breakers set for 250% FLC inverse-time starts."),
+      createParagraph("• PEC Article 2.20 (Branch-Circuit, Feeder, and Service Calculations): Governs general load estimation and aggregation parameters to verify safe and reliable power distribution sizing."),
+      createParagraph("• PEC Table 3.10.1.16 (Conductor Ampacities): Standardizes thermal current-carrying capacities for copper conductors based on insulation types and 30°C temperature values."),
+      createParagraph("• PEC Section 2.40.1.6 (Overcurrent Protective Devices): Standardizes allowable nominal ratings for industrial fuses and inverse-time circuit breakers to secure correct trip boundaries."),
       new Paragraph({ spacing: { after: 200 } })
     );
 
@@ -978,8 +974,7 @@ export const exportToWord = async (
     createFormulaCallout(`I_{\\text{sc, asym}} = I_{\\text{sc, sym}} \\times 1.25 = ${combinedSymmetricalCurrent.toFixed(2)} \\times 1.25 = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A}`),
     
     new Paragraph({ spacing: { before: 200 } }),
-    createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): Requires that OCPDs intended to interrupt fault currents have an interrupting rating (kAIC) greater than or equal to the maximum design symmetrical/asymmetrical fault currents at the terminals."),
-    createParagraph("• PEC Section 2.30.7.1 & Article 2.40: Standardizes high-fault breaker coordination to safely suppress thermal explosion risks at main terminals during sub-cycle faults."),
+    createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): Requires that OCPDs intended to interrupt fault currents have an interrupting rating (kAIC) greater than or equal to the maximum design symmetrical/asymmetrical fault currents at the terminals to protect lives and properties."),
     new Paragraph({ spacing: { before: 200 } })
   );
 
@@ -1381,20 +1376,20 @@ export const exportToWord = async (
       mandate: "Mandatory load aggregation rules for branch networks, primary sub-feeders, and main services."
     },
     {
-      ref: "Table 2.20.3.3",
-      mandate: "Authorized non-linear demand factor allowances based on aggregate volumetric thresholds."
-    },
-    {
       ref: "Table 3.10.1.16",
       mandate: "Master wire ampacity reference matrix for insulation categories and physical ambient constraints."
     },
     {
-      ref: "Section 2.30.2.23",
-      mandate: "Structural and environmental safety parameters for incoming service entrance conductors."
-    },
-    {
       ref: "Section 2.40.1.6",
       mandate: "Defines legal standard continuous ampere ratings for industrial safety fuses and circuit breakers."
+    },
+    {
+      ref: "Section 1.10.1.9",
+      mandate: "Requires that overcurrent protective devices (kAIC) meet or exceed terminal short-circuit currents."
+    },
+    {
+      ref: "Section 2.10.1.19 / 2.15.1.2",
+      mandate: "Recommends branch and feeder-circuit conductors be sized to limit voltage drop under 3% (5% combined)."
     }
   ];
 
