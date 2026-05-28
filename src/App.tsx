@@ -33,6 +33,7 @@ import {
   ShortCircuitParams,
   VoltageDropCalculation,
   IlluminationParams,
+  LoadType,
 } from "./types";
 import {
   STANDARD_CB_RATINGS,
@@ -240,49 +241,27 @@ export default function App() {
     }] : [])
   ];
 
-  const exportToExcel = () => {
-    const wb = XLSX.utils.book_new();
-
-    const allPanelsToExport = [
-      { panel, circuits },
-      ...subPanels.map((sp) => ({ panel: sp.panel, circuits: sp.circuits })),
-    ];
-
-    allPanelsToExport.forEach((item, index) => {
-      const { panel: p, circuits: c } = item;
-
-      const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
-
-      let mainCurrent = 0;
-      if (p.system.includes("3PH")) {
-        const loads = { R: 0, Y: 0, B: 0 };
-        c.forEach((cir) => {
-          cir.phases.forEach((ph) => {
-            loads[ph as keyof typeof loads] += cir.loadVA / cir.phases.length;
-          });
-        });
-        const maxPhaseVA = Math.max(loads.R, loads.Y, loads.B);
-        mainCurrent = (maxPhaseVA * 3) / (p.voltage * Math.sqrt(3));
-      } else {
-        mainCurrent = totalVA / p.voltage;
-      }
-
-      const designAmp = mainCurrent * 1.25;
-      const cb = STANDARD_CB_RATINGS.find((r) => r >= designAmp) || 100;
-
+  const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
+    // Enforce PEC Small Conductor Rule and standard matching
+    const getWireForBreakerLocal = (cbRating: number, designAmpacity: number) => {
       let minSize = 2.0;
-      if (cb > 15 && cb <= 20) minSize = 3.5;
-      else if (cb > 20 && cb <= 30) minSize = 5.5;
-      const requiredAmpacity = Math.max(designAmp, cb);
-      const wire =
+      if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
+      else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+
+      const requiredAmpacity = Math.max(designAmpacity, cbRating);
+      return (
         WIRE_AMPACITY_TABLE.find(
           (w) => w.ampacity >= requiredAmpacity && w.size >= minSize,
-        ) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+        ) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1]
+      );
+    };
 
-      const wireSizeForGnd = wire.size;
+    const formatWireSizeLocal = (size: number): string =>
+      size <= 8 ? size.toFixed(1) : size.toString();
+
+    const getGroundWireForWireSizeLocal = (wireSize: number): string => {
       const wireAmpacity =
-        WIRE_AMPACITY_TABLE.find((w) => w.size === wireSizeForGnd)?.ampacity ||
-        20;
+        WIRE_AMPACITY_TABLE.find((w) => w.size === wireSize)?.ampacity || 20;
 
       let egcSize = 2.0;
       if (wireAmpacity <= 15) egcSize = 2.0;
@@ -301,32 +280,221 @@ export default function App() {
       else if (wireAmpacity <= 1200) egcSize = 150;
       else egcSize = 200;
 
-      const actualGndSize = Math.min(egcSize, wireSizeForGnd);
+      const actualSize = Math.min(egcSize, wireSize);
+      return formatWireSizeLocal(actualSize);
+    };
+
+    const getConduitSizeForWireLocal = (wireSize: number): string => {
+      if (wireSize <= 5.5) return "15mm";
+      if (wireSize <= 14) return "20mm";
+      if (wireSize <= 22) return "25mm";
+      if (wireSize <= 38) return "32mm";
+      if (wireSize <= 60) return "40mm";
+      if (wireSize <= 100) return "50mm";
+      if (wireSize <= 200) return "65mm";
+      return "80mm";
+    };
+
+    const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
+
+    const phaseLoads = { R: 0, Y: 0, B: 0 };
+    c.forEach((cir) => {
+      cir.phases.forEach((ph: string) => {
+        phaseLoads[ph as keyof typeof phaseLoads] +=
+          cir.loadVA / cir.phases.length;
+      });
+    });
+
+    const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
+    const phaseImbalance =
+      maxPhaseLoad > 0
+        ? (1 - Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B) / maxPhaseLoad) *
+          100
+        : 0;
+
+    const phaseAmps = { R: 0, Y: 0, B: 0 };
+    c.forEach((cir) => {
+      if (cir.phases.includes("R")) phaseAmps.R += cir.loadA;
+      if (cir.phases.includes("Y")) phaseAmps.Y += cir.loadA;
+      if (cir.phases.includes("B")) phaseAmps.B += cir.loadA;
+    });
+
+    // Calculate mainCurrent
+    let lightingReceptacleVA = 0;
+    let motorVAs: number[] = [];
+
+    let phaseVAs = { R: 0, Y: 0, B: 0 };
+    let motorPhaseVAs = { R: 0, Y: 0, B: 0 };
+
+    c.forEach((cir) => {
+      const perPhaseVA = cir.loadVA / cir.phases.length;
+      const isMotor =
+        cir.loadType === LoadType.AIR_CON ||
+        cir.loadType === LoadType.MOTOR;
+
+      cir.phases.forEach((ph: string) => {
+        if (ph === "R") {
+          phaseVAs.R += perPhaseVA;
+          if (isMotor) motorPhaseVAs.R += perPhaseVA;
+        }
+        if (ph === "Y") {
+          phaseVAs.Y += perPhaseVA;
+          if (isMotor) motorPhaseVAs.Y += perPhaseVA;
+        }
+        if (ph === "B") {
+          phaseVAs.B += perPhaseVA;
+          if (isMotor) motorPhaseVAs.B += perPhaseVA;
+        }
+      });
+
+      if (isMotor) {
+        motorVAs.push(cir.loadVA);
+      } else {
+        lightingReceptacleVA += cir.loadVA;
+      }
+    });
+
+    let lightingReceptacleDemand = lightingReceptacleVA;
+    if (lightingReceptacleVA > 120000) {
+      lightingReceptacleDemand =
+        3000 * 1.0 +
+        (120000 - 3000) * 0.35 +
+        (lightingReceptacleVA - 120000) * 0.25;
+    } else if (lightingReceptacleVA > 3000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
+    }
+
+    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
+
+    let maxDesignAmp = 0;
+    let maxBaseAmp = 0;
+
+    if (p.system.includes("3PH")) {
+      const highestPhaseBaseVA = Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B);
+      const effectiveTotalBaseVA = highestPhaseBaseVA * 3;
+
+      const factor = p.voltage * Math.sqrt(3);
+      maxBaseAmp = effectiveTotalBaseVA / factor;
+
+      const totalMotorDemandVA =
+        motorVAs.reduce((a, b) => a + b, 0) + largestMotor * 0.25;
+      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+
+      const unbalanceRatio =
+        motorVAs.length + lightingReceptacleVA > 0
+          ? effectiveTotalBaseVA / (motorVAs.reduce((a, b) => a + b, 0) + lightingReceptacleVA)
+          : 1;
+
+      maxDesignAmp = (totalNetComputedVA * Math.max(1, unbalanceRatio)) / factor;
+    } else {
+      const totalMotorDemandVA =
+        motorVAs.reduce((a, b) => a + b, 0) + largestMotor * 0.25;
+      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+      const totalBaseVA = lightingReceptacleVA + motorVAs.reduce((a, b) => a + b, 0);
+
+      maxBaseAmp = totalBaseVA / p.voltage;
+      maxDesignAmp = totalNetComputedVA / p.voltage;
+    }
+
+    const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
+
+    // Calculate Main Feeder
+    const designAmp = mainCurrent.designAmp;
+    const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT));
+    const calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= designAmp) || 100;
+    const cb = Math.max(
+      calculatedCb,
+      STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
+      30,
+    );
+
+    const wire = getWireForBreakerLocal(cb, designAmp);
+    const groundSize = getGroundWireForWireSizeLocal(wire.size);
+    const conduitSize = getConduitSizeForWireLocal(wire.size);
+
+    const branchTypeCounts = c.reduce(
+      (acc, cir) => {
+        acc[cir.mcbType] = (acc[cir.mcbType] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+    const sortedBranchTypes = Object.entries(branchTypeCounts).sort(
+      (a, b) => Number(b[1]) - Number(a[1]),
+    );
+    const predominantBranchType = sortedBranchTypes[0]?.[0] || "MCB";
+
+    const poles = p.system.includes("3PH") ? 3 : 2;
+    let type = predominantBranchType;
+    if (
+      cb > 100 &&
+      (type === "Plug-in" || type === "Bolt-on" || type === "MCB")
+    ) {
+      type = "MCCB";
+    }
+    const kaic = cb > 100 ? 18 : 10;
+    const cbAF =
+      cb <= 50
+        ? 50
+        : cb <= 100
+          ? 100
+          : cb <= 225
+            ? 225
+            : cb <= 400
+              ? 400
+              : 600;
+
+    return {
+      totalVA,
+      phaseLoads,
+      maxPhaseLoad,
+      phaseImbalance,
+      phaseAmps,
+      mainCurrent,
+      mainFeeder: {
+        wire,
+        groundSize,
+        cb,
+        conduitSize,
+        poles,
+        type,
+        kaic,
+        af: cbAF,
+      },
+    };
+  };
+
+  const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    const allPanelsToExport = [
+      { panel, circuits },
+      ...subPanels.map((sp) => ({ panel: sp.panel, circuits: sp.circuits })),
+    ];
+
+    allPanelsToExport.forEach((item, index) => {
+      const { panel: p, circuits: c } = item;
+
+      // Extract accurate calculations matching the system's UI engine
+      const {
+        totalVA,
+        phaseImbalance,
+        phaseAmps,
+        mainCurrent,
+        mainFeeder: {
+          wire,
+          groundSize,
+          cb,
+          conduitSize,
+          poles,
+          type,
+          kaic,
+          af: cbAF,
+        },
+      } = computePanelScheduleValues(p, c);
+
       const formatWireSize = (size: number): string =>
         size <= 8 ? size.toFixed(1) : size.toString();
-      const groundSize = formatWireSize(actualGndSize);
-
-      let conduitSize = "15mm";
-      if (wire.size <= 5.5) conduitSize = "15mm";
-      else if (wire.size <= 14) conduitSize = "20mm";
-      else if (wire.size <= 22) conduitSize = "25mm";
-      else if (wire.size <= 38) conduitSize = "32mm";
-      else if (wire.size <= 60) conduitSize = "40mm";
-      else if (wire.size <= 100) conduitSize = "50mm";
-      else if (wire.size <= 200) conduitSize = "65mm";
-      else conduitSize = "80mm";
-
-      const loads = { R: 0, Y: 0, B: 0 };
-      c.forEach((cir) => {
-        cir.phases.forEach((ph) => {
-          loads[ph as keyof typeof loads] += cir.loadVA / cir.phases.length;
-        });
-      });
-      const maxPhaseLoad = Math.max(loads.R, loads.Y, loads.B);
-      const phaseImbalance =
-        maxPhaseLoad > 0
-          ? (1 - Math.min(loads.R, loads.Y, loads.B) / maxPhaseLoad) * 100
-          : 0;
 
       const wsData: any[][] = [];
       wsData.push(["PROJECT:", p.project, "", "SYSTEM:", p.system]);
@@ -338,16 +506,22 @@ export default function App() {
         p.voltage,
       ]);
       wsData.push([]);
+      
+      const is3Phase = p.system.includes("3PH");
+
       const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
-      if (p.system.includes("3PH")) {
-        headers.push("AMPS", "", "");
+      if (is3Phase) {
+        headers.push("AMPS", "", "", ""); // push 4 slots for AMPS
       } else {
         headers.push("AMPS");
       }
       headers.push("AT", "AF", "P", "KAIC", "TYPE", "WIRE / GND / CONDUIT");
       wsData.push(headers);
 
-      if (p.system.includes("3PH")) {
+      if (is3Phase) {
+        const p1 = p.connectionType === "Line-to-Neutral" ? "AN" : "AB";
+        const p2 = p.connectionType === "Line-to-Neutral" ? "BN" : "BC";
+        const p3 = p.connectionType === "Line-to-Neutral" ? "CN" : "CA";
         wsData.push([
           "",
           "",
@@ -355,9 +529,10 @@ export default function App() {
           "",
           "",
           "",
-          "AB",
-          "BC",
-          "CA",
+          p1,
+          p2,
+          p3,
+          "3Ø",
           "",
           "",
           "",
@@ -368,105 +543,86 @@ export default function App() {
       }
 
       c.forEach((cir) => {
+        const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE;
         const row: any[] = [
           cir.circuitNo,
           cir.description,
-          cir.wattage,
-          cir.quantity,
-          cir.loadVA,
-          cir.phases ? cir.phases.join(", ") : "",
+          isSpace ? "-" : cir.wattage,
+          isSpace ? "-" : cir.quantity,
+          isSpace ? "-" : cir.loadVA,
+          isSpace ? "-" : (cir.phases ? cir.phases.join(", ") : ""),
         ];
 
-        if (p.system.includes("3PH")) {
-          row.push(
-            cir.phases.includes("R") ? cir.loadA.toFixed(2) : "-",
-            cir.phases.includes("Y") ? cir.loadA.toFixed(2) : "-",
-            cir.phases.includes("B") ? cir.loadA.toFixed(2) : "-",
-          );
+        if (is3Phase) {
+          if (isSpace) {
+            row.push("-", "-", "-", "-");
+          } else {
+            row.push(
+              cir.phases.includes("R") && cir.phases.length < 3 ? cir.loadA.toFixed(2) : "-",
+              cir.phases.includes("Y") && cir.phases.length < 3 ? cir.loadA.toFixed(2) : "-",
+              cir.phases.includes("B") && cir.phases.length < 3 ? cir.loadA.toFixed(2) : "-",
+              cir.phases.length === 3 ? cir.loadA.toFixed(2) : "-",
+            );
+          }
         } else {
-          row.push(cir.loadA.toFixed(2));
+          row.push(isSpace ? "-" : cir.loadA.toFixed(2));
         }
 
         row.push(
-          cir.mcbAT,
-          cir.mcbAF,
-          cir.mcbP,
-          cir.mcbKAIC,
-          cir.mcbType,
-          `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
+          isSpace ? "-" : cir.mcbAT,
+          isSpace ? "-" : cir.mcbAF,
+          isSpace ? "-" : cir.mcbP,
+          isSpace ? "-" : cir.mcbKAIC,
+          isSpace ? "-" : cir.mcbType,
+          isSpace ? "-" : `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
         );
         wsData.push(row);
       });
 
-      const is3Phase = p.system.includes("3PH");
       const headerRowOffset = is3Phase ? 1 : 0;
 
       wsData.push([]);
+      
       const baseTotalRow: any[] = [
         "",
         "",
         "",
         "Total Connected Load",
         `${totalVA.toFixed(0)} VA`,
-        "",
+        `(${(totalVA / 1000).toFixed(2)} kVA)`,
       ];
+      
       if (is3Phase) {
-        const amps = { R: 0, Y: 0, B: 0 };
-        c.forEach((cir) => {
-          if (cir.phases.includes("R")) amps.R += cir.loadA;
-          if (cir.phases.includes("Y")) amps.Y += cir.loadA;
-          if (cir.phases.includes("B")) amps.B += cir.loadA;
-        });
         baseTotalRow.push(
-          `${amps.R.toFixed(2)} A`,
-          `${amps.Y.toFixed(2)} A`,
-          `${amps.B.toFixed(2)} A`,
+          `${phaseAmps.R.toFixed(2)} A`,
+          `${phaseAmps.Y.toFixed(2)} A`,
+          `${phaseAmps.B.toFixed(2)} A`,
+          "-",
         );
       } else {
-        baseTotalRow.push(`${mainCurrent.toFixed(2)} A`);
+        baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`);
+      }
+      
+      const numCols = is3Phase ? 16 : 13;
+      const baseRemainingCols = numCols - baseTotalRow.length;
+      for (let i = 0; i < baseRemainingCols; i++) {
+        baseTotalRow.push("");
       }
       wsData.push(baseTotalRow);
-      wsData.push([
+
+      const totalKvaRow: any[] = [
         "",
         "",
         "",
         "Total kVA",
         `${(totalVA / 1000).toFixed(2)} kVA`,
-      ]);
-
-      const cbAF =
-        cb <= 50
-          ? 50
-          : cb <= 100
-            ? 100
-            : cb <= 225
-              ? 225
-              : cb <= 400
-                ? 400
-                : 600;
-      const poles = is3Phase ? 3 : 2;
-
-      const branchTypeCounts = c.reduce(
-        (acc, cir) => {
-          acc[cir.mcbType] = (acc[cir.mcbType] || 0) + 1;
-          return acc;
-        },
-        {} as Record<string, number>,
-      );
-      const sortedBranchTypes = Object.entries(branchTypeCounts).sort(
-        (a, b) => Number(b[1]) - Number(a[1]),
-      );
-      const predominantBranchType = sortedBranchTypes[0]?.[0] || "MCB";
-
-      let type = predominantBranchType;
-      if (
-        cb > 100 &&
-        (type === "Plug-in" || type === "Bolt-on" || type === "MCB")
-      ) {
-        type = "MCCB";
+        "",
+      ];
+      const remainingCols = numCols - totalKvaRow.length;
+      for (let i = 0; i < remainingCols; i++) {
+        totalKvaRow.push("");
       }
-
-      const kaic = cb > 100 ? 18 : 10;
+      wsData.push(totalKvaRow);
 
       wsData.push([]);
       wsData.push(["SUMMARY & MAIN FEEDER"]);
@@ -490,20 +646,19 @@ export default function App() {
         merges.push({ s: { r: 3, c: 3 }, e: { r: 4, c: 3 } });
         merges.push({ s: { r: 3, c: 4 }, e: { r: 4, c: 4 } });
         merges.push({ s: { r: 3, c: 5 }, e: { r: 4, c: 5 } });
-        merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 8 } });
-        merges.push({ s: { r: 3, c: 9 }, e: { r: 4, c: 9 } });
+        merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 9 } });
         merges.push({ s: { r: 3, c: 10 }, e: { r: 4, c: 10 } });
         merges.push({ s: { r: 3, c: 11 }, e: { r: 4, c: 11 } });
         merges.push({ s: { r: 3, c: 12 }, e: { r: 4, c: 12 } });
         merges.push({ s: { r: 3, c: 13 }, e: { r: 4, c: 13 } });
         merges.push({ s: { r: 3, c: 14 }, e: { r: 4, c: 14 } });
+        merges.push({ s: { r: 3, c: 15 }, e: { r: 4, c: 15 } });
       }
       if (merges.length > 0) {
         ws["!merges"] = merges;
       }
 
       const wscols: any[] = [];
-      const numCols = is3Phase ? 15 : 13;
       for (let col = 0; col < numCols; col++) {
         let maxLen = 0;
         wsData.forEach((row) => {

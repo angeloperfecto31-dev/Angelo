@@ -1,32 +1,24 @@
 import { ShortCircuitParams, VoltageDropCalculation, IlluminationParams, LightFixture } from './types';
 
-// PEC Table 3.10.2.6 (B)(16) (Copper THHN/THWN at 75°C)
+// PEC Table 3.10.1.16 (Copper THHN/THWN at 75°C)
 export const WIRE_AMPACITY_TABLE = [
   { size: 2.0, ampacity: 20 },
   { size: 3.5, ampacity: 25 },
   { size: 5.5, ampacity: 35 },
   { size: 8.0, ampacity: 50 },
   { size: 14, ampacity: 65 },
-  { size: 22, ampacity: 85 },
-  { size: 30, ampacity: 100 },
-  { size: 38, ampacity: 115 },
-  { size: 50, ampacity: 140 },
-  { size: 60, ampacity: 155 },
-  { size: 80, ampacity: 190 },
-  { size: 100, ampacity: 220 },
+  { size: 22, ampacity: 90 },
+  { size: 30, ampacity: 110 },
+  { size: 38, ampacity: 125 },
+  { size: 50, ampacity: 150 },
+  { size: 60, ampacity: 175 },
+  { size: 80, ampacity: 200 },
+  { size: 100, ampacity: 230 },
   { size: 125, ampacity: 255 },
   { size: 150, ampacity: 285 },
-  { size: 175, ampacity: 305 },
-  { size: 200, ampacity: 325 },
-  { size: 250, ampacity: 375 },
-  { size: 300, ampacity: 405 },
-  { size: 325, ampacity: 435 },
-  { size: 375, ampacity: 470 },
-  { size: 400, ampacity: 480 },
-  { size: 500, ampacity: 530 }
 ];
 
-export const STANDARD_CB_RATINGS = [15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000, 6000];
+export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 400, 450, 500, 600, 700, 800, 1000];
 
 export const SYSTEM_VOLTAGES = {
   '230V, 1PH, 2W': 230,
