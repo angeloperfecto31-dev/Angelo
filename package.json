@@ -50,5 +50,8 @@
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",
     "@types/three": "^0.184.1"
+  },
+  "overrides": {
+    "node-domexception": "file:./patches/node-domexception"
   }
 }

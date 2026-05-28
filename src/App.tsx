@@ -760,18 +760,19 @@ export default function App() {
           
           let width = el.scrollWidth;
           let height = el.scrollHeight;
+          const isIllumination = id === "illumination-diagram";
           
           if (id === "short-circuit-diagram") {
             width = 1050;
             height = 950;
-          } else if (id === "illumination-diagram") {
-            width = 1000;
-            height = 550;
+          } else if (isIllumination) {
+            width = el.clientWidth || 1000;
+            height = el.clientHeight || 550;
           }
           
           return await toPng(el, {
             quality: 1,
-            backgroundColor: "#ffffff",
+            backgroundColor: isIllumination ? "#020617" : "#ffffff",
             pixelRatio: pRatio,
             width: width,
             height: height,
@@ -784,8 +785,8 @@ export default function App() {
               top: "0",
               margin: "0",
               position: "relative",
-              width: id === "short-circuit-diagram" ? "1050px" : id === "illumination-diagram" ? "1000px" : undefined,
-              height: id === "short-circuit-diagram" ? "950px" : id === "illumination-diagram" ? "550px" : undefined,
+              width: id === "short-circuit-diagram" ? "1050px" : isIllumination ? `${width}px` : undefined,
+              height: id === "short-circuit-diagram" ? "950px" : isIllumination ? `${height}px` : undefined,
             },
           });
         } catch (err) {

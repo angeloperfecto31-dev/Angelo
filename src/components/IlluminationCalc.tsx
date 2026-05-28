@@ -390,19 +390,21 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       const el = document.getElementById("illumination-diagram");
       if (el) {
         try {
+          const captureWidth = el.clientWidth || 1000;
+          const captureHeight = el.clientHeight || 550;
           const dataUrl = await toPng(el, {
             quality: 1,
-            backgroundColor: "#ffffff",
+            backgroundColor: "#020617",
             pixelRatio: 1,
-            width: 1000,
-            height: 550,
+            width: captureWidth,
+            height: captureHeight,
             skipFonts: true,
             style: {
               opacity: "1",
               visibility: "visible",
               transform: "none",
-              width: "1000px",
-              height: "550px",
+              width: `${captureWidth}px`,
+              height: `${captureHeight}px`,
             },
           });
           onSnapshotCapture(newSavedRoom.id, dataUrl, lpdLimitInfo.roomName);

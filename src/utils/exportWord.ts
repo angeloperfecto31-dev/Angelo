@@ -12,6 +12,9 @@ import {
   BorderStyle, 
   VerticalAlign, 
   ImageRun,
+  Header,
+  Footer,
+  PageNumber,
   Math as DocxMath,
   MathRun,
   MathFraction,
@@ -22,6 +25,34 @@ import {
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
+
+// Helper to map LaTeX macros to clean Unicode symbols or text representation
+function getMathSymbol(macro: string): string {
+  switch (macro) {
+    case "times": return " × ";
+    case "cdot":
+    case "mid": return " ∙ ";
+    case "approx": return " ≈ ";
+    case "ge":
+    case "geq": return " ≥ ";
+    case "le":
+    case "leq": return " ≤ ";
+    case "lceil": return "⌈";
+    case "rceil": return "⌉";
+    case "Delta": return "Δ";
+    case "Phi": return "Φ";
+    case "phi": return "φ";
+    case "Omega": return "Ω";
+    case "omega": return "ω";
+    case "theta": return "θ";
+    case "implies": return " ⟹ ";
+    case "left":
+    case "right": return "";
+    case "max": return "max";
+    case "min": return "min";
+    default: return macro;
+  }
+}
 
 // Helper function to recursively parse LaTeX strings to native Word Math Components
 function parseLatex(str: string): any[] {
@@ -63,7 +94,8 @@ function parseLatex(str: string): any[] {
           if (str[pos] === ';') pos++;
           return parseGroupItems();
         }
-        return [new MathRun(m === "" ? str[pos++] : m)];
+        const sym = getMathSymbol(m === "" ? str[pos++] : m);
+        return [new MathRun(sym)];
       }
       return [new MathRun(str[pos++])];
     }
@@ -98,28 +130,6 @@ function parseLatex(str: string): any[] {
         if (str[pos] === ';') pos++;
         const content = parseGroupItems();
         content.forEach(c => items.push({ type: 'component', val: c }));
-      } else if (macro === "times") {
-        items.push({ type: 'component', val: new MathRun(" × ") });
-      } else if (macro === "cdot" || macro === "mid") {
-        items.push({ type: 'component', val: new MathRun(" ∙ ") });
-      } else if (macro === "approx") {
-        items.push({ type: 'component', val: new MathRun(" ≈ ") });
-      } else if (macro === "ge" || macro === "geq") {
-        items.push({ type: 'component', val: new MathRun(" ≥ ") });
-      } else if (macro === "le" || macro === "leq") {
-        items.push({ type: 'component', val: new MathRun(" ≤ ") });
-      } else if (macro === "lceil") {
-        items.push({ type: 'component', val: new MathRun("⌈") });
-      } else if (macro === "rceil") {
-        items.push({ type: 'component', val: new MathRun("⌉") });
-      } else if (macro === "Delta") {
-        items.push({ type: 'component', val: new MathRun("Δ") });
-      } else if (macro === "Phi") {
-        items.push({ type: 'component', val: new MathRun("Φ") });
-      } else if (macro === "phi") {
-        items.push({ type: 'component', val: new MathRun("φ") });
-      } else if (macro === "Omega") {
-        items.push({ type: 'component', val: new MathRun("Ω") });
       } else if (macro === "" || macro === " ") {
         // escaped char
         if (pos < str.length) {
@@ -129,7 +139,10 @@ function parseLatex(str: string): any[] {
           else items.push({ type: 'component', val: new MathRun(esc) });
         }
       } else {
-        items.push({ type: 'component', val: new MathRun(macro) });
+        const sym = getMathSymbol(macro);
+        if (sym !== "") {
+          items.push({ type: 'component', val: new MathRun(sym) });
+        }
       }
     } else {
       // standard character
@@ -193,12 +206,27 @@ function parseLatex(str: string): any[] {
 }
 
 // Splits string by "$" and compiles odd segments into native DocxMath components
+function sanitizeText(text: string): string {
+  return text
+    .replace(/\b(terminal)\s+\1\b/gi, "$1")
+    .replace(/\b(PRACTICAL)\s+\1\b/gi, "$1")
+    .replace(/PRACTICAL PRACTICAL EXAMPLES/gi, "PRACTICAL EXAMPLES")
+    .replace(/\b(\w+)\s+\1\b/gi, (match, word) => {
+       const lowerWord = word.toLowerCase();
+       if (['terminal', 'practical', 'section', 'breaker', 'line', 'the', 'and', 'or'].includes(lowerWord)) {
+         return word;
+       }
+       return match;
+    });
+}
+
 function parseInlineMath(text: string, options: { bold?: boolean, font: string, size: number, color: string }): any[] {
-  if (!text.includes('$')) {
-    return [new TextRun({ text, ...options })];
+  const sanitized = sanitizeText(text);
+  if (!sanitized.includes('$')) {
+    return [new TextRun({ text: sanitized, ...options })];
   }
 
-  const segments = text.split('$');
+  const segments = sanitized.split('$');
   const runs: any[] = [];
 
   segments.forEach((seg, idx) => {
@@ -285,71 +313,88 @@ export const exportToWord = async (
 
   const createHeader = (text: string, pageBreakBefore = false) => {
     return new Paragraph({
-      children: [new TextRun({ text, font: "Segoe UI", size: 36, color: "1E3A8A", bold: true })],
-      spacing: { before: 800, after: 400 },
+      children: [new TextRun({ text: text.toUpperCase(), font: "Segoe UI", size: 28, color: "1B365D", bold: true })],
+      spacing: { before: 500, after: 200 },
       pageBreakBefore,
       border: {
-        bottom: { color: "1E3A8A", space: 10, style: BorderStyle.SINGLE, size: 16 }
+        bottom: { color: "64748B", space: 10, style: BorderStyle.SINGLE, size: 8 }
       }
     });
   };
   
   const createSubHeader = (text: string) => {
     return new Paragraph({
-      children: [new TextRun({ text, font: "Segoe UI", size: 26, color: "0F766E", bold: true })],
-      spacing: { before: 500, after: 200 },
+      children: [new TextRun({ text, font: "Segoe UI", size: 24, color: "1B365D", bold: true })],
+      spacing: { before: 300, after: 120 },
     });
   };
   
   const createParagraph = (text: string, highlight = false) => {
-    const runs = parseInlineMath(text, {
-      bold: highlight,
-      font: "Segoe UI",
-      size: 22,
-      color: highlight ? "0F766E" : "475569"
-    });
+    let childrenRuns: any[] = [];
+    if (text.startsWith("• ") && text.includes(":")) {
+      const colonIndex = text.indexOf(":");
+      const prefix = text.slice(0, colonIndex + 1);
+      const suffix = text.slice(colonIndex + 1);
+      
+      const prefixRuns = parseInlineMath(prefix, {
+        bold: true,
+        font: "Segoe UI",
+        size: 22,
+        color: "1B365D"
+      });
+      const suffixRuns = parseInlineMath(suffix, {
+        bold: highlight,
+        font: "Segoe UI",
+        size: 22,
+        color: highlight ? "1B365D" : "333333"
+      });
+      childrenRuns = [...prefixRuns, ...suffixRuns];
+    } else {
+      childrenRuns = parseInlineMath(text, {
+        bold: highlight,
+        font: "Segoe UI",
+        size: 22,
+        color: highlight ? "1B365D" : "333333"
+      });
+    }
+
     return new Paragraph({
-      children: runs,
-      spacing: { before: 120, after: 120 },
-      shading: highlight ? { fill: "F0FDFA" } : undefined,
+      children: childrenRuns,
+      spacing: { before: 0, after: 120, line: 276 },
+      shading: highlight ? { fill: "F2F4F7" } : undefined,
     });
   };
 
-  const createCallout = (title: string, textLines: string[]) => {
-    const lines = [
-      new Paragraph({
-        children: [new TextRun({ text: "  " + title, font: "Segoe UI", size: 22, color: "0F766E", bold: true })],
-        spacing: { before: 150, after: 100 },
-      })
-    ];
-    
-    textLines.forEach(line => {
-      const runs = parseInlineMath("  " + line, {
-        font: "Segoe UI",
-        size: 20,
-        color: "0F766E"
-      });
-      lines.push(new Paragraph({
-        children: runs,
-        spacing: { before: 80, after: 80 }
-      }));
+  const createFormulaCallout = (formulaText: string) => {
+    const wrapped = formulaText.trim().startsWith('$') ? formulaText : `$${formulaText}$`;
+    const runs = parseInlineMath(wrapped, {
+      font: "Segoe UI",
+      size: 24,
+      color: "1B365D",
+      bold: true
     });
-
+    
     return new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       rows: [
         new TableRow({
           children: [
             new TableCell({
-              children: lines,
-              shading: { fill: "F0FDFA" },
+              children: [
+                new Paragraph({
+                  children: runs,
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 120, after: 120 }
+                })
+              ],
+              shading: { fill: "F2F4F7" },
               verticalAlign: VerticalAlign.CENTER,
               margins: { top: 150, bottom: 150, left: 200, right: 200 },
               borders: {
                 top: { style: BorderStyle.NONE },
                 bottom: { style: BorderStyle.NONE },
                 right: { style: BorderStyle.NONE },
-                left: { style: BorderStyle.SINGLE, size: 24, color: "0D9488" }
+                left: { style: BorderStyle.SINGLE, size: 36, color: "1B365D" }
               }
             })
           ]
@@ -364,30 +409,137 @@ export const exportToWord = async (
     });
   };
 
+  const createCallout = (title: string, textLines: string[]) => {
+    const lines = [
+      new Paragraph({
+        children: [new TextRun({ text: "  " + title, font: "Segoe UI", size: 22, color: "1B365D", bold: true })],
+        spacing: { before: 100, after: 80 },
+      })
+    ];
+    
+    textLines.forEach(line => {
+      const runs = parseInlineMath("  " + line, {
+        font: "Segoe UI",
+        size: 20,
+        color: "333333"
+      });
+      lines.push(new Paragraph({
+        children: runs,
+        spacing: { before: 60, after: 60, line: 240 }
+      }));
+    });
+
+    return new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              children: lines,
+              shading: { fill: "F2F4F7" },
+              verticalAlign: VerticalAlign.CENTER,
+              margins: { top: 120, bottom: 120, left: 150, right: 150 },
+              borders: {
+                top: { style: BorderStyle.NONE },
+                bottom: { style: BorderStyle.NONE },
+                right: { style: BorderStyle.NONE },
+                left: { style: BorderStyle.SINGLE, size: 36, color: "1B365D" }
+              }
+            })
+          ]
+        })
+      ],
+      borders: {
+        top: { style: BorderStyle.NONE },
+        bottom: { style: BorderStyle.NONE },
+        left: { style: BorderStyle.NONE },
+        right: { style: BorderStyle.NONE }
+      }
+    });
+  };
+
+  // HELPER FOR HEADER METADATA BLOCK PANEL
+  const createMetadataCell = (label: string, value: string, fill: string) => {
+    return new TableCell({
+      children: [
+        new Paragraph({
+          children: [
+            new TextRun({ text: label + ": ", font: "Segoe UI", size: 16, bold: true, color: "1B365D" }),
+            ...parseInlineMath(value, { font: "Segoe UI", size: 16, color: "333333" })
+          ],
+          spacing: { before: 60, after: 60 }
+        })
+      ],
+      shading: { fill },
+      verticalAlign: VerticalAlign.CENTER,
+      margins: { top: 80, bottom: 80, left: 100, right: 100 },
+      borders: {
+        top: { style: BorderStyle.NONE },
+        bottom: { style: BorderStyle.NONE },
+        left: { style: BorderStyle.NONE },
+        right: { style: BorderStyle.NONE }
+      }
+    });
+  };
+
+  const metadataTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
+      bottom: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
+      left: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
+      right: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 4 }
+    },
+    rows: [
+      new TableRow({
+        children: [
+          createMetadataCell("DOCUMENT TYPE", "Engineering Standards & Calculation Protocol", "F8FAFC"),
+          createMetadataCell("SUBJECT", "Main OCPD & Service Conductor Sizing", "F8FAFC")
+        ]
+      }),
+      new TableRow({
+        children: [
+          createMetadataCell("REFERENCE CODE", "PEC-2017-CH2", "FFFFFF"),
+          createMetadataCell("COMPLIANCE SIZING ANALYSIS", "Standardized Calculations", "FFFFFF")
+        ]
+      }),
+      new TableRow({
+        children: [
+          createMetadataCell("SYSTEM PHASE", "Single-Phase ($1\\phi$) & Three-Phase ($3\\phi$)", "F8FAFC"),
+          createMetadataCell("REPORT DATE", new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), "F8FAFC")
+        ]
+      })
+    ]
+  });
+
   // TITLE PAGE
   docChildren.push(
+    metadataTable,
+    new Paragraph({ spacing: { before: 400, after: 400 } }),
     new Paragraph({
-      children: [new TextRun({ text: "COMPREHENSIVE ELECTRICAL DESIGN & ANALYSIS REPORT", font: "Segoe UI", size: 52, color: "1E3A8A", bold: true })],
+      children: [new TextRun({ text: "TECHNICAL DESIGN MEMORANDUM", font: "Segoe UI", size: 36, color: "1B365D", bold: true })],
       alignment: AlignmentType.CENTER,
-      spacing: { before: 1600, after: 600 },
+      spacing: { before: 400, after: 200 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: "Engineering Reports: Load Schedule, Short Circuit, Voltage Drop & Illumination", font: "Segoe UI", size: 24, color: "475569", italics: true })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 1200 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: "Project Designation: " + (panel.project || "Industrial/Commercial Facility"), font: "Segoe UI", size: 28, color: "334155", bold: true })],
+      children: [new TextRun({ text: "COMPREHENSIVE ELECTRICAL DESIGN & ANALYSIS REPORT", font: "Segoe UI", size: 40, color: "333333", bold: true })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: "Compliance Standard: Philippine Electrical Code (PEC) 2017 & ASHRAE 90.1", font: "Segoe UI", size: 20, color: "0F766E", bold: true })],
+      children: [new TextRun({ text: "Engineering Reports: Load Schedule, Short Circuit, Voltage Drop & Illumination", font: "Segoe UI", size: 20, color: "475569", italics: true })],
       alignment: AlignmentType.CENTER,
-      spacing: { after: 1800 },
+      spacing: { after: 800 },
     }),
     new Paragraph({
-      children: [new TextRun({ text: "Report Issued: " + new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), font: "Segoe UI", size: 20, color: "94A3B8" })],
+      children: [new TextRun({ text: "Project Designation: " + (panel.project || "Industrial/Commercial Facility"), font: "Segoe UI", size: 24, color: "334155", bold: true })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: "Compliance Standard: Philippine Electrical Code (PEC) 2017 & ASHRAE 90.1", font: "Segoe UI", size: 18, color: "475569", bold: true })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 1200 },
     }),
@@ -415,7 +567,7 @@ export const exportToWord = async (
               alignment: AlignmentType.CENTER
             })
           ],
-          shading: { fill: "1E3A8A" },
+          shading: { fill: "1B365D" },
           verticalAlign: VerticalAlign.CENTER,
           margins: { top: 100, bottom: 100, left: 100, right: 100 },
           width: { size: 15, type: WidthType.PERCENTAGE }
@@ -427,7 +579,7 @@ export const exportToWord = async (
               alignment: AlignmentType.LEFT
             })
           ],
-          shading: { fill: "1E3A8A" },
+          shading: { fill: "1B365D" },
           verticalAlign: VerticalAlign.CENTER,
           margins: { top: 100, bottom: 100, left: 150, right: 100 },
           width: { size: 70, type: WidthType.PERCENTAGE }
@@ -439,7 +591,7 @@ export const exportToWord = async (
               alignment: AlignmentType.CENTER
             })
           ],
-          shading: { fill: "1E3A8A" },
+          shading: { fill: "1B365D" },
           verticalAlign: VerticalAlign.CENTER,
           margins: { top: 100, bottom: 100, left: 100, right: 100 },
           width: { size: 15, type: WidthType.PERCENTAGE }
@@ -457,7 +609,7 @@ export const exportToWord = async (
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: secNum, font: "Segoe UI", size: 18, bold: true, color: "1E3A8A" })],
+                children: [new TextRun({ text: secNum, font: "Segoe UI", size: 18, bold: true, color: "1B365D" })],
                 alignment: AlignmentType.CENTER
               })
             ],
@@ -482,7 +634,7 @@ export const exportToWord = async (
           new TableCell({
             children: [
               new Paragraph({
-                children: [new TextRun({ text: pageNum, font: "Segoe UI", size: 18, bold: true, color: "1E3A8A" })],
+                children: [new TextRun({ text: pageNum, font: "Segoe UI", size: 18, bold: true, color: "1B365D" })],
                 alignment: AlignmentType.CENTER
               })
             ],
@@ -516,7 +668,7 @@ export const exportToWord = async (
       top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
       bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
       insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
-      insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+      insideVertical: { style: BorderStyle.NONE },
     }
   });
 
@@ -571,19 +723,23 @@ export const exportToWord = async (
     else if (cb > 20 && cb <= 30) minSize = 5.5;
     const requiredAmpacity = Math.max(designAmp, cb);
     const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-
     const voltageFactorFormula = is3PH ? "V \\times \\sqrt{3}" : "V";
     const designAmpFormula = "I_{\\text{feeder}} \\times 1.25";
 
     docChildren.push(
       createSubHeader(`A. Sizing Computations Criteria (Main Feeder)`),
-      createParagraph(`• Source System Configuration: ${p.system}`),
-      createParagraph(`• Secondary Nominal Voltage: $V = ${p.voltage}\\text{ V AC}$`),
-      createParagraph(`• Accumulated Nominal Load: $S_{\\text{nominal}} = ${totalVA.toFixed(2)}\\text{ VA}$ ($${(totalVA / 1000).toFixed(2)}\\text{ kVA}$)`),
-      createParagraph(`• Feeder Continuous Load Current: $I_{\\text{feeder}} = \\frac{S_{\\text{nominal}}}{${voltageFactorFormula}} = ${mainCurrent.toFixed(2)}\\text{ A}$`),
-      createParagraph(`• Minimum Design Ampacity (125% factor): $I_{\\text{design}} = ${designAmpFormula} = ${designAmp.toFixed(2)}\\text{ A}$`),
-      createParagraph(`• Sized Main Circuit Breaker Rating (Overcurrent Protection): $I_{\\text{breaker}} = ${cb}\\text{ A}$ Frame / Amperes Trip (AF/AT)`),
-      createParagraph(`• Sized Main Conductor Ground Wire Feed: $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ Copper THHN/THWN Conductors`),
+      createParagraph(`The main feeder conductor and overcurrent protection are sized based on the total accumulated system load. The governing mathematical steps and formulas applied from PEC Article 2.20 and 4.30 are:`),
+      
+      createParagraph(`1. Total Connected Load current ($I_{\\text{feeder}}$) representing normal continuous status:`),
+      createFormulaCallout(`I_{\\text{feeder}} = \\frac{S_{\\text{nominal}}}{${voltageFactorFormula}} = \\frac{${totalVA.toFixed(2)}}{${is3PH ? `${p.voltage} \\times \\sqrt{3}` : p.voltage}} = ${mainCurrent.toFixed(2)}\\text{ A}`),
+      
+      createParagraph(`2. Minimum required design ampacity (incorporating a safety continuous-duty multiplier of 125%):`),
+      createFormulaCallout(`I_{\\text{design}} = I_{\\text{feeder}} \\times 1.25 = ${mainCurrent.toFixed(2)} \\times 1.25 = ${designAmp.toFixed(2)}\\text{ A}`),
+      
+      createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
+      createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
+
+      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main circuit breaker trip of $${cb}\\text{ A}$.`),
       
       new Paragraph({ spacing: { after: 150 } }),
       createSubHeader(`B. PEC 2017 & Visual Safety Sizing Reference Map:`),
@@ -610,7 +766,8 @@ export const exportToWord = async (
         createParagraph(`• Phase B (Line Y) Connected Load: $S_{\\text{phase,Y}} = ${phaseLoads.Y.toFixed(1)}\\text{ VA}$`),
         createParagraph(`• Phase C (Line B) Connected Load: $S_{\\text{phase,B}} = ${phaseLoads.B.toFixed(1)}\\text{ VA}$`),
         createParagraph(`• Average Phase Power Load: $S_{\\text{phase,avg}} = \\frac{S_{\\text{phase,R}} + S_{\\text{phase,Y}} + S_{\\text{phase,B}}}{3} = ${avgPhaseVA.toFixed(1)}\\text{ VA}$`),
-        createParagraph(`• Maximum Calculated Phase Imbalance: $f_{\\text{imbalance}} = \\frac{\\max(|S_{\\text{phase}} - S_{\\text{phase,avg}}|)}{S_{\\text{phase,avg}}} \\times 100\\% = ${phaseImbalance.toFixed(2)}\\%$`, phaseImbalance > 15),
+        createParagraph(`Maximum calculated percentage phase load imbalance across the three lines relative to average power is computed using:`),
+        createFormulaCallout(`f_{\\text{imbalance}} = \\frac{\\max(|S_{\\text{phase}} - S_{\\text{phase,avg}}|)}{S_{\\text{phase,avg}}} \\times 100\\% = ${phaseImbalance.toFixed(2)}\\%`),
         new Paragraph({ spacing: { after: 150 } })
       );
     }
@@ -625,7 +782,7 @@ export const exportToWord = async (
       "Cir No", "Description / Load Name", "Load Type", "Volts", "VA", "Ampere", "CB Rating", "Conductors", "Conduit"
     ].map(t => new TableCell({ 
       children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 16, color: "FFFFFF" })], alignment: AlignmentType.CENTER })], 
-      shading: { fill: "1E3A8A" },
+      shading: { fill: "1B365D" },
       verticalAlign: VerticalAlign.CENTER,
       margins: { top: 80, bottom: 80, left: 80, right: 80 }
     }));
@@ -668,7 +825,7 @@ export const exportToWord = async (
         left: { style: BorderStyle.NONE },
         right: { style: BorderStyle.NONE },
         insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
-        insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+        insideVertical: { style: BorderStyle.NONE },
       }
     });
     docChildren.push(table);
@@ -680,7 +837,7 @@ export const exportToWord = async (
     const findingsLines = [
       `Overall continuous feeder capacity exhibits a total rating of $S_{\\text{total}} = ${(totalVA / 1000).toFixed(2)}\\text{ kVA}$, requiring a minimum overcurrent protective device of $I_{\\text{OCPD}} = ${cb}\\text{ AT}$.`,
       is3PH 
-        ? `Phase balancing is maintained at highly optimal levels with an imbalance deviation of $f_{\\text{imbalance}} = ${imbalanceVal.toFixed(2)}\\%$ (under the standard $15\\%$ maximum phase discrepancy limit).`
+        ? `Phase balancing is maintained at highly optimal levels with an imbalance deviation of $f_{\\text{imbalance}} = ${imbalanceVal.toFixed(2)}\\%$ (under the standard $15\\\%$ maximum phase discrepancy limit).`
         : `Single Phase circuits display solid protective OCPD coordination matching PEC requirements.`,
       `Verified Conductor Ampacity: Sized feeder of $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ Cu conductor boasts a maximum thermic ampacity threshold matching PEC tables comfortably exceeding OCPD rating. Conformance status: OK.`
     ];
@@ -732,7 +889,7 @@ export const exportToWord = async (
   const combinedSymmetricalCurrent = iscFaultPoint + motorContribution;
   const combinedAsymmetricalCurrent = combinedSymmetricalCurrent * 1.25;
 
-  docChildren.push(createHeader(`2. Short Circuit Analysis & Symmetrical/Asymmetrical Fault Findings`, true));
+  docChildren.push(createHeader(`3.0 Short Circuit Analysis & Subtransient Fault Sizing`, true));
   docChildren.push(
     createSubHeader(`A. Engineering Methodology Reference`),
     createParagraph("Short circuit calculations deploy the standard Per-Unit (pu) impedance methodology on a consolidated base system capacity. The elements audited include utility grid infinite source capabilities, power transformer internal inductive resistance, distribution feeder conductor resistance/reactance decay, and transient rotational motor feedbacks back into fault points."),
@@ -745,7 +902,7 @@ export const exportToWord = async (
   // Table of Input parameters
   const scInputHeaders = ["Design Parameter Description", "Engineering Value", "Unit Of Metric"].map(t => new TableCell({
     children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })], alignment: AlignmentType.CENTER })],
-    shading: { fill: "1E3A8A" },
+    shading: { fill: "1B365D" },
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 60, bottom: 60, left: 80, right: 80 }
   }));
@@ -753,7 +910,7 @@ export const exportToWord = async (
   const createSCInputRow = (desc: string, val: string, unit: string, isEven: boolean) => new TableRow({
     children: [
       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: desc, font: "Segoe UI", size: 18, color: "334155" })] })], shading: { fill: isEven ? "F8FAFC" : "FFFFFF" }, margins: { left: 80, right: 80 } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: val, font: "Segoe UI", size: 18, bold: true, color: "1E3A8A" })], alignment: AlignmentType.CENTER })], shading: { fill: isEven ? "F8FAFC" : "FFFFFF" } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: val, font: "Segoe UI", size: 18, bold: true, color: "1B365D" })], alignment: AlignmentType.CENTER })], shading: { fill: isEven ? "F8FAFC" : "FFFFFF" } }),
       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: unit, font: "Segoe UI", size: 18, color: "475569" })], alignment: AlignmentType.CENTER })], shading: { fill: isEven ? "F8FAFC" : "FFFFFF" } }),
     ]
   });
@@ -774,38 +931,47 @@ export const exportToWord = async (
     borders: {
       top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
       bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
-      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 }
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+      insideVertical: { style: BorderStyle.NONE }
     }
   }));
 
   docChildren.push(
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`C. Step-by-Step Per-Unit Impedance & Symmetrical Calculations`),
-    createParagraph(`1. Transformer Full Load Amperes: $I_{\\text{FLA}} = \\frac{S_{\\text{transformer, kVA}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}}$`),
-    createParagraph(`   $I_{\\text{FLA}} = \\frac{${baseKVA} \\times 1000}{${params.transformerVoltage} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}$`),
-    createParagraph(`2. Utility Source Grid Impedance: $Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000}$`),
-    createParagraph(`   $Z_{\\text{util, pu}} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}$`),
-    createParagraph(`3. Transformer Inductive Impedance: $Z_{\\text{trans, pu}} = \\frac{\\%Z_{\\text{transformer}}}{100}$`),
-    createParagraph(`   $Z_{\\text{trans, pu}} = \\frac{${params.transformerZ}\\%}{100} = ${zTranspu.toFixed(6)}\\text{ pr. u.}$`),
-    createParagraph(`4. Feeder Conductor Impedance Sizing Decay: $Z_{\\text{feeder}} = R + jX = ${feederR.toFixed(5)} + j${feederX.toFixed(5)}\\,\\Omega$`),
-    createParagraph(`   Conductor Resistance $R = ${feederR.toFixed(5)}\\,\\Omega$, Reactance $X = ${feederX.toFixed(5)}\\,\\Omega$, Magnitude $|Z_{\\text{feeder}}| = \\sqrt{R^2 + X^2} = ${feederZ.toFixed(5)}\\,\\Omega$`),
-    createParagraph(`   Per-unit Feeder Impedance: $Z_{\\text{feeder, pu}} = Z_{\\text{feeder, } \\Omega} \\times \\frac{S_{\\text{base, kVA}} / 1000}{V_{\\text{base, kV}}^2}$`),
-    createParagraph(`   $Z_{\\text{feeder, pu}} = ${feederZ.toFixed(5)} \\times \\frac{${baseKVA / 1000}}{${(baseKV * baseKV).toFixed(6)}} = ${zFeederpu.toFixed(6)}\\text{ pr. u.}$`),
-    createParagraph(`5. Combined System Impedance: $Z_{\\text{total, pu}} = Z_{\\text{util, pu}} + Z_{\\text{trans, pu}} + Z_{\\text{feeder, pu}} = ${totalZpu.toFixed(6)}\\text{ pr. u.}$`),
+    
+    createParagraph(`1. Transformer Full Load Amperes ($I_{\\text{FLA}}$):`),
+    createFormulaCallout(`I_{\\text{FLA}} = \\frac{S_{\\text{trans, kVA}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}} = \\frac{${baseKVA} \\times 1000}{${params.transformerVoltage} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}`),
+    
+    createParagraph(`2. Utility Source Grid Impedance ($Z_{\\text{util, pu}}$):`),
+    createFormulaCallout(`Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}`),
+    
+    createParagraph(`3. Transformer Inductive Impedance ($Z_{\\text{trans, pu}}$):`),
+    createFormulaCallout(`Z_{\\text{trans, pu}} = \\frac{\\%Z_{\\text{transformer}}}{100} = \\frac{${params.transformerZ}\\%}{100} = ${zTranspu.toFixed(6)}\\text{ pr. u.}`),
+    
+    createParagraph(`4. Feeder Conductor Ohmic Impedance Sizing decay ($Z_{\\text{feeder}}$):`),
+    createFormulaCallout(`Z_{\\text{feeder}} = R + jX = ${feederR.toFixed(5)} + j${feederX.toFixed(5)}\\,\\Omega \\implies |Z_{\\text{feeder}}| = ${feederZ.toFixed(5)}\\,\\Omega`),
+    
+    createParagraph(`   Converting ohmic impedance into per-unit equivalent format:`),
+    createFormulaCallout(`Z_{\\text{feeder, pu}} = Z_{\\text{feeder, } \\Omega} \\times \\frac{S_{\\text{base, kVA}} / 1000}{V_{\\text{base, kV}}^2} = ${zFeederpu.toFixed(6)}\\text{ pr. u.}`),
+    
+    createParagraph(`5. Combined System total per-unit impedance ($Z_{\\text{total, pu}}$):`),
+    createFormulaCallout(`Z_{\\text{total, pu}} = Z_{\\text{util, pu}} + Z_{\\text{trans, pu}} + Z_{\\text{feeder, pu}} = ${totalZpu.toFixed(6)}\\text{ pr. u.}`),
 
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`D. Ultimate Symmetrical and Asymmetrical Fault Current Results`),
-    createParagraph(`• Symmetrical Fault Current at Transformer Terminals: $I_{\\text{sc, Main}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{util, pu}} + Z_{\\text{trans, pu}}}$`),
-    createParagraph(`  $I_{\\text{sc, Main}} = \\frac{${iFullLoad.toFixed(2)}}{${zUtilitypu.toFixed(6)} + ${zTranspu.toFixed(6)}} = ${iscMainBreaker.toFixed(2)}\\text{ A Symmetrical}$`, true),
-    createParagraph(`• Symmetrical Fault Current at Distribution Panelboard Terminals: $I_{\\text{sc, Panel}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{total, pu}}}$`),
-    createParagraph(`  $I_{\\text{sc, Panel}} = \\frac{${iFullLoad.toFixed(2)}}{${totalZpu.toFixed(6)}} = ${iscFaultPoint.toFixed(2)}\\text{ A Symmetrical}$`),
-    createParagraph(`• Subtransient Rotational Motor Feedback Contribution:`),
-    createParagraph(`  Motor Load Current $I_{\\text{motor, FLA}} = \\frac{\\text{Motor VA}_{\\text{total}}}{V_{\\text{secondary}} \\times \\sqrt{3}} = ${(scMotorLoadVA / (Math.sqrt(3) * params.transformerVoltage)).toFixed(2)}\\text{ A}$, Transient Injection Factor = $4.0$`),
-    createParagraph(`  $I_{\\text{motor}} = I_{\\text{motor, FLA}} \\times 4.0 = ${motorContribution.toFixed(2)}\\text{ A Symmetrical}$`),
-    createParagraph(`• Combined Symmetrical Short Circuit Current (Total Symmetrical Fault): $I_{\\text{sc, sym}} = I_{\\text{sc, Panel}} + I_{\\text{motor}}$`),
-    createParagraph(`  $I_{\\text{sc, sym}} = ${iscFaultPoint.toFixed(2)} + ${motorContribution.toFixed(2)} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A Symmetrical}$`, true),
-    createParagraph(`• Ultimate Asymmetrical Combined Short Circuit Current (Total Asymmetrical Fault): $I_{\\text{sc, asym}} = I_{\\text{sc, sym}} \\times 1.25$`),
-    createParagraph(`  $I_{\\text{sc, asym}} = ${combinedSymmetricalCurrent.toFixed(2)} \\times 1.25 = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A Asymmetrical}$`, true),
+    
+    createParagraph(`• Symmetrical Fault Current at Transformer Terminals ($I_{\\text{sc, Main}}$):`),
+    createFormulaCallout(`I_{\\text{sc, Main}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{util, pu}} + Z_{\\text{trans, pu}}} = \\frac{${iFullLoad.toFixed(2)}}{${zUtilitypu.toFixed(6)} + ${zTranspu.toFixed(6)}} = ${iscMainBreaker.toFixed(2)}\\text{ A}`),
+    
+    createParagraph(`• Symmetrical Fault Current at Distribution Panelboard Terminals ($I_{\\text{sc, Panel}}$):`),
+    createFormulaCallout(`I_{\\text{sc, Panel}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{total, pu}}} = \\frac{${iFullLoad.toFixed(2)}}{${totalZpu.toFixed(6)}} = ${iscFaultPoint.toFixed(2)}\\text{ A}`),
+    
+    createParagraph(`• Combined synchronous symmetrical fault current incorporating rotating motor feedback ($I_{\\text{sc, sym}}$):`),
+    createFormulaCallout(`I_{\\text{sc, sym}} = I_{\\text{sc, Panel}} + I_{\\text{motor}} = ${iscFaultPoint.toFixed(2)} + ${motorContribution.toFixed(2)} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A}`),
+    
+    createParagraph(`• Ultimate Asymmetrical Fault Current factoring DC offset transient displacement ($I_{\\text{sc, asym}}$):`),
+    createFormulaCallout(`I_{\\text{sc, asym}} = I_{\\text{sc, sym}} \\times 1.25 = ${combinedSymmetricalCurrent.toFixed(2)} \\times 1.25 = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A}`),
     
     new Paragraph({ spacing: { before: 200 } }),
     createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): Requires that OCPDs intended to interrupt fault currents have an interrupting rating (kAIC) greater than or equal to the maximum design symmetrical/asymmetrical fault currents at the terminals."),
@@ -836,7 +1002,7 @@ export const exportToWord = async (
   }
 
   // === 3. VOLTAGE DROP ===
-  docChildren.push(createHeader(`3. Voltage Drop Calculations and Conductor Thermal Inspections`, true));
+  docChildren.push(createHeader(`4.0 Voltage Drop Calculations and Conductor Thermal Audits`, true));
   docChildren.push(
     createSubHeader(`A. Sizing Guidelines & PEC Voltage Drop Allowances`),
     createParagraph("Over-loss of voltage drop restricts functional motor torque, causes high heating coefficients inside walls, and increases electrical power draw bills. Copper wire conductivity factors resistances and impedances accurately under 75°C temperature load heights."),
@@ -846,9 +1012,12 @@ export const exportToWord = async (
     
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`B. Voltage Drop Sizing Calculations Formulas Matrix`),
-    createParagraph(`1-Phase System Voltage Drop: $V_{\\text{drop, 1}\\phi} = \\frac{2 \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}$`),
-    createParagraph(`3-Phase System Voltage Drop: $V_{\\text{drop, 3}\\phi} = \\frac{\\sqrt{3} \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}$`),
-    createParagraph(`Effective System Percentage Loss (\\%): $V_{\\text{drop, \\%}} = (\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}) \\times 100\\%$`),
+    createParagraph(`• Voltage drop for Single-Phase ($1\\phi$) multi-wire circuits:`),
+    createFormulaCallout(`V_{\\text{drop, 1}\\phi} = \\frac{2 \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}`),
+    createParagraph(`• Voltage drop for Three-Phase ($3\\phi$) balanced load circuits:`),
+    createFormulaCallout(`V_{\\text{drop, 3}\\phi} = \\frac{\\sqrt{3} \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}`),
+    createParagraph(`• System percentage loss ratio relative to nominal standard working potential:`),
+    createFormulaCallout(`V_{\\text{drop, \\%}} = \\left(\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}\\right) \\times 100\\%`),
     createParagraph(`* $R_{\\text{ohms}}$ represents standard copper conductor AC internal resistance values $(\\Omega/\\text{km})$ from the standard table.`),
     new Paragraph({ spacing: { after: 150 } })
   );
@@ -863,7 +1032,7 @@ export const exportToWord = async (
       "Designation / Line Description", "Conductor (mm²)", "System", "Volt", "Length (m)", "Load (A)", "Impedance (Ω/km)", "Drop VD (V)", "VD (%)", "PEC Status"
     ].map(t => new TableCell({ 
       children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 16, color: "FFFFFF" })], alignment: AlignmentType.CENTER })], 
-      shading: { fill: "1E3A8A" },
+      shading: { fill: "1B365D" },
       verticalAlign: VerticalAlign.CENTER,
       margins: { top: 60, bottom: 60, left: 60, right: 60 }
     }));
@@ -926,7 +1095,7 @@ export const exportToWord = async (
         top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
         bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
         insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
-        insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+        insideVertical: { style: BorderStyle.NONE },
       }
     });
 
@@ -961,7 +1130,7 @@ export const exportToWord = async (
   }
 
   // === 4. ILLUMINATION CALCULATION ===
-  docChildren.push(createHeader(`4. Indoor Illumination Sizing & Ergonomics Quality Report`, true));
+  docChildren.push(createHeader(`5.0 Indoor Illumination Sizing & Ergonomics Quality Report`, true));
   docChildren.push(
     createSubHeader(`A. Photometric Methodology & Regulations Reference`),
     createParagraph("Lighting design leverages the standard Lumen Method to calculate uniform, glare-free, and ergonomically correct visual surroundings, backed by point-by-point grid uniformity calculations. Visual safety limits conform to standard Philippine guidelines:"),
@@ -986,7 +1155,7 @@ export const exportToWord = async (
     const tableRows: TableRow[] = [];
     const createTableCell = (text: string, isHeader = false) => new TableCell({
       children: [new Paragraph({ children: [new TextRun({ text, bold: isHeader, font: "Segoe UI", size: 17, color: isHeader ? "FFFFFF" : "334155" })], alignment: AlignmentType.CENTER })],
-      shading: isHeader ? { fill: "1E3A8A" } : undefined,
+      shading: isHeader ? { fill: "1B365D" } : undefined,
       verticalAlign: VerticalAlign.CENTER,
       margins: { top: 60, bottom: 60, left: 80, right: 80 }
     });
@@ -1026,7 +1195,7 @@ export const exportToWord = async (
         top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
         bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
         insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
-        insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+        insideVertical: { style: BorderStyle.NONE },
       }
     }));
     docChildren.push(new Paragraph({ spacing: { after: 200 } }));
@@ -1086,7 +1255,7 @@ export const exportToWord = async (
   // Energy audit table inside report
   const auditHeaders = ["Audit Parameter", "Standard Static Sizing", "Intelligent Photocells Dims"].map(t => new TableCell({
     children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })], alignment: AlignmentType.CENTER })],
-    shading: { fill: "1E3A8A" },
+    shading: { fill: "1B365D" },
     verticalAlign: VerticalAlign.CENTER,
     margins: { top: 60, bottom: 60, left: 80, right: 80 }
   }));
@@ -1110,7 +1279,8 @@ export const exportToWord = async (
     borders: {
       top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
       bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
-      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 }
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+      insideVertical: { style: BorderStyle.NONE }
     }
   }));
 
@@ -1149,7 +1319,7 @@ export const exportToWord = async (
 
   // === 5. ELECTRICAL FLOOR PLAN ===
   if (images?.floorPlan && Array.isArray(images.floorPlan) && images.floorPlan.length > 0) {
-    docChildren.push(createHeader(`5. Electrical Floor Plan Routing & Layout Mapping`, true));
+    docChildren.push(createHeader(`6.0 Electrical Floor Plan Routing & Layout Mapping`, true));
     docChildren.push(createParagraph(`The schematic below illustrates the architectural electrical lighting wiring, switches, and load outlet distributions as uploaded to the project.`));
     for (let i = 0; i < images.floorPlan.length; i++) {
         if (i > 0) {
@@ -1158,6 +1328,84 @@ export const exportToWord = async (
         await addImageToDoc(images.floorPlan[i]);
     }
   }
+
+  // Running footer containing left-aligned text, right-aligned page numbers, and a thin Slate Gray line above
+  const footerTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { color: "64748B", space: 1, style: BorderStyle.SINGLE, size: 4 }, // Thin, elegant horizontal rule
+      bottom: { style: BorderStyle.NONE },
+      left: { style: BorderStyle.NONE },
+      right: { style: BorderStyle.NONE },
+      insideHorizontal: { style: BorderStyle.NONE },
+      insideVertical: { style: BorderStyle.NONE }
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 50, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }
+            },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: "TECHNICAL DESIGN MEMORANDUM | PEC COMPLIANCE",
+                    font: "Segoe UI",
+                    size: 16, // 8pt
+                    color: "64748B",
+                    bold: true
+                  })
+                ],
+                alignment: AlignmentType.LEFT,
+                spacing: { before: 100 } // Slight buffer below the horizontal line
+              })
+            ]
+          }),
+          new TableCell({
+            width: { size: 50, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }
+            },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: "Page ",
+                    font: "Segoe UI",
+                    size: 16,
+                    color: "64748B"
+                  }),
+                  new TextRun({
+                    children: [PageNumber.CURRENT],
+                    font: "Segoe UI",
+                    size: 16,
+                    color: "64748B"
+                  }),
+                  new TextRun({
+                    text: " of ",
+                    font: "Segoe UI",
+                    size: 16,
+                    color: "64748B"
+                  }),
+                  new TextRun({
+                    children: [PageNumber.TOTAL_PAGES],
+                    font: "Segoe UI",
+                    size: 16,
+                    color: "64748B"
+                  })
+                ],
+                alignment: AlignmentType.RIGHT,
+                spacing: { before: 100 }
+              })
+            ]
+          })
+        ]
+      })
+    ]
+  });
 
   const doc = new Document({
     creator: "AI Studio Integrated Sizer",
@@ -1173,6 +1421,11 @@ export const exportToWord = async (
               left: 1440,
             },
           },
+        },
+        footers: {
+          default: new Footer({
+            children: [footerTable]
+          })
         },
         children: docChildren,
       },
