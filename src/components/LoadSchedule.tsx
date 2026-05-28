@@ -294,43 +294,124 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
   const formatWireSize = (size: number): string => size <= 8 ? size.toFixed(1) : size.toString();
 
-  const getGroundWireForWireSize = (wireSize: number): string => {
-    // PEC Table 250.122 Equipment Grounding Conductor
-    // Based on wire size, we find the maximum breaker rating the wire can support 
-    // to map it to the EGC size, ensuring it is not larger than phase conductors.
-    const wireAmpacity = WIRE_AMPACITY_TABLE.find(w => w.size === wireSize)?.ampacity || 20;
-    
+  const getGroundWireForBreaker = (cbRating: number): string => {
+    // PEC Table 2.50.6.13 Minimum Size Equipment Grounding Conductors
     let egcSize = 2.0;
-    if (wireAmpacity <= 15) egcSize = 2.0;
-    else if (wireAmpacity <= 20) egcSize = 3.5;
-    else if (wireAmpacity <= 30) egcSize = 5.5;
-    else if (wireAmpacity <= 40) egcSize = 8.0;
-    else if (wireAmpacity <= 60) egcSize = 14;
-    else if (wireAmpacity <= 100) egcSize = 22;
-    else if (wireAmpacity <= 200) egcSize = 30;
-    else if (wireAmpacity <= 300) egcSize = 38;
-    else if (wireAmpacity <= 400) egcSize = 50;
-    else if (wireAmpacity <= 500) egcSize = 60;
-    else if (wireAmpacity <= 600) egcSize = 80;
-    else if (wireAmpacity <= 800) egcSize = 100;
-    else if (wireAmpacity <= 1000) egcSize = 125;
-    else if (wireAmpacity <= 1200) egcSize = 150;
-    else egcSize = 200;
+    if (cbRating <= 15) egcSize = 2.0;
+    else if (cbRating <= 20) egcSize = 3.5;
+    else if (cbRating <= 60) egcSize = 5.5;
+    else if (cbRating <= 100) egcSize = 8.0;
+    else if (cbRating <= 200) egcSize = 14;
+    else if (cbRating <= 300) egcSize = 22;
+    else if (cbRating <= 500) egcSize = 30;
+    else if (cbRating <= 600) egcSize = 38;
+    else if (cbRating <= 800) egcSize = 50;
+    else if (cbRating <= 1000) egcSize = 60;
+    else if (cbRating <= 1200) egcSize = 80;
+    else if (cbRating <= 1600) egcSize = 100;
+    else if (cbRating <= 2000) egcSize = 125;
+    else if (cbRating <= 2500) egcSize = 175;
+    else if (cbRating <= 3000) egcSize = 200;
+    else if (cbRating <= 4000) egcSize = 250;
+    else if (cbRating <= 5000) egcSize = 375;
+    else egcSize = 400;
 
-    const actualSize = Math.min(egcSize, wireSize);
-    return formatWireSize(actualSize);
+    return formatWireSize(egcSize);
   };
 
-  const getConduitSizeForWire = (wireSize: number): string => {
-    // Conduit sizing for ~3 THHN wires (Line, Neutral, Ground) based on PEC Chapter 9 Table 1 & 4 (40% Fill)
-    if (wireSize <= 5.5) return '15mm';    // Can accommodate up to 6 wires (5.5mm2)
-    if (wireSize <= 14) return '20mm';     // Can accommodate up to 3 wires (14mm2)
-    if (wireSize <= 22) return '25mm';     // Can accommodate up to 4 wires (22mm2)
-    if (wireSize <= 38) return '32mm';     // Can accommodate up to 4 wires (38mm2)
-    if (wireSize <= 60) return '40mm';     // Can accommodate up to 4 wires (60mm2)
-    if (wireSize <= 100) return '50mm';    // Can accommodate up to 3 wires (100mm2)
-    if (wireSize <= 200) return '65mm';    // Can accommodate up to 4 wires (200mm2)
-    return '80mm';
+  const getConduitSizeForWire = (wireSize: number, numWires: number = 3): string => {
+    // PEC Table C.10 Maximum Number of Conductors in Rigid PVC Conduit, Schedule 80 (THHN)
+    // We map wiresize + requested wire count to the appropriate trade size.
+    // Commercial Metric Trade Sizes: 1/2"=15mm, 3/4"=20mm, 1"=25mm, 1-1/4"=32mm, 1-1/2"=40mm, 2"=50mm, 2-1/2"=65mm, 3"=80mm, 3-1/2"=90mm, 4"=100mm, 5"=125mm, 6"=150mm.
+    let conduitSize = 15;
+    
+    if (wireSize <= 5.5) { // 14 to 10 AWG
+      if (numWires <= 6) conduitSize = 15;
+      else if (numWires <= 11) conduitSize = 20;
+      else conduitSize = 25;
+    } else if (wireSize <= 8.0) { // 8 AWG
+      if (numWires <= 3) conduitSize = 15;
+      else if (numWires <= 5) conduitSize = 20;
+      else if (numWires <= 8) conduitSize = 25;
+      else conduitSize = 32;
+    } else if (wireSize <= 14) { // 6 AWG
+       if (numWires <= 1) conduitSize = 15;
+       else if (numWires <= 3) conduitSize = 20;
+       else if (numWires <= 5) conduitSize = 25;
+       else if (numWires <= 9) conduitSize = 32;
+       else conduitSize = 40;
+    } else if (wireSize <= 22) { // 4 AWG
+       if (numWires <= 1) conduitSize = 20;
+       else if (numWires <= 3) conduitSize = 25;
+       else if (numWires <= 5) conduitSize = 32;
+       else if (numWires <= 7) conduitSize = 40;
+       else conduitSize = 50;
+    } else if (wireSize <= 30) { // 2 AWG
+       if (numWires <= 2) conduitSize = 25;
+       else if (numWires <= 4) conduitSize = 32;
+       else if (numWires <= 5) conduitSize = 40;
+       else conduitSize = 50;
+    } else if (wireSize <= 38) { // 1 AWG
+       if (numWires <= 1) conduitSize = 25;
+       else if (numWires <= 3) conduitSize = 32;
+       else if (numWires <= 4) conduitSize = 40;
+       else if (numWires <= 6) conduitSize = 50;
+       else conduitSize = 65;
+    } else if (wireSize <= 50) { // 1/0 AWG
+       if (numWires <= 2) conduitSize = 32;
+       else if (numWires <= 3) conduitSize = 40; // 3 wires in 1 1/4" (32mm) but often sized up to 40mm for ease, but table says 3 in 35mm (metric trade size for 1 1/4"). Wait Table says 1/0 is 3 in 1 1/4".
+       else if (numWires <= 5) conduitSize = 50;
+       else conduitSize = 65;
+       if (numWires === 3) conduitSize = 32; // strict PEC C.10 (35mm designator, locally 32mm)
+    } else if (wireSize <= 60) { // 2/0 AWG
+       if (numWires <= 2) conduitSize = 32;
+       else if (numWires <= 3) conduitSize = 40;
+       else if (numWires <= 5) conduitSize = 50;
+       else conduitSize = 65;
+    } else if (wireSize <= 80) { // 3/0 AWG
+       if (numWires <= 1) conduitSize = 32;
+       else if (numWires <= 2) conduitSize = 40;
+       else if (numWires <= 4) conduitSize = 50;
+       else if (numWires <= 6) conduitSize = 65;
+       else conduitSize = 80;
+    } else if (wireSize <= 100) { // 4/0 AWG
+       if (numWires <= 1) conduitSize = 40;
+       else if (numWires <= 3) conduitSize = 50;
+       else if (numWires <= 5) conduitSize = 65;
+       else conduitSize = 80;
+    } else if (wireSize <= 125) { // 250 kcmil
+       if (numWires <= 1) conduitSize = 40;
+       else if (numWires <= 2) conduitSize = 50;
+       else if (numWires <= 4) conduitSize = 65;
+       else if (numWires <= 6) conduitSize = 80;
+       else conduitSize = 90;
+    } else if (wireSize <= 150) { // 300 kcmil
+       if (numWires <= 1) conduitSize = 50;
+       else if (numWires <= 2) conduitSize = 50;
+       else if (numWires <= 3) conduitSize = 65;
+       else if (numWires <= 5) conduitSize = 80;
+       else conduitSize = 90;
+    } else if (wireSize <= 200) { // 400 kcmil
+       if (numWires <= 1) conduitSize = 50;
+       else if (numWires <= 2) conduitSize = 65;
+       else if (numWires <= 4) conduitSize = 80;
+       else if (numWires <= 5) conduitSize = 90;
+       else conduitSize = 100;
+    } else if (wireSize <= 250) { // 500 kcmil
+       if (numWires <= 1) conduitSize = 50;
+       else if (numWires <= 2) conduitSize = 65;
+       else if (numWires <= 3) conduitSize = 80;
+       else if (numWires <= 4) conduitSize = 90;
+       else conduitSize = 100;
+    } else if (wireSize <= 300) { // 600 kcmil
+       if (numWires <= 1) conduitSize = 65;
+       else if (numWires <= 2) conduitSize = 80;
+       else if (numWires <= 3) conduitSize = 90;
+       else conduitSize = 100;
+    } else {
+       conduitSize = numWires <= 3 ? 100 : 125;
+    }
+    return `${conduitSize}mm`;
   };
 
   useEffect(() => {
@@ -472,8 +553,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       mcbKAIC: mcbKAIC,
       mcbType: c.mcbType || MCBType.BOLT_ON,
       wireSize: formatWireSize(wire.size),
-      groundSize: getGroundWireForWireSize(wire.size),
-      conduitSize: getConduitSizeForWire(wire.size)
+      groundSize: getGroundWireForBreaker(mcbAT),
+      conduitSize: getConduitSizeForWire(wire.size, mcbP === 1 ? 3 : mcbP === 2 ? 3 : (panel.system === '400V/230V, 3PH, 4W' ? 5 : 4))
     };
   };
 
@@ -647,8 +728,9 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
     const wire = getWireForBreaker(cb, designAmp);
-    const groundSize = getGroundWireForWireSize(wire.size);
-    const conduitSize = getConduitSizeForWire(wire.size);
+    const groundSize = getGroundWireForBreaker(cb);
+    const numFeedWires = panel.system.includes('3PH') ? (panel.system.includes('4W') ? 5 : 4) : 3;
+    const conduitSize = getConduitSizeForWire(wire.size, numFeedWires);
     
     const branchTypeCounts = circuits.reduce((acc, c) => {
       acc[c.mcbType] = (acc[c.mcbType] || 0) + 1;

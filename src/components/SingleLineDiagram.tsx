@@ -78,7 +78,7 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mai
         <text x="410" y="70" className="sld-text">
            <tspan x="410" dy="0">{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² THHN +</tspan>
            <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² THHN(G) IN</tspan>
-           <tspan x="410" dy="20">{mainFeeder.conduitSize}MMØ CONDUIT</tspan>
+           <tspan x="410" dy="20">{mainFeeder.conduitSize.replace('mm', '')}MMØ CONDUIT</tspan>
         </text>
 
         {/* Meter */}

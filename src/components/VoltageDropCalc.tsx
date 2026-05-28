@@ -164,23 +164,75 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
       };
       setCalculations([...calculations, newCalc]);
     } else if (source === 'main' && panel && circuits) {
-      const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
       const is3PH = panel.system.includes('3PH');
-      const mainCurrent = is3PH ? (totalVA) / (panel.voltage * Math.sqrt(3)) : (totalVA) / panel.voltage;
-      const designAmp = mainCurrent * 1.25;
-      const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+      let phaseVAs = { R: 0, Y: 0, B: 0 };
+      let motorVAs: number[] = [];
+      let lightingReceptacleVA = 0;
+
+      circuits.forEach(c => {
+         const perPhaseVA = c.loadVA / c.phases.length;
+         const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
+         
+         c.phases.forEach(p => {
+           if (p === 'R') { phaseVAs.R += perPhaseVA; }
+           if (p === 'Y') { phaseVAs.Y += perPhaseVA; }
+           if (p === 'B') { phaseVAs.B += perPhaseVA; }
+         });
+
+         if (isMotor) {
+            motorVAs.push(c.loadVA);
+         } else {
+            lightingReceptacleVA += c.loadVA;
+         }
+      });
+
+      let lightingReceptacleDemand = lightingReceptacleVA;
+      if (lightingReceptacleVA > 120000) {
+        lightingReceptacleDemand = 3000 * 1.0 + (120000 - 3000) * 0.35 + (lightingReceptacleVA - 120000) * 0.25;
+      } else if (lightingReceptacleVA > 3000) {
+        lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
+      }
+
+      const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
+      let maxDesignAmp = 0;
+      let maxBaseAmp = 0;
+
+      if (is3PH) {
+        const highestPhaseBaseVA = Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B);
+        const effectiveTotalBaseVA = highestPhaseBaseVA * 3;
+        const factor = panel.voltage * Math.sqrt(3);
+        maxBaseAmp = effectiveTotalBaseVA / factor;
+
+        const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+        const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+        const unbalanceRatio = motorVAs.length + lightingReceptacleVA > 0 ? (effectiveTotalBaseVA / (motorVAs.reduce((a, b) => a + b, 0) + lightingReceptacleVA)) : 1;
+        
+        maxDesignAmp = (totalNetComputedVA * Math.max(1, unbalanceRatio)) / factor;
+      } else {
+        const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+        const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+        const totalBaseVA = lightingReceptacleVA + motorVAs.reduce((a,b) => a+b, 0);
+
+        maxBaseAmp = totalBaseVA / panel.voltage;
+        maxDesignAmp = totalNetComputedVA / panel.voltage;
+      }
+
+      const designAmp = maxDesignAmp;
+      const maxBranchAT = Math.max(0, ...circuits.map(c => c.mcbAT));
+      const calculatedCb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+      const cb = panel.mainBreakerAT || Math.max(calculatedCb, STANDARD_CB_RATINGS.find(r => r >= maxBranchAT) || calculatedCb, 30);
       
       let minSize = 2.0;
       if (cb > 15 && cb <= 20) minSize = 3.5;
       else if (cb > 20 && cb <= 30) minSize = 5.5;
       const requiredAmpacity = Math.max(designAmp, cb);
       const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-      
+
       const newCalc: VoltageDropCalculation = {
         id: crypto.randomUUID(),
         source: 'main',
         name: 'Main Feeder',
-        loadA: Number(mainCurrent.toFixed(2)),
+        loadA: Number(maxBaseAmp.toFixed(2)),
         length: newLength,
         wireSize: wire.size.toString(),
         voltage: panel.voltage,
