@@ -272,14 +272,20 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
 
   // Enforce PEC Small Conductor Rule and standard matching
-  const getWireForBreaker = (cbRating: number, designAmpacity: number) => {
+  const getWireForBreaker = (cbRating: number, designAmpacity: number, isMotorLoad: boolean = false) => {
     // Determine the minimum wire size based on the circuit breaker rating specifically for the small conductor rule
     // (PEC Article 240.4(D)) which applies strictly to 2.0mm2, 3.5mm2, and 5.5mm2.
     let minSize = 2.0;
-    if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-    else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+    
+    if (!isMotorLoad) {
+      if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
+      else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+    }
 
-    const requiredAmpacity = Math.max(designAmpacity, cbRating);
+    // For motor loads, PEC allows the breaker to be up to 250% of the FLC, but the wire ampacity
+    // only needs to be >= 125% of the motor FLC (designAmpacity).
+    // For non-motor loads, we enforce the general practice of wire ampacity >= breaker rating.
+    const requiredAmpacity = isMotorLoad ? designAmpacity : Math.max(designAmpacity, cbRating);
     
     // Find the wire that satisfies both the required ampacity table and the minimum size rule.
     // For sizes above 5.5mm2, the standard ampacity ratings apply directly.
@@ -452,8 +458,9 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     const mcbAF = mcbAT <= 50 ? 50 : mcbAT <= 100 ? 100 : mcbAT <= 225 ? 225 : 400;
     const mcbKAIC = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
     
-    // PEC requirement: Wire ampacity must be >= breaker rating and >= 125% of load
-    const wire = getWireForBreaker(mcbAT, designLoadA);
+    // PEC requirement: Wire ampacity must be >= breaker rating (unless motor) and >= 125% of load
+    const isMotorOrAC = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
+    const wire = getWireForBreaker(mcbAT, designLoadA, isMotorOrAC);
     
     return {
       ...c,
