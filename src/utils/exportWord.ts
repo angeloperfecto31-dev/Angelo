@@ -661,6 +661,10 @@ export const exportToWord = async (
     addTOCEntry("6.0", "Electrical Floor Plan Wiring Diagram & Layout Mapping", "Architectural CAD and electrical circuit routes, device placements, and wiring distribution schemas.", "Page 8", true);
   }
 
+  const checklistSectionNum = hasFloorPlan ? "7.0" : "6.0";
+  const checklistPageNum = hasFloorPlan ? "Page 9" : "Page 8";
+  addTOCEntry(checklistSectionNum, "Reference Framework Checklist", "Compliance checklist index and legal/engineering execution mandates from the Philippine Electrical Code.", checklistPageNum, !hasFloorPlan);
+
   const tocTable = new Table({
     rows: tocRows,
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -1328,6 +1332,119 @@ export const exportToWord = async (
         await addImageToDoc(images.floorPlan[i]);
     }
   }
+
+  // === 6. REFERENCE FRAMEWORK CHECKLIST ===
+  const checklistSecNum = (images?.floorPlan && Array.isArray(images.floorPlan) && images.floorPlan.length > 0) ? "7.0" : "6.0";
+  docChildren.push(createHeader(`${checklistSecNum} Reference Framework Checklist`, true));
+  docChildren.push(
+    createParagraph("The design memorandum and calculations compiled in this dossier adhere strictly to the mandate of the Philippine Electrical Code (PEC) and related professional frameworks. Sizing methodologies and engineering limits are logged below for standard audit compliance verification:"),
+    new Paragraph({ spacing: { after: 150 } })
+  );
+
+  const checklistRows: TableRow[] = [];
+  
+  // Header row
+  checklistRows.push(
+    new TableRow({
+      children: [
+        new TableCell({
+          width: { size: 30, type: WidthType.PERCENTAGE },
+          shading: { fill: "1B365D" },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 120, bottom: 120, left: 150, right: 100 },
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "PEC REFERENCE SECTION", bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })],
+              alignment: AlignmentType.LEFT
+            })
+          ]
+        }),
+        new TableCell({
+          width: { size: 70, type: WidthType.PERCENTAGE },
+          shading: { fill: "1B365D" },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 120, bottom: 120, left: 150, right: 100 },
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "COMPLIANCE & EXECUTION MANDATES", bold: true, font: "Segoe UI", size: 18, color: "FFFFFF" })],
+              alignment: AlignmentType.LEFT
+            })
+          ]
+        })
+      ]
+    })
+  );
+
+  const checklistData = [
+    {
+      ref: "Article 2.20",
+      mandate: "Mandatory load aggregation rules for branch networks, primary sub-feeders, and main services."
+    },
+    {
+      ref: "Table 2.20.3.3",
+      mandate: "Authorized non-linear demand factor allowances based on aggregate volumetric thresholds."
+    },
+    {
+      ref: "Table 3.10.1.16",
+      mandate: "Master wire ampacity reference matrix for insulation categories and physical ambient constraints."
+    },
+    {
+      ref: "Section 2.30.2.23",
+      mandate: "Structural and environmental safety parameters for incoming service entrance conductors."
+    },
+    {
+      ref: "Section 2.40.1.6",
+      mandate: "Defines legal standard continuous ampere ratings for industrial safety fuses and circuit breakers."
+    }
+  ];
+
+  checklistData.forEach((row, index) => {
+    const isEven = index % 2 === 1;
+    const fill = isEven ? "F8FAFC" : "FFFFFF";
+    checklistRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 30, type: WidthType.PERCENTAGE },
+            shading: { fill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 150, right: 100 },
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: row.ref, bold: true, font: "Segoe UI", size: 18, color: "1B365D" })],
+                alignment: AlignmentType.LEFT
+              })
+            ]
+          }),
+          new TableCell({
+            width: { size: 70, type: WidthType.PERCENTAGE },
+            shading: { fill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 150, right: 100 },
+            children: [
+              new Paragraph({
+                children: [new TextRun({ text: row.mandate, font: "Segoe UI", size: 18, color: "334155" })],
+                alignment: AlignmentType.LEFT
+              })
+            ]
+          })
+        ]
+      })
+    );
+  });
+
+  const checklistTable = new Table({
+    rows: checklistRows,
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
+      insideVertical: { style: BorderStyle.NONE }
+    }
+  });
+
+  docChildren.push(checklistTable);
 
   // Running footer containing left-aligned text, right-aligned page numbers, and a thin Slate Gray line above
   const footerTable = new Table({
