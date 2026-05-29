@@ -53,7 +53,7 @@ export default function PaymentScreen({
 
   // Tabs for the customer view: "paymongo", "maribank", or "manual"
   const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual" | "paymongo">(
-    "paymongo",
+    "maribank",
   );
 
   // Manual payment inputs
