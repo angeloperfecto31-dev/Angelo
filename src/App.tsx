@@ -834,8 +834,11 @@ export default function App() {
               top: "0",
               margin: "0",
               position: "relative",
-              width: id === "short-circuit-diagram" ? "1050px" : isIllumination ? `${width}px` : undefined,
-              height: id === "short-circuit-diagram" ? "950px" : isIllumination ? `${height}px` : undefined,
+              overflow: "hidden", // Removes the scrollbars when capturing!
+              border: "none",     // Ensures clean unconstrained look
+              boxShadow: "none",
+              width: `${width}px`,
+              height: `${height}px`,
             },
           });
         } catch (err) {
@@ -1479,6 +1482,7 @@ export default function App() {
                 circuits={circuits}
                 setCircuits={setCircuits}
                 setActiveTab={setActiveTab}
+                activeTab={activeTab}
                 params={illumParams}
                 setParams={setIllumParams}
                 onSnapshotCapture={handleAddIllumSnapshot}

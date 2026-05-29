@@ -19,7 +19,21 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
     
     setCalculations(prev => {
       let changed = false;
-      const next = prev.map(calc => {
+      
+      // Auto-prune deleted circuits from the calculation list
+      const activeCircuitIds = new Set(circuits.map(c => c.id));
+      const filtered = prev.filter(calc => {
+        if (calc.source !== 'custom' && calc.source !== 'main') {
+          const exists = activeCircuitIds.has(calc.source);
+          if (!exists) {
+            changed = true;
+            return false;
+          }
+        }
+        return true;
+      });
+
+      const next = filtered.map(calc => {
         if (calc.source === 'main') {
           // Recalculate main
           const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);

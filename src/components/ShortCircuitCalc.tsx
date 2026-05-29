@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Maximize2, Minimize2, Download } from 'lucide-react';
+import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } from 'lucide-react';
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS } from '../constants';
 
@@ -89,7 +89,6 @@ const DraggableBox = ({
 
 export default function ShortCircuitCalc({ panel, circuits, subPanels, params, setParams, source, setSource }: ShortCircuitCalcProps) {
 
-  const [isDiagramExpanded, setIsDiagramExpanded] = useState(false);
   const [isBWMode, setIsBWMode] = useState(false);
 
   const { motorLoadVA, nonMotorLoadVA } = useMemo(() => {
@@ -138,17 +137,30 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
       const requiredAmpacity = Math.max(designAmp, cb);
       const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-      const recommendedFeederSize = wire.size.toString();
+      let recommendedFeederSize = wire.size.toString();
+      let recommendedRuns = 1;
+
+      if (cb > 250) {
+        recommendedRuns = 2;
+        if (cb > 500) recommendedRuns = 3;
+        if (cb > 800) recommendedRuns = 4;
+        
+        const targetAmpacityPerRun = requiredAmpacity / recommendedRuns;
+        const singleWire = WIRE_AMPACITY_TABLE.find(w => w.size >= 50 && w.ampacity >= targetAmpacityPerRun) 
+                     || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+        recommendedFeederSize = singleWire.size.toString();
+      }
 
       setParams(p => {
-        if (p.transformerKVA === recommendedKVA && p.transformerVoltage === panel.voltage && p.feederSize === recommendedFeederSize) {
+        if (p.transformerKVA === recommendedKVA && p.transformerVoltage === panel.voltage && p.feederSize === recommendedFeederSize && p.feederRuns === recommendedRuns) {
           return p;
         }
         return {
           ...p,
           transformerKVA: recommendedKVA,
           transformerVoltage: panel.voltage,
-          feederSize: recommendedFeederSize
+          feederSize: recommendedFeederSize,
+          feederRuns: recommendedRuns
         };
       });
     }
@@ -406,8 +418,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       </section>
 
       {/* Impedance Diagram Visual (ETAP Style) */}
-      <div className={isDiagramExpanded ? "fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex p-4 pb-20 items-center justify-center overflow-auto" : ""}>
-        <section className={`bg-white dark:bg-slate-900 rounded-2xl shadow-sm panel-container print:mt-12 relative ${isDiagramExpanded ? 'w-full max-w-4xl max-h-full overflow-auto p-8' : 'border border-slate-200 dark:border-slate-800 p-8'}`}>
+      <div>
+        <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm panel-container print:mt-12 relative border border-slate-200 dark:border-slate-800 p-8">
           <div className="flex items-center justify-between mb-8 no-print">
             <div className="flex flex-col gap-1">
               <h4 className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -434,15 +446,6 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   B&W Mode
                 </button>
               </div>
-
-              <button 
-                type="button"
-                onClick={() => setIsDiagramExpanded(!isDiagramExpanded)}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                title={isDiagramExpanded ? "Minimize Diagram" : "Maximize Diagram"}
-              >
-                {isDiagramExpanded ? <Minimize2 className="w-4 h-4 text-slate-500" /> : <Maximize2 className="w-4 h-4 text-slate-500" />}
-              </button>
             </div>
           </div>
 

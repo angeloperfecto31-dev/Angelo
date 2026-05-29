@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Lightbulb, 
   Maximize, 
@@ -31,13 +31,14 @@ export interface IlluminationCalcProps {
   circuits?: Circuit[];
   setCircuits?: React.Dispatch<React.SetStateAction<Circuit[]>>;
   setActiveTab?: (tab: 'schedule' | 'isc' | 'vd' | 'lighting') => void;
+  activeTab?: string;
   params: IlluminationParams;
   setParams: React.Dispatch<React.SetStateAction<IlluminationParams>>;
   onSnapshotCapture?: (circuitId: string, image: string, roomName: string) => void;
   snapshots?: Record<string, string>;
 }
 
-export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
+export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
 
@@ -368,7 +369,10 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   const handleAddToIlluminationTable = async () => {
     const estimatedWattage = activeFixture.wattage;
     const totalVA = estimatedWattage * calculation.fixtures;
-    const newNo = (params.savedRooms || []).length > 0 ? Math.max(...(params.savedRooms || []).map(r => r.circuitNo || 0)) + 1 : 1;
+    
+    // Unified numbering with circuits
+    const nextNo = circuits && circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
+    const newNo = nextNo;
     
     // Create local Saved Rooms table entry 
     const newSavedRoom = {
@@ -385,6 +389,33 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       fixtureWattage: activeFixture.wattage,
       fixtureLumens: activeFixture.lumens
     };
+
+    // Auto-register corresponding circuit in the Load Schedule
+    if (setCircuits && circuits) {
+      const newCircuit: Circuit = {
+        id: crypto.randomUUID(),
+        circuitNo: newNo,
+        description: `LIGHTING - ${lpdLimitInfo.roomName.toUpperCase()}`,
+        wattage: estimatedWattage,
+        quantity: calculation.fixtures,
+        loadVA: totalVA,
+        voltage: 230,
+        phases: ['R'],
+        loadA: totalVA / 230,
+        mcbAT: 15,
+        mcbAF: 50,
+        mcbP: 1,
+        mcbKAIC: 10,
+        mcbType: MCBType.BOLT_ON,
+        wireSize: '2.0',
+        wireType: 'THHN',
+        groundSize: '2.0',
+        conduitSize: '15mm',
+        conduitType: 'PVC',
+        loadType: LoadType.LIGHTING
+      };
+      setCircuits([...circuits, newCircuit]);
+    }
 
     if (onSnapshotCapture) {
       const el = document.getElementById("illumination-diagram");
@@ -426,6 +457,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     let updatedCircuitNo: number | undefined;
     let newWattage: number | undefined;
     let newQuantity: number | undefined;
+    let newRoomName: string | undefined;
 
     const newRooms = params.savedRooms.map(r => {
       if (r.id === id) {
@@ -439,6 +471,8 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
           updated.totalLumens = fixLumens * updated.fixturesCount;
           newWattage = updated.totalWattage;
           newQuantity = updated.fixturesCount;
+        } else if (field === 'roomName') {
+          newRoomName = value;
         }
         updatedCircuitNo = updated.circuitNo;
         return updated;
@@ -447,21 +481,70 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     });
     setParams({ ...params, savedRooms: newRooms });
 
-    if (updatedCircuitNo !== undefined && circuits && setCircuits && field === 'fixturesCount' && newWattage !== undefined && newQuantity !== undefined) {
+    if (updatedCircuitNo !== undefined && circuits && setCircuits) {
       const newCircuits = circuits.map(c => {
          if (c.circuitNo === updatedCircuitNo) {
-           return {
-             ...c,
-             quantity: newQuantity!,
-             loadVA: newWattage!,
-             loadA: newWattage! / c.voltage
-           };
+           const updatedCirc = { ...c };
+           if (field === 'fixturesCount' && newWattage !== undefined && newQuantity !== undefined) {
+             updatedCirc.quantity = newQuantity!;
+             updatedCirc.loadVA = newWattage!;
+             updatedCirc.loadA = newWattage! / c.voltage;
+           } else if (field === 'roomName' && newRoomName !== undefined) {
+             updatedCirc.description = `LIGHTING - ${newRoomName.toUpperCase()}`;
+           }
+           return updatedCirc;
          }
          return c;
       });
       setCircuits(newCircuits);
     }
   };
+
+  // Bidirectional Synchronization: Sync Load Schedule changes back to Illumination Saved Rooms
+  useEffect(() => {
+    if (!circuits || !params.savedRooms || params.savedRooms.length === 0 || activeTab === "lighting") return;
+
+    let updated = false;
+    const nextRooms = params.savedRooms.map(room => {
+      const matchingCirc = circuits.find(c => c.circuitNo === room.circuitNo && c.loadType === LoadType.LIGHTING);
+      if (matchingCirc) {
+        const cleanDesc = matchingCirc.description.replace(/^LIGHTING - /, '');
+        const nextWattage = matchingCirc.loadVA;
+        const nextQuantity = matchingCirc.quantity;
+        
+        const isDescChanged = room.roomName.toUpperCase() !== cleanDesc.toUpperCase();
+        const isQtyChanged = room.fixturesCount !== nextQuantity;
+        const isWattageChanged = room.totalWattage !== nextWattage;
+
+        if (isDescChanged || isQtyChanged || isWattageChanged) {
+          updated = true;
+          return {
+            ...room,
+            roomName: cleanDesc,
+            fixturesCount: nextQuantity,
+            totalWattage: nextWattage,
+            totalLumens: nextQuantity * (room.fixtureLumens || (room.totalLumens / (room.fixturesCount || 1)) || 1000)
+          };
+        }
+      }
+      return room;
+    }).filter(room => {
+      // If the circuit was completely deleted from circuits, remove the saved room entry
+      const exists = circuits.some(c => c.circuitNo === room.circuitNo && c.loadType === LoadType.LIGHTING);
+      if (!exists) {
+        updated = true;
+        return false;
+      }
+      return true;
+    });
+
+    if (updated) {
+      setParams(prev => ({
+        ...prev,
+        savedRooms: nextRooms
+      }));
+    }
+  }, [circuits, params.savedRooms, activeTab, setParams]);
 
   const removeSavedRoom = (id: string) => {
     if (!params.savedRooms) return;
