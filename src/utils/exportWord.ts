@@ -1234,6 +1234,44 @@ export const exportToWord = async (
         if (images.vdDiagrams[calc.id]) {
            docChildren.push(createSubHeader(`Feeder Attenuation Diagram: ${calc.name}`));
            await addImageToDoc(images.vdDiagrams[calc.id]);
+
+           const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
+           const R = data.r;
+           const is3Phase = calc.systemType === '3PH';
+           const factor = is3Phase ? Math.sqrt(3) : 2;
+           const cLength = calc.length || 0;
+           const cLoad = calc.loadA || 0;
+           const cVoltage = calc.voltage || 230;
+           const vd = (factor * cLength * cLoad * R) / 1000;
+           const vdPercentage = (vd / cVoltage) * 100;
+           
+           docChildren.push(new Paragraph({ spacing: { before: 200 } }));
+           docChildren.push(createSubHeader(`Results and Detailed Calculations: ${calc.name}`));
+           
+           docChildren.push(createParagraph(`1. Operating Profile:`));
+           docChildren.push(createParagraph(`   • System Type = ${calc.systemType}`));
+           docChildren.push(createParagraph(`   • Load Current ($I$) = ${cLoad.toFixed(2)} A`));
+           docChildren.push(createParagraph(`   • Feeder Length ($L$) = ${cLength.toFixed(2)} m`));
+           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSize} mm²`));
+           docChildren.push(createParagraph(`   • AC Resistance ($R_{\\text{ohms}}$) = ${R} \\Omega/km`));
+           docChildren.push(createParagraph(`   • Nominal Voltage ($V_{\\text{nominal}}$) = ${cVoltage} V`));
+           
+           docChildren.push(new Paragraph({ spacing: { before: 100 } }));
+           docChildren.push(createParagraph(`2. Voltage Drop Magnitude ($V_{\\text{drop}}$):`));
+           if (is3Phase) {
+               docChildren.push(createParagraph(`   Formula: $V_{\\text{drop}} = \\frac{\\sqrt{3} \\times R_{\\text{ohms}} \\times L \\times I}{1000}$`));
+               docChildren.push(createParagraph(`   Solution: $V_{\\text{drop}} = \\frac{1.732 \\times ${R} \\times ${cLength.toFixed(2)} \\times ${cLoad.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}$`));
+           } else {
+               docChildren.push(createParagraph(`   Formula: $V_{\\text{drop}} = \\frac{2 \\times R_{\\text{ohms}} \\times L \\times I}{1000}$`));
+               docChildren.push(createParagraph(`   Solution: $V_{\\text{drop}} = \\frac{2 \\times ${R} \\times ${cLength.toFixed(2)} \\times ${cLoad.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}$`));
+           }
+
+           docChildren.push(new Paragraph({ spacing: { before: 100 } }));
+           docChildren.push(createParagraph(`3. Percentage Voltage Drop ($V_{\\text{drop, \\%}}$):`));
+           docChildren.push(createParagraph(`   Formula: $V_{\\text{drop, \\%}} = \\left(\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}\\right) \\times 100\\%$`));
+           docChildren.push(createParagraph(`   Solution: $V_{\\text{drop, \\%}} = \\left(\\frac{${vd.toFixed(2)}}{${cVoltage}}\\right) \\times 100\\% = ${vdPercentage.toFixed(2)}\\%$`));
+           
+           docChildren.push(new Paragraph({ spacing: { after: 200 } }));
         }
      }
   }
@@ -1408,6 +1446,43 @@ export const exportToWord = async (
       if (imgBase64 && typeof imgBase64 === 'string') {
         docChildren.push(createParagraph(`Calculated Environment: ${room.roomName}`));
         await addImageToDoc(imgBase64);
+        
+        // Add detailed calculations and results below the diagram
+        docChildren.push(new Paragraph({ spacing: { before: 200 } }));
+        docChildren.push(createSubHeader(`Results and Detailed Calculations: ${room.roomName}`));
+        
+        docChildren.push(createParagraph(`1. Expected Room Profile:`));
+        docChildren.push(createParagraph(`   • Target Illuminance ($E_{\\text{target}}$) = ${room.targetLux} lx`));
+        docChildren.push(createParagraph(`   • Floor Area ($A_{\\text{floor}}$) = ${room.area.toFixed(2)} m²`));
+        docChildren.push(createParagraph(`   • Selected Fixture Type = ${room.fixtureLightType || "Custom"}`));
+        if (room.fixtureLumens && room.fixtureWattage) {
+          docChildren.push(createParagraph(`   • Fixture Luminous Flux ($\\Phi_{\\text{luminaire}}$) = ${room.fixtureLumens.toLocaleString()} lm`));
+          docChildren.push(createParagraph(`   • Fixture Wattage ($P_{\\text{fixture}}$) = ${room.fixtureWattage} W / VA`));
+        }
+
+        docChildren.push(new Paragraph({ spacing: { before: 100 } }));
+        docChildren.push(createParagraph(`2. Recommended Deployment Scale:`));
+        docChildren.push(createParagraph(`   • Required Number of Fixtures ($N_{\\text{fixtures}}$) = ${room.fixturesCount} units`));
+        if (room.fixtureLumens) {
+          docChildren.push(createParagraph(`   • Total Luminous Flux ($\\Phi_{\\text{total}}$):`));
+          docChildren.push(createParagraph(`     Formula: $\\Phi_{\\text{total}} = N_{\\text{fixtures}} \\times \\Phi_{\\text{luminaire}}$`));
+          docChildren.push(createParagraph(`     Solution: $\\Phi_{\\text{total}} = ${room.fixturesCount} \\times ${room.fixtureLumens.toLocaleString()} = ${room.totalLumens.toLocaleString()} lm`));
+        }
+
+        docChildren.push(new Paragraph({ spacing: { before: 100 } }));
+        docChildren.push(createParagraph(`3. Energy Matrix:`));
+        if (room.fixtureWattage) {
+          docChildren.push(createParagraph(`   • Total Estimated Wattage ($P_{\\text{total}}$):`));
+          docChildren.push(createParagraph(`     Formula: $P_{\\text{total}} = N_{\\text{fixtures}} \\times P_{\\text{fixture}}$`));
+          docChildren.push(createParagraph(`     Solution: $P_{\\text{total}} = ${room.fixturesCount} \\times ${room.fixtureWattage} = ${room.totalWattage.toLocaleString()} VA / W`));
+        }
+        
+        const calcLPD = room.totalWattage / room.area;
+        docChildren.push(createParagraph(`   • Lighting Power Density (LPD):`));
+        docChildren.push(createParagraph(`     Formula: $LPD = \\frac{P_{\\text{total}}}{A_{\\text{floor}}}$`));
+        docChildren.push(createParagraph(`     Solution: $LPD = \\frac{${room.totalWattage.toLocaleString()}}{${room.area.toFixed(2)}} = ${calcLPD.toFixed(2)} \\text{ W/m}^2$`));
+        
+        docChildren.push(new Paragraph({ spacing: { after: 200 } }));
       }
     }
   } else if (images?.illumSnapshots && Object.keys(images.illumSnapshots).length > 0) {
