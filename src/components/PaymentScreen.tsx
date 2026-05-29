@@ -66,6 +66,7 @@ export default function PaymentScreen({
   const [uploadingQr, setUploadingQr] = useState(false);
   const [uploadingMaribankQr, setUploadingMaribankQr] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium">("premium");
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText("09939170684");
@@ -461,7 +462,8 @@ export default function PaymentScreen({
             method: paymentMethod === "maribank" ? "MariBank" : "GCash",
             senderName: manualName.trim(),
             referenceNo: cleanedRef,
-            amount: 1000,
+            amount: selectedPlan === "premium" ? 1499 : 999,
+            plan: selectedPlan,
             submittedAt: new Date().toISOString(),
           },
         },
@@ -514,17 +516,21 @@ export default function PaymentScreen({
   const handleAdminApprove = async (targetUid: string, userEmail: string) => {
     setAdminStatusMsg("");
     try {
+      const userToApprove = allUsers.find(u => u.uid === targetUid);
+      const planToSet = userToApprove?.pendingVerification?.plan || "premium"; // default to premium if missing
+
       await setDoc(
         doc(db, "users", targetUid),
         {
           isActive: true,
           paymentStatus: "paid",
+          plan: planToSet,
           approvedBy: user.email,
           approvedAt: new Date().toISOString(),
         },
         { merge: true },
       );
-      setAdminStatusMsg(`Successfully activated account for ${userEmail}`);
+      setAdminStatusMsg(`Successfully activated account for ${userEmail} on ${planToSet} plan`);
     } catch (err: any) {
       setAdminStatusMsg("Error activating account: " + err.message);
       try {
@@ -1017,6 +1023,12 @@ export default function PaymentScreen({
                           <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-mono text-slate-400 shrink-0">
                             ID: {u.uid.slice(0, 8)}...
                           </span>
+                          
+                          {u.plan && (
+                            <span className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded font-bold uppercase tracking-wider shrink-0">
+                              {u.plan === 'premium' ? "Premium ₱1499" : "Basic ₱999"}
+                            </span>
+                          )}
 
                           {/* Badges */}
                           {isUserActive ? (
@@ -1037,8 +1049,13 @@ export default function PaymentScreen({
                         {/* If pending manual verification, render detail box */}
                         {isPending && u.pendingVerification && (
                           <div className="mt-3 p-4 bg-white border border-amber-200 rounded-xl leading-relaxed shadow-sm">
-                            <span className="text-[10px] uppercase font-black tracking-widest text-amber-500 block mb-2">
+                            <span className="text-[10px] uppercase font-black tracking-widest text-amber-500 mb-2 flex items-center gap-2">
                               Manual Submission Data
+                              {u.pendingVerification.plan && (
+                                <span className={`px-1.5 py-0.5 rounded font-black tracking-wider text-[9px] ${u.pendingVerification.plan === 'premium' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  {u.pendingVerification.plan === 'premium' ? "PREMIUM" : "BASIC"}
+                                </span>
+                              )}
                             </span>
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                               <div>
@@ -1320,7 +1337,7 @@ export default function PaymentScreen({
                     Amount Paid
                   </span>
                   <span className="text-slate-900 font-black text-xs font-mono">
-                    ₱1,000.00
+                    ₱{userProfile.pendingVerification.amount?.toLocaleString() || "1,000"}.00
                   </span>
                 </div>
                 <div className="flex justify-between text-xs">
@@ -1401,48 +1418,64 @@ export default function PaymentScreen({
 
       <div className="sm:mx-auto sm:w-full sm:max-w-lg px-4">
         <div className="bg-white py-8 px-4 shadow-xl sm:rounded-3xl border border-slate-100 sm:px-10">
-          {/* Header Description Price */}
-          <div className="mb-6 border-b border-slate-100 pb-6 flex justify-between items-end">
-            <div>
-              <span className="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full font-black uppercase tracking-wider">
-                Full Activation
-              </span>
-              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-wider mt-2">
-                Lifetime Single Payment
-              </p>
-            </div>
-            <div className="flex items-end gap-1">
-              <span className="text-4xl font-black tracking-tight text-slate-900">
-                ₱1,000
-              </span>
-              <span className="text-slate-400 font-bold mb-1.5 uppercase text-xs">
-                .00
-              </span>
+          <div className="mb-6 border-b border-slate-100 pb-6">
+            <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">1. Select Your Subscription Plan</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <button
+                onClick={() => setSelectedPlan('basic')}
+                className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
+                  selectedPlan === 'basic' 
+                  ? 'border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10' 
+                  : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                {selectedPlan === 'basic' && (
+                  <div className="absolute top-3 right-3 text-indigo-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                )}
+                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Basic Plan</span>
+                <div className="mt-1 flex items-end gap-1">
+                  <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700' : 'text-slate-900'}`}>₱999</span>
+                </div>
+                <ul className="mt-3 space-y-1.5 min-h-[60px]">
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-600 leading-tight">Access to all design tools</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-600 leading-tight">Export load schedules to Excel</span></li>
+                  <li className="flex items-start gap-1.5 opacity-40"><X className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-500 line-through leading-tight">Word File Export feature</span></li>
+                </ul>
+              </button>
+              
+              <button
+                onClick={() => setSelectedPlan('premium')}
+                className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
+                  selectedPlan === 'premium' 
+                  ? 'border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10' 
+                  : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
+                  Recommended
+                </div>
+                {selectedPlan === 'premium' && (
+                  <div className="absolute top-3 right-3 text-indigo-600">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                )}
+                <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Premium Plan</span>
+                <div className="mt-1 flex items-end gap-1">
+                  <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700' : 'text-slate-900'}`}>₱1,499</span>
+                </div>
+                <ul className="mt-3 space-y-1.5 min-h-[60px]">
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-600 leading-tight">Everything in Basic Plan</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-900 leading-tight">Full Word File Report Generation</span></li>
+                  <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-900 leading-tight">Premium Support Access</span></li>
+                </ul>
+              </button>
             </div>
           </div>
 
           <div className="mb-6">
-            <ul className="mb-6 space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <li className="flex items-center gap-3">
-                <CheckCircle2 className="w-4 h-4 text-[#0157E4] shrink-0" />
-                <span className="text-xs text-slate-700 font-bold">
-                  Complete Load Schedule Board Generator
-                </span>
-              </li>
-              <li className="flex items-center gap-3">
-                <CheckCircle2 className="w-4 h-4 text-[#0157E4] shrink-0" />
-                <span className="text-xs text-slate-700 font-bold">
-                  Short Circuit & Voltage Drop Calculations (PEC)
-                </span>
-              </li>
-              <li className="flex items-center gap-3">
-                <CheckCircle2 className="w-4 h-4 text-[#0157E4] shrink-0" />
-                <span className="text-xs text-slate-700 font-bold">
-                  Illumination, Layout Floor Plan & Export Reports (Word/Excel)
-                </span>
-              </li>
-            </ul>
-
+            <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">2. Select Payment Method</h3>
             {/* Selector Tabs */}
             <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6">
               <button
@@ -1551,7 +1584,7 @@ export default function PaymentScreen({
                 <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
                     Please transfer exactly{" "}
-                    <strong className="text-slate-800">₱1,000.00</strong> via
+                    <strong className="text-slate-800">₱{selectedPlan === 'premium' ? '1,499' : '999'}.00</strong> via
                     MariBank QR.
                   </span>
                 </div>
@@ -1687,7 +1720,7 @@ export default function PaymentScreen({
                 <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
                     Please transfer exactly{" "}
-                    <strong className="text-slate-800">₱1,000.00</strong> to the
+                    <strong className="text-slate-800">₱{selectedPlan === 'premium' ? '1,499' : '999'}.00</strong> to the
                     GCash details above.
                   </span>
                 </div>

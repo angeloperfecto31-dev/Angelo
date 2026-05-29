@@ -51,6 +51,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
+  const [userPlan, setUserPlan] = useState<"basic" | "premium" | null>(null);
 
   const isAdmin = user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
   const isActiveRef = useRef(false);
@@ -82,6 +83,8 @@ export default function App() {
       doc(db, "users", user.uid),
       (docSnap) => {
         if (docSnap.exists() && docSnap.data().isActive === true) {
+          const data = docSnap.data();
+          setUserPlan(data.plan || "premium");
           if (!initialLoad && !isActiveRef.current && !isAdmin) {
              // Transitioned from inactive to active while logged in!
              // Give a tiny delay for payment screen to unmount or show a message if we wanted, but the prompt says redirect automatically.
@@ -94,6 +97,7 @@ export default function App() {
         } else {
           setIsActive(false);
           isActiveRef.current = false;
+          setUserPlan(null);
         }
         initialLoad = false;
         setAuthLoading(false);
@@ -954,11 +958,12 @@ export default function App() {
         {/* Bottom Sidebar - User Profile & Actions */}
         <div className="p-4 border-t border-slate-800/50 space-y-3 bg-slate-900/50">
           <button
-            onClick={handleExportWord}
-            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-900/20"
+            onClick={userPlan === 'premium' || isAdmin ? handleExportWord : () => alert('Word file export is highly resource-intensive and is available exclusively on the Premium Plan. Please upgrade your payment plan to access this feature.')}
+            className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 ${userPlan === 'premium' || isAdmin ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20`}
+            title={userPlan !== 'premium' && !isAdmin ? "Available on Premium Plan" : "Generate Word Report"}
           >
             <FileText className="w-4 h-4" />
-            <span>Generate Report</span>
+            <span>{userPlan !== 'premium' && !isAdmin ? "Report (Premium)" : "Generate Report"}</span>
           </button>
           <button
             onClick={exportToExcel}
