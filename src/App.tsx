@@ -52,6 +52,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
   const [userPlan, setUserPlan] = useState<"basic" | "premium" | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   const isAdmin = user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
   const isActiveRef = useRef(false);
@@ -191,6 +192,10 @@ export default function App() {
 
   if (!isActive && !isAdmin) {
     return <PaymentScreen user={user} />;
+  }
+
+  if (showUpgrade && userPlan !== 'premium' && !isAdmin) {
+    return <PaymentScreen user={user} isUpgrade={true} onClose={() => setShowUpgrade(false)} />;
   }
 
   const tabs = [
@@ -958,7 +963,7 @@ export default function App() {
         {/* Bottom Sidebar - User Profile & Actions */}
         <div className="p-4 border-t border-slate-800/50 space-y-3 bg-slate-900/50">
           <button
-            onClick={userPlan === 'premium' || isAdmin ? handleExportWord : () => alert('Word file export is highly resource-intensive and is available exclusively on the Premium Plan. Please upgrade your payment plan to access this feature.')}
+            onClick={userPlan === 'premium' || isAdmin ? handleExportWord : () => setShowUpgrade(true)}
             className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 ${userPlan === 'premium' || isAdmin ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20`}
             title={userPlan !== 'premium' && !isAdmin ? "Available on Premium Plan" : "Generate Word Report"}
           >
