@@ -31,13 +31,18 @@ app.get("/api/health", (req, res) => {
 // Create a checkout session
 app.post("/api/create-checkout", async (req, res) => {
   try {
-    const { userId, email, origin } = req.body;
+    const { userId, email, origin, amount, plan, isUpgrade } = req.body;
 
     if (!process.env.PAYMONGO_SECRET_KEY) {
       return res
         .status(500)
         .json({ error: "PayMongo secret key is not configured." });
     }
+
+    const price = amount ? parseInt(amount, 10) * 100 : 100000;
+    const name = isUpgrade 
+      ? "Applet Premium Upgrade" 
+      : `Applet ${plan === 'basic' ? 'Basic' : 'Premium'} Plan Activation`;
 
     const options = {
       method: "POST",
@@ -52,8 +57,8 @@ app.post("/api/create-checkout", async (req, res) => {
             line_items: [
               {
                 currency: "PHP",
-                amount: 100000, // 1,000.00 PHP represented in cents
-                name: "Applet Activation",
+                amount: price,
+                name: name,
                 quantity: 1,
               },
             ],
@@ -66,6 +71,7 @@ app.post("/api/create-checkout", async (req, res) => {
             },
             metadata: {
               userId: userId,
+              plan: isUpgrade ? "premium" : plan || "premium",
             },
           },
         },
@@ -108,12 +114,15 @@ app.post("/api/verify-checkout", async (req, res) => {
     if (isPaid) {
       // Opportunistically update the user's status using Firebase Admin if available
       const userId = attributes.metadata?.userId;
+      const plan = attributes.metadata?.plan || "premium";
       if (userId && db) {
         try {
           await db.collection("users").doc(userId).set(
             {
               paymentStatus: "paid",
               isActive: true,
+              plan: plan,
+              pendingVerification: null,
             },
             { merge: true },
           );
@@ -121,7 +130,7 @@ app.post("/api/verify-checkout", async (req, res) => {
           console.error("Failed to update DB from server verification:", dbErr);
         }
       }
-      res.json({ status: "paid", userId });
+      res.json({ status: "paid", userId, plan });
     } else {
       res.json({ status: "pending" });
     }
@@ -145,14 +154,17 @@ app.post("/api/paymongo-webhook", async (req, res) => {
       const checkoutSessionInfo = body.data.attributes.data.attributes;
       const metadata = checkoutSessionInfo.metadata;
       const userId = metadata?.userId;
+      const plan = metadata?.plan || "premium";
 
       if (userId && db) {
         // Find the user and update access
-        console.log(`Webhook received: activating user ${userId}`);
+        console.log(`Webhook received: activating user ${userId} with plan ${plan}`);
         await db.collection("users").doc(userId).set(
           {
             paymentStatus: "paid",
             isActive: true,
+            plan: plan,
+            pendingVerification: null,
           },
           { merge: true },
         );
