@@ -16,6 +16,12 @@ export const WIRE_AMPACITY_TABLE = [
   { size: 100, ampacity: 230 },
   { size: 125, ampacity: 255 },
   { size: 150, ampacity: 285 },
+  { size: 175, ampacity: 310 },
+  { size: 200, ampacity: 335 },
+  { size: 250, ampacity: 380 },
+  { size: 325, ampacity: 445 },
+  { size: 400, ampacity: 490 },
+  { size: 500, ampacity: 545 },
 ];
 
 export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 400, 450, 500, 600, 700, 800, 1000];

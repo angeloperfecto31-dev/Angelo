@@ -702,45 +702,155 @@ export const exportToWord = async (
     docChildren.push(createHeader(`1. Electrical Load Schedule and Feeder Sizing: ${p?.designation || 'Main Panel'}`));
 
     const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
-    let mainCurrent = 0;
+    const thhnAreas: Record<number, number> = {
+      2.0: 8.5, 3.5: 11.5, 5.5: 17.5, 8.0: 28.3, 14: 50.3, 22: 85.0, 30: 115.0,
+      38: 140.0, 50: 180.0, 60: 220.0, 80: 290.0, 100: 350.0, 125: 450.0,
+      150: 530.0, 175: 620.0, 200: 710.0, 250: 880.0, 325: 1150.0, 400: 1380.0, 500: 1700.0
+    };
+
+    const conduitFill = [
+      { size: '15mm', limit: 78 },
+      { size: '20mm', limit: 137 },
+      { size: '25mm', limit: 220 },
+      { size: '32mm', limit: 380 },
+      { size: '40mm', limit: 518 },
+      { size: '50mm', limit: 855 },
+      { size: '65mm', limit: 1220 },
+      { size: '80mm', limit: 1880 },
+      { size: '90mm', limit: 2500 },
+      { size: '100mm', limit: 3240 }
+    ];
+
+    const getWireForBreakerLocal = (cbRating: number, designAmpacity: number) => {
+      const requiredAmpacity = Math.max(designAmpacity, cbRating);
+      if (cbRating <= 30) {
+        let minSize = 2.0;
+        if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
+        else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+        const w = WIRE_AMPACITY_TABLE.find(x => x.ampacity >= requiredAmpacity && x.size >= minSize) || WIRE_AMPACITY_TABLE[0];
+        return { size: w.size, ampacity: w.ampacity, runs: 1 };
+      }
+      if (cbRating > 250) {
+        let runs = 2;
+        if (cbRating > 500) runs = 3;
+        if (cbRating > 800) runs = 4;
+        const target = requiredAmpacity / runs;
+        const w = WIRE_AMPACITY_TABLE.find(x => x.size >= 50 && x.ampacity >= target) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+        return { size: w.size, ampacity: w.ampacity * runs, runs };
+      }
+      const w = WIRE_AMPACITY_TABLE.find(x => x.ampacity >= requiredAmpacity) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+      return { size: w.size, ampacity: w.ampacity, runs: 1 };
+    };
+
+    const getGroundWireForWireSizeLocal = (wireSize: number, cbRating: number): string => {
+      let egcSize = 2.0;
+      if (cbRating <= 15) egcSize = 2.0;
+      else if (cbRating <= 20) egcSize = 3.5;
+      else if (cbRating <= 30) egcSize = 5.5;
+      else if (cbRating <= 60) egcSize = 8.0;
+      else if (cbRating <= 100) egcSize = 14;
+      else if (cbRating <= 200) egcSize = 22;
+      else if (cbRating <= 300) egcSize = 30;
+      else if (cbRating <= 400) egcSize = 38;
+      else if (cbRating <= 600) egcSize = 50;
+      else if (cbRating <= 800) egcSize = 60;
+      else if (cbRating <= 1000) egcSize = 80;
+      else if (cbRating <= 1200) egcSize = 100;
+      else egcSize = 125;
+      const actualSize = Math.min(egcSize, wireSize);
+      return actualSize <= 8 ? actualSize.toFixed(1) : actualSize.toString();
+    };
+
+    const getConduitSizeForWiresLocal = (wireSize: number, groundSizeString: string, poles: number, systemName: string): string => {
+      let activePhaseCount = poles === 1 ? 2 : poles;
+      if (poles === 3 && systemName.includes('4W')) {
+        activePhaseCount = 4;
+      }
+      const phaseArea = thhnAreas[wireSize] || (wireSize * 2.5);
+      const groundSize = parseFloat(groundSizeString) || 2.0;
+      const groundArea = thhnAreas[groundSize] || (groundSize * 2.5);
+      const totalArea = (phaseArea * activePhaseCount) + groundArea;
+      const conduit = conduitFill.find(x => x.limit >= totalArea) || conduitFill[conduitFill.length - 1];
+      return conduit.size;
+    };
+
+    let lightingReceptacleVA = 0;
+    let motorVAs: number[] = [];
     const phaseLoads = { R: 0, Y: 0, B: 0 };
-    
-    if (is3PH) {
-      c.forEach(cir => {
-        (cir.phases || []).forEach(ph => {
-          phaseLoads[ph as keyof typeof phaseLoads] += cir.loadVA / (cir.phases?.length || 1);
-        });
+
+    c.forEach(cir => {
+      const perPhaseVA = cir.loadVA / (cir.phases?.length || 1);
+      const isMotor = cir.loadType === LoadType.AIR_CON || cir.loadType === LoadType.MOTOR;
+      
+      (cir.phases || []).forEach(ph => {
+        phaseLoads[ph as keyof typeof phaseLoads] += perPhaseVA;
       });
-      const maxPhaseVA = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
-      mainCurrent = (maxPhaseVA * 3) / (p.voltage * Math.sqrt(3));
-    } else {
-      mainCurrent = totalVA / p.voltage;
+
+      if (isMotor) {
+        motorVAs.push(cir.loadVA);
+      } else {
+        lightingReceptacleVA += cir.loadVA;
+      }
+    });
+
+    let lightingReceptacleDemand = lightingReceptacleVA;
+    if (lightingReceptacleVA > 120000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (120000 - 3000) * 0.35 + (lightingReceptacleVA - 120000) * 0.25;
+    } else if (lightingReceptacleVA > 3000) {
+      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
     }
 
-    const designAmp = mainCurrent * 1.25;
-    const cb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
-    let minSize = 2.0;
-    if (cb > 15 && cb <= 20) minSize = 3.5;
-    else if (cb > 20 && cb <= 30) minSize = 5.5;
-    const requiredAmpacity = Math.max(designAmp, cb);
-    const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
+    let maxDesignAmp = 0;
+    let maxBaseAmp = 0;
+
+    if (is3PH) {
+      const highestPhaseBaseVA = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
+      const effectiveTotalBaseVA = highestPhaseBaseVA * 3;
+      const factor = p.voltage * Math.sqrt(3);
+      maxBaseAmp = effectiveTotalBaseVA / factor;
+
+      const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+      const unbalanceRatio = motorVAs.length + lightingReceptacleVA > 0 ? (effectiveTotalBaseVA / (motorVAs.reduce((a, b) => a + b, 0) + lightingReceptacleVA)) : 1;
+
+      maxDesignAmp = (totalNetComputedVA * Math.max(1, unbalanceRatio)) / factor;
+    } else {
+      const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
+      const totalBaseVA = lightingReceptacleVA + motorVAs.reduce((a, b) => a + b, 0);
+
+      maxBaseAmp = totalBaseVA / p.voltage;
+      maxDesignAmp = totalNetComputedVA / p.voltage;
+    }
+
+    const designAmp = maxDesignAmp;
+    const maxBranchAT = Math.max(0, ...c.map(cir => cir.mcbAT || 0));
+    const calculatedCb = STANDARD_CB_RATINGS.find(r => r >= Math.max(designAmp, maxBaseAmp)) || 100;
+    const cb = Math.max(calculatedCb, STANDARD_CB_RATINGS.find(r => r >= maxBranchAT) || calculatedCb, 30);
+
+    const wire = getWireForBreakerLocal(cb, designAmp);
+    const groundSizeString = getGroundWireForWireSizeLocal(wire.size, cb);
+    const polesCount = is3PH ? 3 : 2;
+    const conduitSizeString = getConduitSizeForWiresLocal(wire.size, groundSizeString, polesCount, p.system);
+    const runsText = wire.runs > 1 ? `${wire.runs} sets of ` : '';
+
     const voltageFactorFormula = is3PH ? "V \\times \\sqrt{3}" : "V";
-    const designAmpFormula = "I_{\\text{feeder}} \\times 1.25";
 
     docChildren.push(
       createSubHeader(`A. Sizing Computations Criteria (Main Feeder)`),
       createParagraph(`The main feeder conductor and overcurrent protection are sized based on the total accumulated system load. The governing mathematical steps and formulas applied from PEC Article 2.20 and 4.30 are:`),
       
-      createParagraph(`1. Total Connected Load current ($I_{\\text{feeder}}$) representing normal continuous status:`),
-      createFormulaCallout(`I_{\\text{feeder}} = \\frac{S_{\\text{nominal}}}{${voltageFactorFormula}} = \\frac{${totalVA.toFixed(2)}}{${is3PH ? `${p.voltage} \\times \\sqrt{3}` : p.voltage}} = ${mainCurrent.toFixed(2)}\\text{ A}`),
+      createParagraph(`1. Total Connected Load current ($I_{\\text{feeder}}$) representing normal continuous status computed from highest phase imbalance distribution:`),
+      createFormulaCallout(`I_{\\text{feeder}} = \\frac{S_{\\text{nominal}}}{${voltageFactorFormula}} = \\frac{${totalVA.toFixed(2)}}{${is3PH ? `${p.voltage} \\times \\sqrt{3}` : p.voltage}} = ${maxBaseAmp.toFixed(2)}\\text{ A}`),
       
-      createParagraph(`2. Minimum required design ampacity (incorporating a safety continuous-duty multiplier of 125%):`),
-      createFormulaCallout(`I_{\\text{design}} = I_{\\text{feeder}} \\times 1.25 = ${mainCurrent.toFixed(2)} \\times 1.25 = ${designAmp.toFixed(2)}\\text{ A}`),
+      createParagraph(`2. Minimum required design ampacity (incorporating a safety continuous-duty multiplier, demand factors, and largest motor load extra multipliers):`),
+      createFormulaCallout(`I_{\\text{design}} = ${designAmp.toFixed(2)}\\text{ A}`),
       
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
       createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
 
-      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main circuit breaker trip of $${cb}\\text{ A}$.`),
+      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ PVC conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
       
       new Paragraph({ spacing: { after: 150 } }),
       createSubHeader(`B. PEC 2017 & Visual Safety Sizing Reference Map:`),

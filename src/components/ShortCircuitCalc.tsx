@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Maximize2, Minimize2, Download } from 'lucide-react';
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
-import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from '../constants';
+import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS } from '../constants';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -214,7 +214,17 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           {circuits && panel && (
             <div className="space-y-1.5 p-4 bg-red-50/50 dark:bg-red-950/25 rounded-xl border border-red-100 dark:border-red-900/40">
               <label className="text-xs font-bold text-red-600 dark:text-red-400 uppercase flex items-center gap-1"><Link className="w-3 h-3" /> Connect to Load Schedule</label>
-              <select value={source} onChange={e => setSource(e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-900 dark:text-red-200 font-medium font-sans mt-2 shadow-sm focus:outline-none">
+              <select 
+                value={source} 
+                onChange={e => {
+                  const val = e.target.value;
+                  setSource(val);
+                  if (val === 'custom') {
+                    setParams(INITIAL_SHORT_CIRCUIT_PARAMS);
+                  }
+                }} 
+                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-900 dark:text-red-200 font-medium font-sans mt-2 shadow-sm focus:outline-none"
+              >
                 <option value="custom" className="dark:bg-slate-900 dark:text-slate-100">Custom Parameters (Disconnected)</option>
                 <option value="auto" className="dark:bg-slate-900 dark:text-slate-100">Auto-Size from {panel.designation} connected load ({(circuits.reduce((sum, c) => sum + c.loadVA, 0) / 1000).toFixed(2)} kVA)</option>
               </select>

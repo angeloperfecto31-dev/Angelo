@@ -242,57 +242,107 @@ export default function App() {
   ];
 
   const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
-    // Enforce PEC Small Conductor Rule and standard matching
-    const getWireForBreakerLocal = (cbRating: number, designAmpacity: number) => {
-      let minSize = 2.0;
-      if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-      else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+    // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
+    const THHN_WIRE_AREAS: Record<number, number> = {
+      2.0: 8.5,
+      3.5: 11.5,
+      5.5: 17.5,
+      8.0: 28.3,
+      14: 50.3,
+      22: 85.0,
+      30: 115.0,
+      38: 140.0,
+      50: 180.0,
+      60: 220.0,
+      80: 290.0,
+      100: 350.0,
+      125: 450.0,
+      150: 530.0,
+      175: 620.0,
+      200: 710.0,
+      250: 880.0,
+      325: 1150.0,
+      400: 1380.0,
+      500: 1700.0,
+    };
 
+    const CONDUIT_FILL_TABLE = [
+      { size: '15mm', limit: 78 },
+      { size: '20mm', limit: 137 },
+      { size: '25mm', limit: 220 },
+      { size: '32mm', limit: 380 },
+      { size: '40mm', limit: 518 },
+      { size: '50mm', limit: 855 },
+      { size: '65mm', limit: 1220 },
+      { size: '80mm', limit: 1880 },
+      { size: '90mm', limit: 2500 },
+      { size: '100mm', limit: 3240 }
+    ];
+
+    const getWireForBreakerLocal = (cbRating: number, designAmpacity: number) => {
       const requiredAmpacity = Math.max(designAmpacity, cbRating);
-      return (
-        WIRE_AMPACITY_TABLE.find(
-          (w) => w.ampacity >= requiredAmpacity && w.size >= minSize,
-        ) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1]
-      );
+      
+      if (cbRating <= 30) {
+        let minSize = 2.0;
+        if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
+        else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+        
+        const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[0];
+        return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
+      }
+
+      if (cbRating > 250) {
+        let runs = 2;
+        if (cbRating > 500) runs = 3;
+        if (cbRating > 800) runs = 4;
+        
+        const targetAmpacityPerRun = requiredAmpacity / runs;
+        const wire = WIRE_AMPACITY_TABLE.find(w => w.size >= 50 && w.ampacity >= targetAmpacityPerRun) 
+                     || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+        
+        return { size: wire.size, ampacity: wire.ampacity * runs, runs };
+      }
+
+      const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+      return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
     };
 
     const formatWireSizeLocal = (size: number): string =>
       size <= 8 ? size.toFixed(1) : size.toString();
 
-    const getGroundWireForWireSizeLocal = (wireSize: number): string => {
-      const wireAmpacity =
-        WIRE_AMPACITY_TABLE.find((w) => w.size === wireSize)?.ampacity || 20;
-
+    const getGroundWireForWireSizeLocal = (wireSize: number, cbRating: number): string => {
       let egcSize = 2.0;
-      if (wireAmpacity <= 15) egcSize = 2.0;
-      else if (wireAmpacity <= 20) egcSize = 3.5;
-      else if (wireAmpacity <= 30) egcSize = 5.5;
-      else if (wireAmpacity <= 40) egcSize = 8.0;
-      else if (wireAmpacity <= 60) egcSize = 14;
-      else if (wireAmpacity <= 100) egcSize = 22;
-      else if (wireAmpacity <= 200) egcSize = 30;
-      else if (wireAmpacity <= 300) egcSize = 38;
-      else if (wireAmpacity <= 400) egcSize = 50;
-      else if (wireAmpacity <= 500) egcSize = 60;
-      else if (wireAmpacity <= 600) egcSize = 80;
-      else if (wireAmpacity <= 800) egcSize = 100;
-      else if (wireAmpacity <= 1000) egcSize = 125;
-      else if (wireAmpacity <= 1200) egcSize = 150;
-      else egcSize = 200;
+      if (cbRating <= 15) egcSize = 2.0;
+      else if (cbRating <= 20) egcSize = 3.5;
+      else if (cbRating <= 30) egcSize = 5.5;
+      else if (cbRating <= 60) egcSize = 8.0;
+      else if (cbRating <= 100) egcSize = 14;
+      else if (cbRating <= 200) egcSize = 22;
+      else if (cbRating <= 300) egcSize = 30;
+      else if (cbRating <= 400) egcSize = 38;
+      else if (cbRating <= 600) egcSize = 50;
+      else if (cbRating <= 800) egcSize = 60;
+      else if (cbRating <= 1000) egcSize = 80;
+      else if (cbRating <= 1200) egcSize = 100;
+      else egcSize = 125;
 
       const actualSize = Math.min(egcSize, wireSize);
       return formatWireSizeLocal(actualSize);
     };
 
-    const getConduitSizeForWireLocal = (wireSize: number): string => {
-      if (wireSize <= 5.5) return "15mm";
-      if (wireSize <= 14) return "20mm";
-      if (wireSize <= 22) return "25mm";
-      if (wireSize <= 38) return "32mm";
-      if (wireSize <= 60) return "40mm";
-      if (wireSize <= 100) return "50mm";
-      if (wireSize <= 200) return "65mm";
-      return "80mm";
+    const getConduitSizeForWiresLocal = (wireSize: number, groundSizeString: string, poles: number, systemName: string): string => {
+      let activePhaseCount = poles === 1 ? 2 : poles;
+      if (poles === 3 && systemName.includes('4W')) {
+        activePhaseCount = 4;
+      }
+      
+      const phaseArea = THHN_WIRE_AREAS[wireSize] || (wireSize * 2.5);
+      const groundSize = parseFloat(groundSizeString) || 2.0;
+      const groundArea = THHN_WIRE_AREAS[groundSize] || (groundSize * 2.5);
+      
+      const totalArea = (phaseArea * activePhaseCount) + groundArea;
+      const conduit = CONDUIT_FILL_TABLE.find(c => c.limit >= totalArea) || CONDUIT_FILL_TABLE[CONDUIT_FILL_TABLE.length - 1];
+      return conduit.size;
     };
 
     const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
@@ -401,16 +451,17 @@ export default function App() {
     // Calculate Main Feeder
     const designAmp = mainCurrent.designAmp;
     const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT));
-    const calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= designAmp) || 100;
+    const calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= Math.max(designAmp, mainCurrent.baseAmp)) || 100;
     const cb = Math.max(
       calculatedCb,
       STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
       30,
     );
 
+    const poles = p.system.includes("3PH") ? 3 : 2;
     const wire = getWireForBreakerLocal(cb, designAmp);
-    const groundSize = getGroundWireForWireSizeLocal(wire.size);
-    const conduitSize = getConduitSizeForWireLocal(wire.size);
+    const groundSize = getGroundWireForWireSizeLocal(wire.size, cb);
+    const conduitSize = getConduitSizeForWiresLocal(wire.size, groundSize, poles, p.system);
 
     const branchTypeCounts = c.reduce(
       (acc, cir) => {
@@ -423,8 +474,6 @@ export default function App() {
       (a, b) => Number(b[1]) - Number(a[1]),
     );
     const predominantBranchType = sortedBranchTypes[0]?.[0] || "MCB";
-
-    const poles = p.system.includes("3PH") ? 3 : 2;
     let type = predominantBranchType;
     if (
       cb > 100 &&

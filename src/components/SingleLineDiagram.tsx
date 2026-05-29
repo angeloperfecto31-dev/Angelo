@@ -25,7 +25,7 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mai
   const voltage = panel.voltage;
   const phaseText = is3Phase ? `3-Φ` : `1-Φ`;
   
-  const wireNumber = is3Phase ? (panel.system.includes('4W') ? 3 : 3) : 2; 
+  const wireNumber = is3Phase ? (panel.system.includes('4W') ? 4 : 3) : 2; 
 
   return (
     <div className="w-full flex justify-center bg-white border-2 border-slate-800 p-8">
@@ -76,9 +76,9 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = ({ panel, mai
         
         {/* Feed Text */}
         <text x="410" y="70" className="sld-text">
-           <tspan x="410" dy="0">{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² THHN +</tspan>
+           <tspan x="410" dy="0">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² THHN +</tspan>
            <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² THHN(G) IN</tspan>
-           <tspan x="410" dy="20">{mainFeeder.conduitSize}MMØ CONDUIT</tspan>
+           <tspan x="410" dy="20">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}-` : ''}{mainFeeder.conduitSize.toUpperCase()}Ø PVC CONDUIT</tspan>
         </text>
 
         {/* Meter */}

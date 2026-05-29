@@ -271,60 +271,114 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
 
-  // Enforce PEC Small Conductor Rule and standard matching
-  const getWireForBreaker = (cbRating: number, designAmpacity: number) => {
-    // Determine the minimum wire size based on the circuit breaker rating specifically for the small conductor rule
-    // (PEC Article 240.4(D)) which applies strictly to 2.0mm2, 3.5mm2, and 5.5mm2.
-    let minSize = 2.0;
-    if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-    else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
-
-    const requiredAmpacity = Math.max(designAmpacity, cbRating);
-    
-    // Find the wire that satisfies both the required ampacity table and the minimum size rule.
-    // For sizes above 5.5mm2, the standard ampacity ratings apply directly.
-    return WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+  // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
+  const THHN_WIRE_AREAS: Record<number, number> = {
+    2.0: 8.5,
+    3.5: 11.5,
+    5.5: 17.5,
+    8.0: 28.3,
+    14: 50.3,
+    22: 85.0,
+    30: 115.0,
+    38: 140.0,
+    50: 180.0,
+    60: 220.0,
+    80: 290.0,
+    100: 350.0,
+    125: 450.0,
+    150: 530.0,
+    175: 620.0,
+    200: 710.0,
+    250: 880.0,
+    325: 1150.0,
+    400: 1380.0,
+    500: 1700.0,
   };
+
+  const CONDUIT_FILL_TABLE = [
+    { size: '15mm', limit: 78 },
+    { size: '20mm', limit: 137 },
+    { size: '25mm', limit: 220 },
+    { size: '32mm', limit: 380 },
+    { size: '40mm', limit: 518 },
+    { size: '50mm', limit: 855 },
+    { size: '65mm', limit: 1220 },
+    { size: '80mm', limit: 1880 },
+    { size: '90mm', limit: 2500 },
+    { size: '100mm', limit: 3240 }
+  ];
 
   const formatWireSize = (size: number): string => size <= 8 ? size.toFixed(1) : size.toString();
 
-  const getGroundWireForWireSize = (wireSize: number): string => {
-    // PEC Table 250.122 Equipment Grounding Conductor
-    // Based on wire size, we find the maximum breaker rating the wire can support 
-    // to map it to the EGC size, ensuring it is not larger than phase conductors.
-    const wireAmpacity = WIRE_AMPACITY_TABLE.find(w => w.size === wireSize)?.ampacity || 20;
+  // Enforce PEC Small Conductor Rule and standard matching (including support for parallel conductor runs)
+  const getWireForBreaker = (cbRating: number, designAmpacity: number) => {
+    const requiredAmpacity = Math.max(designAmpacity, cbRating);
     
-    let egcSize = 2.0;
-    if (wireAmpacity <= 15) egcSize = 2.0;
-    else if (wireAmpacity <= 20) egcSize = 3.5;
-    else if (wireAmpacity <= 30) egcSize = 5.5;
-    else if (wireAmpacity <= 40) egcSize = 8.0;
-    else if (wireAmpacity <= 60) egcSize = 14;
-    else if (wireAmpacity <= 100) egcSize = 22;
-    else if (wireAmpacity <= 200) egcSize = 30;
-    else if (wireAmpacity <= 300) egcSize = 38;
-    else if (wireAmpacity <= 400) egcSize = 50;
-    else if (wireAmpacity <= 500) egcSize = 60;
-    else if (wireAmpacity <= 600) egcSize = 80;
-    else if (wireAmpacity <= 800) egcSize = 100;
-    else if (wireAmpacity <= 1000) egcSize = 125;
-    else if (wireAmpacity <= 1200) egcSize = 150;
-    else egcSize = 200;
+    // For small branch circuits (<= 30A), enforce PEC Section 2.40.4(D) small conductor limit strictly
+    if (cbRating <= 30) {
+      let minSize = 2.0;
+      if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
+      else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
+      
+      const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[0];
+      return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
+    }
 
+    // For larger feeders, support parallel runs per PEC Article 3.10.1.10 (sizes 50mm² and larger)
+    // We choose to parallel for ratings above 250A to match practical building designs
+    if (cbRating > 250) {
+      let runs = 2;
+      if (cbRating > 500) runs = 3;
+      if (cbRating > 800) runs = 4;
+      
+      const targetAmpacityPerRun = requiredAmpacity / runs;
+      const wire = WIRE_AMPACITY_TABLE.find(w => w.size >= 50 && w.ampacity >= targetAmpacityPerRun) 
+                   || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+      
+      return { size: wire.size, ampacity: wire.ampacity * runs, runs };
+    }
+
+    // Standard single run
+    const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+    return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
+  };
+
+  const getGroundWireForWireSize = (wireSize: number, cbRating: number): string => {
+    // PEC Table 2.50.6.13 Equipment Grounding Conductor (EGC) size is determined by the breaker rating (AT)
+    let egcSize = 2.0;
+    if (cbRating <= 15) egcSize = 2.0;
+    else if (cbRating <= 20) egcSize = 3.5;
+    else if (cbRating <= 30) egcSize = 5.5;
+    else if (cbRating <= 60) egcSize = 8.0;
+    else if (cbRating <= 100) egcSize = 14;
+    else if (cbRating <= 200) egcSize = 22;
+    else if (cbRating <= 300) egcSize = 30;
+    else if (cbRating <= 400) egcSize = 38;
+    else if (cbRating <= 600) egcSize = 50;
+    else if (cbRating <= 800) egcSize = 60;
+    else if (cbRating <= 1000) egcSize = 80;
+    else if (cbRating <= 1200) egcSize = 100;
+    else egcSize = 125;
+
+    // EGC is never required to be larger than the phase conductors
     const actualSize = Math.min(egcSize, wireSize);
     return formatWireSize(actualSize);
   };
 
-  const getConduitSizeForWire = (wireSize: number): string => {
-    // Conduit sizing for ~3 THHN wires (Line, Neutral, Ground) based on PEC Chapter 9 Table 1 & 4 (40% Fill)
-    if (wireSize <= 5.5) return '15mm';    // Can accommodate up to 6 wires (5.5mm2)
-    if (wireSize <= 14) return '20mm';     // Can accommodate up to 3 wires (14mm2)
-    if (wireSize <= 22) return '25mm';     // Can accommodate up to 4 wires (22mm2)
-    if (wireSize <= 38) return '32mm';     // Can accommodate up to 4 wires (38mm2)
-    if (wireSize <= 60) return '40mm';     // Can accommodate up to 4 wires (60mm2)
-    if (wireSize <= 100) return '50mm';    // Can accommodate up to 3 wires (100mm2)
-    if (wireSize <= 200) return '65mm';    // Can accommodate up to 4 wires (200mm2)
-    return '80mm';
+  const getConduitSizeForWires = (wireSize: number, groundSizeString: string, poles: number, systemName: string): string => {
+    // poles is 1, 2, or 3
+    let activePhaseCount = poles === 1 ? 2 : poles; // 1P branch has Phase + Neutral (2 wires)
+    if (poles === 3 && systemName.includes('4W')) {
+      activePhaseCount = 4; // 3 phases + 1 neutral (4 wires)
+    }
+    
+    const phaseArea = THHN_WIRE_AREAS[wireSize] || (wireSize * 2.5);
+    const groundSize = parseFloat(groundSizeString) || 2.0;
+    const groundArea = THHN_WIRE_AREAS[groundSize] || (groundSize * 2.5);
+    
+    const totalArea = (phaseArea * activePhaseCount) + groundArea;
+    const conduit = CONDUIT_FILL_TABLE.find(c => c.limit >= totalArea) || CONDUIT_FILL_TABLE[CONDUIT_FILL_TABLE.length - 1];
+    return conduit.size;
   };
 
   useEffect(() => {
@@ -339,16 +393,30 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
           if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId) {
             const sp = availableSubPanels.find(s => s.id === c.linkedSubPanelId);
             if (sp) {
-               const subTotalVA = sp.circuits.reduce((sum, cc) => sum + cc.loadVA, 0);
-               const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + cc.wattage, 0);
+               const subTotalVA = sp.circuits.reduce((sum, cc) => sum + (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE ? 0 : cc.loadVA), 0);
+               const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE ? 0 : cc.wattage * cc.quantity), 0);
                
-               if (c.loadVA !== subTotalVA || c.wattage !== subTotalWattage || c.description !== sp.panel.designation) {
+               const subPoles = sp.panel.system.includes('3PH') ? 3 : (sp.panel.connectionType === 'Line-to-Neutral' ? 1 : 2);
+               const subVoltage = sp.panel.system.includes('3PH') ? (sp.panel.system.includes('400V') ? 400 : 230) : 230;
+               const subCB = sp.panel.mainBreakerAT || 30;
+
+               if (
+                 c.loadVA !== subTotalVA || 
+                 c.wattage !== subTotalWattage || 
+                 c.description !== sp.panel.designation ||
+                 c.mcbP !== subPoles ||
+                 c.voltage !== subVoltage ||
+                 c.mcbAT !== subCB
+               ) {
                   newCircuits[i] = { 
                     ...c, 
                     quantity: 1,
                     wattage: subTotalWattage, 
                     loadVA: subTotalVA, 
-                    description: sp.panel.designation || 'Sub-Panel' 
+                    description: sp.panel.designation || 'Sub-Panel',
+                    mcbP: subPoles,
+                    voltage: subVoltage,
+                    mcbAT: subCB
                   };
                   newCircuits[i] = { ...newCircuits[i], ...calculateCircuit(newCircuits[i]) } as Circuit;
                   changed = true;
@@ -372,10 +440,31 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   }, [panel.system, panel.connectionType, panel.voltage, availableSubPanels, setCircuits]);
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {
+    // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
+    if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId && availableSubPanels) {
+      const sp = availableSubPanels.find(s => s.id === c.linkedSubPanelId);
+      if (sp) {
+         const subTotalVA = sp.circuits.reduce((sum, cc) => sum + (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE ? 0 : cc.loadVA), 0);
+         const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE ? 0 : cc.wattage * cc.quantity), 0);
+         
+         const subPoles = sp.panel.system.includes('3PH') ? 3 : (sp.panel.connectionType === 'Line-to-Neutral' ? 1 : 2);
+         const subVoltage = sp.panel.system.includes('3PH') ? (sp.panel.system.includes('400V') ? 400 : 230) : 230;
+         const subCB = sp.panel.mainBreakerAT || 30;
+
+         c.wattage = subTotalWattage;
+         c.loadVA = subTotalVA;
+         c.quantity = 1;
+         c.mcbP = subPoles;
+         c.voltage = subVoltage;
+         c.mcbAT = subCB;
+         c.description = sp.panel.designation || 'Sub-Panel';
+      }
+    }
+
     let mcbP = c.mcbP;
     
     // Auto-update poles based on global connection type for 1-phase systems
-    if (!panel.system.includes('3PH')) {
+    if (c.loadType !== LoadType.SUB_PANEL && !panel.system.includes('3PH')) {
       if (panel.connectionType === 'Line-to-Line') {
         mcbP = 2;
       } else if (panel.connectionType === 'Line-to-Neutral') {
@@ -394,7 +483,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     const qty = c.quantity || 1;
     const w = isSpace ? 0 : (c.wattage || 0);
-    const va = qty * w;
+    const va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : (qty * w);
     
     let defaultV = panel.voltage || 230;
     // For a 400V/230V system branch:
@@ -465,8 +554,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       mcbKAIC: mcbKAIC,
       mcbType: c.mcbType || MCBType.BOLT_ON,
       wireSize: formatWireSize(wire.size),
-      groundSize: getGroundWireForWireSize(wire.size),
-      conduitSize: getConduitSizeForWire(wire.size)
+      groundSize: getGroundWireForWireSize(wire.size, mcbAT),
+      conduitSize: getConduitSizeForWires(wire.size, getGroundWireForWireSize(wire.size, mcbAT), mcbP, panel.system)
     };
   };
 
@@ -635,13 +724,14 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     // Minimum main breaker sizes are standard, and it must not be less than the maximum branch breaker
     const maxBranchAT = Math.max(0, ...circuits.map(c => c.mcbAT));
-    const calculatedCb = STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+    const calculatedCb = STANDARD_CB_RATINGS.find(r => r >= Math.max(designAmp, mainCurrent.baseAmp)) || 100;
     const cb = Math.max(calculatedCb, STANDARD_CB_RATINGS.find(r => r >= maxBranchAT) || calculatedCb, 30);
     
+    const poles = panel.system.includes('3PH') ? 3 : 2;
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
     const wire = getWireForBreaker(cb, designAmp);
-    const groundSize = getGroundWireForWireSize(wire.size);
-    const conduitSize = getConduitSizeForWire(wire.size);
+    const groundSize = getGroundWireForWireSize(wire.size, cb);
+    const conduitSize = getConduitSizeForWires(wire.size, groundSize, poles, panel.system);
     
     const branchTypeCounts = circuits.reduce((acc, c) => {
       acc[c.mcbType] = (acc[c.mcbType] || 0) + 1;
@@ -649,8 +739,6 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     }, {} as Record<string, number>);
     const sortedBranchTypes = Object.entries(branchTypeCounts).sort((a, b) => Number(b[1]) - Number(a[1]));
     const predominantBranchType = (sortedBranchTypes[0]?.[0] || MCBType.MCB) as MCBType;
-
-    const poles = panel.system.includes('3PH') ? 3 : 2;
     let type = predominantBranchType;
     if (cb > 100 && (type === MCBType.PLUG_IN || type === MCBType.BOLT_ON || type === MCBType.MCB)) {
       type = MCBType.MCCB;
@@ -921,7 +1009,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   )}
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbAT} onChange={e => updateCircuit(c.id, { mcbAT: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900">
+                    <select value={c.mcbAT} disabled={c.loadType === 'SUB'} onChange={e => updateCircuit(c.id, { mcbAT: parseInt(e.target.value) })} className={`bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500' : ''}`}>
                       {STANDARD_CB_RATINGS.map(r => <option key={r} value={r} className="dark:bg-slate-900 dark:text-slate-100">{r}</option>)}
                     </select>
                     )}
@@ -929,7 +1017,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   <td className="px-1 py-3 text-center font-bold text-slate-400 dark:text-slate-500 truncate">{isSpace ? '-' : c.mcbAF}</td>
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
-                    <select value={c.mcbP} onChange={e => updateCircuit(c.id, { mcbP: parseInt(e.target.value) })} className="bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900">
+                    <select value={c.mcbP} disabled={c.loadType === 'SUB'} onChange={e => updateCircuit(c.id, { mcbP: parseInt(e.target.value) })} className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500' : ''}`}>
                       {[1, 2, 3].map(p => <option key={p} value={p} className="dark:bg-slate-900 dark:text-slate-100">{p}P</option>)}
                     </select>
                     )}
@@ -973,7 +1061,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 )}
                 <td colSpan={7} className="px-4 py-6">
                   <div className="uppercase opacity-70 flex flex-col gap-1 items-end" style={{ fontSize: tableFontSize - 2 }}>
-                    <span>Main Feeder: {formatWireSize(mainFeeder.wire.size)}mm² THHN, {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize} PVC</span>
+                    <span>Main Feeder: {mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} sets of ` : ''}{formatWireSize(mainFeeder.wire.size)}mm² THHN, {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize} PVC</span>
                     <span>Main Breaker: {mainFeeder.cb}A AT / {mainFeeder.af}AF, {mainFeeder.poles}P, {mainFeeder.kaic}kAIC, {mainFeeder.type}</span>
                     <span className={phaseImbalance > 15 ? 'text-red-400' : 'text-green-400'}>Phase Imbalance: {phaseImbalance.toFixed(1)}%</span>
                   </div>
@@ -1095,7 +1183,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <div className="mt-2 text-indigo-600 font-bold flex flex-col gap-1">
               <span>Design Current: {mainCurrent.designAmp.toFixed(2)} Amperes</span>
               <span>Selected Main Breaker: {mainFeeder.cb} AT</span>
-              <span>Selected Main Wire: {formatWireSize(mainFeeder.wire.size)} mm² THHN (Ampacity: {mainFeeder.wire.ampacity} A)</span>
+              <span>Selected Main Wire: {mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} sets of ` : ''}{formatWireSize(mainFeeder.wire.size)} mm² THHN (Ampacity: {mainFeeder.wire.ampacity} A)</span>
               <span>Selected Main Conduit: {mainFeeder.conduitSize} PVC</span>
             </div>
           </div>
