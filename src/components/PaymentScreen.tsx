@@ -51,8 +51,8 @@ export default function PaymentScreen({
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Tabs for the customer view: "paymongo", "maribank", or "manual"
-  const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual" | "paymongo">(
+  // Tabs for the customer view: "maribank", or "manual"
+  const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual">(
     "maribank",
   );
 
@@ -1528,19 +1528,7 @@ export default function PaymentScreen({
           <div className="mb-6">
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">2. Select Payment Method</h3>
             {/* Selector Tabs */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("paymongo")}
-                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                  paymentMethod === "paymongo"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                PayMongo
-              </button>
+            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6">
               <button
                 type="button"
                 onClick={() => setPaymentMethod("maribank")}
@@ -1587,33 +1575,7 @@ export default function PaymentScreen({
           )}
 
           {/* Conditional View Method */}
-          {paymentMethod === "paymongo" ? (
-            <div className="space-y-6 flex flex-col items-center border border-slate-100 rounded-2xl p-8 bg-slate-50">
-              <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-2 shadow-inner">
-                <ShieldCheck className="w-8 h-8 text-indigo-600" />
-              </div>
-              <h3 className="text-xl font-black text-slate-900 tracking-tight text-center">
-                Secure Online Payment
-              </h3>
-              <p className="text-center text-sm text-slate-500 max-w-sm mb-4">
-                Pay instantly using Credit Card, E-Wallet (GCash/Maya), or Online Banking via PayMongo's secure checkout. Auto-verifies immediately.
-              </p>
-
-              <button
-                type="button"
-                onClick={handlePay}
-                disabled={loading}
-                className="w-full sm:w-auto px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-black uppercase text-sm tracking-widest transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <ArrowUpRight className="w-5 h-5" />
-                )}
-                {loading ? "Processing..." : `Pay ₱${isUpgrade ? '500' : (selectedPlan === 'premium' ? '1,499' : '999')}.00 via PayMongo`}
-              </button>
-            </div>
-          ) : paymentMethod === "maribank" ? (
+          {paymentMethod === "maribank" ? (
             <div className="space-y-6">
               {/* MariBank QR Card Visualization */}
               <div className="flex justify-center flex-col items-center">

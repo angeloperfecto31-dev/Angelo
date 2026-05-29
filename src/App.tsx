@@ -194,7 +194,7 @@ export default function App() {
     return <PaymentScreen user={user} />;
   }
 
-  if (showUpgrade && userPlan !== 'premium' && !isAdmin) {
+  if (showUpgrade && userPlan !== 'premium') {
     return <PaymentScreen user={user} isUpgrade={true} onClose={() => setShowUpgrade(false)} />;
   }
 
@@ -962,13 +962,13 @@ export default function App() {
 
         {/* Bottom Sidebar - User Profile & Actions */}
         <div className="p-4 border-t border-slate-800/50 space-y-3 bg-slate-900/50">
-        {userPlan !== 'premium' && (
+        {(userPlan !== 'premium' || isAdmin) && (
           <button
             onClick={() => setShowUpgrade(true)}
             className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 mb-2 border border-amber-400/50"
           >
             <Zap className="w-4 h-4 fill-white" />
-            Upgrade to Premium
+            Upgrade to Premium {isAdmin && "(Admin Test)"}
           </button>
         )}
 
