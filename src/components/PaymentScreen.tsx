@@ -105,10 +105,19 @@ export default function PaymentScreen({
         if (docSnap.exists()) {
           const data = docSnap.data();
           setUserProfile(data);
-          if (data.isActive === true) {
-            setSuccess(true);
-            if (onPaymentSuccess) {
-              onPaymentSuccess();
+          if (isUpgrade) {
+            if (data.plan === "premium") {
+              setSuccess(true);
+              if (onPaymentSuccess) {
+                setTimeout(() => onPaymentSuccess(), 2500);
+              }
+            }
+          } else {
+            if (data.isActive === true) {
+              setSuccess(true);
+              if (onPaymentSuccess) {
+                setTimeout(() => onPaymentSuccess(), 2500);
+              }
             }
           }
         } else {
@@ -124,7 +133,7 @@ export default function PaymentScreen({
     );
 
     return () => unsubscribe();
-  }, [user.uid]);
+  }, [user.uid, isUpgrade]);
 
   useEffect(() => {
     // Listen to real-time changes in global GCash payment settings
@@ -1255,8 +1264,9 @@ export default function PaymentScreen({
             Payment Successful!
           </h2>
           <p className="text-slate-500 text-center mb-8">
-            Your account has been activated. You now have full access to
-            ElectricalPH. Please wait while we load your dashboard...
+            {isUpgrade 
+              ? "Your account has been upgraded to Premium. You now have full access to ElectricalPH's premium features. Please wait while we load your dashboard..."
+              : "Your account has been activated. You now have full access to ElectricalPH. Please wait while we load your dashboard..."}
           </p>
           <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
         </div>

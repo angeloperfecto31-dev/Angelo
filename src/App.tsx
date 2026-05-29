@@ -194,8 +194,8 @@ export default function App() {
     return <PaymentScreen user={user} />;
   }
 
-  if (showUpgrade && userPlan !== 'premium') {
-    return <PaymentScreen user={user} isUpgrade={true} onClose={() => setShowUpgrade(false)} />;
+  if (showUpgrade && (userPlan !== 'premium' || isAdmin)) {
+    return <PaymentScreen user={user} isUpgrade={true} onClose={() => setShowUpgrade(false)} onPaymentSuccess={() => setShowUpgrade(false)} />;
   }
 
   const tabs = [
