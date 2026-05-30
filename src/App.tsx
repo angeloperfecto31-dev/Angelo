@@ -406,7 +406,7 @@ export default function App() {
       
       const is3Phase = p.system.includes("3PH");
 
-      const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
+      const headers = ["NO.", "DESCRIPTION", "W", "QTY", "PF", "VA", "PHASE"];
       if (is3Phase) {
         headers.push("AMPS", "", "", ""); // push 4 slots for AMPS
       } else {
@@ -424,6 +424,7 @@ export default function App() {
           "",
           "",
           "",
+          "", // blank for PF
           "",
           "",
           p1,
@@ -446,6 +447,7 @@ export default function App() {
           cir.description,
           isSpace ? "-" : cir.wattage,
           isSpace ? "-" : cir.quantity,
+          isSpace ? "-" : (cir.pf !== undefined ? cir.pf : (cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON ? 0.85 : 1.0)),
           isSpace ? "-" : cir.loadVA,
           isSpace ? "-" : (cir.phases ? cir.phases.join(", ") : ""),
         ];
@@ -484,6 +486,7 @@ export default function App() {
         "",
         "",
         "",
+        "",
         "Total Connected Load",
         `${totalVA.toFixed(0)} VA`,
         `(${(totalVA / 1000).toFixed(2)} kVA)`,
@@ -500,7 +503,7 @@ export default function App() {
         baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`);
       }
       
-      const numCols = is3Phase ? 16 : 13;
+      const numCols = is3Phase ? 17 : 14;
       const baseRemainingCols = numCols - baseTotalRow.length;
       for (let i = 0; i < baseRemainingCols; i++) {
         baseTotalRow.push("");
@@ -508,6 +511,7 @@ export default function App() {
       wsData.push(baseTotalRow);
 
       const totalKvaRow: any[] = [
+        "",
         "",
         "",
         "",
@@ -543,13 +547,14 @@ export default function App() {
         merges.push({ s: { r: 3, c: 3 }, e: { r: 4, c: 3 } });
         merges.push({ s: { r: 3, c: 4 }, e: { r: 4, c: 4 } });
         merges.push({ s: { r: 3, c: 5 }, e: { r: 4, c: 5 } });
-        merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 9 } });
-        merges.push({ s: { r: 3, c: 10 }, e: { r: 4, c: 10 } });
+        merges.push({ s: { r: 3, c: 6 }, e: { r: 4, c: 6 } });
+        merges.push({ s: { r: 3, c: 7 }, e: { r: 3, c: 10 } });
         merges.push({ s: { r: 3, c: 11 }, e: { r: 4, c: 11 } });
         merges.push({ s: { r: 3, c: 12 }, e: { r: 4, c: 12 } });
         merges.push({ s: { r: 3, c: 13 }, e: { r: 4, c: 13 } });
         merges.push({ s: { r: 3, c: 14 }, e: { r: 4, c: 14 } });
         merges.push({ s: { r: 3, c: 15 }, e: { r: 4, c: 15 } });
+        merges.push({ s: { r: 3, c: 16 }, e: { r: 4, c: 16 } });
       }
       if (merges.length > 0) {
         ws["!merges"] = merges;
@@ -659,36 +664,13 @@ export default function App() {
         "STATUS"
       ]);
       
-      const WIRE_IMPEDANCE_TABLE_IMPORT: Record<string, { r: number; x: number }> = {
-        "2.0": { r: 9.4, x: 0.111 },
-        "3.5": { r: 5.4, x: 0.105 },
-        "5.5": { r: 3.4, x: 0.100 },
-        "8.0": { r: 2.3, x: 0.096 },
-        "14": { r: 1.35, x: 0.091 },
-        "22": { r: 0.84, x: 0.088 },
-        "30": { r: 0.61, x: 0.086 },
-        "38": { r: 0.49, x: 0.084 },
-        "50": { r: 0.38, x: 0.084 },
-        "60": { r: 0.31, x: 0.082 },
-        "80": { r: 0.23, x: 0.081 },
-        "100": { r: 0.19, x: 0.080 },
-        "125": { r: 0.15, x: 0.079 },
-        "150": { r: 0.12, x: 0.078 },
-        "175": { r: 0.10, x: 0.078 },
-        "200": { r: 0.091, x: 0.077 },
-        "250": { r: 0.072, x: 0.076 },
-        "325": { r: 0.054, x: 0.075 },
-        "400": { r: 0.044, x: 0.075 },
-        "500": { r: 0.035, x: 0.074 },
-      };
-
       vdCalculations.forEach((vd) => {
         const factor = vd.systemType === "3PH" ? 1.732 : 2;
         const cLength = vd.length || 0;
         const cLoad = vd.loadA || 0;
         const cVoltage = vd.voltage || 230;
         const dataStr = vd.wireSize;
-        const impedanceInfo = WIRE_IMPEDANCE_TABLE_IMPORT[dataStr] || { r: 5.4, x: 0.105 };
+        const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] || WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
         const R = impedanceInfo.r;
 
         const VD_v = (factor * cLength * cLoad * R) / 1000;
@@ -748,11 +730,108 @@ export default function App() {
     }
 
     // -----------------------------------------------------
+    // Short Circuit Export
+    // -----------------------------------------------------
+    const scParams = iscParams || {
+      transformerKVA: 100,
+      transformerZ: 5,
+      transformerVoltage: panel?.voltage || 230,
+      primaryVoltage: 34500,
+      transformerConnection: 'Delta-Wye',
+      utilityShortCircuitMVA: 500,
+      feederLength: 10,
+      feederSize: '30',
+      feederRuns: 1,
+      conductorType: 'Copper'
+    };
+
+    const scBaseKVA = scParams.transformerKVA;
+    const scBaseKV = scParams.transformerVoltage / 1000;
+    const scZUtilitypu = scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
+    const scZTranspu = scParams.transformerZ / 100;
+
+    const scFeederR = 0.7 * (scParams.feederLength / 1000) / (scParams.feederRuns || 1);
+    const scFeederX = 0.08 * (scParams.feederLength / 1000) / (scParams.feederRuns || 1);
+    const scFeederZ = Math.sqrt(scFeederR * scFeederR + scFeederX * scFeederX);
+    const scZFeederpu = scFeederZ * (scBaseKVA / 1000) / (scBaseKV * scBaseKV);
+
+    const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
+    const scIFullLoad = scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
+
+    const scIscMainBreaker = scIFullLoad / (scZUtilitypu + scZTranspu);
+    const scIscFaultPoint = scIFullLoad / scTotalZpu;
+
+    const scMotorLoadVA = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
+    const scMotorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4 : 0;
+
+    const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
+    const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * 1.25;
+    const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
+
+    const scData: any[][] = [];
+    scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
+    scData.push([]);
+    scData.push(["INPUT DESIGN PARAMETERS", "VALUE", "UNIT"]);
+    scData.push(["Utility Short Circuit Strength", scParams.utilityShortCircuitMVA, "MVAsc"]);
+    scData.push(["Primary Bus Voltage (HV)", scParams.primaryVoltage, "Volts"]);
+    scData.push(["Secondary Rated Bus Voltage (LV)", scParams.transformerVoltage, "Volts"]);
+    scData.push(["Transformer Sizing Capacity", scParams.transformerKVA, "kVA"]);
+    scData.push(["Transformer Percent Impedance (%Z)", scParams.transformerZ, "%"]);
+    scData.push(["Feeder Conductor Cross-Section", scParams.feederSize, "mm² THHN"]);
+    scData.push(["Feeder Distance Length", scParams.feederLength, "Meters"]);
+    scData.push(["Parallel Feeder Conductors", scParams.feederRuns, "Runs"]);
+    scData.push(["Active Conductor Metal Type", scParams.conductorType, "Copper/Aluminum"]);
+    scData.push([]);
+    scData.push(["PER-UNIT IMPEDANCES (BASE S SYSTEM = " + scParams.transformerKVA + " kVA)", "VALUE", "UNIT"]);
+    scData.push(["Transformer Full Load Current (FLA)", scIFullLoad.toFixed(2), "Amperes"]);
+    scData.push(["Utility Grid Impedance (Z-utility)", scZUtilitypu.toFixed(6), "pu"]);
+    scData.push(["Transformer Leakage Impedance (Z-transformer)", scZTranspu.toFixed(6), "pu"]);
+    scData.push(["Main Feeder Ohmic Resistance (R)", scFeederR.toFixed(5), "Ohms"]);
+    scData.push(["Main Feeder Ohmic Reactance (X)", scFeederX.toFixed(5), "Ohms"]);
+    scData.push(["Main Feeder Absolute Ohmic Impedance (|Z|)", scFeederZ.toFixed(5), "Ohms"]);
+    scData.push(["Feeder Integrated Impedance (Z-feeder)", scZFeederpu.toFixed(6), "pu"]);
+    scData.push(["Total Consolidated System Impedance (Z-total)", scTotalZpu.toFixed(6), "pu"]);
+    scData.push([]);
+    scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
+    scData.push(["Symmetrical Fault Current at Transformer (Isc Main)", scIscMainBreaker.toFixed(2), "Amps"]);
+    scData.push(["Symmetrical Fault Current at Panel (Isc Panel)", scIscFaultPoint.toFixed(2), "Amps"]);
+    scData.push(["Rotating Motor Feedback Symmetrical Contribution (Imotor)", scMotorContribution.toFixed(2), "Amps"]);
+    scData.push(["Combined Total Symmetrical Fault Current (Isc sym)", scCombinedSymmetricalCurrent.toFixed(2), "Amps"]);
+    scData.push(["Factored Asymmetrical Fault Current (Isc asym)", scCombinedAsymmetricalCurrent.toFixed(2), "Amps"]);
+    scData.push(["Ultimate Fault Breaking Intensity Assessment", scBreakingkAIC.toFixed(2), "kAIC"]);
+    scData.push(["Interrupting Protection Level Class", scBreakingkAIC > 22 ? "35 kAIC Required" : scBreakingkAIC > 10 ? "22 kAIC" : "10 kAIC", ""]);
+
+    const wsSc = XLSX.utils.aoa_to_sheet(scData);
+    const wscolsSc = [{ wch: 45 }, { wch: 25 }, { wch: 15 }];
+    wsSc["!cols"] = wscolsSc;
+
+    const rangeSc = XLSX.utils.decode_range(wsSc["!ref"] || "A1:A1");
+    for (let R = rangeSc.s.r; R <= rangeSc.e.r; ++R) {
+      for (let C = rangeSc.s.c; C <= rangeSc.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!wsSc[cellAddress]) wsSc[cellAddress] = { t: "s", v: "" };
+        let style: any = {
+          font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+          fill: { fgColor: { rgb: "FFFFFF" } },
+        };
+        if (R === 0) {
+          style.font.bold = true;
+          style.font.sz = 14;
+        } else if (R === 2 || R === 14 || R === 24) {
+          style.font.bold = true;
+          style.fill.fgColor.rgb = "F3F4F6";
+        }
+        wsSc[cellAddress].s = style;
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
+
+    // -----------------------------------------------------
     // Illumination Export
     // -----------------------------------------------------
     if (illumParams && illumParams.savedRooms && illumParams.savedRooms.length > 0) {
       const illData: any[][] = [];
-      illData.push(["ILLUMINATION (LUMEN METHOD) ANALYSIS", "", "", "", "", "", ""]);
+      illData.push(["ILLUMINATION (LUMEN METHOD) ANALYSIS", "", "", "", "", "", "", "", "", "", ""]);
       illData.push([]);
       illData.push([
         "ROOM NAME",
@@ -761,11 +840,17 @@ export default function App() {
         "FIXTURE TYPE",
         "FIXTURES COUNT",
         "TOTAL LUMENS",
-        "TOTAL WATTAGE",
+        "TOTAL WATTAGE (W)",
+        "LPD (W/m²)",
+        "ASHRAE LIMIT (W/m²)",
+        "STATUS",
         "CIRCUIT NO."
       ]);
       
       illumParams.savedRooms.forEach((room) => {
+        const roomLPD = room.totalWattage / room.area;
+        const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
+        const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
         illData.push([
           room.roomName,
           room.targetLux,
@@ -774,6 +859,9 @@ export default function App() {
           room.fixturesCount,
           room.totalLumens,
           room.totalWattage,
+          Number(roomLPD.toFixed(2)),
+          limitLPD,
+          status,
           room.circuitNo ? room.circuitNo : "-"
         ]);
       });
@@ -787,6 +875,9 @@ export default function App() {
         { wch: 18 },
         { wch: 18 },
         { wch: 18 },
+        { wch: 15 },
+        { wch: 20 },
+        { wch: 15 },
         { wch: 15 },
       ];
       wsIll["!cols"] = wscolsIll;
