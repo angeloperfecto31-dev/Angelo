@@ -5,7 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
-import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2, Sun, Moon } from "lucide-react";
+import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2, Sun, Moon, FolderOpen, Calculator } from "lucide-react";
 import {
   Zap,
   Layout,
@@ -44,10 +44,14 @@ import {
   INITIAL_ILLUMINATION_PARAMS,
   WIRE_IMPEDANCE_TABLE,
 } from "./constants";
+import { ProjectData } from "./types/project";
+import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
+import { computePanelScheduleValues } from "./utils/computeEngine";
 
 import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
+import PECCurrentCalculator from "./components/PECCurrentCalculator";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -122,7 +126,7 @@ export default function App() {
   }, [user, isAdmin]);
 
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify"
+    "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify" | "current-calc"
   >("dashboard");
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem("theme");
@@ -231,6 +235,40 @@ export default function App() {
 
   const [floorPlanImages, setFloorPlanImages] = useState<FloorPlanImage[]>([]);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isProjectManagerOpen, setIsProjectManagerOpen] = useState<boolean>(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+
+  const handleLoadProject = (projectId: string, data: ProjectData) => {
+    setCurrentProjectId(projectId);
+    setPanel(data.panel);
+    setCircuits(data.circuits);
+    setSubPanels(data.subPanels || []);
+    setIscParams(data.iscParams);
+    setIscSource(data.iscSource);
+    setVdCalculations(data.vdCalculations);
+    setIllumParams(data.illumParams);
+  };
+
+  const currentProjectData: ProjectData = {
+    panel,
+    circuits,
+    subPanels,
+    iscParams,
+    iscSource,
+    vdCalculations,
+    illumParams
+  };
+
+  const handleNewProject = () => {
+    setCurrentProjectId(null);
+    setPanel(INITIAL_PANEL);
+    setCircuits(INITIAL_CIRCUITS);
+    setSubPanels([]);
+    setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
+    setIscSource('auto');
+    setVdCalculations(INITIAL_VOLTAGE_DROP_CALCULATIONS);
+    setIllumParams(INITIAL_ILLUMINATION_PARAMS);
+  };
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
   const isPostPaymentRedirect = window.location.search.includes("session_id=");
@@ -305,6 +343,13 @@ export default function App() {
       color: "text-emerald-600",
       bg: "bg-emerald-50",
     },
+    {
+      id: "current-calc",
+      label: "PEC Calculator",
+      icon: Calculator,
+      color: "text-fuchsia-600",
+      bg: "bg-fuchsia-50",
+    },
     ...(isAdmin ? [{
       id: "verify",
       label: "Verify Users",
@@ -314,277 +359,7 @@ export default function App() {
     }] : [])
   ];
 
-  const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
-    // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
-    const THHN_WIRE_AREAS: Record<number, number> = {
-      2.0: 8.5,
-      3.5: 11.5,
-      5.5: 17.5,
-      8.0: 28.3,
-      14: 50.3,
-      22: 85.0,
-      30: 115.0,
-      38: 140.0,
-      50: 180.0,
-      60: 220.0,
-      80: 290.0,
-      100: 350.0,
-      125: 450.0,
-      150: 530.0,
-      175: 620.0,
-      200: 710.0,
-      250: 880.0,
-      325: 1150.0,
-      400: 1380.0,
-      500: 1700.0,
-    };
-
-    const CONDUIT_FILL_TABLE = [
-      { size: '15mm', limit: 78 },
-      { size: '20mm', limit: 137 },
-      { size: '25mm', limit: 220 },
-      { size: '32mm', limit: 380 },
-      { size: '40mm', limit: 518 },
-      { size: '50mm', limit: 855 },
-      { size: '65mm', limit: 1220 },
-      { size: '80mm', limit: 1880 },
-      { size: '90mm', limit: 2500 },
-      { size: '100mm', limit: 3240 }
-    ];
-
-    const getWireForBreakerLocal = (cbRating: number, designAmpacity: number) => {
-      const requiredAmpacity = Math.max(designAmpacity, cbRating);
-      
-      if (cbRating <= 30) {
-        let minSize = 2.0;
-        if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-        else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
-        
-        const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[0];
-        return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
-      }
-
-      if (cbRating > 250) {
-        let runs = 2;
-        if (cbRating > 500) runs = 3;
-        if (cbRating > 800) runs = 4;
-        
-        const targetAmpacityPerRun = requiredAmpacity / runs;
-        const wire = WIRE_AMPACITY_TABLE.find(w => w.size >= 50 && w.ampacity >= targetAmpacityPerRun) 
-                     || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-        
-        return { size: wire.size, ampacity: wire.ampacity * runs, runs };
-      }
-
-      const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-      return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
-    };
-
-    const formatWireSizeLocal = (size: number): string =>
-      size <= 8 ? size.toFixed(1) : size.toString();
-
-    const getGroundWireForWireSizeLocal = (wireSize: number, cbRating: number): string => {
-      let egcSize = 2.0;
-      if (cbRating <= 15) egcSize = 2.0;
-      else if (cbRating <= 20) egcSize = 3.5;
-      else if (cbRating <= 30) egcSize = 5.5;
-      else if (cbRating <= 60) egcSize = 8.0;
-      else if (cbRating <= 100) egcSize = 14;
-      else if (cbRating <= 200) egcSize = 22;
-      else if (cbRating <= 300) egcSize = 30;
-      else if (cbRating <= 400) egcSize = 38;
-      else if (cbRating <= 600) egcSize = 50;
-      else if (cbRating <= 800) egcSize = 60;
-      else if (cbRating <= 1000) egcSize = 80;
-      else if (cbRating <= 1200) egcSize = 100;
-      else egcSize = 125;
-
-      const actualSize = Math.min(egcSize, wireSize);
-      return formatWireSizeLocal(actualSize);
-    };
-
-    const getConduitSizeForWiresLocal = (wireSize: number, groundSizeString: string, poles: number, systemName: string): string => {
-      let activePhaseCount = poles === 1 ? 2 : poles;
-      if (poles === 3 && systemName.includes('4W')) {
-        activePhaseCount = 4;
-      }
-      
-      const phaseArea = THHN_WIRE_AREAS[wireSize] || (wireSize * 2.5);
-      const groundSize = parseFloat(groundSizeString) || 2.0;
-      const groundArea = THHN_WIRE_AREAS[groundSize] || (groundSize * 2.5);
-      
-      const totalArea = (phaseArea * activePhaseCount) + groundArea;
-      const conduit = CONDUIT_FILL_TABLE.find(c => c.limit >= totalArea) || CONDUIT_FILL_TABLE[CONDUIT_FILL_TABLE.length - 1];
-      return conduit.size;
-    };
-
-    const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
-
-    const phaseLoads = { R: 0, Y: 0, B: 0 };
-    c.forEach((cir) => {
-      cir.phases.forEach((ph: string) => {
-        phaseLoads[ph as keyof typeof phaseLoads] +=
-          cir.loadVA / cir.phases.length;
-      });
-    });
-
-    const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
-    const phaseImbalance =
-      maxPhaseLoad > 0
-        ? (1 - Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B) / maxPhaseLoad) *
-          100
-        : 0;
-
-    const phaseAmps = { R: 0, Y: 0, B: 0 };
-    c.forEach((cir) => {
-      if (cir.phases.includes("R")) phaseAmps.R += cir.loadA;
-      if (cir.phases.includes("Y")) phaseAmps.Y += cir.loadA;
-      if (cir.phases.includes("B")) phaseAmps.B += cir.loadA;
-    });
-
-    // Calculate mainCurrent
-    let lightingReceptacleVA = 0;
-    let motorVAs: number[] = [];
-
-    let phaseVAs = { R: 0, Y: 0, B: 0 };
-    let motorPhaseVAs = { R: 0, Y: 0, B: 0 };
-
-    c.forEach((cir) => {
-      const perPhaseVA = cir.loadVA / cir.phases.length;
-      const isMotor =
-        cir.loadType === LoadType.AIR_CON ||
-        cir.loadType === LoadType.MOTOR;
-
-      cir.phases.forEach((ph: string) => {
-        if (ph === "R") {
-          phaseVAs.R += perPhaseVA;
-          if (isMotor) motorPhaseVAs.R += perPhaseVA;
-        }
-        if (ph === "Y") {
-          phaseVAs.Y += perPhaseVA;
-          if (isMotor) motorPhaseVAs.Y += perPhaseVA;
-        }
-        if (ph === "B") {
-          phaseVAs.B += perPhaseVA;
-          if (isMotor) motorPhaseVAs.B += perPhaseVA;
-        }
-      });
-
-      if (isMotor) {
-        motorVAs.push(cir.loadVA);
-      } else {
-        lightingReceptacleVA += cir.loadVA;
-      }
-    });
-
-    let lightingReceptacleDemand = lightingReceptacleVA;
-    if (lightingReceptacleVA > 120000) {
-      lightingReceptacleDemand =
-        3000 * 1.0 +
-        (120000 - 3000) * 0.35 +
-        (lightingReceptacleVA - 120000) * 0.25;
-    } else if (lightingReceptacleVA > 3000) {
-      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
-    }
-
-    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
-
-    let maxDesignAmp = 0;
-    let maxBaseAmp = 0;
-
-    if (p.system.includes("3PH")) {
-      const highestPhaseBaseVA = Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B);
-      const effectiveTotalBaseVA = highestPhaseBaseVA * 3;
-
-      const factor = p.voltage * Math.sqrt(3);
-      maxBaseAmp = effectiveTotalBaseVA / factor;
-
-      const totalMotorDemandVA =
-        motorVAs.reduce((a, b) => a + b, 0) + largestMotor * 0.25;
-      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
-
-      const unbalanceRatio =
-        motorVAs.length + lightingReceptacleVA > 0
-          ? effectiveTotalBaseVA / (motorVAs.reduce((a, b) => a + b, 0) + lightingReceptacleVA)
-          : 1;
-
-      maxDesignAmp = (totalNetComputedVA * Math.max(1, unbalanceRatio)) / factor;
-    } else {
-      const totalMotorDemandVA =
-        motorVAs.reduce((a, b) => a + b, 0) + largestMotor * 0.25;
-      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
-      const totalBaseVA = lightingReceptacleVA + motorVAs.reduce((a, b) => a + b, 0);
-
-      maxBaseAmp = totalBaseVA / p.voltage;
-      maxDesignAmp = totalNetComputedVA / p.voltage;
-    }
-
-    const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
-
-    // Calculate Main Feeder
-    const designAmp = mainCurrent.designAmp;
-    const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT));
-    const calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= Math.max(designAmp, mainCurrent.baseAmp)) || 100;
-    const cb = Math.max(
-      calculatedCb,
-      STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
-      30,
-    );
-
-    const poles = p.system.includes("3PH") ? 3 : 2;
-    const wire = getWireForBreakerLocal(cb, designAmp);
-    const groundSize = getGroundWireForWireSizeLocal(wire.size, cb);
-    const conduitSize = getConduitSizeForWiresLocal(wire.size, groundSize, poles, p.system);
-
-    const branchTypeCounts = c.reduce(
-      (acc, cir) => {
-        acc[cir.mcbType] = (acc[cir.mcbType] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    );
-    const sortedBranchTypes = Object.entries(branchTypeCounts).sort(
-      (a, b) => Number(b[1]) - Number(a[1]),
-    );
-    const predominantBranchType = sortedBranchTypes[0]?.[0] || "MCB";
-    let type = predominantBranchType;
-    if (
-      cb > 100 &&
-      (type === "Plug-in" || type === "Bolt-on" || type === "MCB")
-    ) {
-      type = "MCCB";
-    }
-    const kaic = cb > 100 ? 18 : 10;
-    const cbAF =
-      cb <= 50
-        ? 50
-        : cb <= 100
-          ? 100
-          : cb <= 225
-            ? 225
-            : cb <= 400
-              ? 400
-              : 600;
-
-    return {
-      totalVA,
-      phaseLoads,
-      maxPhaseLoad,
-      phaseImbalance,
-      phaseAmps,
-      mainCurrent,
-      mainFeeder: {
-        wire,
-        groundSize,
-        cb,
-        conduitSize,
-        poles,
-        type,
-        kaic,
-        af: cbAF,
-      },
-    };
-  };
+  // We now import computePanelScheduleValues from computeEngine.ts
 
   const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -719,7 +494,7 @@ export default function App() {
           `${phaseAmps.R.toFixed(2)} A`,
           `${phaseAmps.Y.toFixed(2)} A`,
           `${phaseAmps.B.toFixed(2)} A`,
-          "-",
+          phaseAmps.threePhase > 0 ? `${phaseAmps.threePhase.toFixed(2)} A` : "-",
         );
       } else {
         baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`);
@@ -864,7 +639,181 @@ export default function App() {
       XLSX.utils.book_append_sheet(wb, ws, finalName);
     });
 
-    XLSX.writeFile(wb, `Load_Schedule_${panel.designation || "Project"}.xlsx`);
+    // -----------------------------------------------------
+    // Voltage Drop Export
+    // -----------------------------------------------------
+    if (vdCalculations && vdCalculations.length > 0) {
+      const vdData: any[][] = [];
+      vdData.push(["VOLTAGE DROP ANALYSIS", "", "", "", "", "", "", "", "", ""]);
+      vdData.push([]);
+      vdData.push([
+        "SYSTEM / SOURCE",
+        "LINE NAME",
+        "CURRENT (A)",
+        "LENGTH (m)",
+        "WIRE SIZE (mm²)",
+        "VOLTAGE",
+        "SYSTEM TYPE",
+        "VD (V)",
+        "VD (%)",
+        "STATUS"
+      ]);
+      
+      const WIRE_IMPEDANCE_TABLE_IMPORT: Record<string, { r: number; x: number }> = {
+        "2.0": { r: 9.4, x: 0.111 },
+        "3.5": { r: 5.4, x: 0.105 },
+        "5.5": { r: 3.4, x: 0.100 },
+        "8.0": { r: 2.3, x: 0.096 },
+        "14": { r: 1.35, x: 0.091 },
+        "22": { r: 0.84, x: 0.088 },
+        "30": { r: 0.61, x: 0.086 },
+        "38": { r: 0.49, x: 0.084 },
+        "50": { r: 0.38, x: 0.084 },
+        "60": { r: 0.31, x: 0.082 },
+        "80": { r: 0.23, x: 0.081 },
+        "100": { r: 0.19, x: 0.080 },
+        "125": { r: 0.15, x: 0.079 },
+        "150": { r: 0.12, x: 0.078 },
+        "175": { r: 0.10, x: 0.078 },
+        "200": { r: 0.091, x: 0.077 },
+        "250": { r: 0.072, x: 0.076 },
+        "325": { r: 0.054, x: 0.075 },
+        "400": { r: 0.044, x: 0.075 },
+        "500": { r: 0.035, x: 0.074 },
+      };
+
+      vdCalculations.forEach((vd) => {
+        const factor = vd.systemType === "3PH" ? 1.732 : 2;
+        const cLength = vd.length || 0;
+        const cLoad = vd.loadA || 0;
+        const cVoltage = vd.voltage || 230;
+        const dataStr = vd.wireSize;
+        const impedanceInfo = WIRE_IMPEDANCE_TABLE_IMPORT[dataStr] || { r: 5.4, x: 0.105 };
+        const R = impedanceInfo.r;
+
+        const VD_v = (factor * cLength * cLoad * R) / 1000;
+        const VD_percent = (VD_v / cVoltage) * 100;
+        const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
+
+        vdData.push([
+          vd.source,
+          vd.name,
+          vd.loadA,
+          vd.length,
+          vd.wireSize,
+          vd.voltage,
+          vd.systemType,
+          VD_v.toFixed(2),
+          VD_percent.toFixed(2) + "%",
+          status
+        ]);
+      });
+      
+      const wsVd = XLSX.utils.aoa_to_sheet(vdData);
+      
+      const wscolsVd = [
+        { wch: 20 },
+        { wch: 25 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 18 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 15 },
+      ];
+      wsVd["!cols"] = wscolsVd;
+      
+      const rangeVd = XLSX.utils.decode_range(wsVd["!ref"] || "A1:A1");
+      for (let R = rangeVd.s.r; R <= rangeVd.e.r; ++R) {
+        for (let C = rangeVd.s.c; C <= rangeVd.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!wsVd[cellAddress]) wsVd[cellAddress] = { t: "s", v: "" };
+          let style: any = {
+            font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+            fill: { fgColor: { rgb: "FFFFFF" } },
+          };
+          if (R === 0) {
+            style.font.bold = true;
+            style.font.sz = 14;
+          } else if (R === 2) {
+            style.font.bold = true;
+            style.fill.fgColor.rgb = "F3F4F6";
+          }
+          wsVd[cellAddress].s = style;
+        }
+      }
+      XLSX.utils.book_append_sheet(wb, wsVd, "Voltage_Drop");
+    }
+
+    // -----------------------------------------------------
+    // Illumination Export
+    // -----------------------------------------------------
+    if (illumParams && illumParams.savedRooms && illumParams.savedRooms.length > 0) {
+      const illData: any[][] = [];
+      illData.push(["ILLUMINATION (LUMEN METHOD) ANALYSIS", "", "", "", "", "", ""]);
+      illData.push([]);
+      illData.push([
+        "ROOM NAME",
+        "TARGET LUX",
+        "AREA (m²)",
+        "FIXTURE TYPE",
+        "FIXTURES COUNT",
+        "TOTAL LUMENS",
+        "TOTAL WATTAGE",
+        "CIRCUIT NO."
+      ]);
+      
+      illumParams.savedRooms.forEach((room) => {
+        illData.push([
+          room.roomName,
+          room.targetLux,
+          room.area,
+          room.fixtureLightType || "Custom",
+          room.fixturesCount,
+          room.totalLumens,
+          room.totalWattage,
+          room.circuitNo ? room.circuitNo : "-"
+        ]);
+      });
+      
+      const wsIll = XLSX.utils.aoa_to_sheet(illData);
+      const wscolsIll = [
+        { wch: 25 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 25 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 18 },
+        { wch: 15 },
+      ];
+      wsIll["!cols"] = wscolsIll;
+      
+      const rangeIll = XLSX.utils.decode_range(wsIll["!ref"] || "A1:A1");
+      for (let R = rangeIll.s.r; R <= rangeIll.e.r; ++R) {
+        for (let C = rangeIll.s.c; C <= rangeIll.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!wsIll[cellAddress]) wsIll[cellAddress] = { t: "s", v: "" };
+          let style: any = {
+            font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+            fill: { fgColor: { rgb: "FFFFFF" } },
+          };
+          if (R === 0) {
+            style.font.bold = true;
+            style.font.sz = 14;
+          } else if (R === 2) {
+            style.font.bold = true;
+            style.fill.fgColor.rgb = "F3F4F6";
+          }
+          wsIll[cellAddress].s = style;
+        }
+      }
+      XLSX.utils.book_append_sheet(wb, wsIll, "Illumination");
+    }
+
+    XLSX.writeFile(wb, `Engineering_Reports_${panel.designation || "Project"}.xlsx`);
   };
 
   const handleExportWord = async () => {
@@ -1037,6 +986,14 @@ export default function App() {
         )}
 
           <button
+            onClick={() => setIsProjectManagerOpen(true)}
+            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20 mb-2 border border-slate-700/50"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span>Manage Projects</span>
+          </button>
+          
+          <button
             onClick={userPlan === 'premium' || isAdmin ? handleExportWord : () => setShowUpgrade(true)}
             className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 ${userPlan === 'premium' || isAdmin ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20`}
             title={userPlan !== 'premium' && !isAdmin ? "Available on Premium Plan" : "Generate Word Report"}
@@ -1172,7 +1129,7 @@ export default function App() {
                   const baseKV = (iscParams.transformerVoltage || 230) / 1000;
                   const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 250) * 1000);
                   const zTranspu = (iscParams.transformerZ || 5) / 100;
-                  const iFullLoad = baseKVA / (Math.sqrt(3) * baseKV);
+                  const iFullLoad = baseKVA / (1.732 * baseKV);
                   const iscMainBreakerVal = iFullLoad / (zUtilitypu + zTranspu) || 12500; 
                   const iscKAIC = (iscMainBreakerVal / 1000);
                   const panelLimitKAIC = parseFloat(panel.icRating) || 10;
@@ -1217,7 +1174,7 @@ export default function App() {
                   vdCalculations.forEach((vd) => {
                     const data = WIRE_IMPEDANCE_TABLE[vd.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
                     const r = data ? data.r : 0.0172 / (parseFloat(vd.wireSize) || 3.5);
-                    const factor = vd.systemType === '3PH' ? Math.sqrt(3) : 2;
+                    const factor = vd.systemType === '3PH' ? 1.732 : 2;
                     const divisor = data ? 1000 : 1;
                     const dropV = (factor * vd.loadA * vd.length * r) / divisor;
                     const pct = (dropV / vd.voltage) * 100;
@@ -1405,6 +1362,9 @@ export default function App() {
 
               </div>
 
+              {/* Interactive PEC Current Calculator & Verifier */}
+              <PECCurrentCalculator />
+
               {/* Direct Actions & Interactive Quick Launcher Tab */}
               <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
                 <h4 className="font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest text-[10px]">Jump-switch to Active Calculation Terminals:</h4>
@@ -1591,6 +1551,27 @@ export default function App() {
             </motion.div>
           </div>
 
+          {/* PEC Calculator Tab */}
+          <div className={activeTab === "current-calc" ? "w-full" : "hidden"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={activeTab === "current-calc" ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full"
+            >
+              <div className="max-w-4xl mx-auto space-y-6">
+                <div className="bg-gradient-to-r from-fuchsia-600 to-indigo-650 rounded-2xl p-6 text-white shadow-md">
+                  <h3 className="text-xl font-bold uppercase tracking-wider mb-2">PEC Current Verification Suite</h3>
+                  <p className="text-xs text-fuchsia-100 leading-relaxed">
+                    Verify connection parameters, trace standard equation steps, and evaluate the final design currents 
+                    fully compliant with Philippine Electrical Code (PEC) 2017 Part 1 standards.
+                  </p>
+                </div>
+                <PECCurrentCalculator />
+              </div>
+            </motion.div>
+          </div>
+
           {/* Verify Admin Tab */}
           <div className={activeTab === "verify" ? "w-full" : "hidden"}>
             <motion.div
@@ -1617,6 +1598,16 @@ export default function App() {
           <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-2">Please wait while the documents and diagrams are being generated...</p>
         </div>
       )}
+
+      <ProjectManagerModal
+        isOpen={isProjectManagerOpen}
+        onClose={() => setIsProjectManagerOpen(false)}
+        currentProjectData={currentProjectData}
+        onLoadProject={handleLoadProject}
+        onNewProject={handleNewProject}
+        currentProjectId={currentProjectId}
+        setCurrentProjectId={setCurrentProjectId}
+      />
 
         <footer className="w-full bg-white/50 border-t border-slate-200 mt-12 py-8 rounded-2xl no-print">
           <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">

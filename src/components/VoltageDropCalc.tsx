@@ -36,7 +36,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
            });
          });
          const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
-         mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * Math.sqrt(3));
+         mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * 1.732);
       } else {
          mainCurrent = totalVA / panel.voltage;
       }
@@ -159,7 +159,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'];
     const R = data.r;
-    const factor = calc.systemType === '3PH' ? Math.sqrt(3) : 2;
+    const factor = calc.systemType === '3PH' ? 1.732 : 2;
     const vd = (factor * calc.length * calc.loadA * R) / 1000;
     const vdPercentage = (vd / calc.voltage) * 100;
     
@@ -193,7 +193,7 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
     } else if (source === 'main' && panel && circuits) {
       const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
       const is3PH = panel.system.includes('3PH');
-      const mainCurrent = is3PH ? (totalVA) / (panel.voltage * Math.sqrt(3)) : (totalVA) / panel.voltage;
+      const mainCurrent = is3PH ? (totalVA) / (panel.voltage * 1.732) : (totalVA) / panel.voltage;
       const designAmp = mainCurrent * 1.25;
       const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
       

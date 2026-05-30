@@ -37,6 +37,7 @@ export const INITIAL_CIRCUITS: Circuit[] = [
     wattage: 100,
     quantity: 12,
     loadVA: 1200,
+    pf: 1.0,
     voltage: 230,
     phases: ['R'],
     loadA: 5.22,
@@ -59,6 +60,7 @@ export const INITIAL_CIRCUITS: Circuit[] = [
     wattage: 180,
     quantity: 20,
     loadVA: 3600,
+    pf: 1.0,
     voltage: 230,
     phases: ['R'],
     loadA: 15.65,
@@ -483,21 +485,31 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     const qty = c.quantity || 1;
     const w = isSpace ? 0 : (c.wattage || 0);
-    const va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : (qty * w);
+    const pf = c.pf !== undefined ? c.pf : (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON ? 0.85 : 1.0);
+    const va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : Math.round((qty * w) / (pf || 1));
     
-    let defaultV = panel.voltage || 230;
-    // For a 400V/230V system branch:
-    if (panel.system === '400V/230V, 3PH, 4W') {
-       if (panel.connectionType === 'Line-to-Neutral' && mcbP === 1) defaultV = 230;
-       else if (mcbP >= 2) defaultV = 400;
+    let defaultV = 230;
+    const is3PhaseLoad = c.phases && c.phases.length === 3;
+
+    if (panel.system === '230V, 1PH, 2W') {
+      defaultV = 230;
     } else if (panel.system === '230V, 3PH, 3W') {
-       defaultV = 230;
+      defaultV = 230;
+    } else if (panel.system === '400V/230V, 3PH, 4W') {
+      if (is3PhaseLoad) {
+        defaultV = 400;
+      } else {
+        defaultV = panel.connectionType === 'Line-to-Line' ? 400 : 230;
+      }
     }
-    const v = c.voltage || defaultV;
+    const v = defaultV;
+    c.voltage = v;
     
-    let loadA = va / v;
-    if (mcbP === 3 && panel.system.includes('3PH')) {
-      loadA = va / (v * Math.sqrt(3));
+    let loadA = 0;
+    if ((panel.system === '230V, 3PH, 3W' || panel.system === '400V/230V, 3PH, 4W') && is3PhaseLoad) {
+      loadA = va / (v * 1.732);
+    } else {
+      loadA = va / v;
     }
     
     // PDF Rule: Apply 125% for continuous loads (Lighting, AC, Motors for wire ampacity)
@@ -546,6 +558,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     return {
       ...c,
+      pf: pf,
       loadVA: va,
       loadA: Number(loadA.toFixed(2)),
       mcbAT: mcbAT,
@@ -567,7 +580,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       description: 'NEW CIRCUIT',
       wattage: 180,
       quantity: 1,
-      voltage: 230,
+      voltage: panel.voltage,
       phases: ['R'],
       loadType: LoadType.POWER,
       mcbType: MCBType.BOLT_ON,
@@ -586,7 +599,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       description: item.description,
       wattage: item.wattage,
       quantity: 1,
-      voltage: 230,
+      voltage: panel.voltage,
       phases: ['R'],
       loadType: item.loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
@@ -603,7 +616,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       if (c.id === id) {
         const merged = { ...c, ...updates };
         // Trigger recalculation if load parameters OR the circuit breaker itself changes
-        if ('wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates) {
+        if ('phases' in updates || 'wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates || 'pf' in updates) {
           return { ...merged, ...calculateCircuit(merged) } as Circuit;
         }
         return merged;
@@ -639,38 +652,135 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
   const phaseImbalance = maxPhaseLoad > 0 ? (1 - (Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B) / maxPhaseLoad)) * 100 : 0;
 
   const phaseAmps = useMemo(() => {
-    const amps = { R: 0, Y: 0, B: 0 };
+    const amps = { R: 0, Y: 0, B: 0, threePhase: 0 };
     circuits.forEach(c => {
-      if (c.phases.includes('R')) amps.R += c.loadA;
-      if (c.phases.includes('Y')) amps.Y += c.loadA;
-      if (c.phases.includes('B')) amps.B += c.loadA;
+      if (c.phases.length === 3) {
+        amps.threePhase += c.loadA;
+      } else {
+        if (c.phases.includes('R')) amps.R += c.loadA;
+        if (c.phases.includes('Y')) amps.Y += c.loadA;
+        if (c.phases.includes('B')) amps.B += c.loadA;
+      }
     });
     return amps;
   }, [circuits]);
   
   const mainCurrent = useMemo(() => {
+    const systemVoltage = panel.system === '400V/230V, 3PH, 4W' ? 400 : 230;
     let lightingReceptacleVA = 0;
     let motorVAs: number[] = [];
 
-    let phaseVAs = { R: 0, Y: 0, B: 0 };
-    let motorPhaseVAs = { R: 0, Y: 0, B: 0 };
+    const phaseLoads = { R: 0, Y: 0, B: 0 };
+    const phaseVAs = { R: 0, Y: 0, B: 0 };
+    const motorPhaseVAs = { R: 0, Y: 0, B: 0 };
+
+    const getCircuitActiveLines = (phases: string[], connectionType: string | undefined): string[] => {
+      if (phases.length === 3) {
+        return ['R', 'Y', 'B'];
+      }
+      if (phases.length === 1) {
+        const ph = phases[0];
+        if (connectionType === 'Line-to-Line') {
+          if (ph === 'R') return ['R', 'Y'];
+          if (ph === 'Y') return ['Y', 'B'];
+          if (ph === 'B') return ['B', 'R'];
+        }
+        return [ph];
+      }
+      return phases;
+    };
 
     circuits.forEach(c => {
-       const perPhaseVA = c.loadVA / c.phases.length;
-       const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
-       
-       c.phases.forEach(p => {
-         if (p === 'R') { phaseVAs.R += perPhaseVA; if (isMotor) motorPhaseVAs.R += perPhaseVA; }
-         if (p === 'Y') { phaseVAs.Y += perPhaseVA; if (isMotor) motorPhaseVAs.Y += perPhaseVA; }
-         if (p === 'B') { phaseVAs.B += perPhaseVA; if (isMotor) motorPhaseVAs.B += perPhaseVA; }
-       });
+      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+      
+      const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
+      const activeLines = getCircuitActiveLines(c.phases || [], panel.connectionType);
+      
+      const perPhaseVA = c.loadVA / (activeLines.length || 1);
 
-       if (isMotor) {
-          motorVAs.push(c.loadVA);
-       } else {
-          lightingReceptacleVA += c.loadVA;
-       }
+      activeLines.forEach(ph => {
+        phaseLoads[ph as keyof typeof phaseLoads] += perPhaseVA;
+
+        if (ph === "R") {
+          phaseVAs.R += perPhaseVA;
+          if (isMotor) motorPhaseVAs.R += perPhaseVA;
+        }
+        if (ph === "Y") {
+          phaseVAs.Y += perPhaseVA;
+          if (isMotor) motorPhaseVAs.Y += perPhaseVA;
+        }
+        if (ph === "B") {
+          phaseVAs.B += perPhaseVA;
+          if (isMotor) motorPhaseVAs.B += perPhaseVA;
+        }
+      });
+
+      if (isMotor) {
+        motorVAs.push(c.loadVA);
+      } else {
+        lightingReceptacleVA += c.loadVA;
+      }
     });
+
+    const phaseBaseCurrents = { R: 0, Y: 0, B: 0 };
+    const phaseDesignCurrents = { R: 0, Y: 0, B: 0 };
+
+    circuits.forEach(c => {
+      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+
+      const activeLines = getCircuitActiveLines(c.phases || [], panel.connectionType);
+      const is3Phase = c.phases && c.phases.length === 3;
+      let cirV = c.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+      
+      if (c.loadType === LoadType.SUB_PANEL) {
+        cirV = c.voltage || cirV;
+      }
+
+      const loadI = is3Phase ? c.loadVA / (cirV * 1.732) : c.loadVA / cirV;
+      const isContinuous = c.loadType === LoadType.LIGHTING || c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
+      const designI = isContinuous ? loadI * 1.25 : loadI;
+
+      if (is3Phase) {
+        phaseBaseCurrents.R += loadI;
+        phaseBaseCurrents.Y += loadI;
+        phaseBaseCurrents.B += loadI;
+
+        phaseDesignCurrents.R += designI;
+        phaseDesignCurrents.Y += designI;
+        phaseDesignCurrents.B += designI;
+      } else {
+        activeLines.forEach(ph => {
+          phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] += loadI;
+          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += designI;
+        });
+      }
+    });
+
+    const motorCircuits = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON);
+    if (motorCircuits.length > 0) {
+      let largestMotorCir = motorCircuits[0];
+      motorCircuits.forEach(mc => {
+        const mcV = mc.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (mc.phases.length === 3 ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        const largestV = largestMotorCir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (largestMotorCir.phases.length === 3 ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        
+        const mcI = mc.phases.length === 3 ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
+        const largestI = largestMotorCir.phases.length === 3 ? largestMotorCir.loadVA / (largestV * 1.732) : largestMotorCir.loadVA / largestV;
+
+        if (mcI > largestI) {
+          largestMotorCir = mc;
+        }
+      });
+
+      const isLargest3Phase = largestMotorCir.phases.length === 3;
+      const largestMotorV = largestMotorCir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (isLargest3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+      const largestMotorI = isLargest3Phase ? largestMotorCir.loadVA / (largestMotorV * 1.732) : largestMotorCir.loadVA / largestMotorV;
+
+      const extraI = largestMotorI * 0.25;
+      const activeLines = getCircuitActiveLines(largestMotorCir.phases || [], panel.connectionType);
+      activeLines.forEach(ph => {
+        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += extraI;
+      });
+    }
 
     // Step 1: Demand Factors for General Lighting & Receptacles
     let lightingReceptacleDemand = lightingReceptacleVA;
@@ -683,36 +793,30 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     // Step 2: Motor Loads (PEC 4.30.2.4 & 4.40.4.1) Largest motor at 125%, others at 100%
     const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
     
+    if (lightingReceptacleVA > 0 && lightingReceptacleDemand < lightingReceptacleVA) {
+      const demandReductionI = (lightingReceptacleVA - lightingReceptacleDemand) / (systemVoltage * (panel.system.includes("3PH") ? 1.732 : 1));
+      Object.keys(phaseDesignCurrents).forEach(ph => {
+        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] = Math.max(
+          phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents],
+          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] - demandReductionI
+        );
+      });
+    }
+
     // We compute total based on the highest individual phase projected to 3 phases, to protect against imbalance
-    let maxDesignAmp = 0;
     let maxBaseAmp = 0;
+    let maxDesignAmp = 0;
 
-    if (panel.system.includes('3PH')) {
-      const highestPhaseBaseVA = Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B);
-      // To apply demand factors fairly while respecting phase imbalance, we calculate effective total base VA:
-      const effectiveTotalBaseVA = highestPhaseBaseVA * 3;
-      
-      const factor = panel.voltage * Math.sqrt(3);
-      maxBaseAmp = effectiveTotalBaseVA / factor;
+    const totalVA = circuits.reduce((sum, curr) => sum + curr.loadVA, 0);
 
-      // For design amp, we use the panel total demand logic. 
-      // If the user's rule dictates applying demand factors to the exact total:
-      const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
-      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
-      
-      // But we must also account for unbalance in the design amp. 
-      // Ratio of unbalance:
-      const unbalanceRatio = motorVAs.length + lightingReceptacleVA > 0 ? (effectiveTotalBaseVA / (motorVAs.reduce((a, b) => a + b, 0) + lightingReceptacleVA)) : 1;
-      
-      // Net computed load considering unbalance:
-      maxDesignAmp = (totalNetComputedVA * Math.max(1, unbalanceRatio)) / factor;
+    if (panel.system.includes("3PH")) {
+      maxBaseAmp = totalVA / (systemVoltage * 1.732);
+      const designPower = lightingReceptacleDemand + motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+      maxDesignAmp = designPower / (systemVoltage * 1.732);
     } else {
-      const totalMotorDemandVA = motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
-      const totalNetComputedVA = lightingReceptacleDemand + totalMotorDemandVA;
-      const totalBaseVA = lightingReceptacleVA + motorVAs.reduce((a,b) => a+b, 0);
-
-      maxBaseAmp = totalBaseVA / panel.voltage;
-      maxDesignAmp = totalNetComputedVA / panel.voltage;
+      maxBaseAmp = totalVA / systemVoltage;
+      const designPower = lightingReceptacleDemand + motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
+      maxDesignAmp = designPower / systemVoltage;
     }
 
     return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
@@ -887,7 +991,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <thead className="bg-slate-900 text-white print:bg-slate-200 print:text-slate-900">
               <tr>
                 {[
-                  'NO.', 'DESCRIPTION', 'W', 'QTY', 'VA', 'PHASE'
+                  'NO.', 'DESCRIPTION', 'W', 'QTY', 'PF', 'VA', 'PHASE'
                 ].map((header) => (
                   <th 
                     key={header} 
@@ -978,20 +1082,32 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />}
                   </td>
+                  <td className="px-1 py-3 text-center">
+                    {isSpace ? '-' : <input type="number" step="0.01" min="0.1" max="1.0" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.pf !== undefined ? c.pf : (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON ? 0.85 : 1.0)} onChange={e => {
+                      const val = parseFloat(e.target.value);
+                      updateCircuit(c.id, { pf: isNaN(val) ? undefined : val });
+                    }} />}
+                  </td>
                   <td className="px-1 py-3 text-center font-mono font-bold text-slate-400 dark:text-slate-500 truncate">
                     {isSpace ? '-' : c.loadVA}
                   </td>
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : (
                     <div className="flex gap-0.5 justify-center flex-wrap">
-                      {['R', 'Y', 'B'].map(p => (
+                      {['R', 'Y', 'B', '3Ø'].map(p => (
                         <button key={p} onClick={() => {
-                          const newPhases = c.phases.includes(p as Phase) ? c.phases.filter(x => x !== p) : [...c.phases, p as Phase];
-                          if (newPhases.length) updateCircuit(c.id, { phases: newPhases });
-                        }} className={`w-4 h-4 rounded-sm font-bold shrink-0 ${
-                          c.phases.includes(p as Phase) 
-                            ? p === 'R' ? 'bg-red-600 text-white' : p === 'Y' ? 'bg-yellow-400 text-black' : 'bg-blue-600 text-white'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                          if (p === '3Ø') {
+                            updateCircuit(c.id, { phases: ['R', 'Y', 'B'] });
+                          } else {
+                            // Single phase selection replaces other phases to ensure it's reflected correctly
+                            updateCircuit(c.id, { phases: [p as Phase] });
+                          }
+                        }} className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                          (p === '3Ø' && c.phases.length === 3)
+                            ? 'bg-indigo-600 text-white'
+                            : (p !== '3Ø' && c.phases.includes(p as Phase) && c.phases.length === 1)
+                              ? p === 'R' ? 'bg-red-600 text-white' : p === 'Y' ? 'bg-yellow-400 text-black' : 'bg-blue-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700'
                         } ${!panel.system.includes('3PH') && p !== 'R' ? 'hidden' : ''}`} style={{ fontSize: tableFontSize - 4 }}>{p}</button>
                       ))}
                     </div>
@@ -1046,7 +1162,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 </tr>
               )})}
               <tr style={{ fontSize: tableFontSize }} className="bg-slate-900 text-white font-bold border-t-2 border-slate-900 print:text-slate-900 print:bg-white transition-all">
-                <td colSpan={4} className="px-4 py-6 text-right uppercase opacity-70">Total Connected Load</td>
+                <td colSpan={5} className="px-4 py-6 text-right uppercase opacity-70">Total Connected Load</td>
                 <td className="px-1 py-6 text-center truncate">{totalVA.toFixed(0)} VA</td>
                 <td className="px-1 py-6 text-center opacity-70 truncate">({(totalVA/1000).toFixed(2)} kVA)</td>
                 {panel.system.includes('3PH') ? (
@@ -1054,7 +1170,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                     <td className="px-1 py-6 text-center text-red-500 print:text-slate-900 truncate">{phaseAmps.R.toFixed(2)} A</td>
                     <td className="px-1 py-6 text-center text-yellow-500 print:text-slate-900 truncate">{phaseAmps.Y.toFixed(2)} A</td>
                     <td className="px-1 py-6 text-center text-blue-500 print:text-slate-900 truncate">{phaseAmps.B.toFixed(2)} A</td>
-                    <td className="px-1 py-6 text-center text-indigo-500 print:text-slate-900 truncate">-</td>
+                    <td className="px-1 py-6 text-center text-indigo-500 print:text-slate-900 truncate">{phaseAmps.threePhase > 0 ? `${phaseAmps.threePhase.toFixed(2)} A` : '-'}</td>
                   </>
                 ) : (
                   <td className="px-1 py-6 text-center text-yellow-400 print:text-slate-900 truncate">{mainCurrent.baseAmp.toFixed(2)} A</td>
@@ -1163,8 +1279,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <h3 className="font-bold text-slate-900 mb-2">2. Single-Phase vs Three-Phase Current (Ampacity)</h3>
             <p className="mb-2">The total design current depends on the system type (1-Phase vs 3-Phase). Based on PEC 2017 Part 1.</p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>{`For 1-Phase: I = Total Base VA / Voltage`}</span>
-              <span>{`For 3-Phase: I = (Max Base Phase VA × 3) / (Voltage × √3)`}</span>
+              <span>{`For 1-Phase: I = Total Connected VA / Voltage`}</span>
+              <span>{`For 3-Phase: I = Total Connected VA / (1.732 × Voltage)`}</span>
             </div>
             <p className="mt-2 text-indigo-600 font-bold">
               Calculated Main Current: {mainCurrent.baseAmp.toFixed(2)} Amperes 

@@ -47,6 +47,7 @@ export interface Circuit {
   wattage: number;
   vaPerUnit?: number;
   linkedSubPanelId?: string;
+  pf?: number;
 }
 
 export interface PanelConfig {

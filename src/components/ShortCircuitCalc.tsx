@@ -123,7 +123,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       
       let mainCurrent = 0;
       if (panel.system.includes('3PH')) {
-          mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * Math.sqrt(3));
+          mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * 1.732);
       } else {
           mainCurrent = (totalKVA * 1000) / panel.voltage;
       }
@@ -183,18 +183,18 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
 
     const totalZpu = zUtilitypu + zTranspu + zFeederpu;
     
-    const iFullLoad = params.transformerKVA / (Math.sqrt(3) * (params.transformerVoltage / 1000));
+    const iFullLoad = params.transformerKVA / (1.732 * (params.transformerVoltage / 1000));
     
     // Isc at different points
     const iscMainBreaker = iFullLoad / (zUtilitypu + zTranspu);
     const iscFaultPoint = iFullLoad / totalZpu;
 
-    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (Math.sqrt(3) * params.transformerVoltage)) * 4 : 0;
+    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (1.732 * params.transformerVoltage)) * 4 : 0;
     
     const multiplier = 1 / totalZpu;
 
     // Fault 1 (HV side or Primary Service Entrance)
-    const fault1Isc = (params.utilityShortCircuitMVA * 1000000) / (Math.sqrt(3) * params.primaryVoltage);
+    const fault1Isc = (params.utilityShortCircuitMVA * 1000000) / (1.732 * params.primaryVoltage);
 
     return {
       fla: iFullLoad.toFixed(2),
