@@ -134,3 +134,10 @@ export interface IlluminationParams {
   customLumens?: number;
   customWattage?: number;
 }
+
+export interface FloorPlanImage {
+  id: string;
+  name: string;
+  data: string;
+}
+

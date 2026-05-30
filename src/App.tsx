@@ -34,6 +34,7 @@ import {
   VoltageDropCalculation,
   IlluminationParams,
   LoadType,
+  FloorPlanImage,
 } from "./types";
 import {
   STANDARD_CB_RATINGS,
@@ -165,7 +166,7 @@ export default function App() {
     }));
   };
 
-  const [floorPlanImages, setFloorPlanImages] = useState<string[]>([]);
+  const [floorPlanImages, setFloorPlanImages] = useState<FloorPlanImage[]>([]);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it

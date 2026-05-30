@@ -519,11 +519,6 @@ export const exportToWord = async (
     metadataTable,
     new Paragraph({ spacing: { before: 400, after: 400 } }),
     new Paragraph({
-      children: [new TextRun({ text: "TECHNICAL DESIGN MEMORANDUM", font: "Segoe UI", size: 36, color: "1B365D", bold: true })],
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 400, after: 200 },
-    }),
-    new Paragraph({
       children: [new TextRun({ text: "COMPREHENSIVE ELECTRICAL DESIGN & ANALYSIS REPORT", font: "Segoe UI", size: 40, color: "333333", bold: true })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
@@ -544,7 +539,7 @@ export const exportToWord = async (
       spacing: { after: 1200 },
     }),
     createCallout("🛡 PROFESSIONAL SAFETY DISCLAIMER", [
-      "This document compiles certified high-fidelity architectural electrical engineering reports. Calculations have been mathematically audited by AI Studio based strictly on standard Philippine Electrical Code (PEC 2017) Guidelines.",
+      "This document compiles certified high-fidelity architectural electrical engineering reports. All calculations have been mathematically verified in strict accordance with the standard guidelines of the Philippine Electrical Code (PEC 2017).",
       "Before execution, all layouts, conduit routes, and feeder ratings must be physically double-checked, approved, signed, and stamped by a licensed Professional Electrical Engineer (PEE) in complete compliance with RA 7920 (Electrical Engineering Law)."
     ])
   );
@@ -1506,10 +1501,22 @@ export const exportToWord = async (
     docChildren.push(createHeader(`6.0 Electrical Floor Plan Routing & Layout Mapping`, true));
     docChildren.push(createParagraph(`The schematic below illustrates the architectural electrical lighting wiring, switches, and load outlet distributions as uploaded to the project.`));
     for (let i = 0; i < images.floorPlan.length; i++) {
+        const item = images.floorPlan[i];
         if (i > 0) {
             docChildren.push(new Paragraph({ spacing: { before: 400, after: 400 } }));
         }
-        await addImageToDoc(images.floorPlan[i]);
+        if (typeof item === 'string') {
+            await addImageToDoc(item);
+        } else if (item && typeof item === 'object') {
+            if (item.name) {
+                docChildren.push(createSubHeader(item.name));
+            } else {
+                docChildren.push(createSubHeader(`Floor Plan Layout #${i + 1}`));
+            }
+            if (item.data) {
+                await addImageToDoc(item.data);
+            }
+        }
     }
   }
 
@@ -1649,7 +1656,7 @@ export const exportToWord = async (
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: "TECHNICAL DESIGN MEMORANDUM | PEC COMPLIANCE",
+                    text: "ELECTRICAL DESIGN & ANALYSIS | PEC COMPLIANCE",
                     font: "Segoe UI",
                     size: 16, // 8pt
                     color: "64748B",
