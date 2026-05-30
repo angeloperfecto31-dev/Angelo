@@ -42,6 +42,7 @@ import {
   INITIAL_SHORT_CIRCUIT_PARAMS,
   INITIAL_VOLTAGE_DROP_CALCULATIONS,
   INITIAL_ILLUMINATION_PARAMS,
+  WIRE_IMPEDANCE_TABLE,
 } from "./constants";
 import { exportToWord } from "./utils/exportWord";
 
@@ -147,7 +148,7 @@ export default function App() {
   const [iscParams, setIscParams] = useState<ShortCircuitParams>(
     INITIAL_SHORT_CIRCUIT_PARAMS,
   );
-  const [iscSource, setIscSource] = useState<string>("custom");
+  const [iscSource, setIscSource] = useState<string>("auto");
 
   const [vdCalculations, setVdCalculations] = useState<
     VoltageDropCalculation[]
@@ -156,6 +157,68 @@ export default function App() {
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
   );
+
+  // Bidirectional sync between circuits and saved lighting rooms
+  useEffect(() => {
+    if (!circuits || !illumParams || !illumParams.savedRooms) return;
+
+    let circuitsChanged = false;
+    let savedRoomsChanged = false;
+
+    const nextCircuits = circuits.map(c => {
+      if (c.loadType === LoadType.LIGHTING) {
+        // Find if there's a saved room with matching circuitNo
+        const matchingRoom = illumParams.savedRooms?.find(r => r.circuitNo === c.circuitNo);
+        if (matchingRoom) {
+          const estimatedWattage = matchingRoom.fixtureWattage || 15;
+          const totalVA = estimatedWattage * matchingRoom.fixturesCount;
+          
+          if (c.quantity !== matchingRoom.fixturesCount || c.wattage !== estimatedWattage || c.loadVA !== totalVA || Math.abs(c.loadA - totalVA / c.voltage) > 0.01) {
+            circuitsChanged = true;
+            return {
+              ...c,
+              quantity: matchingRoom.fixturesCount,
+              wattage: estimatedWattage,
+              loadVA: totalVA,
+              loadA: Number((totalVA / c.voltage).toFixed(2))
+            };
+          }
+        }
+      }
+      return c;
+    });
+
+    const nextSavedRooms = illumParams.savedRooms.map(r => {
+      if (r.circuitNo) {
+        const matchingCircuit = circuits.find(c => c.circuitNo === r.circuitNo);
+        if (matchingCircuit) {
+          const expectedTotalWattage = matchingCircuit.wattage * matchingCircuit.quantity;
+          if (r.fixturesCount !== matchingCircuit.quantity || r.fixtureWattage !== matchingCircuit.wattage || r.totalWattage !== expectedTotalWattage) {
+            savedRoomsChanged = true;
+            const fixLumens = r.fixtureLumens || 1000;
+            return {
+              ...r,
+              fixturesCount: matchingCircuit.quantity,
+              fixtureWattage: matchingCircuit.wattage,
+              totalWattage: expectedTotalWattage,
+              totalLumens: fixLumens * matchingCircuit.quantity
+            };
+          }
+        }
+      }
+      return r;
+    });
+
+    if (circuitsChanged) {
+      setCircuits(nextCircuits);
+    }
+    if (savedRoomsChanged) {
+      setIllumParams(prev => ({
+        ...prev,
+        savedRooms: nextSavedRooms
+      }));
+    }
+  }, [circuits, illumParams, setCircuits, setIllumParams]);
   
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>({});
 
@@ -1152,10 +1215,11 @@ export default function App() {
                 {(() => {
                   let maxVDPercent = 0;
                   vdCalculations.forEach((vd) => {
-                    const size = parseFloat(vd.wireSize) || 3.5;
-                    const r = 0.0172 / size; 
+                    const data = WIRE_IMPEDANCE_TABLE[vd.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
+                    const r = data ? data.r : 0.0172 / (parseFloat(vd.wireSize) || 3.5);
                     const factor = vd.systemType === '3PH' ? Math.sqrt(3) : 2;
-                    const dropV = factor * vd.loadA * vd.length * r;
+                    const divisor = data ? 1000 : 1;
+                    const dropV = (factor * vd.loadA * vd.length * r) / divisor;
                     const pct = (dropV / vd.voltage) * 100;
                     if (pct > maxVDPercent) maxVDPercent = pct;
                   });

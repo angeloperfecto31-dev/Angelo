@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Ruler, Zap, AlertTriangle, Calculator, Link, Plus, Trash2, CheckCircle2 } from 'lucide-react';
-import { VoltageDropCalculation, Circuit, PanelConfig } from '../types';
+import { VoltageDropCalculation, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_IMPEDANCE_TABLE, WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from '../constants';
 
 export interface VoltageDropCalcProps {
@@ -15,91 +15,144 @@ export default function VoltageDropCalc({ panel, circuits, calculations, setCalc
   const [newLength, setNewLength] = useState<number>(30);
 
   useEffect(() => {
-    if (!circuits || !panel || calculations.length === 0) return;
+    if (!circuits || !panel) return;
     
     setCalculations(prev => {
+      const prevMap = new Map((prev || []).map(calc => [calc.source, calc]));
+      const updatedCalcs: VoltageDropCalculation[] = [];
       let changed = false;
+
+      // 1. Maintain Main Feeder
+      const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
+      const is3PH = panel.system.includes('3PH');
       
-      // Auto-prune deleted circuits from the calculation list
-      const activeCircuitIds = new Set(circuits.map(c => c.id));
-      const filtered = prev.filter(calc => {
-        if (calc.source !== 'custom' && calc.source !== 'main') {
-          const exists = activeCircuitIds.has(calc.source);
-          if (!exists) {
-            changed = true;
-            return false;
-          }
+      let mainCurrent = 0;
+      if (is3PH) {
+         const phaseLoads = { R: 0, Y: 0, B: 0 };
+         circuits.forEach(c => {
+           c.phases.forEach(p => {
+             const key = p as keyof typeof phaseLoads;
+             phaseLoads[key] = (phaseLoads[key] || 0) + c.loadVA / c.phases.length;
+           });
+         });
+         const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
+         mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * Math.sqrt(3));
+      } else {
+         mainCurrent = totalVA / panel.voltage;
+      }
+
+      const designAmp = mainCurrent * 1.25;
+      const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
+      
+      let minSize = 2.0;
+      if (cb > 15 && cb <= 20) minSize = 3.5;
+      else if (cb > 20 && cb <= 30) minSize = 5.5;
+      const requiredAmpacity = Math.max(designAmp, cb);
+      const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
+      
+      const mainLoadA = Number(mainCurrent.toFixed(2));
+      const mainWireSize = wire.size.toString();
+      const mainVoltage = panel.voltage;
+      const mainSystemType: '1PH' | '3PH' = is3PH ? '3PH' : '1PH';
+
+      const existingMain = prevMap.get('main');
+      if (existingMain) {
+        const hasMainChanged = existingMain.loadA !== mainLoadA || 
+                               existingMain.wireSize !== mainWireSize || 
+                               existingMain.voltage !== mainVoltage || 
+                               existingMain.systemType !== mainSystemType;
+        if (hasMainChanged) {
+          changed = true;
         }
-        return true;
+        updatedCalcs.push({
+          ...existingMain,
+          loadA: mainLoadA,
+          wireSize: mainWireSize,
+          voltage: mainVoltage,
+          systemType: mainSystemType
+        });
+      } else {
+        changed = true;
+        updatedCalcs.push({
+          id: crypto.randomUUID(),
+          source: 'main',
+          name: 'Main Feeder',
+          loadA: mainLoadA,
+          length: 30,
+          wireSize: mainWireSize,
+          voltage: mainVoltage,
+          systemType: mainSystemType
+        });
+      }
+
+      // 2. Maintain Branch Circuits from Load Schedule
+      circuits.forEach(c => {
+        // Skip spare or space as they have zero active load current/feeders generally
+        const ltStr = c.loadType as string;
+        if (ltStr === 'SP' || ltStr === 'SPACE' || ltStr === LoadType.SPARE || ltStr === LoadType.SPACE) {
+          return;
+        }
+
+        const existingBranch = prevMap.get(c.id);
+        const branchName = `Circuit ${c.circuitNo}: ${c.description}`;
+        const branchSystemType: '1PH' | '3PH' = c.phases.length > 2 ? '3PH' : '1PH';
+
+        if (existingBranch) {
+          const hasBranchChanged = existingBranch.name !== branchName ||
+                                   existingBranch.loadA !== c.loadA ||
+                                   existingBranch.wireSize !== c.wireSize ||
+                                   existingBranch.voltage !== c.voltage ||
+                                   existingBranch.systemType !== branchSystemType;
+          if (hasBranchChanged) {
+            changed = true;
+          }
+          updatedCalcs.push({
+            ...existingBranch,
+            name: branchName,
+            loadA: c.loadA,
+            wireSize: c.wireSize,
+            voltage: c.voltage,
+            systemType: branchSystemType
+          });
+        } else {
+          changed = true;
+          updatedCalcs.push({
+            id: crypto.randomUUID(),
+            source: c.id,
+            name: branchName,
+            loadA: c.loadA,
+            length: 30, // Default to 30 meters
+            wireSize: c.wireSize,
+            voltage: c.voltage,
+            systemType: branchSystemType
+          });
+        }
       });
 
-      const next = filtered.map(calc => {
-        if (calc.source === 'main') {
-          // Recalculate main
-          const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
-          const is3PH = panel.system.includes('3PH');
-          
-          let mainCurrent = 0;
-          if (is3PH) {
-             const phaseLoads = { R: 0, Y: 0, B: 0 };
-             circuits.forEach(c => {
-               c.phases.forEach(p => {
-                 const key = p as keyof typeof phaseLoads;
-                 phaseLoads[key] = (phaseLoads[key] || 0) + c.loadVA / c.phases.length;
-               });
-             });
-             const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
-             mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * Math.sqrt(3));
-          } else {
-             mainCurrent = totalVA / panel.voltage;
-          }
+      // 3. Maintain Custom Circuits
+      (prev || []).forEach(calc => {
+        if (calc.source === 'custom') {
+          updatedCalcs.push(calc);
+        }
+      });
 
-          const designAmp = mainCurrent * 1.25;
-          const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
-          
-          let minSize = 2.0;
-          if (cb > 15 && cb <= 20) minSize = 3.5;
-          else if (cb > 20 && cb <= 30) minSize = 5.5;
-          const requiredAmpacity = Math.max(designAmp, cb);
-          const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-          
-          const newLoadA = Number(mainCurrent.toFixed(2));
-          const newWireSize = wire.size.toString();
-          const newVoltage = panel.voltage;
-          const newSystemType: '1PH' | '3PH' = is3PH ? '3PH' : '1PH';
-          
-          if (calc.loadA !== newLoadA || calc.wireSize !== newWireSize || calc.voltage !== newVoltage || calc.systemType !== newSystemType) {
+      // Structural or value changes checking
+      if (updatedCalcs.length !== (prev || []).length) {
+        changed = true;
+      } else {
+        const pList = prev || [];
+        for (let i = 0; i < updatedCalcs.length; i++) {
+          if (updatedCalcs[i].id !== pList[i].id || 
+              updatedCalcs[i].loadA !== pList[i].loadA || 
+              updatedCalcs[i].wireSize !== pList[i].wireSize || 
+              updatedCalcs[i].length !== pList[i].length) {
             changed = true;
-            return {
-              ...calc,
-              loadA: newLoadA,
-              wireSize: newWireSize,
-              voltage: newVoltage,
-              systemType: newSystemType
-            };
-          }
-        } else if (calc.source !== 'custom') {
-          // It's a circuit
-          const c = circuits.find(c => c.id === calc.source);
-          if (c) {
-            const newName = `Circuit ${c.circuitNo}: ${c.description}`;
-            const newSystemType: '1PH' | '3PH' = c.phases.length > 2 ? '3PH' : '1PH';
-            if (calc.loadA !== c.loadA || calc.wireSize !== c.wireSize || calc.voltage !== c.voltage || calc.name !== newName || calc.systemType !== newSystemType) {
-              changed = true;
-              return {
-                ...calc,
-                name: newName,
-                loadA: c.loadA,
-                wireSize: c.wireSize,
-                voltage: c.voltage,
-                systemType: newSystemType
-              };
-            }
+            break;
           }
         }
-        return calc;
-      });
-      return changed ? next : prev;
+      }
+
+      return changed ? updatedCalcs : prev;
     });
   }, [circuits, panel, setCalculations]);
 
