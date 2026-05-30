@@ -31,6 +31,24 @@ import {
 } from "lucide-react";
 import axios from "axios";
 
+const getUserName = (u: any) => {
+  if (u.name) return u.name;
+  if (u.displayName) return u.displayName;
+  if (u.senderName) return u.senderName;
+  if (u.pendingVerification?.senderName) return u.pendingVerification.senderName;
+  
+  const email = (u.email || "").trim().toLowerCase();
+  if (email === "angeloperfecto.epc@gmail.com") return "Angelo Perfecto";
+  if (email === "jeloperfecto@gmail.com") return "Jelo Perfecto";
+  if (email === "angeloperfecto31@gmail.com") return "Angelo Perfecto";
+  
+  if (u.email) {
+    const parts = u.email.split('@')[0].split(/[._]/);
+    return parts.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
+  }
+  return "Unknown User";
+};
+
 interface PaymentScreenProps {
   user: User;
   onPaymentSuccess?: () => void;
@@ -1041,8 +1059,11 @@ export default function PaymentScreen({
                       {/* Left: Metadata */}
                       <div className="w-full md:w-3/5">
                         <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <span className="font-bold text-slate-800 text-sm font-mono truncate max-w-[240px] md:max-w-none">
-                            {u.email || "No Email"}
+                          <span className="font-extrabold text-slate-900 text-sm tracking-tight text-indigo-950 dark:text-white">
+                            {getUserName(u)}
+                          </span>
+                          <span className="text-xs text-slate-500 hover:text-indigo-600 font-mono transition-colors">
+                            {u.email ? `(${u.email})` : "(No Email)"}
                           </span>
                           <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-mono text-slate-400 shrink-0">
                             ID: {u.uid.slice(0, 8)}...
