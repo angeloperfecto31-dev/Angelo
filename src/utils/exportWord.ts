@@ -710,16 +710,70 @@ export const exportToWord = async (
     const conduitSizeString = conduitSize;
     const runsText = wire.runs > 1 ? `${wire.runs} sets of ` : '';
 
-    const voltageFactorFormula = is3PH ? "V \\times \\sqrt{3}" : "V";
+    let stepDescription = "";
+    let formulaText = "";
+
+    if (is3PH) {
+      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
+      c.forEach((cir) => {
+        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
+        const is3Phase = cir.phases && cir.phases.length === 3;
+        let cirV = cir.voltage || (p.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (p.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        if (cir.loadType === LoadType.SUB_PANEL) {
+          cirV = cir.voltage || cirV;
+        }
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+        if (is3Phase) {
+          localPhaseAmps.threePhase += loadI;
+        } else {
+          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
+          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
+          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+        }
+      });
+
+      const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+      let HML = 0;
+      motorCircuits.forEach((cir) => {
+        const is3Phase = cir.phases && cir.phases.length === 3;
+        let cirV = cir.voltage || (p.system === "400V/230V, 3PH, 4W" ? (is3Phase ? 400 : (p.connectionType === "Line-to-Line" ? 400 : 230)) : 230);
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+        if (loadI > HML) {
+          HML = loadI;
+        }
+      });
+
+      const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
+      const connectionLabel = p.connectionType === "Line-to-Line" ? "Line-to-Line (AB, BC, CA)" : "Line-to-Neutral (AN, BN, CN)";
+
+      stepDescription = `The system is Three-Phase (${p.system}) with ${connectionLabel} single-phase loading.
+- Highest Line Current (I_line) = ${totalAmpere.toFixed(2)} A
+- Total 3-Phase loads current (I_3ph) = ${localPhaseAmps.threePhase.toFixed(2)} A
+- Highest Motor Load (HML) = ${HML.toFixed(2)} A
+Using Philippine Electrical Code (PEC) demand rules, the Maximum Demand Current is computed as:`;
+
+      formulaText = `I_{\\text{demand}} = (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} = (${totalAmpere.toFixed(2)} \\times 1.732) \\times 0.80 + ${localPhaseAmps.threePhase.toFixed(2)} + 0.25 \\times ${HML.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+    } else {
+      const totalConnectedVA = c.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
+      const highestAmps = c.length > 0 ? Math.max(...c.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
+
+      stepDescription = `The system is Single-Phase (${p.system}).
+- Total Connected Load = ${totalConnectedVA.toFixed(1)} VA
+- Highest Active Circuit Current (I_highest) = ${highestAmps.toFixed(2)} A
+Using PEC rules, the Maximum Demand Current is calculated as:`;
+
+      formulaText = `I_{\\text{demand}} = \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times I_{\\text{highest}} = \\left( \\frac{${totalConnectedVA.toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${highestAmps.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+    }
 
     docChildren.push(
       createSubHeader(`A. Sizing Computations Criteria (Main Feeder)`),
       createParagraph(`The main feeder conductor and overcurrent protection are sized based on the total accumulated system load. The governing mathematical steps and formulas applied from PEC Article 2.20 and 4.30 are:`),
       
-      createParagraph(`1. Total Connected Load current ($I_{\\text{feeder}}$) representing normal continuous status computed from highest phase imbalance distribution:`),
-      createFormulaCallout(`I_{\\text{feeder}} = \\frac{S_{\\text{nominal}}}{${voltageFactorFormula}} = \\frac{${totalVA.toFixed(2)}}{${is3PH ? `${p.voltage} \\times \\sqrt{3}` : p.voltage}} = ${maxBaseAmp.toFixed(2)}\\text{ A}`),
+      createParagraph(`1. Total Connected Load Maximum Demand current ($I_{\\text{feeder}}$) representing normal continuous status computed from PEC demand criteria with phase balancing check:`),
+      createParagraph(stepDescription),
+      createFormulaCallout(formulaText),
       
-      createParagraph(`2. Minimum required design ampacity (incorporating a safety continuous-duty multiplier, demand factors, and largest motor load extra multipliers):`),
+      createParagraph(`2. Minimum required design ampacity (incorporating safety continuous-duty multiplier, demand factors, and largest motor load extra multipliers):`),
       createFormulaCallout(`I_{\\text{design}} = ${designAmp.toFixed(2)}\\text{ A}`),
       
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),

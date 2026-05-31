@@ -249,13 +249,49 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   let maxDesignAmp = 0;
 
   if (p.system.includes("3PH")) {
-    maxBaseAmp = totalVA / (systemVoltage * 1.732);
-    const designPower = lightingReceptacleDemand + motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
-    maxDesignAmp = designPower / (systemVoltage * 1.732);
+    const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
+    c.forEach((cir) => {
+      if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
+      
+      const is3Phase = cir.phases && cir.phases.length === 3;
+      let cirV = cir.voltage || (p.system === "400V/230V, 3PH, 4W" ? (is3Phase ? 400 : (p.connectionType === "Line-to-Line" ? 400 : 230)) : 230);
+      if (cir.loadType === LoadType.SUB_PANEL) {
+        cirV = cir.voltage || cirV;
+      }
+      const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+
+      if (is3Phase) {
+        localPhaseAmps.threePhase += loadI;
+      } else {
+        if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
+        if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
+        if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+      }
+    });
+
+    const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+    let HML = 0;
+    motorCircuits.forEach((cir) => {
+      const is3Phase = cir.phases && cir.phases.length === 3;
+      let cirV = cir.voltage || (p.system === "400V/230V, 3PH, 4W" ? (is3Phase ? 400 : (p.connectionType === "Line-to-Line" ? 400 : 230)) : 230);
+      const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+      if (loadI > HML) {
+        HML = loadI;
+      }
+    });
+
+    const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
+    const maxDemandCurrent = (totalAmpere * 1.732) * 0.80 + localPhaseAmps.threePhase + (0.25 * HML);
+    
+    maxBaseAmp = maxDemandCurrent;
+    maxDesignAmp = maxDemandCurrent;
   } else {
-    maxBaseAmp = totalVA / systemVoltage;
-    const designPower = lightingReceptacleDemand + motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
-    maxDesignAmp = designPower / systemVoltage;
+    const totalConnectedVA = c.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
+    const highestAmps = c.length > 0 ? Math.max(...c.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
+    const maxDemandCurrent = (totalConnectedVA / 230) * 0.80 + (0.25 * highestAmps);
+    
+    maxBaseAmp = maxDemandCurrent;
+    maxDesignAmp = maxDemandCurrent;
   }
 
   const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };

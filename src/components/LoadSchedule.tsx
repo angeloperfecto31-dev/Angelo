@@ -272,6 +272,7 @@ const VerticalBusBarComponent: React.FC<{ label: string, is3Phase?: boolean }> =
 export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, isSubPanel = false, onRemoveSubPanel, availableSubPanels, readOnly = false }: LoadScheduleProps) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
+  const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
 
   // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
   const THHN_WIRE_AREAS: Record<number, number> = {
@@ -665,158 +666,120 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     return amps;
   }, [circuits]);
   
-  const mainCurrent = useMemo(() => {
-    const systemVoltage = panel.system === '400V/230V, 3PH, 4W' ? 400 : 230;
-    let lightingReceptacleVA = 0;
-    let motorVAs: number[] = [];
-
-    const phaseLoads = { R: 0, Y: 0, B: 0 };
-    const phaseVAs = { R: 0, Y: 0, B: 0 };
-    const motorPhaseVAs = { R: 0, Y: 0, B: 0 };
-
-    const getCircuitActiveLines = (phases: string[], connectionType: string | undefined): string[] => {
-      if (phases.length === 3) {
-        return ['R', 'Y', 'B'];
-      }
-      if (phases.length === 1) {
-        const ph = phases[0];
-        if (connectionType === 'Line-to-Line') {
-          if (ph === 'R') return ['R', 'Y'];
-          if (ph === 'Y') return ['Y', 'B'];
-          if (ph === 'B') return ['B', 'R'];
-        }
-        return [ph];
-      }
-      return phases;
-    };
-
-    circuits.forEach(c => {
-      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-      
-      const isMotor = c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
-      const activeLines = getCircuitActiveLines(c.phases || [], panel.connectionType);
-      
-      const perPhaseVA = c.loadVA / (activeLines.length || 1);
-
-      activeLines.forEach(ph => {
-        phaseLoads[ph as keyof typeof phaseLoads] += perPhaseVA;
-
-        if (ph === "R") {
-          phaseVAs.R += perPhaseVA;
-          if (isMotor) motorPhaseVAs.R += perPhaseVA;
-        }
-        if (ph === "Y") {
-          phaseVAs.Y += perPhaseVA;
-          if (isMotor) motorPhaseVAs.Y += perPhaseVA;
-        }
-        if (ph === "B") {
-          phaseVAs.B += perPhaseVA;
-          if (isMotor) motorPhaseVAs.B += perPhaseVA;
-        }
-      });
-
-      if (isMotor) {
-        motorVAs.push(c.loadVA);
-      } else {
-        lightingReceptacleVA += c.loadVA;
-      }
-    });
-
-    const phaseBaseCurrents = { R: 0, Y: 0, B: 0 };
-    const phaseDesignCurrents = { R: 0, Y: 0, B: 0 };
-
-    circuits.forEach(c => {
-      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-
-      const activeLines = getCircuitActiveLines(c.phases || [], panel.connectionType);
-      const is3Phase = c.phases && c.phases.length === 3;
-      let cirV = c.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
-      
-      if (c.loadType === LoadType.SUB_PANEL) {
-        cirV = c.voltage || cirV;
-      }
-
-      const loadI = is3Phase ? c.loadVA / (cirV * 1.732) : c.loadVA / cirV;
-      const isContinuous = c.loadType === LoadType.LIGHTING || c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR;
-      const designI = isContinuous ? loadI * 1.25 : loadI;
-
-      if (is3Phase) {
-        phaseBaseCurrents.R += loadI;
-        phaseBaseCurrents.Y += loadI;
-        phaseBaseCurrents.B += loadI;
-
-        phaseDesignCurrents.R += designI;
-        phaseDesignCurrents.Y += designI;
-        phaseDesignCurrents.B += designI;
-      } else {
-        activeLines.forEach(ph => {
-          phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] += loadI;
-          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += designI;
-        });
-      }
-    });
-
-    const motorCircuits = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON);
-    if (motorCircuits.length > 0) {
-      let largestMotorCir = motorCircuits[0];
-      motorCircuits.forEach(mc => {
-        const mcV = mc.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (mc.phases.length === 3 ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
-        const largestV = largestMotorCir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (largestMotorCir.phases.length === 3 ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
-        
-        const mcI = mc.phases.length === 3 ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
-        const largestI = largestMotorCir.phases.length === 3 ? largestMotorCir.loadVA / (largestV * 1.732) : largestMotorCir.loadVA / largestV;
-
-        if (mcI > largestI) {
-          largestMotorCir = mc;
-        }
-      });
-
-      const isLargest3Phase = largestMotorCir.phases.length === 3;
-      const largestMotorV = largestMotorCir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (isLargest3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
-      const largestMotorI = isLargest3Phase ? largestMotorCir.loadVA / (largestMotorV * 1.732) : largestMotorCir.loadVA / largestMotorV;
-
-      const extraI = largestMotorI * 0.25;
-      const activeLines = getCircuitActiveLines(largestMotorCir.phases || [], panel.connectionType);
-      activeLines.forEach(ph => {
-        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += extraI;
-      });
-    }
-
-    // Step 1: Demand Factors for General Lighting & Receptacles
-    let lightingReceptacleDemand = lightingReceptacleVA;
-    if (lightingReceptacleVA > 120000) {
-      lightingReceptacleDemand = 3000 * 1.0 + (120000 - 3000) * 0.35 + (lightingReceptacleVA - 120000) * 0.25;
-    } else if (lightingReceptacleVA > 3000) {
-      lightingReceptacleDemand = 3000 * 1.0 + (lightingReceptacleVA - 3000) * 0.35;
-    }
-
-    // Step 2: Motor Loads (PEC 4.30.2.4 & 4.40.4.1) Largest motor at 125%, others at 100%
-    const largestMotor = motorVAs.length > 0 ? Math.max(...motorVAs) : 0;
+  const maxDemandDetails = useMemo(() => {
+    const is3PH = panel.system.includes("3PH");
+    const systemVoltage = panel.voltage || 230;
     
-    if (lightingReceptacleVA > 0 && lightingReceptacleDemand < lightingReceptacleVA) {
-      const demandReductionI = (lightingReceptacleVA - lightingReceptacleDemand) / (systemVoltage * (panel.system.includes("3PH") ? 1.732 : 1));
-      Object.keys(phaseDesignCurrents).forEach(ph => {
-        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] = Math.max(
-          phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents],
-          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] - demandReductionI
-        );
-      });
-    }
+    if (is3PH) {
+      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
+      circuits.forEach((cir) => {
+        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
+        
+        const is3Phase = cir.phases && cir.phases.length === 3;
+        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        if (cir.loadType === LoadType.SUB_PANEL) {
+          cirV = cir.voltage || cirV;
+        }
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
 
-    // We compute total based on the highest individual phase projected to 3 phases, to protect against imbalance
+        if (is3Phase) {
+          localPhaseAmps.threePhase += loadI;
+        } else {
+          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
+          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
+          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+        }
+      });
+
+      const motorCircuits = circuits.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+      let HML = 0;
+      motorCircuits.forEach((cir) => {
+        const is3Phase = cir.phases && cir.phases.length === 3;
+        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+        if (loadI > HML) {
+          HML = loadI;
+        }
+      });
+
+      const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
+      const baseAmp = (totalAmpere * 1.732) * 0.80 + localPhaseAmps.threePhase + (0.25 * HML);
+
+      return {
+        is3PH,
+        systemVoltage,
+        phaseR: localPhaseAmps.R,
+        phaseY: localPhaseAmps.Y,
+        phaseB: localPhaseAmps.B,
+        total3Phase: localPhaseAmps.threePhase,
+        totalAmpere,
+        HML,
+        baseAmp,
+        connectionType: panel.connectionType || 'Line-to-Line'
+      };
+    } else {
+      const totalConnectedVA = circuits.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
+      const highestAmps = circuits.length > 0 ? Math.max(...circuits.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
+      const baseAmp = (totalConnectedVA / 230) * 0.80 + (0.25 * highestAmps);
+
+      return {
+        is3PH,
+        systemVoltage,
+        totalConnectedVA,
+        highestAmps,
+        baseAmp
+      };
+    }
+  }, [circuits, panel]);
+
+  const mainCurrent = useMemo(() => {
     let maxBaseAmp = 0;
     let maxDesignAmp = 0;
 
-    const totalVA = circuits.reduce((sum, curr) => sum + curr.loadVA, 0);
-
     if (panel.system.includes("3PH")) {
-      maxBaseAmp = totalVA / (systemVoltage * 1.732);
-      const designPower = lightingReceptacleDemand + motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
-      maxDesignAmp = designPower / (systemVoltage * 1.732);
+      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
+      circuits.forEach((cir) => {
+        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
+        
+        const is3Phase = cir.phases && cir.phases.length === 3;
+        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        if (cir.loadType === LoadType.SUB_PANEL) {
+          cirV = cir.voltage || cirV;
+        }
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+
+        if (is3Phase) {
+          localPhaseAmps.threePhase += loadI;
+        } else {
+          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
+          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
+          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+        }
+      });
+
+      const motorCircuits = circuits.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+      let HML = 0;
+      motorCircuits.forEach((cir) => {
+        const is3Phase = cir.phases && cir.phases.length === 3;
+        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+        if (loadI > HML) {
+          HML = loadI;
+        }
+      });
+
+      const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
+      const maxDemandCurrent = (totalAmpere * 1.732) * 0.80 + localPhaseAmps.threePhase + (0.25 * HML);
+      
+      maxBaseAmp = maxDemandCurrent;
+      maxDesignAmp = maxDemandCurrent;
     } else {
-      maxBaseAmp = totalVA / systemVoltage;
-      const designPower = lightingReceptacleDemand + motorVAs.reduce((a, b) => a + b, 0) + (largestMotor * 0.25);
-      maxDesignAmp = designPower / systemVoltage;
+      const totalConnectedVA = circuits.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
+      const highestAmps = circuits.length > 0 ? Math.max(...circuits.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
+      const maxDemandCurrent = (totalConnectedVA / 230) * 0.80 + (0.25 * highestAmps);
+      
+      maxBaseAmp = maxDemandCurrent;
+      maxDesignAmp = maxDemandCurrent;
     }
 
     return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
@@ -1203,6 +1166,140 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
           <p className="text-5xl font-black text-yellow-400 print:text-slate-900 md:text-3xl">{mainCurrent.baseAmp.toFixed(1)}<span className="text-lg ml-2">AMPS</span></p>
         </div>
         <div className="p-4 bg-white/10 rounded-2xl print:border print:border-slate-200"><Calculator className="w-8 h-8" /></div>
+      </section>
+
+      {/* Maximum Demand Current Solver Section */}
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 sm:p-4 no-print">
+        <div className="flex items-center justify-between cursor-pointer border-b border-slate-100 dark:border-slate-800 pb-4" onClick={() => setShowDemandMath(!showDemandMath)}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl">
+              <Calculator className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-wider text-sm">PEC Maximum Demand Math Solver</h3>
+              <p className="text-xs text-slate-400">Step-by-step mathematical substitution in LaTeX format</p>
+            </div>
+          </div>
+          <button className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-3 py-1.5 rounded-lg transition-all">
+            {showDemandMath ? 'Hide Math' : 'Show Math'}
+          </button>
+        </div>
+
+        {showDemandMath && (
+          <div className="mt-6 space-y-6">
+            {!maxDemandDetails.is3PH ? (
+              <div className="space-y-4">
+                <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mathematical Formula (LaTeX)</h4>
+                  <div className="font-mono text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800 text-xs overflow-x-auto">
+                    {`\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times I_{\\text{highest}}`}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 font-semibold">Step-by-Step Substations & Values</h4>
+                  <div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                      <span>Total Connected Load (<span className="font-mono">Total VA</span>):</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{(maxDemandDetails.totalConnectedVA || 0).toFixed(1)} VA</span>
+                    </p>
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                      <span>System Voltage (<span className="font-mono">V_sys</span>):</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{maxDemandDetails.systemVoltage} V</span>
+                    </p>
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                      <span>Highest Active Circuit Current (<span className="font-mono">I_highest</span>):</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{(maxDemandDetails.highestAmps || 0).toFixed(2)} A</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-white">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">LaTex Solution Details</h4>
+                  <div className="bg-zinc-950 p-4 rounded-xl font-mono text-xs text-emerald-400 overflow-x-auto space-y-2">
+                    <p>{`\\begin{aligned}`}</p>
+                    <p className="pl-4">{`I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.highestAmps || 0).toFixed(2)} \\\\`}</p>
+                    <p className="pl-4">{`&= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\`}</p>
+                    <p className="pl-4">{`&= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.80).toFixed(3)} + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\`}</p>
+                    <p className="pl-4">{`&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}`}</p>
+                    <p>{`\\end{aligned}`}</p>
+                  </div>
+                  <div className="mt-4 flex justify-between items-center">
+                    <span className="text-[10px] text-zinc-500">Perfect for technical paper publications and PEE submittals.</span>
+                    <button 
+                      onClick={() => {
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.highestAmps || 0).toFixed(2)} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        navigator.clipboard.writeText(code);
+                      }}
+                      className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" /> Copy LaTeX
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mathematical Formula (3-Phase LaTeX)</h4>
+                  <div className="font-mono text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800 text-xs overflow-x-auto">
+                    {`\\text{Max Demand Current (3\\Phi)} = (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML}`}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 font-semibold">Step-by-Step Substations & Values ({maxDemandDetails.connectionType})</h4>
+                  <div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                      <span>Phase currents (Line values):</span>
+                      <span className="font-mono text-xs">
+                        {maxDemandDetails.connectionType === 'Line-to-Line' ? 'AB' : 'AN'} = {(maxDemandDetails.phaseR || 0).toFixed(2)} A,{' '}
+                        {maxDemandDetails.connectionType === 'Line-to-Line' ? 'BC' : 'BN'} = {(maxDemandDetails.phaseY || 0).toFixed(2)} A,{' '}
+                        {maxDemandDetails.connectionType === 'Line-to-Line' ? 'CA' : 'CN'} = {(maxDemandDetails.phaseB || 0).toFixed(2)} A
+                      </span>
+                    </p>
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1 font-bold text-slate-800 dark:text-white">
+                      <span>Highest Phase Current (<span className="font-mono">I_line</span>):</span>
+                      <span>{(maxDemandDetails.totalAmpere || 0).toFixed(2)} A</span>
+                    </p>
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                      <span>Total 3-Phase loads current (<span className="font-mono">I_3ph</span>):</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{(maxDemandDetails.total3Phase || 0).toFixed(2)} A</span>
+                    </p>
+                    <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                      <span>Highest Motor Load (<span className="font-mono">HML</span>):</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{(maxDemandDetails.HML || 0).toFixed(2)} A</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-white">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">LaTex Solution Details</h4>
+                  <div className="bg-zinc-950 p-4 rounded-xl font-mono text-xs text-emerald-400 overflow-x-auto space-y-2">
+                    <p>{`\\begin{aligned}`}</p>
+                    <p className="pl-4">{`I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\`}</p>
+                    <p className="pl-4">{`&= (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\`}</p>
+                    <p className="pl-4">{`&= ${(((maxDemandDetails.totalAmpere || 0) * 1.732) * 0.80).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\`}</p>
+                    <p className="pl-4">{`&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}`}</p>
+                    <p>{`\\end{aligned}`}</p>
+                  </div>
+                  <div className="mt-4 flex justify-between items-center">
+                    <span className="text-[10px] text-zinc-500">Includes 80% demand factor on line currents + separate 3-phase and 25% HML.</span>
+                    <button 
+                      onClick={() => {
+                        const code = `\\text{Max Demand Current (3\\Phi)} = (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        navigator.clipboard.writeText(code);
+                      }}
+                      className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" /> Copy LaTeX
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Single Line Diagram / Panel Layout */}

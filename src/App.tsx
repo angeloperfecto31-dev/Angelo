@@ -536,6 +536,10 @@ export default function App() {
         `${cb}A AT / ${cbAF}AF, ${poles}P, ${kaic}kAIC, ${type}`,
       ]);
       wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
+      wsData.push([
+        "Max Demand Current:",
+        `${mainCurrent.baseAmp.toFixed(2)} A`,
+      ]);
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
