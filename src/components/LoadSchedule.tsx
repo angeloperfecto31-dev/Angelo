@@ -28,6 +28,7 @@ import {
   LOAD_PRESETS
 } from '../constants';
 import { SingleLineDiagram } from './SingleLineDiagram';
+import LatexRenderer from './LatexRenderer';
 
 export const INITIAL_CIRCUITS: Circuit[] = [
   {
@@ -466,13 +467,21 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
     let mcbP = c.mcbP;
     
-    // Auto-update poles based on global connection type for 1-phase systems
-    if (c.loadType !== LoadType.SUB_PANEL && !panel.system.includes('3PH')) {
+    // Auto-update poles for three-phase circuits when in a three-phase system (230V, 3Ø, 3W or 400V/230V, 3Ø, 4W)
+    if (panel.system.includes('3PH') && c.phases && c.phases.length === 3) {
+      mcbP = 3;
+    } else if (c.loadType !== LoadType.SUB_PANEL && !panel.system.includes('3PH')) {
+      // Auto-update poles based on global connection type for 1-phase systems
       if (panel.connectionType === 'Line-to-Line') {
         mcbP = 2;
       } else if (panel.connectionType === 'Line-to-Neutral') {
         mcbP = 1;
       }
+    }
+
+    // Auto-sanitize phases array if switching from a 3PH to a 1PH system
+    if (!panel.system.includes('3PH') && c.phases && c.phases.length > 1) {
+      c.phases = ['R'];
     }
 
     if (!mcbP) {
@@ -1191,8 +1200,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
               <div className="space-y-4">
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mathematical Formula (LaTeX)</h4>
-                  <div className="font-mono text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800 text-xs overflow-x-auto">
-                    {`\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times I_{\\text{highest}}`}
+                  <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
+                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left( \frac{\text{Total Connected VA}}{V_{\text{sys}}} \right) \times 0.80 + 0.25 \times I_{\text{highest}}" />
                   </div>
                 </div>
 
@@ -1216,15 +1225,15 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
                 <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-white">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">LaTex Solution Details</h4>
-                  <div className="bg-zinc-950 p-4 rounded-xl font-mono text-xs text-emerald-400 overflow-x-auto space-y-2">
-                    <p>{`\\begin{aligned}`}</p>
-                    <p className="pl-4">{`I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.highestAmps || 0).toFixed(2)} \\\\`}</p>
-                    <p className="pl-4">{`&= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\`}</p>
-                    <p className="pl-4">{`&= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.80).toFixed(3)} + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\`}</p>
-                    <p className="pl-4">{`&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}`}</p>
-                    <p>{`\\end{aligned}`}</p>
+                  <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center justify-center">
+                    <LatexRenderer tex={`\\begin{aligned}
+I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.highestAmps || 0).toFixed(2)} \\\\
+&= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\
+&= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.80).toFixed(3)} + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\
+&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
+\\end{aligned}`} />
                   </div>
-                  <div className="mt-4 flex justify-between items-center">
+                  <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">Perfect for technical paper publications and PEE submittals.</span>
                     <button 
                       onClick={() => {
@@ -1242,8 +1251,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
               <div className="space-y-4">
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mathematical Formula (3-Phase LaTeX)</h4>
-                  <div className="font-mono text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-950 p-3 rounded border border-slate-200 dark:border-zinc-800 text-xs overflow-x-auto">
-                    {`\\text{Max Demand Current (3\\Phi)} = (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML}`}
+                  <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
+                    <LatexRenderer tex="\text{Max Demand Current (3}\Phi\text{)} = (I_{\text{line}} \times 1.732) \times 0.80 + I_{3\Phi} + 0.25 \times \text{HML}" />
                   </div>
                 </div>
 
@@ -1275,15 +1284,15 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
                 <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-white">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">LaTex Solution Details</h4>
-                  <div className="bg-zinc-950 p-4 rounded-xl font-mono text-xs text-emerald-400 overflow-x-auto space-y-2">
-                    <p>{`\\begin{aligned}`}</p>
-                    <p className="pl-4">{`I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\`}</p>
-                    <p className="pl-4">{`&= (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\`}</p>
-                    <p className="pl-4">{`&= ${(((maxDemandDetails.totalAmpere || 0) * 1.732) * 0.80).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\`}</p>
-                    <p className="pl-4">{`&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}`}</p>
-                    <p>{`\\end{aligned}`}</p>
+                  <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center justify-center">
+                    <LatexRenderer tex={`\\begin{aligned}
+I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
+&= (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+&= ${(((maxDemandDetails.totalAmpere || 0) * 1.732) * 0.80).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
+\\end{aligned}`} />
                   </div>
-                  <div className="mt-4 flex justify-between items-center">
+                  <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">Includes 80% demand factor on line currents + separate 3-phase and 25% HML.</span>
                     <button 
                       onClick={() => {
