@@ -69,6 +69,34 @@
           "type": "string",
           "description": "The base64 encoded string representing the custom GCash payment QR code"
         },
+        "basicPrice": {
+          "type": "number",
+          "description": "The dynamic price of the Basic Plan"
+        },
+        "premiumPrice": {
+          "type": "number",
+          "description": "The dynamic price of the Premium Plan"
+        },
+        "upgradePrice": {
+          "type": "number",
+          "description": "The dynamic price to upgrade from Basic to Premium"
+        },
+        "promoDiscountBasic": {
+          "type": "number",
+          "description": "Optional promotional discount for Basic Plan"
+        },
+        "promoDiscountPremium": {
+          "type": "number",
+          "description": "Optional promotional discount for Premium Plan"
+        },
+        "offerTitle": {
+          "type": "string",
+          "description": "The title of a promotional offer"
+        },
+        "offerExpiry": {
+          "type": "string",
+          "description": "ISO timestamp indicating when the promotional offer expires"
+        },
         "updatedBy": {
           "type": "string",
           "description": "Email address of the admin who updated the setting"

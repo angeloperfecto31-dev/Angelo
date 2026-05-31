@@ -39,7 +39,7 @@ app.post("/api/create-checkout", async (req, res) => {
         .json({ error: "PayMongo secret key is not configured." });
     }
 
-    const price = amount ? parseInt(amount, 10) * 100 : 100000;
+    const price = amount ? Math.round(parseFloat(amount) * 100) : 149900;
     const name = isUpgrade 
       ? "Applet Premium Upgrade" 
       : `Applet ${plan === 'basic' ? 'Basic' : 'Premium'} Plan Activation`;
