@@ -495,8 +495,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     
     const qty = c.quantity || 1;
     const w = isSpace ? 0 : (c.wattage || 0);
-    const pf = c.pf !== undefined ? c.pf : (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON ? 0.85 : 1.0);
-    const va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : Math.round((qty * w) / (pf || 1));
+    const pf = 1.0;
+    const va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : Math.round(qty * w);
     
     let defaultV = 230;
     const is3PhaseLoad = c.phases && c.phases.length === 3;
@@ -963,7 +963,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <thead className="bg-slate-900 text-white print:bg-slate-200 print:text-slate-900">
               <tr>
                 {[
-                  'NO.', 'DESCRIPTION', 'W', 'QTY', 'PF', 'VA', 'PHASE'
+                  'NO.', 'DESCRIPTION', 'W', 'QTY', 'VA', 'PHASE'
                 ].map((header) => (
                   <th 
                     key={header} 
@@ -1054,12 +1054,6 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   <td className="px-1 py-3 text-center">
                     {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />}
                   </td>
-                  <td className="px-1 py-3 text-center">
-                    {isSpace ? '-' : <input type="number" step="0.01" min="0.1" max="1.0" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.pf !== undefined ? c.pf : (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON ? 0.85 : 1.0)} onChange={e => {
-                      const val = parseFloat(e.target.value);
-                      updateCircuit(c.id, { pf: isNaN(val) ? undefined : val });
-                    }} />}
-                  </td>
                   <td className="px-1 py-3 text-center font-mono font-bold text-slate-400 dark:text-slate-500 truncate">
                     {isSpace ? '-' : c.loadVA}
                   </td>
@@ -1134,7 +1128,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 </tr>
               )})}
               <tr style={{ fontSize: tableFontSize }} className="bg-slate-900 text-white font-bold border-t-2 border-slate-900 print:text-slate-900 print:bg-white transition-all">
-                <td colSpan={5} className="px-4 py-6 text-right uppercase opacity-70">Total Connected Load</td>
+                <td colSpan={4} className="px-4 py-6 text-right uppercase opacity-70">Total Connected Load</td>
                 <td className="px-1 py-6 text-center truncate">{totalVA.toFixed(0)} VA</td>
                 <td className="px-1 py-6 text-center opacity-70 truncate">({(totalVA/1000).toFixed(2)} kVA)</td>
                 {panel.system.includes('3PH') ? (

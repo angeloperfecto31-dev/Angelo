@@ -812,7 +812,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
 
     // Circuit Schedules Table
     const tableHeaderCells = [
-      "Cir No", "Description / Load Name", "Load Type", "Volts", "PF", "VA", "Ampere", "CB Rating", "Conductors", "Conduit"
+      "Cir No", "Description / Load Name", "Load Type", "Volts", "VA", "Ampere", "CB Rating", "Conductors", "Conduit"
     ].map(t => new TableCell({ 
       children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 16, color: "FFFFFF" })], alignment: AlignmentType.CENTER })], 
       shading: { fill: "1B365D" },
@@ -835,7 +835,6 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
       };
 
       const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE;
-      const cirPF = cir.pf !== undefined ? cir.pf : (cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON ? 0.85 : 1.0);
 
       tableRows.push(new TableRow({
         children: [
@@ -843,7 +842,6 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
           createCell(cir.description || "", AlignmentType.LEFT),
           createCell((cir.loadType || "GENERAL").toUpperCase()),
           createCell(cir.voltage?.toString() || "230"),
-          createCell(isSpace ? "-" : cirPF.toFixed(2)),
           createCell(cir.loadVA?.toString() || "0"),
           createCell(cir.loadA?.toFixed(2) || "0.00"),
           createCell(`${cir.mcbAT || 20}AT/${cir.mcbAF || 50}AF`),

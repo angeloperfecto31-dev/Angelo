@@ -406,7 +406,7 @@ export default function App() {
       
       const is3Phase = p.system.includes("3PH");
 
-      const headers = ["NO.", "DESCRIPTION", "W", "QTY", "PF", "VA", "PHASE"];
+      const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
       if (is3Phase) {
         headers.push("AMPS", "", "", ""); // push 4 slots for AMPS
       } else {
@@ -424,7 +424,6 @@ export default function App() {
           "",
           "",
           "",
-          "", // blank for PF
           "",
           "",
           p1,
@@ -447,7 +446,6 @@ export default function App() {
           cir.description,
           isSpace ? "-" : cir.wattage,
           isSpace ? "-" : cir.quantity,
-          isSpace ? "-" : (cir.pf !== undefined ? cir.pf : (cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON ? 0.85 : 1.0)),
           isSpace ? "-" : cir.loadVA,
           isSpace ? "-" : (cir.phases ? cir.phases.join(", ") : ""),
         ];
