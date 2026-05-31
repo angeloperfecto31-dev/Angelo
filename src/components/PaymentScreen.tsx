@@ -409,11 +409,11 @@ export default function PaymentScreen({
     setSavingPricing(true);
     setAdminStatusMsg("");
     
-    const basicVal = parseFloat(adminBasicPrice);
-    const premiumVal = parseFloat(adminPremiumPrice);
-    const upgradeVal = parseFloat(adminUpgradePrice);
-    const promoBasicVal = parseFloat(adminPromoDiscountBasic);
-    const promoPremiumVal = parseFloat(adminPromoDiscountPremium);
+    const basicVal = parseFloat(adminBasicPrice || "0");
+    const premiumVal = parseFloat(adminPremiumPrice || "0");
+    const upgradeVal = parseFloat(adminUpgradePrice || "0");
+    const promoBasicVal = parseFloat(adminPromoDiscountBasic || "0");
+    const promoPremiumVal = parseFloat(adminPromoDiscountPremium || "0");
 
     if (isNaN(basicVal) || basicVal < 0 ||
         isNaN(premiumVal) || premiumVal < 0 ||
@@ -1260,22 +1260,62 @@ export default function PaymentScreen({
                 </div>
               </div>
 
+              {/* Inline feedback status message */}
+              {adminStatusMsg && (
+                <div className="mt-4 bg-indigo-50 border-l-4 border-indigo-600 p-3 rounded-xl animate-fade-in">
+                  <p className="text-xs text-indigo-900 font-bold select-all">
+                    {adminStatusMsg}
+                  </p>
+                </div>
+              )}
+
               {/* Actions footer */}
               <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => {
+                  disabled={savingPricing}
+                  onClick={async () => {
                     const confirmClear = window.confirm("Are you sure you want to disable and clear all active campaigns and discount tiers?");
                     if (!confirmClear) return;
+                    
+                    setSavingPricing(true);
+                    setAdminStatusMsg("");
+                    
                     setAdminOfferTitle("");
                     setAdminOfferExpiry("");
                     setAdminPromoDiscountBasic("0");
                     setAdminPromoDiscountPremium("0");
-                    setAdminStatusMsg("Promotion forms reset. Submit to save and apply updates system-wide.");
+
+                    try {
+                      const basicVal = parseFloat(adminBasicPrice || "999");
+                      const premiumVal = parseFloat(adminPremiumPrice || "1499");
+                      const upgradeVal = parseFloat(adminUpgradePrice || "500");
+
+                      await setDoc(
+                        doc(db, "settings", "pricing"),
+                        {
+                          basicPrice: basicVal,
+                          premiumPrice: premiumVal,
+                          upgradePrice: upgradeVal,
+                          promoDiscountBasic: 0,
+                          promoDiscountPremium: 0,
+                          offerTitle: "",
+                          offerExpiry: "",
+                          updatedBy: user.email,
+                          updatedAt: new Date().toISOString()
+                        },
+                        { merge: true }
+                      );
+                      setAdminStatusMsg("Active promotion cleared and changes have been published system-wide successfully!");
+                    } catch (err: any) {
+                      setAdminStatusMsg("Failed to clear promotion database-side: " + err.message);
+                    } finally {
+                      setSavingPricing(false);
+                    }
                   }}
-                  className="w-full sm:w-auto px-4 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all select-none"
+                  className="w-full sm:w-auto px-4 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all select-none"
                 >
-                  Clear Active Promotion
+                  {savingPricing ? "Processing..." : "Clear Active Promotion"}
                 </button>
                 <button
                   type="submit"
