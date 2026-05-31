@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { User, signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
 import {
@@ -111,6 +111,7 @@ export default function PaymentScreen({
   const [adminOfferTitle, setAdminOfferTitle] = useState<string>("");
   const [adminOfferExpiry, setAdminOfferExpiry] = useState<string>("");
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
+  const hasLoadedPricingInputs = useRef(false);
 
   // Helper calculations for dynamic values
   const offerExpiryDate = pricingSettings.offerExpiry ? new Date(pricingSettings.offerExpiry) : null;
@@ -241,14 +242,17 @@ export default function PaymentScreen({
             offerExpiry: expiry,
           });
 
-          // Prefill admin panels from loaded dynamic variables
-          setAdminBasicPrice(basic.toString());
-          setAdminPremiumPrice(premium.toString());
-          setAdminUpgradePrice(upgrade.toString());
-          setAdminPromoDiscountBasic(promoBasic.toString());
-          setAdminPromoDiscountPremium(promoPremium.toString());
-          setAdminOfferTitle(title);
-          setAdminOfferExpiry(expiry);
+          // Prefill admin panels only on first load, to prevent overwriting active admin edits
+          if (!hasLoadedPricingInputs.current) {
+            setAdminBasicPrice(basic.toString());
+            setAdminPremiumPrice(premium.toString());
+            setAdminUpgradePrice(upgrade.toString());
+            setAdminPromoDiscountBasic(promoBasic.toString());
+            setAdminPromoDiscountPremium(promoPremium.toString());
+            setAdminOfferTitle(title);
+            setAdminOfferExpiry(expiry);
+            hasLoadedPricingInputs.current = true;
+          }
         }
       },
       (error) => {
