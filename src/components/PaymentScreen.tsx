@@ -114,7 +114,9 @@ export default function PaymentScreen({
   const hasLoadedPricingInputs = useRef(false);
 
   // Helper calculations for dynamic values
-  const offerExpiryDate = pricingSettings.offerExpiry ? new Date(pricingSettings.offerExpiry) : null;
+  const offerExpiryDate = (pricingSettings.offerExpiry && !isNaN(new Date(pricingSettings.offerExpiry).getTime())) 
+    ? new Date(pricingSettings.offerExpiry) 
+    : null;
   const isOfferActive = !!(pricingSettings.offerTitle && (!offerExpiryDate || offerExpiryDate > new Date()));
   
   const basicFinalPrice = Math.max(0, pricingSettings.basicPrice - (isOfferActive ? pricingSettings.promoDiscountBasic : 0));
@@ -221,7 +223,7 @@ export default function PaymentScreen({
 
     const unsubscribePricing = onSnapshot(
       doc(db, "settings", "pricing"),
-      (docSnap) => {
+      async (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
           const basic = typeof data.basicPrice === 'number' ? data.basicPrice : 999;
@@ -252,6 +254,35 @@ export default function PaymentScreen({
             setAdminOfferTitle(title);
             setAdminOfferExpiry(expiry);
             hasLoadedPricingInputs.current = true;
+          }
+        } else {
+          // If the pricing document doesn't exist, set local state to defaults and auto-seed if admin is logged in
+          setPricingSettings({
+            basicPrice: 999,
+            premiumPrice: 1499,
+            upgradePrice: 500,
+            promoDiscountBasic: 0,
+            promoDiscountPremium: 0,
+            offerTitle: "",
+            offerExpiry: "",
+          });
+
+          if (isAdminUser) {
+            try {
+              await setDoc(doc(db, "settings", "pricing"), {
+                basicPrice: 999,
+                premiumPrice: 1499,
+                upgradePrice: 500,
+                promoDiscountBasic: 0,
+                promoDiscountPremium: 0,
+                offerTitle: "",
+                offerExpiry: "",
+                updatedBy: "System (Auto-generated)",
+                updatedAt: new Date().toISOString()
+              });
+            } catch (err) {
+              console.error("Failed to auto-seed settings/pricing document:", err);
+            }
           }
         }
       },

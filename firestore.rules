@@ -46,18 +46,18 @@ service cloud.firestore {
         && (!("pendingVerification" in data) || data.pendingVerification == null || (
              data.pendingVerification.senderName is string && data.pendingVerification.senderName.size() <= 128 &&
              data.pendingVerification.referenceNo is string && data.pendingVerification.referenceNo.size() <= 128 &&
-             data.pendingVerification.amount is number &&
+             (data.pendingVerification.amount is int || data.pendingVerification.amount is float) &&
              data.pendingVerification.submittedAt is string
            ));
     }
 
     function isValidSettings(data) {
       return (!("qrCodeDataUrl" in data) || data.qrCodeDataUrl == null || (data.qrCodeDataUrl is string && data.qrCodeDataUrl.size() <= 1000000))
-        && (!("basicPrice" in data) || data.basicPrice == null || data.basicPrice is number)
-        && (!("premiumPrice" in data) || data.premiumPrice == null || data.premiumPrice is number)
-        && (!("upgradePrice" in data) || data.upgradePrice == null || data.upgradePrice is number)
-        && (!("promoDiscountBasic" in data) || data.promoDiscountBasic == null || data.promoDiscountBasic is number)
-        && (!("promoDiscountPremium" in data) || data.promoDiscountPremium == null || data.promoDiscountPremium is number)
+        && (!("basicPrice" in data) || data.basicPrice == null || (data.basicPrice is int || data.basicPrice is float))
+        && (!("premiumPrice" in data) || data.premiumPrice == null || (data.premiumPrice is int || data.premiumPrice is float))
+        && (!("upgradePrice" in data) || data.upgradePrice == null || (data.upgradePrice is int || data.upgradePrice is float))
+        && (!("promoDiscountBasic" in data) || data.promoDiscountBasic == null || (data.promoDiscountBasic is int || data.promoDiscountBasic is float))
+        && (!("promoDiscountPremium" in data) || data.promoDiscountPremium == null || (data.promoDiscountPremium is int || data.promoDiscountPremium is float))
         && (!("offerTitle" in data) || data.offerTitle == null || data.offerTitle is string)
         && (!("offerExpiry" in data) || data.offerExpiry == null || data.offerExpiry is string)
         && (!("updatedBy" in data) || data.updatedBy == null || data.updatedBy is string)
