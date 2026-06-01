@@ -326,7 +326,7 @@ export default function PaymentScreen({
           doc(db, "settings", "gcash"),
           {
             qrCodeDataUrl: base64String,
-            updatedBy: user.email,
+            updatedBy: user.email || "",
             updatedAt: new Date().toISOString(),
           },
           { merge: true },
@@ -380,7 +380,7 @@ export default function PaymentScreen({
           doc(db, "settings", "maribank"),
           {
             qrCodeDataUrl: base64String,
-            updatedBy: user.email,
+            updatedBy: user.email || "",
             updatedAt: new Date().toISOString(),
           },
           { merge: true },
@@ -445,7 +445,7 @@ export default function PaymentScreen({
           promoDiscountPremium: promoPremiumVal,
           offerTitle: adminOfferTitle.trim(),
           offerExpiry: adminOfferExpiry,
-          updatedBy: user.email,
+          updatedBy: user.email || "",
           updatedAt: new Date().toISOString()
         },
         { merge: true }
@@ -1301,7 +1301,7 @@ export default function PaymentScreen({
                           promoDiscountPremium: 0,
                           offerTitle: "",
                           offerExpiry: "",
-                          updatedBy: user.email,
+                          updatedBy: user.email || "",
                           updatedAt: new Date().toISOString()
                         },
                         { merge: true }
