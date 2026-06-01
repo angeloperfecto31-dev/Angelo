@@ -121,15 +121,23 @@ export default function PaymentScreen({
   const hasLoadedPricingInputs = useRef(false);
 
   // Helper calculations for dynamic values
-  const offerExpiryDate = (pricingSettings.offerExpiry && !isNaN(new Date(pricingSettings.offerExpiry).getTime())) 
+  const offerExpiryDate = (pricingSettings.offerExpiry && pricingSettings.offerExpiry.trim() !== "" && !isNaN(new Date(pricingSettings.offerExpiry).getTime())) 
     ? new Date(pricingSettings.offerExpiry) 
     : null;
   const hasValidPromo = pricingSettings.promoDiscountBasic > 0 || pricingSettings.promoDiscountPremium > 0 || pricingSettings.offerTitle;
   const isOfferActive = !!(hasValidPromo && (!offerExpiryDate || offerExpiryDate > new Date()));
   
-  const basicFinalPrice = Math.max(0, pricingSettings.basicPrice - (isOfferActive ? pricingSettings.promoDiscountBasic : 0));
-  const premiumFinalPrice = Math.max(0, pricingSettings.premiumPrice - (isOfferActive ? pricingSettings.promoDiscountPremium : 0));
-  const upgradeFinalPrice = Math.max(0, pricingSettings.upgradePrice - (isOfferActive ? pricingSettings.promoDiscountPremium : 0));
+  const basicFinalPrice = (isOfferActive && pricingSettings.promoDiscountBasic > 0) 
+    ? pricingSettings.promoDiscountBasic 
+    : pricingSettings.basicPrice;
+  const premiumFinalPrice = (isOfferActive && pricingSettings.promoDiscountPremium > 0) 
+    ? pricingSettings.promoDiscountPremium 
+    : pricingSettings.premiumPrice;
+  
+  // Calculate upgrade price safely - either standard upgrade cost, or difference between promo premium and base basic
+  const upgradeFinalPrice = (isOfferActive && pricingSettings.promoDiscountPremium > 0)
+    ? Math.max(0, pricingSettings.promoDiscountPremium - pricingSettings.basicPrice)
+    : pricingSettings.upgradePrice;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText("09939170684");
@@ -1228,7 +1236,7 @@ export default function PaymentScreen({
                   {/* Basic discount deductions */}
                   <div>
                     <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
-                      Basic Plan Discount Deduction Amount (₱)
+                      Basic Plan Promo Final Price (₱)
                     </label>
                     <div className="relative">
                       <span className="absolute left-3.5 top-2 py-0.5 text-xs text-indigo-400 font-bold">₱</span>
@@ -1246,7 +1254,7 @@ export default function PaymentScreen({
                   {/* Premium discount deductions */}
                   <div>
                     <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
-                      Premium Plan Discount Deduction Amount (₱)
+                      Premium Plan Promo Final Price (₱)
                     </label>
                     <div className="relative">
                       <span className="absolute left-3.5 top-2 py-0.5 text-xs text-indigo-400 font-bold">₱</span>
