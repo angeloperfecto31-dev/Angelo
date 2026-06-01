@@ -823,9 +823,12 @@ export default function PaymentScreen({
 
   // Filter users for the Admin panel view
   const filteredUsers = allUsers.filter((u) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.uid?.toLowerCase().includes(searchQuery.toLowerCase());
+      (u.email || "").toLowerCase().includes(q) ||
+      (u.uid || "").toLowerCase().includes(q) ||
+      (u.pendingVerification?.referenceNo || "").toLowerCase().includes(q) ||
+      (u.pendingVerification?.senderName || "").toLowerCase().includes(q);
     if (!matchesSearch) return false;
 
     if (adminFilter === "all") return true;
@@ -1417,7 +1420,7 @@ export default function PaymentScreen({
               <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search by Email or User ID..."
+                placeholder="Search by Email, ID, Ref No, or Name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 text-xs font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all font-mono"
