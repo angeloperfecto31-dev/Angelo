@@ -124,7 +124,8 @@ export default function PaymentScreen({
   const offerExpiryDate = (pricingSettings.offerExpiry && !isNaN(new Date(pricingSettings.offerExpiry).getTime())) 
     ? new Date(pricingSettings.offerExpiry) 
     : null;
-  const isOfferActive = !!(pricingSettings.offerTitle && (!offerExpiryDate || offerExpiryDate > new Date()));
+  const hasValidPromo = pricingSettings.promoDiscountBasic > 0 || pricingSettings.promoDiscountPremium > 0 || pricingSettings.offerTitle;
+  const isOfferActive = !!(hasValidPromo && (!offerExpiryDate || offerExpiryDate > new Date()));
   
   const basicFinalPrice = Math.max(0, pricingSettings.basicPrice - (isOfferActive ? pricingSettings.promoDiscountBasic : 0));
   const premiumFinalPrice = Math.max(0, pricingSettings.premiumPrice - (isOfferActive ? pricingSettings.promoDiscountPremium : 0));
@@ -1908,7 +1909,7 @@ export default function PaymentScreen({
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-rose-100 text-rose-700 animate-pulse">
                     PROMO ACTIVE
                   </span>
-                  <span className="text-xs font-black uppercase tracking-wide">{pricingSettings.offerTitle}</span>
+                  <span className="text-xs font-black uppercase tracking-wide">{pricingSettings.offerTitle || "SPECIAL DISCOUNT"}</span>
                 </div>
                 <p className="text-[10px] text-white/80 mt-1 leading-snug">Premium promo rates have been applied dynamically below.</p>
               </div>
