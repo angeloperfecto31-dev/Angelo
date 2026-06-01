@@ -728,14 +728,21 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       };
     } else {
       const totalConnectedVA = circuits.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
-      const highestAmps = circuits.length > 0 ? Math.max(...circuits.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
-      const baseAmp = (totalConnectedVA / 230) * 0.80 + (0.25 * highestAmps);
+      const motorCircuits = circuits.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+      let HML = 0;
+      motorCircuits.forEach(cir => {
+        const loadI = cir.loadA || (cir.loadVA / (cir.voltage || 230));
+        if (loadI > HML) {
+          HML = loadI;
+        }
+      });
+      const baseAmp = (totalConnectedVA / 230) * 0.80 + (0.25 * HML);
 
       return {
         is3PH,
         systemVoltage,
         totalConnectedVA,
-        highestAmps,
+        HML,
         baseAmp
       };
     }
@@ -784,8 +791,15 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       maxDesignAmp = maxDemandCurrent;
     } else {
       const totalConnectedVA = circuits.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
-      const highestAmps = circuits.length > 0 ? Math.max(...circuits.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
-      const maxDemandCurrent = (totalConnectedVA / 230) * 0.80 + (0.25 * highestAmps);
+      const motorCircuits = circuits.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+      let HML = 0;
+      motorCircuits.forEach(cir => {
+        const loadI = cir.loadA || (cir.loadVA / (cir.voltage || 230));
+        if (loadI > HML) {
+          HML = loadI;
+        }
+      });
+      const maxDemandCurrent = (totalConnectedVA / 230) * 0.80 + (0.25 * HML);
       
       maxBaseAmp = maxDemandCurrent;
       maxDesignAmp = maxDemandCurrent;
@@ -1195,7 +1209,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mathematical Formula (LaTeX)</h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left( \frac{\text{Total Connected VA}}{V_{\text{sys}}} \right) \times 0.80 + 0.25 \times I_{\text{highest}}" />
+                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left( \frac{\text{Total Connected VA}}{V_{\text{sys}}} \right) \times 0.80 + 0.25 \times \text{HML}" />
                   </div>
                 </div>
 
@@ -1211,8 +1225,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                       <span className="font-bold text-slate-800 dark:text-white">{maxDemandDetails.systemVoltage} V</span>
                     </p>
                     <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
-                      <span>Highest Active Circuit Current (<span className="font-mono">I_highest</span>):</span>
-                      <span className="font-bold text-slate-800 dark:text-white">{(maxDemandDetails.highestAmps || 0).toFixed(2)} A</span>
+                      <span>Highest Motor Load (<span className="font-mono">HML</span>):</span>
+                      <span className="font-bold text-slate-800 dark:text-white">{(maxDemandDetails.HML || 0).toFixed(2)} A</span>
                     </p>
                   </div>
                 </div>
@@ -1221,9 +1235,9 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">LaTex Solution Details</h4>
                   <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center justify-center">
                     <LatexRenderer tex={`\\begin{aligned}
-I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.highestAmps || 0).toFixed(2)} \\\\
-&= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\
-&= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.80).toFixed(3)} + ${(0.25 * (maxDemandDetails.highestAmps || 0)).toFixed(3)} \\\\
+I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
+&= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+&= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.80).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
 &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
 \\end{aligned}`} />
                   </div>
@@ -1231,7 +1245,7 @@ I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).
                     <span className="text-[10px] text-zinc-500">Perfect for technical paper publications and PEE submittals.</span>
                     <button 
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.highestAmps || 0).toFixed(2)} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"

@@ -755,14 +755,21 @@ Using Philippine Electrical Code (PEC) demand rules, the Maximum Demand Current 
       formulaText = `I_{\\text{demand}} = (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} = (${totalAmpere.toFixed(2)} \\times 1.732) \\times 0.80 + ${localPhaseAmps.threePhase.toFixed(2)} + 0.25 \\times ${HML.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     } else {
       const totalConnectedVA = c.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
-      const highestAmps = c.length > 0 ? Math.max(...c.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
+      const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+      let HML = 0;
+      motorCircuits.forEach(cir => {
+        const loadI = cir.loadA || (cir.loadVA / (cir.voltage || 230));
+        if (loadI > HML) {
+          HML = loadI;
+        }
+      });
 
       stepDescription = `The system is Single-Phase (${p.system}).
 - Total Connected Load = ${totalConnectedVA.toFixed(1)} VA
-- Highest Active Circuit Current (I_highest) = ${highestAmps.toFixed(2)} A
+- Highest Motor Load (HML) = ${HML.toFixed(2)} A
 Using PEC rules, the Maximum Demand Current is calculated as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times I_{\\text{highest}} = \\left( \\frac{${totalConnectedVA.toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${highestAmps.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} = \\left( \\frac{${totalConnectedVA.toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${HML.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     }
 
     docChildren.push(

@@ -287,8 +287,15 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
     maxDesignAmp = maxDemandCurrent;
   } else {
     const totalConnectedVA = c.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
-    const highestAmps = c.length > 0 ? Math.max(...c.map(cir => cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE ? 0 : (cir.loadA || (cir.loadVA / (cir.voltage || 230))))) : 0;
-    const maxDemandCurrent = (totalConnectedVA / 230) * 0.80 + (0.25 * highestAmps);
+    const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
+    let HML = 0;
+    motorCircuits.forEach(cir => {
+      const loadI = cir.loadA || (cir.loadVA / (cir.voltage || 230));
+      if (loadI > HML) {
+        HML = loadI;
+      }
+    });
+    const maxDemandCurrent = (totalConnectedVA / 230) * 0.80 + (0.25 * HML);
     
     maxBaseAmp = maxDemandCurrent;
     maxDesignAmp = maxDemandCurrent;
