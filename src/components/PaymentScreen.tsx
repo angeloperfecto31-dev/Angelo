@@ -91,6 +91,13 @@ export default function PaymentScreen({
   const [copied, setCopied] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium">("premium");
 
+  // Custom confirmation states to bypass native window.confirm blocks in sandboxed iframes
+  const [confirmDeleteReg, setConfirmDeleteReg] = useState(false);
+  const [confirmCancelReview, setConfirmCancelReview] = useState(false);
+  const [confirmResetGcash, setConfirmResetGcash] = useState(false);
+  const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
+  const [confirmClearPromo, setConfirmClearPromo] = useState(false);
+
   // Dynamic Pricing State
   const [pricingSettings, setPricingSettings] = useState({
     basicPrice: 999,
@@ -452,6 +459,12 @@ export default function PaymentScreen({
       );
 
       setAdminStatusMsg("Pricing configurations updated successfully throughout the system!");
+      hasLoadedPricingInputs.current = false;
+
+      // Automatically return to the customer view to instantly discover the updated prices and custom promo offers
+      setTimeout(() => {
+        setIsAdminMode(false);
+      }, 1200);
     } catch (err: any) {
       setAdminStatusMsg("Failed to update pricing settings: " + err.message);
       try {
@@ -481,11 +494,8 @@ export default function PaymentScreen({
   const handleCancelRegistration = async (msg?: string) => {
     setLoading(true);
     setError(msg || "Cancelling transaction and deleting account...");
-    const confirmCancel = msg
-      ? true
-      : window.confirm(
-          "Are you sure you want to cancel your transaction? This will permanently delete your registration data.",
-        );
+    // Implicitly confirmed when executed (button triggers double-click state confirmation)
+    const confirmCancel = true;
 
     if (confirmCancel) {
       try {
@@ -622,25 +632,10 @@ export default function PaymentScreen({
       paymentMethod === "manual" &&
       (cleanedRef.length < 10 || cleanedRef.length > 15)
     ) {
-      setError(
-        "Please check your reference number. GCash handles 13-digit Reference Numbers.",
-      );
-      const confirmation = window.confirm(
-         "Standard GCash Reference Numbers are usually 13 digits. Are you sure you entered the correct reference number?",
-      );
-      if (!confirmation) {
-        return;
-      }
+      // Allow submission without iframe-blocking popup warning modal
+      console.warn("Manual payment has a non-standard reference number length.");
     } else if (paymentMethod === "maribank" && cleanedRef.length < 6) {
-      setError(
-        "Please verify your MariBank reference number. It looks too short.",
-      );
-      const confirmation = window.confirm(
-        "Are you sure you entered the correct MariBank reference number?",
-      );
-      if (!confirmation) {
-        return;
-      }
+      console.warn("MariBank reference number length is non-standard.");
     }
 
     setSubmittingManual(true);
@@ -686,11 +681,6 @@ export default function PaymentScreen({
 
   // Cancel manual payment submission
   const handleCancelManualReview = async () => {
-    const confirmCancel = window.confirm(
-      "Are you sure you want to cancel the review process? You can then choose to try again or make an automated payment.",
-    );
-    if (!confirmCancel) return;
-
     setLoading(true);
     try {
       await setDoc(
@@ -956,10 +946,12 @@ export default function PaymentScreen({
                     </span>
                     <button
                       onClick={async () => {
-                        const confirmReset = window.confirm(
-                          "Are you sure you want to reset and use the default built-in QR image?",
-                        );
-                        if (!confirmReset) return;
+                        if (!confirmResetGcash) {
+                          setConfirmResetGcash(true);
+                          setTimeout(() => setConfirmResetGcash(false), 4000);
+                          return;
+                        }
+                        setConfirmResetGcash(false);
                         try {
                           await setDoc(
                             doc(db, "settings", "gcash"),
@@ -983,8 +975,12 @@ export default function PaymentScreen({
                           } catch (e) {}
                         }
                       }}
-                      className="absolute -top-2 -right-3 bg-red-100 border border-red-200 text-red-600 hover:bg-red-200 font-bold text-[10px] p-1.5 rounded-full transition-colors shadow-sm"
-                      title="Reset to default"
+                      className={`absolute -top-2 -right-3 border font-bold text-[10px] p-1.5 rounded-full transition-all shadow-sm ${
+                        confirmResetGcash
+                          ? "bg-red-600 border-red-700 text-white animate-pulse"
+                          : "bg-red-100 border-red-200 text-red-600 hover:bg-red-200"
+                      }`}
+                      title={confirmResetGcash ? "Click again to confirm reset" : "Reset to default"}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1065,10 +1061,12 @@ export default function PaymentScreen({
                     </span>
                     <button
                       onClick={async () => {
-                        const confirmReset = window.confirm(
-                          "Are you sure you want to remove the MariBank QR image?",
-                        );
-                        if (!confirmReset) return;
+                        if (!confirmResetMaribank) {
+                          setConfirmResetMaribank(true);
+                          setTimeout(() => setConfirmResetMaribank(false), 4000);
+                          return;
+                        }
+                        setConfirmResetMaribank(false);
                         try {
                           await setDoc(
                             doc(db, "settings", "maribank"),
@@ -1090,8 +1088,12 @@ export default function PaymentScreen({
                           } catch (e) {}
                         }
                       }}
-                      className="absolute -top-2 -right-3 bg-red-100 border border-red-200 text-red-600 hover:bg-red-200 font-bold text-[10px] p-1.5 rounded-full transition-colors shadow-sm"
-                      title="Reset to default"
+                      className={`absolute -top-2 -right-3 border font-bold text-[10px] p-1.5 rounded-full transition-all shadow-sm ${
+                        confirmResetMaribank
+                          ? "bg-red-600 border-red-700 text-white animate-pulse"
+                          : "bg-red-100 border-red-200 text-red-600 hover:bg-red-200"
+                      }`}
+                      title={confirmResetMaribank ? "Click again to confirm reset" : "Reset to default"}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1275,9 +1277,12 @@ export default function PaymentScreen({
                   type="button"
                   disabled={savingPricing}
                   onClick={async () => {
-                    const confirmClear = window.confirm("Are you sure you want to disable and clear all active campaigns and discount tiers?");
-                    if (!confirmClear) return;
-                    
+                    if (!confirmClearPromo) {
+                      setConfirmClearPromo(true);
+                      setTimeout(() => setConfirmClearPromo(false), 5000);
+                      return;
+                    }
+                    setConfirmClearPromo(false);
                     setSavingPricing(true);
                     setAdminStatusMsg("");
                     
@@ -1307,15 +1312,30 @@ export default function PaymentScreen({
                         { merge: true }
                       );
                       setAdminStatusMsg("Active promotion cleared and changes have been published system-wide successfully!");
+                      hasLoadedPricingInputs.current = false;
+
+                      // Automatically return to standard customer view so the rates update is instantly shown
+                      setTimeout(() => {
+                        setIsAdminMode(false);
+                      }, 1200);
                     } catch (err: any) {
                       setAdminStatusMsg("Failed to clear promotion database-side: " + err.message);
                     } finally {
                       setSavingPricing(false);
                     }
                   }}
-                  className="w-full sm:w-auto px-4 py-2 border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all select-none"
+                  className={`w-full sm:w-auto px-4 py-2 border disabled:opacity-50 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all select-none ${
+                    confirmClearPromo 
+                      ? "bg-rose-600 border-rose-700 text-white hover:bg-rose-700" 
+                      : "border-rose-200 text-rose-600 hover:bg-rose-50"
+                  }`}
                 >
-                  {savingPricing ? "Processing..." : "Clear Active Promotion"}
+                  {savingPricing 
+                    ? "Processing..." 
+                    : confirmClearPromo 
+                      ? "⚠️ Click again to confirm clear" 
+                      : "Clear Active Promotion"
+                  }
                 </button>
                 <button
                   type="submit"
@@ -1811,10 +1831,22 @@ export default function PaymentScreen({
 
             <div className="space-y-3">
               <button
-                onClick={handleCancelManualReview}
-                className="w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors border border-transparent hover:border-red-100 rounded-xl bg-slate-50"
+                onClick={() => {
+                  if (!confirmCancelReview) {
+                    setConfirmCancelReview(true);
+                    setTimeout(() => setConfirmCancelReview(false), 5000);
+                  } else {
+                    handleCancelManualReview();
+                    setConfirmCancelReview(false);
+                  }
+                }}
+                className={`w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold transition-colors border rounded-xl bg-slate-50 ${
+                  confirmCancelReview
+                    ? "bg-red-600 text-white hover:bg-red-700 border-transparent animate-pulse"
+                    : "text-red-500 hover:text-red-700 hover:bg-red-50 border-transparent hover:border-red-100"
+                }`}
               >
-                Cancel and edit reference details
+                {confirmCancelReview ? "⚠️ Click again to confirm cancel" : "Cancel and edit reference details"}
               </button>
               <button
                 onClick={handleLogout}
@@ -2280,11 +2312,26 @@ export default function PaymentScreen({
           {/* Master Logout Options */}
           <div className="mt-6 border-t border-slate-100 pt-6">
             <button
-              onClick={() => handleCancelRegistration()}
-              className="w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors bg-slate-50 border border-transparent hover:border-red-100 rounded-xl"
+              onClick={() => {
+                if (!confirmDeleteReg) {
+                  setConfirmDeleteReg(true);
+                  setTimeout(() => setConfirmDeleteReg(false), 5000);
+                } else {
+                  handleCancelRegistration();
+                  setConfirmDeleteReg(false);
+                }
+              }}
+              className={`w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold transition-all border rounded-xl ${
+                confirmDeleteReg
+                  ? "bg-red-600 border-red-700 text-white animate-pulse hover:bg-red-700 font-extrabold"
+                  : "text-red-500 hover:text-red-700 hover:bg-red-50 bg-slate-50 border-transparent hover:border-red-100"
+              }`}
             >
               <LogOut className="w-4 h-4" />
-              Cancel Transaction (Delete Registration)
+              {confirmDeleteReg 
+                ? "⚠️ Click again to Permanently Cancel & Delete Registration" 
+                : "Cancel Transaction (Delete Registration)"
+              }
             </button>
             <button
               onClick={handleLogout}
