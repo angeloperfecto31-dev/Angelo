@@ -24,7 +24,7 @@ export const WIRE_AMPACITY_TABLE = [
   { size: 500, ampacity: 545 },
 ];
 
-export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225, 250, 300, 400, 450, 500, 600, 700, 800, 1000];
+export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 160, 175, 200, 225, 250, 300, 400, 450, 500, 600, 700, 800, 1000];
 
 export const SYSTEM_VOLTAGES = {
   '230V, 1PH, 2W': 230,
