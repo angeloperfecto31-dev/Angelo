@@ -365,8 +365,8 @@ export default function App() {
     const wb = XLSX.utils.book_new();
 
     const allPanelsToExport = [
-      { panel, circuits },
-      ...subPanels.map((sp) => ({ panel: sp.panel, circuits: sp.circuits })),
+      { id: "main", panel, circuits },
+      ...subPanels.map((sp) => ({ id: sp.id, panel: sp.panel, circuits: sp.circuits })),
     ];
 
     allPanelsToExport.forEach((item, index) => {
@@ -679,8 +679,21 @@ export default function App() {
         const VD_percent = (VD_v / cVoltage) * 100;
         const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
 
+        let sourceLabel = vd.source;
+        if (vd.source === "custom") {
+          sourceLabel = "Custom";
+        } else {
+          let matchingPanel = allPanelsToExport.find(p => p.id === vd.source);
+          if (!matchingPanel) {
+            matchingPanel = allPanelsToExport.find(p => p.circuits.some(c => c.id === vd.source));
+          }
+          if (matchingPanel) {
+            sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || (matchingPanel.id === "main" ? "MDP" : "Sub Panel")}`;
+          }
+        }
+
         vdData.push([
-          vd.source,
+          sourceLabel,
           vd.name,
           vd.loadA,
           vd.length,
@@ -717,10 +730,12 @@ export default function App() {
           let style: any = {
             font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
             fill: { fgColor: { rgb: "FFFFFF" } },
+            alignment: { horizontal: "center", vertical: "center" }
           };
           if (R === 0) {
             style.font.bold = true;
             style.font.sz = 14;
+            style.alignment = { horizontal: "left", vertical: "center" };
           } else if (R === 2) {
             style.font.bold = true;
             style.fill.fgColor.rgb = "F3F4F6";
@@ -815,10 +830,12 @@ export default function App() {
         let style: any = {
           font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
           fill: { fgColor: { rgb: "FFFFFF" } },
+          alignment: { horizontal: "center", vertical: "center" }
         };
         if (R === 0) {
           style.font.bold = true;
           style.font.sz = 14;
+          style.alignment = { horizontal: "left", vertical: "center" };
         } else if (R === 2 || R === 14 || R === 24) {
           style.font.bold = true;
           style.fill.fgColor.rgb = "F3F4F6";
@@ -892,10 +909,12 @@ export default function App() {
           let style: any = {
             font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
             fill: { fgColor: { rgb: "FFFFFF" } },
+            alignment: { horizontal: "center", vertical: "center" }
           };
           if (R === 0) {
             style.font.bold = true;
             style.font.sz = 14;
+            style.alignment = { horizontal: "left", vertical: "center" };
           } else if (R === 2) {
             style.font.bold = true;
             style.fill.fgColor.rgb = "F3F4F6";
