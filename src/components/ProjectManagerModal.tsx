@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Save, FolderOpen, FilePlus, Copy, Trash2, X } from 'lucide-react';
 import { SavedProject, ProjectData } from '../types/project';
+import { db, auth } from '../firebase';
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from "../utils/firestoreError";
 
 interface ProjectManagerModalProps {
   isOpen: boolean;
@@ -37,7 +40,12 @@ export default function ProjectManagerModal({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    const user = auth.currentUser;
+
+    if (!user) {
+      // Fallback to localStorage if no user is authenticated
       const saved = localStorage.getItem(STORAGE_KEY);
       let loadedProjects: SavedProject[] = [];
       if (saved) {
@@ -49,19 +57,64 @@ export default function ProjectManagerModal({
         }
       }
 
-      // Initialize saveName once when modal opens
       if (currentProjectId) {
         const current = loadedProjects.find(p => p.id === currentProjectId);
         setSaveName(current ? current.name : (currentProjectData.panel.project || ''));
       } else {
         setSaveName(currentProjectData.panel.project || '');
       }
+      return;
     }
-  }, [isOpen]);
 
-  const saveToStorage = (newProjects: SavedProject[]) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
-    setProjects(newProjects);
+    // Sync with Firestore
+    const projectsRef = collection(db, 'users', user.uid, 'projects');
+    const unsubscribe = onSnapshot(projectsRef, (snapshot) => {
+      const loadedProjects: SavedProject[] = [];
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        loadedProjects.push({
+          id: docSnap.id,
+          name: data.name,
+          lastModified: data.lastModified,
+          data: data.data,
+        });
+      });
+      setProjects(loadedProjects);
+
+      if (currentProjectId) {
+        const current = loadedProjects.find(p => p.id === currentProjectId);
+        setSaveName(current ? current.name : (currentProjectData.panel.project || ''));
+      } else {
+        setSaveName(currentProjectData.panel.project || '');
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/projects`);
+    });
+
+    return () => unsubscribe();
+  }, [isOpen, currentProjectId, currentProjectData.panel.project]);
+
+  const saveToStorage = async (newProjects: SavedProject[], projectToUpdate?: SavedProject) => {
+    const user = auth.currentUser;
+    if (!user) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
+      setProjects(newProjects);
+      return;
+    }
+
+    if (projectToUpdate) {
+      const docRef = doc(db, 'users', user.uid, 'projects', projectToUpdate.id);
+      try {
+        await setDoc(docRef, {
+          name: projectToUpdate.name,
+          lastModified: projectToUpdate.lastModified,
+          data: projectToUpdate.data,
+          ownerId: user.uid
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/projects/${projectToUpdate.id}`);
+      }
+    }
   };
 
   const handleSave = () => {
@@ -76,10 +129,18 @@ export default function ProjectManagerModal({
 
     const projectExists = projects.some(p => p.id === currentProjectId);
     if (currentProjectId && projectExists) {
+      const updatedProject = {
+        id: currentProjectId,
+        name: finalName,
+        lastModified: Date.now(),
+        data: updatedData
+      };
+      
       const updated = projects.map(p => 
-        p.id === currentProjectId ? { ...p, name: finalName, lastModified: Date.now(), data: updatedData } : p
+        p.id === currentProjectId ? updatedProject : p
       );
-      saveToStorage(updated);
+      
+      saveToStorage(updated, updatedProject);
       onLoadProject(currentProjectId, updatedData);
       onClose();
     } else {
@@ -103,7 +164,8 @@ export default function ProjectManagerModal({
       lastModified: Date.now(),
       data: updatedData
     };
-    saveToStorage([...projects, newProject]);
+    
+    saveToStorage([...projects, newProject], newProject);
     setCurrentProjectId(newId);
     onLoadProject(newId, updatedData);
     setSaveName('');
@@ -115,9 +177,22 @@ export default function ProjectManagerModal({
     onClose();
   };
 
-  const confirmDelete = (id: string) => {
+  const confirmDelete = async (id: string) => {
     const updated = projects.filter(p => p.id !== id);
-    saveToStorage(updated);
+    
+    const user = auth.currentUser;
+    if (user) {
+      const docRef = doc(db, 'users', user.uid, 'projects', id);
+      try {
+        await deleteDoc(docRef);
+      } catch (error) {
+         handleFirestoreError(error, OperationType.DELETE, `users/${user.uid}/projects/${id}`);
+      }
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      setProjects(updated);
+    }
+
     if (currentProjectId === id) {
       setCurrentProjectId(null);
     }

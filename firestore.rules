@@ -64,6 +64,15 @@ service cloud.firestore {
         && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
     }
 
+    function isValidProject(data) {
+      return data.keys().hasAll(["name", "lastModified", "data", "ownerId"])
+        && data.keys().size() == 4
+        && data.name is string && data.name.size() <= 300
+        && (data.lastModified is int || data.lastModified is float)
+        && data.data is map
+        && data.ownerId is string && data.ownerId == request.auth.uid;
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -104,6 +113,18 @@ service cloud.firestore {
 
       // Users can delete their own account (for cancellation), or admins can
       allow delete: if isAdmin() || isOwner(userId);
+
+      // 3.5 Projects Subcollection
+      match /projects/{projectId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(projectId) && isValidProject(incoming());
+        allow update: if isOwner(userId) && isValidId(projectId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'lastModified', 'data']) &&
+          incoming().name is string && incoming().name.size() <= 300 &&
+          (incoming().lastModified is int || incoming().lastModified is float) &&
+          incoming().data is map;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     // 4. Settings Collection Matched Rules (Pillar 6: Isolated Config and Admin Control)
