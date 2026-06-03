@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { PanelConfig, Circuit } from '../types';
 import { computePanelScheduleValues } from '../utils/computeEngine';
 import { SingleLineDiagramContent } from './SingleLineDiagram';
+import { toPng } from 'html-to-image';
+import { Printer, Download, AlertCircle } from 'lucide-react';
 
 interface SubPanelData {
   id: string;
@@ -33,6 +35,9 @@ const getPanelRows = (panelCircuits: Circuit[], panelSystem: string) => {
 
 export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps) {
   const formatWireSize = (size: number | string) => size;
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [showPrintWarning, setShowPrintWarning] = useState(false);
 
   const mdpData = useMemo(() => computePanelScheduleValues(panel, circuits), [panel, circuits]);
   const mdpRows = useMemo(() => getPanelRows(circuits, panel.system), [circuits, panel.system]);
@@ -80,9 +85,76 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
   let leftDrops = 0;
   let rightDrops = 0;
 
+  const handlePrint = () => {
+    const isIframe = window.self !== window.top;
+    try {
+      window.print();
+    } catch (err) {
+      console.error('Print trigger failed:', err);
+    }
+    if (isIframe) {
+      setShowPrintWarning(true);
+    }
+  };
+
+  const handleDownloadPNG = async () => {
+    const el = document.getElementById('sld-system-wide');
+    if (!el) return;
+    setIsExporting(true);
+    try {
+      const dataUrl = await toPng(el, {
+        quality: 1.0,
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        width: svgWidth,
+        height: svgHeight,
+      });
+      const link = document.createElement('a');
+      link.download = `${panel.project ? panel.project.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Project'}_System_SLD.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('PNG Export failed:', err);
+      // fallback warning in UI
+      setShowPrintWarning(true);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    const el = document.getElementById('sld-system-wide');
+    if (!el) return;
+    setIsExporting(true);
+    try {
+      const dataUrl = await toPng(el, {
+        quality: 1.0,
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        width: svgWidth,
+        height: svgHeight,
+      });
+      
+      const { jsPDF } = await import('jspdf');
+      const orientation = svgWidth > svgHeight ? 'l' : 'p';
+      const pdf = new jsPDF({
+        orientation,
+        unit: 'px',
+        format: [svgWidth + 40, svgHeight + 40]
+      });
+      pdf.addImage(dataUrl, 'PNG', 20, 20, svgWidth, svgHeight);
+      pdf.save(`${panel.project ? panel.project.replace(/[^a-zA-Z0-9_-]/g, '_') : 'Project'}_System_SLD.pdf`);
+    } catch (err) {
+      console.error('PDF Export failed:', err);
+      setShowPrintWarning(true);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-8 panel-container overflow-hidden">
-      <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mb-10 gap-4">
+      <div className="flex flex-col xl:flex-row xl:justify-between items-start xl:items-center mb-10 gap-4">
          <div>
             <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-3 tracking-tight">
                SYSTEM SINGLE LINE DIAGRAM
@@ -91,13 +163,45 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
                Complete system distribution showing MDP fully expanded, interconnected directly with detailed Sub-Panels.
             </p>
          </div>
-         <button 
-           onClick={() => window.print()}
-           className="no-print bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all"
-         >
-           Print SLD
-         </button>
+         <div className="flex flex-wrap items-center gap-2 no-print w-full xl:w-auto">
+            <button 
+              onClick={handlePrint}
+              disabled={isExporting}
+              className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Print SLD</span>
+            </button>
+            <button 
+              onClick={handleDownloadPDF}
+              disabled={isExporting}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isExporting ? 'Exporting...' : 'Download PDF'}</span>
+            </button>
+            <button 
+              onClick={handleDownloadPNG}
+              disabled={isExporting}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download PNG</span>
+            </button>
+         </div>
       </div>
+
+      {showPrintWarning && (
+        <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs sm:text-sm font-medium flex gap-3 animate-fade-in no-print">
+          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold">Did the print dialog not open?</p>
+            <p>
+              Browsers block print calls called inside sandboxed iframe previews. Please use the <span className="font-bold">Download PDF</span> or <span className="font-bold">Download PNG</span> buttons above for offline-ready high-res single-view assets, or click "Open in developmental tab" to use native browser menu printing.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="w-full flex justify-center bg-white border-2 border-slate-800 p-8 overflow-x-auto print-scaling">
         <svg id={`sld-system-wide`} viewBox={`0 0 ${svgWidth} ${svgHeight}`} width={svgWidth} height={svgHeight} className="max-w-full font-sans text-slate-800 print-svg">

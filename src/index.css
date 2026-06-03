@@ -48,18 +48,42 @@
 }
 
 @media print {
+  html, body, #root, [class*="h-screen"], [class*="overflow-hidden"] {
+    height: auto !important;
+    min-height: initial !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+  
+  main, #print-area {
+    height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
   body {
     background-color: white !important;
     color: black !important;
     padding: 0 !important;
     margin: 0 !important;
   }
+  
   .no-print {
     display: none !important;
   }
+  
   .print-only {
     display: block !important;
   }
+
+  .print-show {
+    display: block !important;
+  }
+  
   .panel-container {
     padding: 0 !important;
     max-width: 100% !important;
@@ -69,6 +93,24 @@
     border: 1px solid #cbd5e1 !important;
     page-break-after: always;
   }
+
+  .print-scaling {
+    padding: 0 !important;
+    border: none !important;
+    overflow: visible !important;
+    width: 100% !important;
+    display: block !important;
+    background: white !important;
+  }
+
+  .print-svg {
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
+    page-break-inside: avoid;
+    display: block !important;
+  }
+
   @page {
     size: A4 portrait;
     margin: 10mm;
