@@ -38,9 +38,308 @@ export interface IlluminationCalcProps {
   snapshots?: Record<string, string>;
 }
 
+function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
+  if (isCustom || !fixtureId) {
+    return {
+      fixtureShape: 'square' as const,
+      fixtureWidth: 0.6,
+      fixtureLength: 0.6,
+      fixtureDiameter: 0.2,
+      fixtureThickness: 0.05,
+      fixtureBeamAngle: 120,
+      fixtureDistributionType: 'conical' as const
+    };
+  }
+
+  switch (fixtureId) {
+    case 'ind-led-bulb':
+    case 'ind-smart-bulb':
+    case 'spl-rgb':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.1,
+        fixtureLength: 0.1,
+        fixtureDiameter: 0.12,
+        fixtureThickness: 0.15,
+        fixtureBeamAngle: 140,
+        fixtureDistributionType: 'omni' as const
+      };
+    
+    case 'ind-t5-t8':
+    case 'spl-uv':
+      return {
+        fixtureShape: 'linear' as const,
+        fixtureWidth: 0.05,
+        fixtureLength: 1.2,
+        fixtureDiameter: 0.05,
+        fixtureThickness: 0.05,
+        fixtureBeamAngle: 120,
+        fixtureDistributionType: 'linear' as const
+      };
+    
+    case 'ind-panel':
+      return {
+        fixtureShape: 'square' as const,
+        fixtureWidth: 0.6,
+        fixtureLength: 0.6,
+        fixtureDiameter: 0.6,
+        fixtureThickness: 0.02,
+        fixtureBeamAngle: 110,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'ind-downlight':
+    case 'out-pool':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.15,
+        fixtureLength: 0.15,
+        fixtureDiameter: 0.15,
+        fixtureThickness: 0.02,
+        fixtureBeamAngle: 60,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'ind-ceiling':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.4,
+        fixtureLength: 0.4,
+        fixtureDiameter: 0.4,
+        fixtureThickness: 0.08,
+        fixtureBeamAngle: 120,
+        fixtureDistributionType: 'omni' as const
+      };
+    
+    case 'ind-chandelier':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.6,
+        fixtureLength: 0.6,
+        fixtureDiameter: 0.6,
+        fixtureThickness: 0.5,
+        fixtureBeamAngle: 180,
+        fixtureDistributionType: 'omni' as const
+      };
+    
+    case 'ind-track':
+      return {
+        fixtureShape: 'linear' as const,
+        fixtureWidth: 0.08,
+        fixtureLength: 1.0,
+        fixtureDiameter: 0.08,
+        fixtureThickness: 0.12,
+        fixtureBeamAngle: 35,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'ind-desk':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.2,
+        fixtureLength: 0.2,
+        fixtureDiameter: 0.18,
+        fixtureThickness: 0.35,
+        fixtureBeamAngle: 50,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'ind-emergency':
+      return {
+        fixtureShape: 'rectangular' as const,
+        fixtureWidth: 0.3,
+        fixtureLength: 0.1,
+        fixtureDiameter: 0.15,
+        fixtureThickness: 0.12,
+        fixtureBeamAngle: 80,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'out-floodlight':
+    case 'spl-motion':
+      return {
+        fixtureShape: 'rectangular' as const,
+        fixtureWidth: 0.22,
+        fixtureLength: 0.16,
+        fixtureDiameter: 0.15,
+        fixtureThickness: 0.1,
+        fixtureBeamAngle: 90,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'out-street':
+      return {
+        fixtureShape: 'rectangular' as const,
+        fixtureWidth: 0.25,
+        fixtureLength: 0.6,
+        fixtureDiameter: 0.25,
+        fixtureThickness: 0.12,
+        fixtureBeamAngle: 110,
+        fixtureDistributionType: 'oblong' as const
+      };
+    
+    case 'out-solar':
+      return {
+        fixtureShape: 'rectangular' as const,
+        fixtureWidth: 0.35,
+        fixtureLength: 0.2,
+        fixtureDiameter: 0.2,
+        fixtureThickness: 0.08,
+        fixtureBeamAngle: 100,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'out-garden':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.15,
+        fixtureLength: 0.15,
+        fixtureDiameter: 0.15,
+        fixtureThickness: 0.6,
+        fixtureBeamAngle: 180,
+        fixtureDistributionType: 'omni' as const
+      };
+    
+    case 'out-wall':
+      return {
+        fixtureShape: 'rectangular' as const,
+        fixtureWidth: 0.12,
+        fixtureLength: 0.1,
+        fixtureDiameter: 0.1,
+        fixtureThickness: 0.25,
+        fixtureBeamAngle: 90,
+        fixtureDistributionType: 'oblong' as const
+      };
+    
+    case 'out-highbay':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.4,
+        fixtureLength: 0.4,
+        fixtureDiameter: 0.4,
+        fixtureThickness: 0.28,
+        fixtureBeamAngle: 90,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'out-lowbay':
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.3,
+        fixtureLength: 0.3,
+        fixtureDiameter: 0.3,
+        fixtureThickness: 0.2,
+        fixtureBeamAngle: 110,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'out-canopy':
+      return {
+        fixtureShape: 'square' as const,
+        fixtureWidth: 0.4,
+        fixtureLength: 0.4,
+        fixtureDiameter: 0.4,
+        fixtureThickness: 0.08,
+        fixtureBeamAngle: 90,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'spl-grow':
+      return {
+        fixtureShape: 'linear' as const,
+        fixtureWidth: 0.12,
+        fixtureLength: 1.2,
+        fixtureDiameter: 0.12,
+        fixtureThickness: 0.06,
+        fixtureBeamAngle: 90,
+        fixtureDistributionType: 'linear' as const
+      };
+    
+    case 'spl-exit':
+      return {
+        fixtureShape: 'rectangular' as const,
+        fixtureWidth: 0.3,
+        fixtureLength: 0.03,
+        fixtureDiameter: 0.15,
+        fixtureThickness: 0.15,
+        fixtureBeamAngle: 160,
+        fixtureDistributionType: 'conical' as const
+      };
+    
+    case 'spl-strip':
+    case 'spl-cob-strip':
+    case 'spl-neon':
+      return {
+        fixtureShape: 'linear' as const,
+        fixtureWidth: 0.02,
+        fixtureLength: 1.0,
+        fixtureDiameter: 0.02,
+        fixtureThickness: 0.01,
+        fixtureBeamAngle: 120,
+        fixtureDistributionType: 'linear' as const
+      };
+    
+    default:
+      return {
+        fixtureShape: 'square' as const,
+        fixtureWidth: 0.3,
+        fixtureLength: 0.3,
+        fixtureDiameter: 0.3,
+        fixtureThickness: 0.05,
+        fixtureBeamAngle: 120,
+        fixtureDistributionType: 'conical' as const
+      };
+  }
+}
+
 export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
+
+  // Keep track of previously selected fixture and override values when choice changes
+  const [prevFixtureKey, setPrevFixtureKey] = useState('');
+  useEffect(() => {
+    const key = `${params.isCustomFixture ? 'custom' : 'lib'}-${params.selectedFixtureId || ''}`;
+    if (prevFixtureKey && prevFixtureKey !== key) {
+      const defaults = getPredefinedFixtureDefaults(params.selectedFixtureId || 'ind-panel', !!params.isCustomFixture);
+      setParams(current => ({
+        ...current,
+        fixtureShape: defaults.fixtureShape,
+        fixtureWidth: defaults.fixtureWidth,
+        fixtureLength: defaults.fixtureLength,
+        fixtureDiameter: defaults.fixtureDiameter,
+        fixtureThickness: defaults.fixtureThickness,
+        fixtureBeamAngle: defaults.fixtureBeamAngle,
+        fixtureDistributionType: defaults.fixtureDistributionType,
+      }));
+    }
+    setPrevFixtureKey(key);
+  }, [params.selectedFixtureId, params.isCustomFixture]);
+
+  // Backfill on mount if dimension details are missing or empty
+  useEffect(() => {
+    const defaults = getPredefinedFixtureDefaults(params.selectedFixtureId || 'ind-panel', !!params.isCustomFixture);
+    if (
+      params.fixtureShape === undefined ||
+      params.fixtureWidth === undefined ||
+      params.fixtureLength === undefined ||
+      params.fixtureDiameter === undefined ||
+      params.fixtureThickness === undefined ||
+      params.fixtureBeamAngle === undefined ||
+      params.fixtureDistributionType === undefined
+    ) {
+      setParams(current => ({
+        ...current,
+        fixtureShape: current.fixtureShape || defaults.fixtureShape,
+        fixtureWidth: current.fixtureWidth !== undefined ? current.fixtureWidth : defaults.fixtureWidth,
+        fixtureLength: current.fixtureLength !== undefined ? current.fixtureLength : defaults.fixtureLength,
+        fixtureDiameter: current.fixtureDiameter !== undefined ? current.fixtureDiameter : defaults.fixtureDiameter,
+        fixtureThickness: current.fixtureThickness !== undefined ? current.fixtureThickness : defaults.fixtureThickness,
+        fixtureBeamAngle: current.fixtureBeamAngle !== undefined ? current.fixtureBeamAngle : defaults.fixtureBeamAngle,
+        fixtureDistributionType: current.fixtureDistributionType || defaults.fixtureDistributionType,
+      }));
+    }
+  }, []);
 
   // Advanced DIALux evo inputs managed inside the component
   const [showFalseColor, setShowFalseColor] = useState(false);
@@ -739,6 +1038,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                 </div>
 
                 {params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0 ? (
+                  <>
                   <Illumination3DModel 
                     width={params.roomWidth} 
                     length={params.roomLength} 
@@ -754,7 +1054,140 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                     lpdValue={energyAudit.lpd}
                     lpdLimit={lpdLimitInfo.limit}
                     targetLux={params.targetLux}
+                    fixtureShape={params.fixtureShape}
+                    fixtureWidth={params.fixtureWidth}
+                    fixtureLength={params.fixtureLength}
+                    fixtureDiameter={params.fixtureDiameter}
+                    fixtureThickness={params.fixtureThickness}
+                    fixtureBeamAngle={params.fixtureBeamAngle}
+                    fixtureDistributionType={params.fixtureDistributionType}
                   />
+
+                  {/* Dynamic interactive form controls for physical shape/size/spread customization */}
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-5 rounded-2xl shadow-sm mt-6 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-indigo-505 rounded-full animate-pulse"></div>
+                        <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Configure Fixture Dimensions & Light Distribution</h4>
+                      </div>
+                      <span className="text-[9px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded font-bold uppercase font-mono">DIALux / CAD Engine</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      
+                      {/* Control 1: Shape */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">Physical Shape</label>
+                        <select 
+                          value={params.fixtureShape || 'square'}
+                          onChange={e => setParams({ ...params, fixtureShape: e.target.value as any })}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                        >
+                          <option value="square">Square Panel</option>
+                          <option value="rectangular">Rectangular Plate</option>
+                          <option value="circular">Circular Downlight/Dome</option>
+                          <option value="linear">Linear Tube/Strip</option>
+                        </select>
+                      </div>
+
+                      {/* Control 2: Sizes */}
+                      {(params.fixtureShape === 'square' || params.fixtureShape === 'rectangular' || params.fixtureShape === 'linear' || !params.fixtureShape) && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">Fixture Width (m)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            min="0.01"
+                            max="5.0"
+                            value={params.fixtureWidth !== undefined ? params.fixtureWidth : 0.6}
+                            onChange={e => setParams({ ...params, fixtureWidth: Math.max(0.01, parseFloat(e.target.value) || 0.6) })}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-bold font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {(params.fixtureShape === 'rectangular' || params.fixtureShape === 'linear') && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">Fixture Length (m)</label>
+                          <input 
+                            type="number" 
+                            step="0.05" 
+                            min="0.1"
+                            max="10.0"
+                            value={params.fixtureLength !== undefined ? params.fixtureLength : 1.2}
+                            onChange={e => setParams({ ...params, fixtureLength: Math.max(0.05, parseFloat(e.target.value) || 1.2) })}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-bold font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {params.fixtureShape === 'circular' && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">Fixture Diameter (Ø m)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            min="0.02"
+                            max="3.0"
+                            value={params.fixtureDiameter !== undefined ? params.fixtureDiameter : 0.15}
+                            onChange={e => setParams({ ...params, fixtureDiameter: Math.max(0.02, parseFloat(e.target.value) || 0.15) })}
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-bold font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {/* Control 3: Thickness */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">Thickness/Height (m)</label>
+                        <input 
+                          type="number" 
+                          step="0.01" 
+                          min="0.005"
+                          max="2.0"
+                          value={params.fixtureThickness !== undefined ? params.fixtureThickness : 0.05}
+                          onChange={e => setParams({ ...params, fixtureThickness: Math.max(0.005, parseFloat(e.target.value) || 0.05) })}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-bold font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                        />
+                      </div>
+
+                      {/* Control 4: Dispersion */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">Dispersion Pattern</label>
+                        <select 
+                          value={params.fixtureDistributionType || 'conical'}
+                          onChange={e => setParams({ ...params, fixtureDistributionType: e.target.value as any })}
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                        >
+                          <option value="conical">Conical Spot (Downlights)</option>
+                          <option value="linear">Linear Spread (Tube lights)</option>
+                          <option value="oblong">Oblong (Flood/Street Sconces)</option>
+                          <option value="omni">Omnidirectional (Bulbs/Chandeliers)</option>
+                        </select>
+                      </div>
+
+                    </div>
+
+                    {/* Beam spread slider slider */}
+                    <div className="bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 block uppercase tracking-wider">Beam Spread Angle</span>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 normal-case">Directly governs the spotlight beam radius and the false color falloff gradients.</p>
+                      </div>
+                      <div className="flex items-center gap-3 w-full sm:max-w-xs shrink-0">
+                        <input 
+                          type="range"
+                          min="15"
+                          max="180"
+                          step="5"
+                          value={params.fixtureBeamAngle !== undefined ? params.fixtureBeamAngle : 120}
+                          onChange={e => setParams({ ...params, fixtureBeamAngle: parseInt(e.target.value) || 120 })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        />
+                        <span className="text-xs font-black text-slate-700 dark:text-slate-250 font-mono w-12 text-center bg-white dark:bg-slate-950 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">{params.fixtureBeamAngle || 120}°</span>
+                      </div>
+                    </div>
+                  </div>
+                  </>
                 ) : (
                   <div id="illumination-diagram" className="w-full h-[320px] bg-slate-100/80 rounded-xl border border-dashed border-slate-200 flex flex-col items-center justify-center text-center p-6 mt-8">
                      <Maximize className="w-10 h-10 text-slate-300 mb-3" />

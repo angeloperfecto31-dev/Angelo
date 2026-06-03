@@ -134,6 +134,13 @@ export interface IlluminationParams {
   customLightType?: string;
   customLumens?: number;
   customWattage?: number;
+  fixtureShape?: 'rectangular' | 'square' | 'circular' | 'linear';
+  fixtureWidth?: number;
+  fixtureLength?: number;
+  fixtureDiameter?: number;
+  fixtureThickness?: number;
+  fixtureBeamAngle?: number;
+  fixtureDistributionType?: 'conical' | 'oblong' | 'omni' | 'linear';
 }
 
 export interface FloorPlanImage {
