@@ -689,6 +689,11 @@ export const exportToWord = async (
 
   generalNotes.forEach(note => docChildren.push(createParagraph(note)));
 
+  if (images?.systemSLD) {
+    docChildren.push(createHeader(`System-Wide Distribution Single Line Diagram`));
+    await addImageToDoc(images.systemSLD);
+  }
+
   const allPanelsToExport = [{ panel, circuits }, ...subPanels.map(sp => ({ panel: sp.panel, circuits: sp.circuits }))];
 
   for (const { panel: p, circuits: c } of allPanelsToExport) {

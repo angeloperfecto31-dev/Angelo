@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, FolderOpen, FilePlus, Copy, Trash2, X } from 'lucide-react';
+import { Save, FolderOpen, FilePlus, Copy, Trash2, X, Server } from 'lucide-react';
 import { SavedProject, ProjectData } from '../types/project';
 import { db, auth } from '../firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
@@ -94,6 +94,18 @@ export default function ProjectManagerModal({
     return () => unsubscribe();
   }, [isOpen, currentProjectId, currentProjectData.panel.project]);
 
+  const cleanData = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(cleanData);
+    const result: any = {};
+    for (const key in obj) {
+      if (obj[key] !== undefined) {
+        result[key] = cleanData(obj[key]);
+      }
+    }
+    return result;
+  };
+
   const saveToStorage = async (newProjects: SavedProject[], projectToUpdate?: SavedProject) => {
     const user = auth.currentUser;
     if (!user) {
@@ -105,12 +117,12 @@ export default function ProjectManagerModal({
     if (projectToUpdate) {
       const docRef = doc(db, 'users', user.uid, 'projects', projectToUpdate.id);
       try {
-        await setDoc(docRef, {
+        await setDoc(docRef, cleanData({
           name: projectToUpdate.name,
           lastModified: projectToUpdate.lastModified,
           data: projectToUpdate.data,
           ownerId: user.uid
-        });
+        }));
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/projects/${projectToUpdate.id}`);
       }
@@ -216,9 +228,20 @@ export default function ProjectManagerModal({
             <FolderOpen className="w-5 h-5 text-indigo-500" />
             Project Management
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-500">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-4">
+            {auth.currentUser ? (
+              <span className="text-xs font-bold px-2 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300 rounded-lg flex items-center gap-1">
+                <Save className="w-3 h-3" /> Cloud Sync Active
+              </span>
+            ) : (
+              <span className="text-xs font-bold px-2 py-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 rounded-lg flex items-center gap-1">
+                <Server className="w-3 h-3" /> Local Storage
+              </span>
+            )}
+            <button onClick={onClose} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-500">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto space-y-6 relative">
@@ -274,9 +297,14 @@ export default function ProjectManagerModal({
                         {p.name}
                         {currentProjectId === p.id && <span className="ml-2 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full">Current</span>}
                       </h4>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Last modified: {new Date(p.lastModified).toLocaleString()}
-                      </p>
+                      <div className="flex gap-4 items-center">
+                         <p className="text-xs text-slate-500 mt-1">
+                           Last modified: {new Date(p.lastModified).toLocaleString()}
+                         </p>
+                         <p className="text-xs text-slate-400 mt-1 font-medium bg-slate-100 dark:bg-slate-700/50 px-2 rounded-md">
+                           {p.data.circuits?.length || 0} Circuits {p.data.subPanels && p.data.subPanels.length > 0 ? `• ${p.data.subPanels.length} Sub-Panels` : ''}
+                         </p>
+                      </div>
                     </div>
                     {deleteConfirmId === p.id ? (
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>

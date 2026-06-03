@@ -16,6 +16,7 @@ import {
   FileText,
   Plus,
   Map,
+  Network,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import * as XLSX from "xlsx-js-style";
@@ -25,6 +26,7 @@ import LoadSchedule, {
 } from "./components/LoadSchedule";
 import ShortCircuitCalc from "./components/ShortCircuitCalc";
 import VoltageDropCalc from "./components/VoltageDropCalc";
+import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
 import FloorPlanUploader from "./components/FloorPlanUploader";
 import {
@@ -126,7 +128,7 @@ export default function App() {
   }, [user, isAdmin]);
 
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify" | "current-calc"
+    "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify" | "current-calc" | "system-sld"
   >("dashboard");
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem("theme");
@@ -335,6 +337,13 @@ export default function App() {
       icon: Lightbulb,
       color: "text-yellow-500",
       bg: "bg-yellow-50",
+    },
+    {
+      id: "system-sld",
+      label: "System SLD",
+      icon: Network,
+      color: "text-teal-600",
+      bg: "bg-teal-50",
     },
     {
       id: "floor-plan",
@@ -989,6 +998,7 @@ export default function App() {
       }
 
       const images = {
+        systemSLD: await getImg("sld-system-wide"),
         sld: sldImages,
         isc: await getImg("short-circuit-diagram"),
         vdDiagrams: {} as Record<string, string | null>,
@@ -1645,6 +1655,18 @@ export default function App() {
                 onSnapshotCapture={handleAddIllumSnapshot}
                 snapshots={illumSnapshots}
               />
+            </motion.div>
+          </div>
+
+          {/* System SLD Tab */}
+          <div className={(activeTab === "system-sld" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={(activeTab === "system-sld" || isExporting) ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.2 }}
+              className="w-full flex justify-center"
+            >
+              <SystemSLD panel={panel} circuits={circuits} subPanels={subPanels} />
             </motion.div>
           </div>
 
