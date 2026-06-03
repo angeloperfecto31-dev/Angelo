@@ -134,10 +134,8 @@ export default function PaymentScreen({
     ? pricingSettings.promoDiscountPremium 
     : pricingSettings.premiumPrice;
   
-  // Calculate upgrade price safely - either standard upgrade cost, or difference between promo premium and base basic
-  const upgradeFinalPrice = (isOfferActive && pricingSettings.promoDiscountPremium > 0)
-    ? Math.max(0, pricingSettings.promoDiscountPremium - pricingSettings.basicPrice)
-    : pricingSettings.upgradePrice;
+  // Calculate upgrade price safely - upgrade section should not apply any promo/discount campaign rates
+  const upgradeFinalPrice = pricingSettings.upgradePrice;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText("09939170684");
@@ -1913,7 +1911,7 @@ export default function PaymentScreen({
         )}
         <div className="bg-white py-8 px-4 shadow-xl sm:rounded-3xl border border-slate-100 sm:px-10">
           {/* Real-time Promo Offer Banner */}
-          {isOfferActive && (
+          {isOfferActive && !isUpgrade && (
             <div className="mb-6 bg-gradient-to-r from-pink-500 via-indigo-600 to-indigo-700 text-white p-4 rounded-2xl shadow-md border border-indigo-500/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 select-none">
               <div>
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -1945,7 +1943,7 @@ export default function PaymentScreen({
                <div className="mt-1 flex items-end gap-1">
                  <span className="text-2xl font-black tracking-tight text-indigo-700">₱{upgradeFinalPrice.toLocaleString()}</span>
                  {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
-                   <span className="text-[11px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.upgradePrice.toLocaleString()}</span>
+                   null
                  )}
                </div>
                <ul className="mt-3 space-y-1.5">

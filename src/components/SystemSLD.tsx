@@ -49,15 +49,37 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
       const spData = computePanelScheduleValues(sp.panel, sp.circuits);
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
       const spHeight = 320 + spRows.length * 60 + 100;
-      
-      const feederIndex = circuits.findIndex(c => c.linkedSubPanelId === sp.id || c.description === sp.panel.designation);
-      const feedingCircuit = feederIndex >= 0 ? circuits[feederIndex] : null;
-      
+
+      let parentId: 'mdp' | string = 'mdp';
+      let feedingCircuit: Circuit | null = null;
       let rowIndex = 0;
       let isLeft = true;
-      if (feedingCircuit) {
-        rowIndex = mdpRows.findIndex(r => r.left?.id === feedingCircuit.id || r.right?.id === feedingCircuit.id);
-        isLeft = mdpRows[rowIndex]?.left?.id === feedingCircuit.id;
+
+      // Check if fed from MDP
+      const mdpFeederIndex = circuits.findIndex(
+        c => c.linkedSubPanelId === sp.id || (sp.panel.designation && c.description === sp.panel.designation)
+      );
+
+      if (mdpFeederIndex >= 0) {
+        feedingCircuit = circuits[mdpFeederIndex];
+        parentId = 'mdp';
+        rowIndex = mdpRows.findIndex(r => r.left?.id === feedingCircuit!.id || r.right?.id === feedingCircuit!.id);
+        isLeft = rowIndex >= 0 ? (mdpRows[rowIndex]?.left?.id === feedingCircuit!.id) : true;
+      } else {
+        // Check if fed from another subpanel
+        for (const otherSp of subPanels) {
+          const spFeederIndex = otherSp.circuits.findIndex(
+            c => c.linkedSubPanelId === sp.id || (sp.panel.designation && c.description === sp.panel.designation)
+          );
+          if (spFeederIndex >= 0) {
+            feedingCircuit = otherSp.circuits[spFeederIndex];
+            parentId = otherSp.id;
+            
+            const pRows = getPanelRows(otherSp.circuits, otherSp.panel.system);
+            rowIndex = pRows.findIndex(r => r.left?.id === feedingCircuit!.id || r.right?.id === feedingCircuit!.id);
+            break;
+          }
+        }
       }
 
       return {
@@ -65,22 +87,55 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
         spData,
         spRows,
         spHeight,
+        parentId,
         feedingCircuit,
         rowIndex: rowIndex >= 0 ? rowIndex : 0,
-        isLeft,
+        tempIsLeft: isLeft,
         idx
       };
     });
   }, [subPanels, circuits, mdpRows]);
 
-  const maxSpHeight = spLayouts.length > 0 ? Math.max(...spLayouts.map(s => s.spHeight)) : 0;
+  const resolvedLayouts = useMemo(() => {
+    const layoutMap = new Map(spLayouts.map(l => [l.sp.id, l]));
+
+    const resolveIsLeft = (id: string): boolean => {
+      const layout = layoutMap.get(id);
+      if (!layout) return true;
+      if (layout.parentId === 'mdp') {
+        return layout.tempIsLeft;
+      }
+      return resolveIsLeft(layout.parentId);
+    };
+
+    return spLayouts.map(layout => {
+      const isLeft = resolveIsLeft(layout.sp.id);
+      return {
+        ...layout,
+        isLeft
+      };
+    });
+  }, [spLayouts]);
+
+  const leftPanels = useMemo(() => resolvedLayouts.filter(l => l.isLeft), [resolvedLayouts]);
+  const rightPanels = useMemo(() => resolvedLayouts.filter(l => !l.isLeft), [resolvedLayouts]);
+
+  const maxSpHeight = resolvedLayouts.length > 0 ? Math.max(...resolvedLayouts.map(s => s.spHeight)) : 0;
   
   const SpYOffset = mdpHeight + 150;
   const svgHeight = SpYOffset + maxSpHeight + 50;
   
   const spSpacing = 800;
-  const svgWidth = Math.max(1000, 400 + Math.max(1, subPanels.length) * spSpacing);
-  const MdpXOffset = (svgWidth - 800) / 2;
+  const numLeft = leftPanels.length;
+  const numRight = rightPanels.length;
+
+  let MdpXOffset = 200;
+  let svgWidth = 1200;
+
+  if (numLeft > 0 || numRight > 0) {
+    MdpXOffset = Math.max(100, numLeft * spSpacing + 100);
+    svgWidth = MdpXOffset + 800 + Math.max(1, numRight) * spSpacing + 100;
+  }
 
   let leftDrops = 0;
   let rightDrops = 0;
@@ -234,42 +289,72 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
           </g>
 
           {/* SUB PANELS & ROUTING LINES */}
-          {spLayouts.map((layout, i) => {
-            const SpXOffset = (svgWidth - subPanels.length * spSpacing) / 2 + i * spSpacing;
+          {resolvedLayouts.map((layout, i) => {
+            const isLeft = layout.isLeft;
+            let SpXOffset = 0;
+            if (isLeft) {
+              const idxInSide = leftPanels.findIndex(l => l.sp.id === layout.sp.id);
+              SpXOffset = idxInSide * spSpacing;
+            } else {
+              const idxInSide = rightPanels.findIndex(l => l.sp.id === layout.sp.id);
+              SpXOffset = MdpXOffset + 800 + idxInSide * spSpacing;
+            }
+
+            // Resolve Parent Coordinates
+            let parentXOffset = MdpXOffset;
+            let parentYOffset = 50;
             
+            if (layout.parentId !== 'mdp') {
+              const parentLayout = resolvedLayouts.find(l => l.sp.id === layout.parentId);
+              if (parentLayout) {
+                const parentIsLeft = parentLayout.isLeft;
+                let parentIdx = 0;
+                if (parentIsLeft) {
+                  parentIdx = leftPanels.findIndex(l => l.sp.id === layout.parentId);
+                  parentXOffset = parentIdx * spSpacing;
+                } else {
+                  parentIdx = rightPanels.findIndex(l => l.sp.id === layout.parentId);
+                  parentXOffset = MdpXOffset + 800 + parentIdx * spSpacing;
+                }
+                parentYOffset = SpYOffset + 50;
+              }
+            }
+
             // Routing Math
-            const y1 = 50 + 320 + layout.rowIndex * 60;
-            const x1 = MdpXOffset + (layout.isLeft ? 180 : 620); // 180 is left arrow tip, 620 is right arrow tip
+            const y1 = parentYOffset + 320 + layout.rowIndex * 60;
+            const x1 = parentXOffset + (isLeft ? 180 : 620); // 180 is left branch tip, 620 is right branch tip
             
             let dropX;
-            if (layout.isLeft) {
+            if (isLeft) {
                leftDrops++;
-               dropX = MdpXOffset + 150 - (leftDrops * 20); // stepping outward securely
+               dropX = parentXOffset + 150 - (leftDrops * 20); // stepping outward securely
             } else {
                rightDrops++;
-               dropX = MdpXOffset + 650 + (rightDrops * 20);
+               dropX = parentXOffset + 650 + (rightDrops * 20);
             }
             
             const routingY = SpYOffset; // Enter SP from top
             
             // Sub panel top source connection point
             const spFeedX = SpXOffset + 270;
-            const spFeedY = SpYOffset + 100;
+            const spFeedY = SpYOffset + 150;
             
             // Calculate turning points
             let path = `M ${x1},${y1}`; // start at branch tip
             
-            if (layout.isLeft) {
+            if (isLeft) {
               path += ` L ${dropX},${y1}`;
-              path += ` L ${dropX},${routingY - 40}`; // drop down safely below MDP
-              path += ` L ${spFeedX - 20},${routingY - 40}`; // traverse horizontally to align with SP input
-              path += ` L ${spFeedX - 20},${spFeedY}`; // down to SP input
-              path += ` L ${spFeedX},${spFeedY}`; // right into the SP input
+              path += ` L ${dropX},${routingY + 60}`; // drop down safely in route channel
+              path += ` L ${spFeedX - 25},${routingY + 60}`; // traverse horizontally to align with SP input
+              path += ` L ${spFeedX - 25},${spFeedY - 50}`; // down to SP input level
+              path += ` L ${spFeedX},${spFeedY - 50}`; // into input path
+              path += ` L ${spFeedX},${spFeedY}`; // directly into feed point
             } else {
               path += ` L ${dropX},${y1}`;
-              path += ` L ${dropX},${routingY - 60 + (i * 10)}`; // staggered horizontal routing Y
-              path += ` L ${spFeedX - 20},${routingY - 60 + (i * 10)}`;
-              path += ` L ${spFeedX - 20},${spFeedY}`;
+              path += ` L ${dropX},${routingY + 40 + (i * 10)}`; // staggered horizontal routing Y in routing channel
+              path += ` L ${spFeedX - 25},${routingY + 40 + (i * 10)}`;
+              path += ` L ${spFeedX - 25},${spFeedY - 50}`;
+              path += ` L ${spFeedX},${spFeedY - 50}`;
               path += ` L ${spFeedX},${spFeedY}`;
             }
 
@@ -279,8 +364,8 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
                 <path d={path} className="sld-thick" />
                 
                 {/* Sub Panel Feeder Details Text Box overlaid on routing line */}
-                <rect x={spFeedX - 30} y={spFeedY - 65} width="60" height="20" fill="white" />
-                <text x={spFeedX} y={spFeedY - 50} textAnchor="middle" className="sld-label-blue">
+                <rect x={spFeedX - 62.5} y={spFeedY - 80} width="125" height="20" fill="white" stroke="#0284c7" strokeWidth="0.5" rx="3" />
+                <text x={spFeedX} y={spFeedY - 66} textAnchor="middle" className="sld-label-blue">
                    FEED TO {layout.sp.panel.designation || `SP-${i+1}`}
                 </text>
 
