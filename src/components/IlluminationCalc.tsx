@@ -455,15 +455,20 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     
     const fixtureCoords: {x: number, z: number}[] = [];
     if (fixturesCount > 0 && cols > 0 && rows > 0) {
-      const stepX = w / cols;
       const stepZ = l / rows;
-      for (let i = 0; i < fixturesCount; i++) {
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        fixtureCoords.push({
-          x: stepX / 2 + c * stepX,
-          z: stepZ / 2 + r * stepZ
-        });
+      for (let r = 0; r < rows; r++) {
+        const startIdx = r * cols;
+        const endIdx = Math.min(fixturesCount, (r + 1) * cols);
+        const fixturesInThisRow = endIdx - startIdx;
+        if (fixturesInThisRow <= 0) continue;
+
+        const rowStepX = w / fixturesInThisRow;
+        for (let c = 0; c < fixturesInThisRow; c++) {
+          fixtureCoords.push({
+            x: rowStepX / 2 + c * rowStepX,
+            z: stepZ / 2 + r * stepZ
+          });
+        }
       }
     }
     
@@ -729,13 +734,23 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     const newRooms = params.savedRooms.map(r => {
       if (r.id === id) {
         const updated = { ...r, [field]: value };
-        if (field === 'fixturesCount') {
-          const isCustom = updated.fixtureId === 'custom';
-          const fixWattage = isCustom ? (updated.fixtureWattage || params.customWattage || 15) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.wattage || 0);
-          const fixLumens = isCustom ? (updated.fixtureLumens || params.customLumens || 1500) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.lumens || 0);
-          
+        const isCustom = updated.fixtureId === 'custom';
+        const fixWattage = isCustom ? (updated.fixtureWattage || params.customWattage || 15) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.wattage || 0);
+        const fixLumens = isCustom ? (updated.fixtureLumens || params.customLumens || 1500) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.lumens || 1000 || 1);
+        const cu = params.coefficientOfUtilization || 0.6;
+        const mf = params.maintenanceFactor || 0.8;
+        const areaVal = Number(updated.area) || 1;
+
+        if (field === 'targetLux' || field === 'area') {
+          const targetLuxVal = Number(updated.targetLux) || 0;
+          const totalLumensRequiredForRoom = (targetLuxVal * areaVal) / (cu * mf);
+          updated.fixturesCount = Math.max(1, Math.ceil(totalLumensRequiredForRoom / (fixLumens || 1)));
           updated.totalWattage = fixWattage * updated.fixturesCount;
           updated.totalLumens = fixLumens * updated.fixturesCount;
+        } else if (field === 'fixturesCount') {
+          updated.totalWattage = fixWattage * updated.fixturesCount;
+          updated.totalLumens = fixLumens * updated.fixturesCount;
+          updated.targetLux = Math.round((updated.fixturesCount * fixLumens * cu * mf) / areaVal);
         }
         return updated;
       }
@@ -1638,7 +1653,16 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                         className="w-20 bg-transparent p-1 border border-transparent hover:border-slate-300 focus:border-indigo-500 rounded outline-none transition-colors text-slate-800 font-medium"
                       />
                     </td>
-                    <td className="px-4 py-3 text-slate-500">{room.area}</td>
+                    <td className="px-4 py-3">
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        min="0.1"
+                        value={room.area} 
+                        onChange={(e) => updateSavedRoom(room.id, 'area', Number(e.target.value))}
+                        className="w-20 bg-transparent p-1 border border-transparent hover:border-slate-300 focus:border-indigo-500 rounded outline-none transition-colors text-slate-800 font-medium font-mono"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-slate-500 text-xs font-bold uppercase tracking-wider">{room.fixtureLightType}</td>
                     <td className="px-4 py-3 text-right">
                       <input 

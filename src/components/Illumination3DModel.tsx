@@ -308,15 +308,20 @@ export default function Illumination3DModel({
 
     const fixturePositions: {x: number; z: number}[] = [];
     if (dFixtures > 0 && cols > 0 && rows > 0) {
-      const stepX = dWidth / cols;
       const stepZ = dLength / rows;
-      for (let i = 0; i < dFixtures; i++) {
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        fixturePositions.push({
-          x: -dWidth / 2 + stepX / 2 + c * stepX,
-          z: -dLength / 2 + stepZ / 2 + r * stepZ
-        });
+      for (let r = 0; r < rows; r++) {
+        const startIdx = r * cols;
+        const endIdx = Math.min(dFixtures, (r + 1) * cols);
+        const fixturesInThisRow = endIdx - startIdx;
+        if (fixturesInThisRow <= 0) continue;
+
+        const rowStepX = dWidth / fixturesInThisRow;
+        for (let c = 0; c < fixturesInThisRow; c++) {
+          fixturePositions.push({
+            x: -dWidth / 2 + rowStepX / 2 + c * rowStepX,
+            z: -dLength / 2 + stepZ / 2 + r * stepZ
+          });
+        }
       }
     }
 
@@ -497,15 +502,19 @@ export default function Illumination3DModel({
 
     const fixturePositions: [number, number, number][] = [];
     if (dFixtures > 0 && cols > 0 && rows > 0) {
-      const stepX = dWidth / cols;
       const stepZ = dLength / rows;
+      for (let r = 0; r < rows; r++) {
+        const startIdx = r * cols;
+        const endIdx = Math.min(dFixtures, (r + 1) * cols);
+        const fixturesInThisRow = endIdx - startIdx;
+        if (fixturesInThisRow <= 0) continue;
 
-      for (let i = 0; i < dFixtures; i++) {
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        const x = -dWidth / 2 + stepX / 2 + c * stepX;
-        const z = -dLength / 2 + stepZ / 2 + r * stepZ;
-        fixturePositions.push([x, dHeight, z]);
+        const rowStepX = dWidth / fixturesInThisRow;
+        for (let c = 0; c < fixturesInThisRow; c++) {
+          const x = -dWidth / 2 + rowStepX / 2 + c * rowStepX;
+          const z = -dLength / 2 + stepZ / 2 + r * stepZ;
+          fixturePositions.push([x, dHeight, z]);
+        }
       }
     }
 
@@ -536,14 +545,19 @@ export default function Illumination3DModel({
       lRows = Math.ceil(count / lCols);
 
       if (count > 0 && lCols > 0 && lRows > 0) {
-        const stepX = dWidth / lCols;
         const stepZ = dLength / lRows;
-        for (let i = 0; i < count; i++) {
-          const r = Math.floor(i / lCols);
-          const c = i % lCols;
-          const x = -dWidth / 2 + stepX / 2 + c * stepX;
-          const z = -dLength / 2 + stepZ / 2 + r * stepZ;
-          lightPositions.push([x, dHeight, z]);
+        for (let r = 0; r < lRows; r++) {
+          const startIdx = r * lCols;
+          const endIdx = Math.min(count, (r + 1) * lCols);
+          const lightsInThisRow = endIdx - startIdx;
+          if (lightsInThisRow <= 0) continue;
+
+          const rowStepX = dWidth / lightsInThisRow;
+          for (let c = 0; c < lightsInThisRow; c++) {
+            const x = -dWidth / 2 + rowStepX / 2 + c * rowStepX;
+            const z = -dLength / 2 + stepZ / 2 + r * stepZ;
+            lightPositions.push([x, dHeight, z]);
+          }
         }
       }
     }
