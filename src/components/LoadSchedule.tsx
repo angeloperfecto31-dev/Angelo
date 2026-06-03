@@ -1040,7 +1040,9 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                         const nextType = e.target.value as LoadType;
                         let fallbackSubId = c.linkedSubPanelId;
                         if (nextType === LoadType.SUB_PANEL && !fallbackSubId && availableSubPanels?.length) {
-                          fallbackSubId = availableSubPanels[0].id;
+                          const existingSubCount = circuits.filter(circ => circ.loadType === LoadType.SUB_PANEL && circ.id !== c.id).length;
+                          const targetIndex = Math.min(existingSubCount, availableSubPanels.length - 1);
+                          fallbackSubId = availableSubPanels[targetIndex].id;
                         }
                         updateCircuit(c.id, { loadType: nextType, linkedSubPanelId: fallbackSubId });
                       }} className="p-0.5 bg-slate-100 dark:bg-slate-800 border-0 rounded uppercase font-black no-print shrink-0 text-slate-800 dark:text-slate-100" style={{ fontSize: tableFontSize - 3 }}>

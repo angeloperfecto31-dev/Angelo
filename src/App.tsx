@@ -130,6 +130,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<
     "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify" | "current-calc" | "system-sld"
   >("dashboard");
+  const [activeScheduleTab, setActiveScheduleTab] = useState<string>("mdp");
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem("theme");
     return saved === "dark";
@@ -1525,77 +1526,151 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
-              <div className="flex flex-col gap-12 w-full max-w-full">
-                <LoadSchedule
-                  panel={panel}
-                  setPanel={setPanel}
-                  circuits={circuits}
-                  setCircuits={setCircuits}
-                  availableSubPanels={subPanels}
-                />
+              <div className="flex flex-col gap-8 w-full max-w-full">
+                {/* Custom Inside Panel Tabs */}
+                {!isExporting && (
+                  <div className="bg-slate-100/80 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-2xl p-2.5 flex flex-wrap items-center gap-2 mb-2 no-print shadow-sm">
+                    {/* Main Panel Tag */}
+                    <button
+                      onClick={() => setActiveScheduleTab("mdp")}
+                      className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                        activeScheduleTab === "mdp"
+                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px]"
+                          : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
+                      }`}
+                    >
+                      <Layout className="w-4 h-4 text-indigo-500 shadow-sm" />
+                      <span>{panel.designation || "Main Panel (MDP)"}</span>
+                    </button>
 
-                {subPanels.map((sp, index) => (
-                  <React.Fragment key={sp.id}>
-                    <LoadSchedule
-                      panel={sp.panel}
-                      setPanel={(newPanel) => {
-                        setSubPanels((prev) => {
-                          const currentPanel = prev[index].panel;
-                          const updatedPanel =
-                            typeof newPanel === "function"
-                              ? newPanel(currentPanel)
-                              : newPanel;
-                          if (currentPanel === updatedPanel) return prev;
-                          return prev.map((p, i) =>
-                            i === index ? { ...p, panel: updatedPanel } : p,
-                          );
-                        });
-                      }}
-                      circuits={sp.circuits}
-                      setCircuits={(newCircuits) => {
-                        setSubPanels((prev) => {
-                          const currentCircuits = prev[index].circuits;
-                          const updatedCircuits =
-                            typeof newCircuits === "function"
-                              ? newCircuits(currentCircuits)
-                              : newCircuits;
-                          if (currentCircuits === updatedCircuits) return prev;
-                          return prev.map((p, i) =>
-                            i === index
-                              ? { ...p, circuits: updatedCircuits }
-                              : p,
-                          );
-                        });
-                      }}
-                      isSubPanel={true}
-                      onRemoveSubPanel={() => {
-                        setSubPanels((prev) =>
-                          prev.filter((p) => p.id !== sp.id),
-                        );
-                      }}
-                    />
-                  </React.Fragment>
-                ))}
+                    {/* Sub Panels Tags */}
+                    {subPanels.map((sp) => (
+                      <button
+                        key={sp.id}
+                        onClick={() => setActiveScheduleTab(sp.id)}
+                        className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                          activeScheduleTab === sp.id
+                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px]"
+                            : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
+                        }`}
+                      >
+                        <Network className="w-3.5 h-3.5 text-cyan-500" />
+                        <span>{sp.panel.designation || "Subpanel"}</span>
+                      </button>
+                    ))}
 
-                <button
-                  onClick={() => {
-                    setSubPanels((prev) => [
-                      ...prev,
-                      {
-                        id: crypto.randomUUID(),
-                        panel: {
-                          ...INITIAL_PANEL,
-                          designation: `Sub-Panel ${prev.length + 1}`,
+                    {/* Plus Quick Tab Action */}
+                    <button
+                      onClick={() => {
+                        const newId = crypto.randomUUID();
+                        setSubPanels((prev) => [
+                          ...prev,
+                          {
+                            id: newId,
+                            panel: {
+                              ...INITIAL_PANEL,
+                              designation: `Sub-Panel ${prev.length + 1}`,
+                            },
+                            circuits: INITIAL_CIRCUITS,
+                          },
+                        ]);
+                        setActiveScheduleTab(newId);
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 border border-dashed border-indigo-300 dark:border-indigo-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ml-auto"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add Sub-Panel
+                    </button>
+                  </div>
+                )}
+
+                {/* 1. Main Distribution Panel Schedule */}
+                {(isExporting || activeScheduleTab === "mdp") && (
+                  <LoadSchedule
+                    panel={panel}
+                    setPanel={setPanel}
+                    circuits={circuits}
+                    setCircuits={setCircuits}
+                    availableSubPanels={subPanels}
+                  />
+                )}
+
+                {/* 2. Sub-Panels Schedules */}
+                {subPanels.map((sp, index) => {
+                  const isVisible = isExporting || activeScheduleTab === sp.id;
+                  if (!isVisible) return null;
+
+                  return (
+                    <React.Fragment key={sp.id}>
+                      <LoadSchedule
+                        panel={sp.panel}
+                        setPanel={(newPanel) => {
+                          setSubPanels((prev) => {
+                            const currentPanel = prev[index]?.panel;
+                            if (!currentPanel) return prev;
+                            const updatedPanel =
+                              typeof newPanel === "function"
+                                ? newPanel(currentPanel)
+                                : newPanel;
+                            if (currentPanel === updatedPanel) return prev;
+                            return prev.map((p, i) =>
+                              i === index ? { ...p, panel: updatedPanel } : p,
+                            );
+                          });
+                        }}
+                        circuits={sp.circuits}
+                        setCircuits={(newCircuits) => {
+                          setSubPanels((prev) => {
+                            const currentCircuits = prev[index]?.circuits;
+                            if (!currentCircuits) return prev;
+                            const updatedCircuits =
+                              typeof newCircuits === "function"
+                                ? newCircuits(currentCircuits)
+                                : newCircuits;
+                            if (currentCircuits === updatedCircuits) return prev;
+                            return prev.map((p, i) =>
+                              i === index
+                                ? { ...p, circuits: updatedCircuits }
+                                : p,
+                            );
+                          });
+                        }}
+                        isSubPanel={true}
+                        onRemoveSubPanel={() => {
+                          setSubPanels((prev) =>
+                            prev.filter((p) => p.id !== sp.id),
+                          );
+                          setActiveScheduleTab("mdp");
+                        }}
+                      />
+                    </React.Fragment>
+                  );
+                })}
+
+                {/* Fallback Large "Add Subpanel" helper at the bottom ONLY if mdp is visible on screen */}
+                {!isExporting && activeScheduleTab === "mdp" && (
+                  <button
+                    onClick={() => {
+                      const newId = crypto.randomUUID();
+                      setSubPanels((prev) => [
+                        ...prev,
+                        {
+                          id: newId,
+                          panel: {
+                            ...INITIAL_PANEL,
+                            designation: `Sub-Panel ${prev.length + 1}`,
+                          },
+                          circuits: INITIAL_CIRCUITS,
                         },
-                        circuits: INITIAL_CIRCUITS,
-                      },
-                    ]);
-                  }}
-                  className="w-full py-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 font-bold hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all no-print"
-                >
-                  <Plus className="w-5 h-5" />
-                  Add Sub-Panel
-                </button>
+                      ]);
+                      setActiveScheduleTab(newId);
+                    }}
+                    className="w-full py-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 font-bold hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all no-print cursor-pointer shadow-sm"
+                  >
+                    <Plus className="w-5 h-5 animate-pulse" />
+                    Create New Sub-Panel Board
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

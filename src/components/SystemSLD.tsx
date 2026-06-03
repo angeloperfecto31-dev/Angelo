@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { PanelConfig, Circuit } from '../types';
+import { PanelConfig, Circuit, LoadType } from '../types';
 import { computePanelScheduleValues } from '../utils/computeEngine';
 import { SingleLineDiagramContent } from './SingleLineDiagram';
 import { toPng } from 'html-to-image';
@@ -56,9 +56,18 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
       let isLeft = true;
 
       // Check if fed from MDP
-      const mdpFeederIndex = circuits.findIndex(
+      let mdpFeederIndex = circuits.findIndex(
         c => c.linkedSubPanelId === sp.id || (sp.panel.designation && c.description === sp.panel.designation)
       );
+
+      // Positional fallback: map idx-th subpanel to idx-th circuit of type SUB_PANEL
+      if (mdpFeederIndex < 0) {
+        const mdpSubCircuits = circuits.filter(c => c.loadType === LoadType.SUB_PANEL);
+        if (mdpSubCircuits.length > idx) {
+          const matchingCircuit = mdpSubCircuits[idx];
+          mdpFeederIndex = circuits.findIndex(c => c.id === matchingCircuit.id);
+        }
+      }
 
       if (mdpFeederIndex >= 0) {
         feedingCircuit = circuits[mdpFeederIndex];
@@ -322,7 +331,7 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
 
             // Routing Math
             const y1 = parentYOffset + 320 + layout.rowIndex * 60;
-            const x1 = parentXOffset + (isLeft ? 180 : 620); // 180 is left branch tip, 620 is right branch tip
+            const x1 = parentXOffset + (isLeft ? 190 : 610); // 190 is left arrow tip, 610 is right arrow tip
             
             let dropX;
             if (isLeft) {
@@ -340,17 +349,21 @@ export default function SystemSLD({ panel, circuits, subPanels }: SystemSLDProps
             const spFeedY = SpYOffset + 150;
             
             // Calculate turning points
+            // Drop down first by 25px to avoid overlapping with circuit description texts & arrowheads
+            const pathY = y1 + 25;
             let path = `M ${x1},${y1}`; // start at branch tip
             
             if (isLeft) {
-              path += ` L ${dropX},${y1}`;
-              path += ` L ${dropX},${routingY + 60}`; // drop down safely in route channel
-              path += ` L ${spFeedX - 25},${routingY + 60}`; // traverse horizontally to align with SP input
+              path += ` L ${x1},${pathY}`; // vertical drop clear of text
+              path += ` L ${dropX},${pathY}`; // horizontal traverse to drop channel
+              path += ` L ${dropX},${routingY + 40 + (i * 10)}`; // staggered horizontal routing Y in routing channel
+              path += ` L ${spFeedX - 25},${routingY + 40 + (i * 10)}`; // traverse horizontally to align with SP input
               path += ` L ${spFeedX - 25},${spFeedY - 50}`; // down to SP input level
               path += ` L ${spFeedX},${spFeedY - 50}`; // into input path
               path += ` L ${spFeedX},${spFeedY}`; // directly into feed point
             } else {
-              path += ` L ${dropX},${y1}`;
+              path += ` L ${x1},${pathY}`; // vertical drop clear of text
+              path += ` L ${dropX},${pathY}`; // horizontal traverse to drop channel
               path += ` L ${dropX},${routingY + 40 + (i * 10)}`; // staggered horizontal routing Y in routing channel
               path += ` L ${spFeedX - 25},${routingY + 40 + (i * 10)}`;
               path += ` L ${spFeedX - 25},${spFeedY - 50}`;

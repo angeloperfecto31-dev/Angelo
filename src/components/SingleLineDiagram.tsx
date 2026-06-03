@@ -112,7 +112,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                     <line x1="250" y1={y} x2="210" y2={y} className="sld-line" />
                     
                     <polygon points={`190,${y} 210,${y - 10} 210,${y + 10}`} fill="#94a3b8" stroke="#1e293b" />
-                    <text x="180" y={y + 5} className="sld-text" textAnchor="end">{row.left.description}</text>
+                    <text x="180" y={y - 6} className="sld-text" textAnchor="end">{row.left.description}</text>
                  </g>
               )}
               {row.right && (
@@ -138,7 +138,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                     {/* Arrow going OUT. Pointing Right. Tip is 610, Base is 590 */}
                     <line x1="550" y1={y} x2="590" y2={y} className="sld-line" />
                     <polygon points={`610,${y} 590,${y - 10} 590,${y + 10}`} fill="#94a3b8" stroke="#1e293b" />
-                    <text x="620" y={y + 5} className="sld-text" textAnchor="start">{row.right.description}</text>
+                    <text x="620" y={y - 6} className="sld-text" textAnchor="start">{row.right.description}</text>
                  </g>
               )}
            </g>
