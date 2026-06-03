@@ -626,7 +626,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       if (c.id === id) {
         const merged = { ...c, ...updates };
         // Trigger recalculation if load parameters OR the circuit breaker itself changes
-        if ('phases' in updates || 'wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates || 'pf' in updates) {
+        if ('phases' in updates || 'wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates || 'pf' in updates || 'linkedSubPanelId' in updates) {
           return { ...merged, ...calculateCircuit(merged) } as Circuit;
         }
         return merged;
