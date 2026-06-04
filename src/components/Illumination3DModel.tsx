@@ -199,6 +199,8 @@ export default function Illumination3DModel({
   fixtureDistributionType
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fallbackCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [webGlError, setWebGlError] = useState<string | null>(null);
 
   // Debounce WebGL recreation & 2D heatmap texture generation to prevent lag during fast typing
   const [debouncedParams, setDebouncedParams] = useState({
@@ -461,8 +463,317 @@ export default function Illumination3DModel({
     return canvas;
   }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, resolved]);
 
+  // 2D Canvas Fallback Layout Renderer (triggered if WebGL is unavailable or fails to initialize)
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!webGlError || !fallbackCanvasRef.current) return;
+
+    const canvas = fallbackCanvasRef.current;
+    
+    // Fit the canvas to the container client rect or generic dimensions
+    const parent = canvas.parentElement;
+    const cw = parent ? parent.clientWidth : 950;
+    const ch = parent ? parent.clientHeight : 550;
+    canvas.width = cw;
+    canvas.height = ch;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear background with dark blue slate
+    ctx.fillStyle = '#020617'; // slate-950
+    ctx.fillRect(0, 0, cw, ch);
+
+    // Grid columns & rows of fixtures
+    let cols = Math.ceil(Math.sqrt(dFixtures));
+    let rows = Math.ceil(dFixtures / cols);
+    const ratio = dWidth / Math.max(0.1, dLength);
+    cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
+    rows = Math.ceil(dFixtures / cols);
+
+    const fixturePositions: {x: number; z: number}[] = [];
+    if (dFixtures > 0 && cols > 0 && rows > 0) {
+      const stepZ = dLength / rows;
+      for (let r = 0; r < rows; r++) {
+        const startIdx = r * cols;
+        const endIdx = Math.min(dFixtures, (r + 1) * cols);
+        const fixturesInThisRow = endIdx - startIdx;
+        if (fixturesInThisRow <= 0) continue;
+
+        const rowStepX = dWidth / fixturesInThisRow;
+        for (let c = 0; c < fixturesInThisRow; c++) {
+          fixturePositions.push({
+            x: -dWidth / 2 + rowStepX / 2 + c * rowStepX,
+            z: -dLength / 2 + stepZ / 2 + r * stepZ
+          });
+        }
+      }
+    }
+
+    const skyIllum = dSkyCondition === 'clear' ? 35000 : dSkyCondition === 'partly' ? 18000 : 7000;
+
+    // Generate accurate fallback 2D illumination texture on a 96x96 grid for top performance
+    const gridRes = 96;
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = gridRes;
+    tempCanvas.height = gridRes;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (tempCtx) {
+      const imgData = tempCtx.createImageData(gridRes, gridRes);
+      for (let gZ = 0; gZ < gridRes; gZ++) {
+        for (let gX = 0; gX < gridRes; gX++) {
+          const realX = -dWidth / 2 + (gX / (gridRes - 1)) * dWidth;
+          const realZ = -dLength / 2 + (gZ / (gridRes - 1)) * dLength;
+
+          let totalLux = 0;
+
+          fixturePositions.forEach(pos => {
+            let ptLux = 0;
+            const intensity = dLumens / (2 * Math.PI);
+
+            if (resolved.distributionType === 'linear') {
+              const halfL = resolved.length / 2;
+              const zClamped = Math.max(pos.z - halfL, Math.min(pos.z + halfL, realZ));
+              const dx = realX - pos.x;
+              const dz = realZ - zClamped;
+              const distSq = dx*dx + dz*dz + dHeight**2;
+              const dist = Math.sqrt(distSq);
+              const cosTheta = dHeight / dist;
+              const theta = Math.acos(cosTheta);
+              const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+              let factor = 0;
+              if (theta <= beamHalfAngleRad) {
+                factor = Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2));
+              }
+              ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
+            } else if (resolved.distributionType === 'oblong') {
+              const dx = (realX - pos.x) * 1.6;
+              const dz = (realZ - pos.z) * 0.7;
+              const distSq = dx*dx + dz*dz + dHeight**2;
+              const dist = Math.sqrt(distSq);
+              const cosTheta = dHeight / dist;
+              const theta = Math.acos(cosTheta);
+              const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+              let factor = 0;
+              if (theta <= beamHalfAngleRad) {
+                factor = Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2));
+              }
+              ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
+            } else if (resolved.distributionType === 'omni') {
+              const dx = realX - pos.x;
+              const dz = realZ - pos.z;
+              const distSq = dx*dx + dz*dz + dHeight**2;
+              const dist = Math.sqrt(distSq);
+              const cosTheta = dHeight / dist;
+              const factor = Math.cos(Math.acos(cosTheta) * 0.6);
+              ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
+            } else {
+              const dx = realX - pos.x;
+              const dz = realZ - pos.z;
+              const distSq = dx*dx + dz*dz + dHeight**2;
+              const dist = Math.sqrt(distSq);
+              const cosTheta = dHeight / dist;
+              const theta = Math.acos(cosTheta);
+              const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+              let factor = 0;
+              if (theta <= beamHalfAngleRad) {
+                factor = Math.pow(Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2)), 1.5);
+              } else if (theta <= beamHalfAngleRad * 1.3) {
+                const ratio = 1 - (theta - beamHalfAngleRad) / (beamHalfAngleRad * 0.3);
+                factor = 0.08 * Math.pow(ratio, 2);
+              }
+              ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
+            }
+            totalLux += ptLux;
+          });
+
+          if (dEnableDaylight) {
+            const distFromNorth = realZ - (-dLength/2);
+            const dfAtWall = 0.08 * (dWindowArea / (dWidth * dLength)) * 100;
+            const locDF = dfAtWall * Math.exp(-0.5 * Math.max(0, distFromNorth));
+            const daylightPointLux = locDF * skyIllum / 100;
+            totalLux += daylightPointLux;
+          }
+
+          let r = 0, g = 0, b = 0;
+          if (dShowFalseColor) {
+            const t1 = dTargetLux * 0.33;
+            const t2 = dTargetLux * 0.67;
+            const t3 = dTargetLux * 1.0;
+            const t4 = dTargetLux * 1.67;
+            const t5 = dTargetLux * 2.5;
+
+            if (totalLux < t1) {
+              const rValue = totalLux / t1;
+              r = 0; g = 0; b = Math.round(50 + rValue * 150);
+            } else if (totalLux < t2) {
+              const rValue = (totalLux - t1) / (t2 - t1);
+              r = 0; g = Math.round(rValue * 200); b = 200;
+            } else if (totalLux < t3) {
+              const rValue = (totalLux - t2) / (t3 - t2);
+              r = 0; g = 255; b = Math.round(200 - rValue * 200);
+            } else if (totalLux < t4) {
+              const rValue = (totalLux - t3) / (t4 - t3);
+              r = Math.round(rValue * 255); g = 255; b = 0;
+            } else if (totalLux < t5) {
+              const rValue = (totalLux - t4) / (t5 - t4);
+              r = 255; g = Math.round(255 - rValue * 155); b = 0;
+            } else {
+              const rValue = Math.min(1, (totalLux - t5) / t5);
+              r = 255; g = Math.round(100 + rValue * 155); b = Math.round(100 + rValue * 155);
+            }
+          } else {
+            const brightness = Math.min(1, totalLux / Math.max(1, dTargetLux * 1.5));
+            r = Math.round(30 + brightness * 200); 
+            g = Math.round(41 + brightness * 190); 
+            b = Math.round(59 + brightness * 150); 
+          }
+
+          const idx = (gZ * gridRes + gX) * 4;
+          imgData.data[idx] = r;
+          imgData.data[idx+1] = g;
+          imgData.data[idx+2] = b;
+          imgData.data[idx+3] = 255;
+        }
+      }
+      tempCtx.putImageData(imgData, 0, 0);
+    }
+
+    // Set layout aspect ratio box based on room size
+    const pad = 75;
+    const viewWidth = cw - pad * 2;
+    const viewHeight = ch - pad * 2;
+
+    const scale = Math.min(viewWidth / dWidth, viewHeight / dLength);
+    const drawW = dWidth * scale;
+    const drawH = dLength * scale;
+    const startX = (cw - drawW) / 2;
+    const startY = (ch - drawH) / 2;
+
+    // Draw grid background for engineering feel
+    ctx.strokeStyle = '#111827'; // slate-900 gridline
+    ctx.lineWidth = 1;
+    for (let xPos = 0; xPos <= cw; xPos += 40) {
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, ch);
+      ctx.stroke();
+    }
+    for (let yPos = 0; yPos <= ch; yPos += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, yPos);
+      ctx.lineTo(cw, yPos);
+      ctx.stroke();
+    }
+
+    // Draw the computed heatmap texture
+    ctx.drawImage(tempCanvas, startX, startY, drawW, drawH);
+
+    // Stroke border of the room
+    ctx.strokeStyle = '#475569'; // slate-600
+    ctx.lineWidth = 3;
+    ctx.strokeRect(startX, startY, drawW, drawH);
+
+    // Draw window marker if daylight enabled
+    if (dEnableDaylight) {
+      ctx.fillStyle = '#38bdf8'; // sky-400
+      const winW = Math.min(drawW * 0.7, Math.sqrt(dWindowArea) * 1.5 * scale);
+      ctx.fillRect(startX + (drawW - winW) / 2, startY - 5, winW, 8);
+      
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'bold 9px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('DAYLIGHT SOURCE WINDOW (NORTH)', startX + drawW / 2, startY - 8);
+    }
+
+    // Draw fixtures
+    fixturePositions.forEach((pos, index) => {
+      const cx = startX + ((pos.x + dWidth / 2) / dWidth) * drawW;
+      const cy = startY + ((pos.z + dLength / 2) / dLength) * drawH;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 1.5;
+      
+      ctx.shadowColor = '#fef08a';
+      ctx.shadowBlur = 10;
+
+      if (resolved.shape === 'circular') {
+        const rad = Math.max(3.5, (resolved.diameter / 2) * scale);
+        ctx.beginPath();
+        ctx.arc(cx, cy, rad, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+      } else if (resolved.shape === 'linear') {
+        const lThickness = Math.max(2, resolved.width * scale);
+        const lLen = Math.max(12, resolved.length * scale);
+        ctx.fillRect(cx - lThickness / 2, cy - lLen / 2, lThickness, lLen);
+        ctx.strokeRect(cx - lThickness / 2, cy - lLen / 2, lThickness, lLen);
+      } else { // square or rectangular
+        const rectW = Math.max(6, resolved.width * scale);
+        const rectL = Math.max(6, resolved.length * scale);
+        ctx.fillRect(cx - rectW / 2, cy - rectL / 2, rectW, rectL);
+        ctx.strokeRect(cx - rectW / 2, cy - rectL / 2, rectW, rectL);
+      }
+
+      ctx.shadowBlur = 0; // Reset blur
+
+      // Draw number inside fixture circle/rect
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 8px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((index + 1).toString(), cx, cy);
+    });
+
+    // Dimension indicators with arrows
+    ctx.fillStyle = '#94a3b8';
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+
+    // Width arrow line (underneath room)
+    const arrowY = startY + drawH + 20;
+    ctx.beginPath();
+    ctx.moveTo(startX, arrowY);
+    ctx.lineTo(startX + drawW, arrowY);
+    ctx.stroke();
+
+    // Arrows tips
+    ctx.beginPath();
+    ctx.moveTo(startX, arrowY); ctx.lineTo(startX + 6, arrowY - 3); ctx.lineTo(startX + 6, arrowY + 3); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(startX + drawW, arrowY); ctx.lineTo(startX + drawW - 6, arrowY - 3); ctx.lineTo(startX + drawW - 6, arrowY + 3); ctx.fill();
+    
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(`${dWidth.toFixed(2)}m (Width)`, startX + drawW / 2, arrowY + 14);
+
+    // Length arrow line (on side of room)
+    ctx.fillStyle = '#94a3b8';
+    const arrowX = startX - 25;
+    ctx.beginPath();
+    ctx.moveTo(arrowX, startY);
+    ctx.lineTo(arrowX, startY + drawH);
+    ctx.stroke();
+
+    // Arrows tips
+    ctx.beginPath();
+    ctx.moveTo(arrowX, startY); ctx.lineTo(arrowX - 3, startY + 6); ctx.lineTo(arrowX + 3, startY + 6); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(arrowX, startY + drawH); ctx.lineTo(arrowX - 3, startY + drawH - 6); ctx.lineTo(arrowX + 3, startY + drawH - 6); ctx.fill();
+
+    ctx.save();
+    ctx.translate(arrowX - 10, startY + drawH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(`${dLength.toFixed(2)}m (Length)`, 0, 0);
+    ctx.restore();
+
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, resolved, webGlError]);
+
+  useEffect(() => {
+    if (!containerRef.current || webGlError) return;
 
     // Reset container canvas elements
     containerRef.current.innerHTML = '';
@@ -477,7 +788,15 @@ export default function Illumination3DModel({
     const camera = new THREE.PerspectiveCamera(45, containerWidth / containerHeight, 0.1, 1000);
     camera.position.set(dWidth * 1.4, dCeilingHeight * 2.2, dLength * 1.4);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    } catch (err: any) {
+      console.warn("WebGL Renderer creation failed:", err);
+      setWebGlError(err?.message || "WebGL context creation failed");
+      return;
+    }
+
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(containerWidth, containerHeight);
     containerRef.current.appendChild(renderer.domElement);
@@ -737,15 +1056,19 @@ export default function Illumination3DModel({
         
         {/* Heads-Up Display (HUD) Controls Overlay */}
         <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-90 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none">
-          <div className="flex flex-col gap-1.5 bg-slate-900/95 px-4 py-3 border border-slate-800 rounded-xl backdrop-blur-md">
+          <div className="flex flex-col gap-1.5 bg-slate-900/95 px-4 py-3 border border-slate-800 rounded-xl backdrop-blur-md text-slate-100">
             <span className="text-white text-xs font-bold font-mono tracking-tight flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-              3D Lighting CAD Space
+              <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${webGlError ? 'bg-amber-500' : 'bg-blue-500'}`}></span>
+              {webGlError ? '2D Lighting Simulation Space' : '3D Lighting CAD Space'}
             </span>
-            <span className="text-[10px] font-medium text-slate-400 normal-case">Drag mouse pointer to rotate, scroll wheel to zoom model.</span>
+            <span className="text-[10px] font-medium text-slate-400 normal-case">
+              {webGlError 
+                ? "Showing top-down blueprint lighting layout simulation (WebGL disabled)." 
+                : "Drag mouse pointer to rotate, scroll wheel to zoom model."}
+            </span>
             <div className="text-[10px] text-yellow-350 font-mono tracking-normal mt-1 border-t border-slate-800 pt-1.5 font-bold normal-case space-y-0.5">
               <div>ROOM SIZE: {width.toFixed(2)}m (W) × {length.toFixed(2)}m (L) × {ceilingHeight.toFixed(2)}m (H)</div>
-              <div className="text-cyan-400 font-bold uppercase">
+              <div className="text-cyan-400 font-bold uppercase text-[9px] tracking-wide">
                 FIXTURE: {resolved.shape} ({resolved.shape === 'circular' ? `Ø${resolved.diameter}m` : `${resolved.width}m × ${resolved.length}m`}) | Beam: {resolved.beamAngle}° | {resolved.distributionType}
               </div>
             </div>
@@ -769,13 +1092,13 @@ export default function Illumination3DModel({
                 <span>LPD Standard Overload ({lpdValue.toFixed(2)} W/m²)</span>
               </div>
             )}
-
+ 
             <div className={`px-3 py-1.5 rounded-lg border text-[10px] uppercase text-center backdrop-blur-sm ${complianceBg}`}>
               {complianceBadge}
             </div>
           </div>
         </div>
-
+ 
         {/* Floating Detailed Adequacy Note Panel */}
         <div className="absolute left-4 bottom-4 bg-slate-900/95 border border-slate-800 p-4 rounded-xl text-white z-10 text-[10px] max-w-[340px] pointer-events-auto backdrop-blur-md shadow-lg space-y-1.5">
           <div className="font-extrabold text-cyan-400 uppercase tracking-wider text-[10px]">Real-term Assessment Notes</div>
@@ -787,7 +1110,7 @@ export default function Illumination3DModel({
             <span>Estimated: <strong>{estAverageLux} lx</strong></span>
           </div>
         </div>
-
+ 
         {showFalseColor && (
           <div className="absolute right-4 bottom-4 bg-slate-900/95 border border-slate-700/80 p-3.5 rounded-xl text-white z-10 text-[10px] space-y-2 backdrop-blur-md shadow-lg max-w-[220px]">
             <div className="font-extrabold border-b border-white/10 pb-1 mb-1 uppercase tracking-widest text-[#fbbf24] text-[9px]">False Color Lux Index</div>
@@ -799,16 +1122,20 @@ export default function Illumination3DModel({
             <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded bg-[#0000a0] shrink-0"></div><span className="font-medium text-slate-200">&lt; {Math.round(targetLux * 0.33)} Lux (Shadows)</span></div>
           </div>
         )}
-
+ 
         {enableDaylight && (
           <div className="absolute right-4 top-24 bg-indigo-950/90 border border-indigo-800/80 px-2.5 py-1.5 rounded-lg text-indigo-200 z-10 text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-md">
             <div className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-pulse"></div>
             Daylight Source Enabled (North Window)
           </div>
         )}
-
-        {/* Actual mounted canvas shell */}
-        <div ref={containerRef} className="w-full h-full" />
+ 
+        {/* Actual mounted canvas shell / graceful WebGL fallback */}
+        {webGlError ? (
+          <canvas ref={fallbackCanvasRef} className="w-full h-full block" />
+        ) : (
+          <div ref={containerRef} className="w-full h-full" />
+        )}
       </div>
     </div>
   );
