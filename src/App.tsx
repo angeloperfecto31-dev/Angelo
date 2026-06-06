@@ -243,10 +243,27 @@ export default function App() {
 
   const handleLoadProject = (projectId: string, data: ProjectData) => {
     setCurrentProjectId(projectId);
-    setPanel(data.panel);
+    setPanel({
+      ...data.panel,
+      transformerConnection: data.panel.transformerConnection === 'Delta-Wye' ? 'Delta-Wye (Δ-Y)' :
+                             data.panel.transformerConnection === 'Wye (Star)' ? 'Wye (Star) Connection' :
+                             data.panel.transformerConnection === 'Delta' ? 'Delta Connection' :
+                             data.panel.transformerConnection === 'Wye-Wye' ? 'Wye-Wye (Y-Y)' :
+                             data.panel.transformerConnection
+    });
     setCircuits(data.circuits);
     setSubPanels(data.subPanels || []);
-    setIscParams(data.iscParams);
+    
+    // Normalize short circuit params too
+    const normalizedIscParams = { ...data.iscParams };
+    if (normalizedIscParams) {
+      if (normalizedIscParams.transformerConnection === 'Delta-Wye') normalizedIscParams.transformerConnection = 'Delta-Wye (Δ-Y)';
+      else if (normalizedIscParams.transformerConnection === 'Wye (Star)') normalizedIscParams.transformerConnection = 'Wye (Star) Connection';
+      else if (normalizedIscParams.transformerConnection === 'Delta') normalizedIscParams.transformerConnection = 'Delta Connection';
+      else if (normalizedIscParams.transformerConnection === 'Wye-Wye') normalizedIscParams.transformerConnection = 'Wye-Wye (Y-Y)';
+    }
+    setIscParams(normalizedIscParams);
+    
     setIscSource(data.iscSource);
     setVdCalculations(data.vdCalculations);
     setIllumParams(data.illumParams);
@@ -491,45 +508,47 @@ export default function App() {
       wsData.push([]);
       
       const baseTotalRow: any[] = [
+        "Total Connected Load", // 0
         "",
         "",
         "",
-        "",
-        "Total Connected Load",
-        `${totalVA.toFixed(0)} VA`,
-        `(${(totalVA / 1000).toFixed(2)} kVA)`,
+        `${totalVA.toFixed(0)} VA`, // 4: VA
+        `(${(totalVA / 1000).toFixed(2)} kVA)`, // 5: PHASE
       ];
       
       if (is3Phase) {
         baseTotalRow.push(
-          `${phaseAmps.R.toFixed(2)} A`,
-          `${phaseAmps.Y.toFixed(2)} A`,
-          `${phaseAmps.B.toFixed(2)} A`,
-          phaseAmps.threePhase > 0 ? `${phaseAmps.threePhase.toFixed(2)} A` : "-",
+          `${phaseAmps.R.toFixed(2)} A`, // 6: p1
+          `${phaseAmps.Y.toFixed(2)} A`, // 7: p2
+          `${phaseAmps.B.toFixed(2)} A`, // 8: p3
+          phaseAmps.threePhase > 0 ? `${phaseAmps.threePhase.toFixed(2)} A` : "-", // 9: 3Ø
         );
       } else {
-        baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`);
+        baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 6: AMPS
       }
       
-      const numCols = is3Phase ? 17 : 14;
+      const numCols = is3Phase ? 16 : 13;
       const baseRemainingCols = numCols - baseTotalRow.length;
-      for (let i = 0; i < baseRemainingCols; i++) {
-        baseTotalRow.push("");
+      if (baseRemainingCols > 0) {
+        for (let i = 0; i < baseRemainingCols; i++) {
+          baseTotalRow.push("");
+        }
       }
       wsData.push(baseTotalRow);
 
       const totalKvaRow: any[] = [
+        "Total kVA", // 0
         "",
         "",
         "",
-        "",
-        "Total kVA",
-        `${(totalVA / 1000).toFixed(2)} kVA`,
-        "",
+        `${(totalVA / 1000).toFixed(2)} kVA`, // 4: VA
+        "", // 5: PHASE
       ];
       const remainingCols = numCols - totalKvaRow.length;
-      for (let i = 0; i < remainingCols; i++) {
-        totalKvaRow.push("");
+      if (remainingCols > 0) {
+        for (let i = 0; i < remainingCols; i++) {
+          totalKvaRow.push("");
+        }
       }
       wsData.push(totalKvaRow);
 
@@ -559,18 +578,21 @@ export default function App() {
         merges.push({ s: { r: 3, c: 3 }, e: { r: 4, c: 3 } });
         merges.push({ s: { r: 3, c: 4 }, e: { r: 4, c: 4 } });
         merges.push({ s: { r: 3, c: 5 }, e: { r: 4, c: 5 } });
-        merges.push({ s: { r: 3, c: 6 }, e: { r: 4, c: 6 } });
-        merges.push({ s: { r: 3, c: 7 }, e: { r: 3, c: 10 } });
+        merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 9 } }); // AMPS spans cols 6, 7, 8, 9
+        merges.push({ s: { r: 3, c: 10 }, e: { r: 4, c: 10 } });
         merges.push({ s: { r: 3, c: 11 }, e: { r: 4, c: 11 } });
         merges.push({ s: { r: 3, c: 12 }, e: { r: 4, c: 12 } });
         merges.push({ s: { r: 3, c: 13 }, e: { r: 4, c: 13 } });
         merges.push({ s: { r: 3, c: 14 }, e: { r: 4, c: 14 } });
         merges.push({ s: { r: 3, c: 15 }, e: { r: 4, c: 15 } });
-        merges.push({ s: { r: 3, c: 16 }, e: { r: 4, c: 16 } });
       }
       if (merges.length > 0) {
         ws["!merges"] = merges;
       }
+
+      // Add merges for bottom total row labels
+      merges.push({ s: { r: 4 + headerRowOffset + c.length + 1, c: 0 }, e: { r: 4 + headerRowOffset + c.length + 1, c: 3 } });
+      merges.push({ s: { r: 4 + headerRowOffset + c.length + 2, c: 0 }, e: { r: 4 + headerRowOffset + c.length + 2, c: 3 } });
 
       const wscols: any[] = [];
       for (let col = 0; col < numCols; col++) {
@@ -764,7 +786,7 @@ export default function App() {
       transformerZ: 5,
       transformerVoltage: panel?.voltage || 230,
       primaryVoltage: 34500,
-      transformerConnection: 'Delta-Wye',
+      transformerConnection: 'Delta-Wye (Δ-Y)',
       utilityShortCircuitMVA: 500,
       feederLength: 10,
       feederSize: '30',
@@ -1486,7 +1508,7 @@ export default function App() {
               </div>
 
               {/* Interactive PEC Current Calculator & Verifier */}
-              <PECCurrentCalculator />
+              <PECCurrentCalculator panel={panel} setPanel={setPanel} />
 
               {/* Direct Actions & Interactive Quick Launcher Tab */}
               <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
@@ -1776,7 +1798,7 @@ export default function App() {
                     fully compliant with Philippine Electrical Code (PEC) 2017 Part 1 standards.
                   </p>
                 </div>
-                <PECCurrentCalculator />
+                <PECCurrentCalculator panel={panel} setPanel={setPanel} />
               </div>
             </motion.div>
           </div>

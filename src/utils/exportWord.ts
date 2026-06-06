@@ -901,7 +901,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     transformerZ: 5,
     transformerVoltage: panel?.voltage || 230,
     primaryVoltage: 34500,
-    transformerConnection: 'Delta-Wye',
+    transformerConnection: 'Delta-Wye (Δ-Y)',
     utilityShortCircuitMVA: 500,
     feederLength: 10,
     feederSize: '30',
@@ -912,7 +912,21 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   const baseKVA = params.transformerKVA;
   const baseKV = params.transformerVoltage / 1000;
   const zUtilitypu = baseKVA / (params.utilityShortCircuitMVA * 1000);
-  const zTranspu = params.transformerZ / 100;
+  
+  let connectionMultiplier = 1.0;
+  let groundFaultFactor = 1.0;
+  if (params.transformerConnection?.includes('Open') || false) {
+    connectionMultiplier = 0.866; 
+  }
+  
+  if (params.transformerConnection === 'Wye (Star) Connection' || 
+      params.transformerConnection === 'Delta-Wye (Δ-Y)' || 
+      params.transformerConnection === 'Wye-Wye (Y-Y)' ||
+      params.transformerConnection === 'Open Wye-Open Delta') {
+    groundFaultFactor = 1.25; 
+  }
+  
+  const zTranspu = (params.transformerZ / 100) / connectionMultiplier;
 
   // Feeder attenuation resistances matching typical standards
   const feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
@@ -990,8 +1004,8 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     createParagraph(`2. Utility Source Grid Impedance ($Z_{\\text{util, pu}}$):`),
     createFormulaCallout(`Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}`),
     
-    createParagraph(`3. Transformer Inductive Impedance ($Z_{\\text{trans, pu}}$):`),
-    createFormulaCallout(`Z_{\\text{trans, pu}} = \\frac{\\%Z_{\\text{transformer}}}{100} = \\frac{${params.transformerZ}\\%}{100} = ${zTranspu.toFixed(6)}\\text{ pr. u.}`),
+    createParagraph(`3. Transformer Inductive Impedance ($Z_{\\text{trans, pu}}$) - Connection factor applied: ${connectionMultiplier}:`),
+    createFormulaCallout(`Z_{\\text{trans, pu}} = \\frac{(\\%Z_{\\text{transformer}} / 100)}{\\text{ConnectionMultiplier}} = \\frac{(${params.transformerZ}\\% / 100)}{${connectionMultiplier}} = ${zTranspu.toFixed(6)}\\text{ pr. u.}`),
     
     createParagraph(`4. Feeder Conductor Ohmic Impedance Sizing decay ($Z_{\\text{feeder}}$):`),
     createFormulaCallout(`Z_{\\text{feeder}} = R + jX = ${feederR.toFixed(5)} + j${feederX.toFixed(5)}\\,\\Omega \\implies |Z_{\\text{feeder}}| = ${feederZ.toFixed(5)}\\,\\Omega`),

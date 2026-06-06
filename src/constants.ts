@@ -37,7 +37,7 @@ export const INITIAL_SHORT_CIRCUIT_PARAMS: ShortCircuitParams = {
   transformerZ: 5,
   transformerVoltage: 230,
   primaryVoltage: 34500,
-  transformerConnection: 'Delta-Wye',
+  transformerConnection: 'Delta-Wye (Δ-Y)',
   utilityShortCircuitMVA: 500,
   feederLength: 10,
   feederSize: '30',

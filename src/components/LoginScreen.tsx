@@ -73,6 +73,8 @@ export default function LoginScreen() {
         setError('Google Sign-In is not enabled. Please enable it in the Firebase Console under Authentication.');
       } else if (errorCode === 'auth/network-request-failed' || errorMessage.includes('network-request-failed')) {
         setError("Google SSO failed: Network request blocked. This usually happens in the preview iframe. Please click 'Open in New Tab' in the top-right corner, or check if Brave Shields or an adblocker is blocking Google authentication endpoints.");
+      } else if (errorCode === 'auth/cancelled-popup-request' || errorMessage.includes('cancelled-popup-request')) {
+        setError("Google Sign-In popup was cancelled or blocked by the browser. If you are inside the preview iframe, your browser might be blocking popups. Please click 'Open in New Tab' in the top-right corner to authenticate in a full window.");
       } else {
         setError(err.message || 'An error occurred during Google sign in.');
       }

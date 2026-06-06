@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ActiveFixtureSelection, PlacedFixtureDragPosition } from '../types';
 
 interface SceneProps {
   width: number;
@@ -24,6 +25,20 @@ interface SceneProps {
   fixtureThickness?: number;
   fixtureBeamAngle?: number;
   fixtureDistributionType?: 'conical' | 'oblong' | 'omni' | 'linear';
+  activeFixtures?: ActiveFixtureSelection[];
+  customPositions?: PlacedFixtureDragPosition[];
+}
+
+interface PlacedFixture {
+  x: number;
+  z: number;
+  y: number;
+  rotationDegrees?: number;
+  lumens: number;
+  wattage: number;
+  fixtureId: string;
+  lightType: string;
+  resolved: ReturnType<typeof resolveFixtureParams>;
 }
 
 // Resolver for safe default parameters of a light fixture shape or size
@@ -196,7 +211,9 @@ export default function Illumination3DModel({
   fixtureDiameter,
   fixtureThickness,
   fixtureBeamAngle,
-  fixtureDistributionType
+  fixtureDistributionType,
+  activeFixtures,
+  customPositions
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fallbackCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -221,7 +238,9 @@ export default function Illumination3DModel({
     fixtureDiameter,
     fixtureThickness,
     fixtureBeamAngle,
-    fixtureDistributionType
+    fixtureDistributionType,
+    activeFixtures,
+    customPositions
   });
 
   useEffect(() => {
@@ -244,7 +263,9 @@ export default function Illumination3DModel({
         fixtureDiameter,
         fixtureThickness,
         fixtureBeamAngle,
-        fixtureDistributionType
+        fixtureDistributionType,
+        activeFixtures,
+        customPositions
       });
     }, 280); // 280ms provides optimal blend between live feel and high-performance typing fluidity
 
@@ -254,7 +275,8 @@ export default function Illumination3DModel({
   }, [
     width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, 
     enableDaylight, windowArea, skyCondition, targetLux,
-    fixtureShape, fixtureWidth, fixtureLength, fixtureDiameter, fixtureThickness, fixtureBeamAngle, fixtureDistributionType
+    fixtureShape, fixtureWidth, fixtureLength, fixtureDiameter, fixtureThickness, fixtureBeamAngle, fixtureDistributionType,
+    activeFixtures, customPositions
   ]);
 
   const {
@@ -275,7 +297,9 @@ export default function Illumination3DModel({
     fixtureDiameter: dFixtureDiameter,
     fixtureThickness: dFixtureThickness,
     fixtureBeamAngle: dFixtureBeamAngle,
-    fixtureDistributionType: dFixtureDistributionType
+    fixtureDistributionType: dFixtureDistributionType,
+    activeFixtures: dActiveFixtures,
+    customPositions: dCustomPositions
   } = debouncedParams;
 
   // Resolved parameters accounting for pre-configured defaults
@@ -291,6 +315,122 @@ export default function Illumination3DModel({
     );
   }, [dFixtureShape, dFixtureWidth, dFixtureLength, dFixtureDiameter, dFixtureThickness, dFixtureBeamAngle, dFixtureDistributionType]);
 
+  // Generate actual coordinates and parameters of all active fixtures in the room (handles single and combined layouts)
+  const placedFixtures = useMemo(() => {
+    const list: PlacedFixture[] = [];
+    const ratio = dWidth / Math.max(0.1, dLength);
+    
+    if (dCustomPositions && dCustomPositions.length > 0) {
+      dCustomPositions.forEach(cp => {
+        let matchingAf = dActiveFixtures?.find(f => f.fixtureId === cp.fixtureId);
+        if (!matchingAf && dActiveFixtures && dActiveFixtures.length === 1) {
+          matchingAf = dActiveFixtures[0];
+        }
+        const res = resolveFixtureParams(
+          matchingAf?.fixtureShape ?? dFixtureShape,
+          matchingAf?.fixtureWidth ?? dFixtureWidth,
+          matchingAf?.fixtureLength ?? dFixtureLength,
+          matchingAf?.fixtureDiameter ?? dFixtureDiameter,
+          matchingAf?.fixtureThickness ?? dFixtureThickness,
+          matchingAf?.fixtureBeamAngle ?? dFixtureBeamAngle,
+          matchingAf?.fixtureDistributionType ?? dFixtureDistributionType
+        );
+        list.push({
+          x: cp.x - dWidth / 2,
+          z: cp.z - dLength / 2,
+          y: dHeight, // mounting height
+          rotationDegrees: cp.rotationDegrees,
+          lumens: cp.lumens ?? matchingAf?.lumens ?? dLumens,
+          wattage: cp.wattage ?? matchingAf?.wattage ?? 0,
+          fixtureId: cp.fixtureId,
+          lightType: cp.lightType,
+          resolved: res
+        });
+      });
+    } else if (dActiveFixtures && dActiveFixtures.length > 0) {
+      dActiveFixtures.forEach((af, afIdx) => {
+        const q = af.quantity || 0;
+        if (q <= 0) return;
+        
+        let cols = Math.ceil(Math.sqrt(q));
+        let rows = Math.ceil(q / cols);
+        cols = Math.max(1, Math.round(Math.sqrt(q * ratio)));
+        rows = Math.ceil(q / cols);
+        
+        const res = resolveFixtureParams(
+          af.fixtureShape,
+          af.fixtureWidth,
+          af.fixtureLength,
+          af.fixtureDiameter,
+          af.fixtureThickness,
+          af.fixtureBeamAngle,
+          af.fixtureDistributionType
+        );
+        
+        const stepZ = dLength / rows;
+        for (let r = 0; r < rows; r++) {
+          const startIdx = r * cols;
+          const endIdx = Math.min(q, (r + 1) * cols);
+          const countRow = endIdx - startIdx;
+          if (countRow <= 0) continue;
+          
+          const rowStepX = dWidth / countRow;
+          for (let c = 0; c < countRow; c++) {
+            // Apply a slight stagger offset to prevent visual overlap if rows/cols of different types land on exact coordinates
+            let staggerX = 0;
+            let staggerZ = 0;
+            if (dActiveFixtures.length > 1) {
+              const thetaOffset = (afIdx / dActiveFixtures.length) * 2 * Math.PI;
+              const radiusOffset = 0.15; // 15cm shift
+              staggerX = radiusOffset * Math.cos(thetaOffset);
+              staggerZ = radiusOffset * Math.sin(thetaOffset);
+            }
+            list.push({
+              x: -dWidth / 2 + rowStepX / 2 + c * rowStepX + staggerX,
+              z: -dLength / 2 + stepZ / 2 + r * stepZ + staggerZ,
+              y: dHeight, // mounting height
+              lumens: af.lumens,
+              wattage: af.wattage,
+              fixtureId: af.fixtureId,
+              lightType: af.lightType,
+              resolved: res
+            });
+          }
+        }
+      });
+    } else {
+      if (dFixtures > 0) {
+        let cols = Math.ceil(Math.sqrt(dFixtures));
+        let rows = Math.ceil(dFixtures / cols);
+        cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
+        rows = Math.ceil(dFixtures / cols);
+        
+        const stepZ = dLength / rows;
+        for (let r = 0; r < rows; r++) {
+          const startIdx = r * cols;
+          const endIdx = Math.min(dFixtures, (r + 1) * cols);
+          const countRow = endIdx - startIdx;
+          if (countRow <= 0) continue;
+          
+          const rowStepX = dWidth / countRow;
+          for (let c = 0; c < countRow; c++) {
+            list.push({
+              x: -dWidth / 2 + rowStepX / 2 + c * rowStepX,
+              z: -dLength / 2 + stepZ / 2 + r * stepZ,
+              y: dHeight,
+              lumens: dLumens,
+              wattage: 0,
+              fixtureId: dFixtureShape || 'square',
+              lightType: 'Standard',
+              resolved: resolved
+            });
+          }
+        }
+      }
+    }
+    return list;
+  }, [dActiveFixtures, dCustomPositions, dWidth, dLength, dHeight, dFixtures, dLumens, dFixtureShape, resolved]);
+
   // Generate false color heat-map texture dynamically using a 2D canvas with proper distribution curves
   const canvasTextureElement = useMemo(() => {
     if (!dShowFalseColor) return null;
@@ -301,32 +441,6 @@ export default function Illumination3DModel({
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // Find grid layout of fixtures
-    let cols = Math.ceil(Math.sqrt(dFixtures));
-    let rows = Math.ceil(dFixtures / cols);
-    const ratio = dWidth / Math.max(0.1, dLength);
-    cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
-    rows = Math.ceil(dFixtures / cols);
-
-    const fixturePositions: {x: number; z: number}[] = [];
-    if (dFixtures > 0 && cols > 0 && rows > 0) {
-      const stepZ = dLength / rows;
-      for (let r = 0; r < rows; r++) {
-        const startIdx = r * cols;
-        const endIdx = Math.min(dFixtures, (r + 1) * cols);
-        const fixturesInThisRow = endIdx - startIdx;
-        if (fixturesInThisRow <= 0) continue;
-
-        const rowStepX = dWidth / fixturesInThisRow;
-        for (let c = 0; c < fixturesInThisRow; c++) {
-          fixturePositions.push({
-            x: -dWidth / 2 + rowStepX / 2 + c * rowStepX,
-            z: -dLength / 2 + stepZ / 2 + r * stepZ
-          });
-        }
-      }
-    }
-
     const skyIllum = dSkyCondition === 'clear' ? 35000 : dSkyCondition === 'partly' ? 18000 : 7000;
 
     for (let cZ = 0; cZ < 64; cZ++) {
@@ -336,23 +450,35 @@ export default function Illumination3DModel({
 
         let totalLux = 0;
 
-        fixturePositions.forEach(pos => {
+        placedFixtures.forEach(pos => {
           let ptLux = 0;
-          const intensity = dLumens / (2 * Math.PI); // standard forward flux
+          const intensity = pos.lumens / (2 * Math.PI); // standard forward flux
+          const res = pos.resolved;
           
-          if (resolved.distributionType === 'linear') {
+          let dx = realX - pos.x;
+          let dz = realZ - pos.z;
+
+          if (pos.rotationDegrees) {
+            const rad = -pos.rotationDegrees * Math.PI / 180;
+            const cosR = Math.cos(rad);
+            const sinR = Math.sin(rad);
+            const tX = dx * cosR - dz * sinR;
+            const tZ = dx * sinR + dz * cosR;
+            dx = tX;
+            dz = tZ;
+          }
+          
+          if (res.distributionType === 'linear') {
             // Linear light segment spread along Z-axis (length)
-            const halfL = resolved.length / 2;
-            const zClamped = Math.max(pos.z - halfL, Math.min(pos.z + halfL, realZ));
+            const halfL = res.length / 2;
+            const zClamped = Math.max(-halfL, Math.min(halfL, dz));
             
-            const dx = realX - pos.x;
-            const dz = realZ - zClamped;
-            const distSq = dx*dx + dz*dz + dHeight**2;
+            const distSq = dx*dx + (dz - zClamped)*(dz - zClamped) + dHeight**2;
             const dist = Math.sqrt(distSq);
             
             const cosTheta = dHeight / dist;
             const theta = Math.acos(cosTheta);
-            const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+            const beamHalfAngleRad = (res.beamAngle / 2) * (Math.PI / 180);
             
             let factor = 0;
             if (theta <= beamHalfAngleRad) {
@@ -362,15 +488,15 @@ export default function Illumination3DModel({
             const rawPtLux = (intensity * dHeight) / Math.pow(distSq, 1.5);
             ptLux = rawPtLux * factor;
             
-          } else if (resolved.distributionType === 'oblong') {
+          } else if (res.distributionType === 'oblong') {
             // Oval-shaped asymmetric spread
-            const dx = (realX - pos.x) * 1.6; // squeeze X
-            const dz = (realZ - pos.z) * 0.7; // extend Z (wide roadway sweep)
-            const distSq = dx*dx + dz*dz + dHeight**2;
+            const odx = dx * 1.6; // squeeze X
+            const odz = dz * 0.7; // extend Z (wide roadway sweep)
+            const distSq = odx*odx + odz*odz + dHeight**2;
             const dist = Math.sqrt(distSq);
             const cosTheta = dHeight / dist;
             const theta = Math.acos(cosTheta);
-            const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+            const beamHalfAngleRad = (res.beamAngle / 2) * (Math.PI / 180);
             
             let factor = 0;
             if (theta <= beamHalfAngleRad) {
@@ -380,10 +506,8 @@ export default function Illumination3DModel({
             const rawPtLux = (intensity * dHeight) / Math.pow(distSq, 1.5);
             ptLux = rawPtLux * factor;
             
-          } else if (resolved.distributionType === 'omni') {
+          } else if (res.distributionType === 'omni') {
             // Omnidirectional scattering
-            const dx = realX - pos.x;
-            const dz = realZ - pos.z;
             const distSq = dx*dx + dz*dz + dHeight**2;
             const dist = Math.sqrt(distSq);
             const cosTheta = dHeight / dist;
@@ -395,13 +519,11 @@ export default function Illumination3DModel({
             ptLux = rawPtLux * factor;
             
           } else { // 'conical' standard directive spot
-            const dx = realX - pos.x;
-            const dz = realZ - pos.z;
             const distSq = dx*dx + dz*dz + dHeight**2;
             const dist = Math.sqrt(distSq);
             const cosTheta = dHeight / dist;
             const theta = Math.acos(cosTheta);
-            const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+            const beamHalfAngleRad = (res.beamAngle / 2) * (Math.PI / 180);
             
             let factor = 0;
             if (theta <= beamHalfAngleRad) {
@@ -461,7 +583,7 @@ export default function Illumination3DModel({
     }
 
     return canvas;
-  }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, resolved]);
+  }, [dWidth, dLength, dHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, placedFixtures]);
 
   // 2D Canvas Fallback Layout Renderer (triggered if WebGL is unavailable or fails to initialize)
   useEffect(() => {
@@ -484,31 +606,6 @@ export default function Illumination3DModel({
     ctx.fillRect(0, 0, cw, ch);
 
     // Grid columns & rows of fixtures
-    let cols = Math.ceil(Math.sqrt(dFixtures));
-    let rows = Math.ceil(dFixtures / cols);
-    const ratio = dWidth / Math.max(0.1, dLength);
-    cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
-    rows = Math.ceil(dFixtures / cols);
-
-    const fixturePositions: {x: number; z: number}[] = [];
-    if (dFixtures > 0 && cols > 0 && rows > 0) {
-      const stepZ = dLength / rows;
-      for (let r = 0; r < rows; r++) {
-        const startIdx = r * cols;
-        const endIdx = Math.min(dFixtures, (r + 1) * cols);
-        const fixturesInThisRow = endIdx - startIdx;
-        if (fixturesInThisRow <= 0) continue;
-
-        const rowStepX = dWidth / fixturesInThisRow;
-        for (let c = 0; c < fixturesInThisRow; c++) {
-          fixturePositions.push({
-            x: -dWidth / 2 + rowStepX / 2 + c * rowStepX,
-            z: -dLength / 2 + stepZ / 2 + r * stepZ
-          });
-        }
-      }
-    }
-
     const skyIllum = dSkyCondition === 'clear' ? 35000 : dSkyCondition === 'partly' ? 18000 : 7000;
 
     // Generate accurate fallback 2D illumination texture on a 96x96 grid for top performance
@@ -526,12 +623,13 @@ export default function Illumination3DModel({
 
           let totalLux = 0;
 
-          fixturePositions.forEach(pos => {
+          placedFixtures.forEach(pos => {
             let ptLux = 0;
-            const intensity = dLumens / (2 * Math.PI);
+            const intensity = pos.lumens / (2 * Math.PI);
+            const res = pos.resolved;
 
-            if (resolved.distributionType === 'linear') {
-              const halfL = resolved.length / 2;
+            if (res.distributionType === 'linear') {
+              const halfL = res.length / 2;
               const zClamped = Math.max(pos.z - halfL, Math.min(pos.z + halfL, realZ));
               const dx = realX - pos.x;
               const dz = realZ - zClamped;
@@ -539,26 +637,26 @@ export default function Illumination3DModel({
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
               const theta = Math.acos(cosTheta);
-              const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+              const beamHalfAngleRad = (res.beamAngle / 2) * (Math.PI / 180);
               let factor = 0;
               if (theta <= beamHalfAngleRad) {
                 factor = Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2));
               }
               ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
-            } else if (resolved.distributionType === 'oblong') {
+            } else if (res.distributionType === 'oblong') {
               const dx = (realX - pos.x) * 1.6;
               const dz = (realZ - pos.z) * 0.7;
               const distSq = dx*dx + dz*dz + dHeight**2;
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
               const theta = Math.acos(cosTheta);
-              const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+              const beamHalfAngleRad = (res.beamAngle / 2) * (Math.PI / 180);
               let factor = 0;
               if (theta <= beamHalfAngleRad) {
                 factor = Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2));
               }
               ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
-            } else if (resolved.distributionType === 'omni') {
+            } else if (res.distributionType === 'omni') {
               const dx = realX - pos.x;
               const dz = realZ - pos.z;
               const distSq = dx*dx + dz*dz + dHeight**2;
@@ -573,7 +671,7 @@ export default function Illumination3DModel({
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
               const theta = Math.acos(cosTheta);
-              const beamHalfAngleRad = (resolved.beamAngle / 2) * (Math.PI / 180);
+              const beamHalfAngleRad = (res.beamAngle / 2) * (Math.PI / 180);
               let factor = 0;
               if (theta <= beamHalfAngleRad) {
                 factor = Math.pow(Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2)), 1.5);
@@ -687,9 +785,16 @@ export default function Illumination3DModel({
     }
 
     // Draw fixtures
-    fixturePositions.forEach((pos, index) => {
+    placedFixtures.forEach((pos, index) => {
       const cx = startX + ((pos.x + dWidth / 2) / dWidth) * drawW;
       const cy = startY + ((pos.z + dLength / 2) / dLength) * drawH;
+      const res = pos.resolved;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (pos.rotationDegrees) {
+        ctx.rotate(pos.rotationDegrees * Math.PI / 180);
+      }
 
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#f8fafc';
@@ -698,32 +803,39 @@ export default function Illumination3DModel({
       ctx.shadowColor = '#fef08a';
       ctx.shadowBlur = 10;
 
-      if (resolved.shape === 'circular') {
-        const rad = Math.max(3.5, (resolved.diameter / 2) * scale);
+      if (res.shape === 'circular') {
+        const rad = Math.max(3.5, (res.diameter / 2) * scale);
         ctx.beginPath();
-        ctx.arc(cx, cy, rad, 0, 2 * Math.PI);
+        ctx.arc(0, 0, rad, 0, 2 * Math.PI);
         ctx.fill();
         ctx.stroke();
-      } else if (resolved.shape === 'linear') {
-        const lThickness = Math.max(2, resolved.width * scale);
-        const lLen = Math.max(12, resolved.length * scale);
-        ctx.fillRect(cx - lThickness / 2, cy - lLen / 2, lThickness, lLen);
-        ctx.strokeRect(cx - lThickness / 2, cy - lLen / 2, lThickness, lLen);
+      } else if (res.shape === 'linear') {
+        const lThickness = Math.max(2, res.width * scale);
+        const lLen = Math.max(12, res.length * scale);
+        ctx.fillRect(-lThickness / 2, -lLen / 2, lThickness, lLen);
+        ctx.strokeRect(-lThickness / 2, -lLen / 2, lThickness, lLen);
       } else { // square or rectangular
-        const rectW = Math.max(6, resolved.width * scale);
-        const rectL = Math.max(6, resolved.length * scale);
-        ctx.fillRect(cx - rectW / 2, cy - rectL / 2, rectW, rectL);
-        ctx.strokeRect(cx - rectW / 2, cy - rectL / 2, rectW, rectL);
+        const rectW = Math.max(6, res.width * scale);
+        const rectL = Math.max(6, res.length * scale);
+        ctx.fillRect(-rectW / 2, -rectL / 2, rectW, rectL);
+        ctx.strokeRect(-rectW / 2, -rectL / 2, rectW, rectL);
       }
 
       ctx.shadowBlur = 0; // Reset blur
 
-      // Draw number inside fixture circle/rect
+      // Draw number inside fixture circle/rect, counter-rotating so it stays upright
+      ctx.save();
+      if (pos.rotationDegrees) {
+        ctx.rotate(-pos.rotationDegrees * Math.PI / 180);
+      }
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 8px system-ui';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText((index + 1).toString(), cx, cy);
+      ctx.fillText((index + 1).toString(), 0, 0);
+      ctx.restore();
+
+      ctx.restore();
     });
 
     // Dimension indicators with arrows
@@ -770,7 +882,7 @@ export default function Illumination3DModel({
     ctx.fillText(`${dLength.toFixed(2)}m (Length)`, 0, 0);
     ctx.restore();
 
-  }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, resolved, webGlError]);
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, placedFixtures, webGlError]);
 
   useEffect(() => {
     if (!containerRef.current || webGlError) return;
@@ -812,96 +924,72 @@ export default function Illumination3DModel({
     const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity);
     scene.add(ambientLight);
 
-    // Calculate grid placements
-    let cols = Math.ceil(Math.sqrt(dFixtures));
-    let rows = Math.ceil(dFixtures / cols);
-    const ratio = dWidth / Math.max(0.1, dLength);
-    cols = Math.max(1, Math.round(Math.sqrt(dFixtures * ratio)));
-    rows = Math.ceil(dFixtures / cols);
-
-    const fixturePositions: [number, number, number][] = [];
-    if (dFixtures > 0 && cols > 0 && rows > 0) {
-      const stepZ = dLength / rows;
-      for (let r = 0; r < rows; r++) {
-        const startIdx = r * cols;
-        const endIdx = Math.min(dFixtures, (r + 1) * cols);
-        const fixturesInThisRow = endIdx - startIdx;
-        if (fixturesInThisRow <= 0) continue;
-
-        const rowStepX = dWidth / fixturesInThisRow;
-        for (let c = 0; c < fixturesInThisRow; c++) {
-          const x = -dWidth / 2 + rowStepX / 2 + c * rowStepX;
-          const z = -dLength / 2 + stepZ / 2 + r * stepZ;
-          fixturePositions.push([x, dHeight, z]);
-        }
-      }
-    }
-
     // Spawn 3D Fixture models on ceiling
-    fixturePositions.forEach(pos => {
-      const model = createFixture3D(resolved);
-      model.position.set(pos[0], pos[1], pos[2]);
+    placedFixtures.forEach(pos => {
+      const model = createFixture3D(pos.resolved);
+      model.position.set(pos.x, pos.y, pos.z);
       
-      // If linear, align orientation along Z-axis (room length) or X-axis based on room ratio
-      if (resolved.shape === 'linear') {
-        // Oriented nicely
+      // Default basic orientation, and then apply custom rotation
+      if (pos.resolved.shape === 'linear') {
         model.rotation.y = 0; 
       }
+      
+      if (pos.rotationDegrees) {
+        model.rotation.y = -pos.rotationDegrees * Math.PI / 180;
+      }
+      
       scene.add(model);
     });
 
     // Spawn Three.js Spotlights matching the directionality and beam angle
     const MAX_LIGHTS = 16;
-    let lightPositions: [number, number, number][] = [];
-    if (dFixtures <= MAX_LIGHTS) {
-      lightPositions = fixturePositions;
+    let lightsToSpawn: { x: number; y: number; z: number; lumens: number; resolved: any }[] = [];
+    if (placedFixtures.length <= MAX_LIGHTS) {
+      lightsToSpawn = placedFixtures.map(f => ({
+        x: f.x,
+        y: f.y,
+        z: f.z,
+        lumens: f.lumens,
+        resolved: f.resolved
+      }));
     } else {
-      const count = MAX_LIGHTS;
-      let lCols = Math.ceil(Math.sqrt(count));
-      let lRows = Math.ceil(count / lCols);
-      const lRatio = dWidth / Math.max(0.1, dLength);
-      lCols = Math.max(1, Math.round(Math.sqrt(count * lRatio)));
-      lRows = Math.ceil(count / lCols);
-
-      if (count > 0 && lCols > 0 && lRows > 0) {
-        const stepZ = dLength / lRows;
-        for (let r = 0; r < lRows; r++) {
-          const startIdx = r * lCols;
-          const endIdx = Math.min(count, (r + 1) * lCols);
-          const lightsInThisRow = endIdx - startIdx;
-          if (lightsInThisRow <= 0) continue;
-
-          const rowStepX = dWidth / lightsInThisRow;
-          for (let c = 0; c < lightsInThisRow; c++) {
-            const x = -dWidth / 2 + rowStepX / 2 + c * rowStepX;
-            const z = -dLength / 2 + stepZ / 2 + r * stepZ;
-            lightPositions.push([x, dHeight, z]);
-          }
+      const step = Math.ceil(placedFixtures.length / MAX_LIGHTS);
+      for (let i = 0; i < placedFixtures.length; i += step) {
+        if (lightsToSpawn.length < MAX_LIGHTS && placedFixtures[i]) {
+          const f = placedFixtures[i];
+          lightsToSpawn.push({
+            x: f.x,
+            y: f.y,
+            z: f.z,
+            lumens: f.lumens * step, // scale representing other lights
+            resolved: f.resolved
+          });
         }
       }
     }
 
-    const pointLightIntensity = Math.min(dLumens, 10000) / 100;
-    const intensityMultiplier = dFixtures > MAX_LIGHTS ? dFixtures / MAX_LIGHTS : 1;
-    const finalIntensity = pointLightIntensity * intensityMultiplier;
-    const lightIntensity = dShowFalseColor ? finalIntensity * 0.15 : finalIntensity;
+    lightsToSpawn.forEach(l => {
+      const pointLightIntensity = Math.min(l.lumens, 10000) / 100;
+      const intensityMultiplier = placedFixtures.length > MAX_LIGHTS ? placedFixtures.length / MAX_LIGHTS : 1;
+      const finalIntensity = pointLightIntensity * intensityMultiplier;
+      const lightIntensity = dShowFalseColor ? finalIntensity * 0.15 : finalIntensity;
 
-    lightPositions.forEach(pos => {
-      if (resolved.distributionType === 'conical' || resolved.distributionType === 'linear') {
+      const res = l.resolved;
+      if (res.distributionType === 'conical' || res.distributionType === 'linear') {
         // High-fidelity cone/spotlights directed downward
         const spotLight = new THREE.SpotLight(
           0xfffff4,
           lightIntensity * 4.0, 
           dHeight * 3.8,
-          (resolved.beamAngle * Math.PI) / 360, // angle/2 in radian
+          (res.beamAngle * Math.PI) / 360, // angle/2 in radian
           0.3, // soft decay edge
           1.6  // physical decay
         );
-        spotLight.position.set(pos[0], pos[1], pos[2]);
+        spotLight.position.set(l.x, l.y, l.z);
         
         // Spot target vector
         const targetObj = new THREE.Object3D();
-        targetObj.position.set(pos[0], pos[1] - 1.0, pos[2]);
+        targetObj.position.set(l.x, l.y - 1.0, l.z);
         scene.add(targetObj);
         spotLight.target = targetObj;
         
@@ -909,7 +997,7 @@ export default function Illumination3DModel({
       } else {
         // Spherical scattering for omni / oblong
         const pointLight = new THREE.PointLight(0xfffff0, lightIntensity, dHeight * 3.5, 1.8);
-        pointLight.position.set(pos[0], pos[1], pos[2]);
+        pointLight.position.set(l.x, l.y, l.z);
         scene.add(pointLight);
       }
     });
@@ -1017,16 +1105,23 @@ export default function Illumination3DModel({
         containerRef.current.innerHTML = '';
       }
     };
-  }, [dWidth, dLength, dHeight, dCeilingHeight, dFixtures, dLumens, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux, resolved]);
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux, placedFixtures]);
+
+  const totalLumensVal = activeFixtures && activeFixtures.length > 0
+    ? activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0)
+    : (fixtures * lumens);
+  const totalQtyVal = activeFixtures && activeFixtures.length > 0
+    ? activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
+    : fixtures;
 
   // Model Luminous Adequacy Assessments
-  const estAverageLux = Math.ceil((fixtures * lumens * 0.6) / (width * length || 1));
+  const estAverageLux = Math.ceil((totalLumensVal * 0.6) / (width * length || 1));
   
   let complianceBadge = "NO WORKPLACE FIXTURES";
   let complianceBg = "bg-slate-900/95 border-slate-700 text-slate-300";
   let complianceMessage = "Please add lighting fixtures to calculate estimated lux on the working plane.";
 
-  if (fixtures > 0) {
+  if (totalQtyVal > 0) {
     if (estAverageLux >= targetLux) {
       if (estAverageLux >= targetLux * 1.6) {
         complianceBadge = "PASSED (OVERLIT WARNING)";
@@ -1069,7 +1164,11 @@ export default function Illumination3DModel({
             <div className="text-[10px] text-yellow-350 font-mono tracking-normal mt-1 border-t border-slate-800 pt-1.5 font-bold normal-case space-y-0.5">
               <div>ROOM SIZE: {width.toFixed(2)}m (W) × {length.toFixed(2)}m (L) × {ceilingHeight.toFixed(2)}m (H)</div>
               <div className="text-cyan-400 font-bold uppercase text-[9px] tracking-wide">
-                FIXTURE: {resolved.shape} ({resolved.shape === 'circular' ? `Ø${resolved.diameter}m` : `${resolved.width}m × ${resolved.length}m`}) | Beam: {resolved.beamAngle}° | {resolved.distributionType}
+                {activeFixtures && activeFixtures.length > 1 ? (
+                  <span>FIXTURES: COMBINED DESIGN ({totalQtyVal} Total units, {activeFixtures.length} Types)</span>
+                ) : (
+                  <span>FIXTURE: {resolved.shape} ({resolved.shape === 'circular' ? `Ø${resolved.diameter}m` : `${resolved.width}m × ${resolved.length}m`}) | Beam: {resolved.beamAngle}° | {resolved.distributionType}</span>
+                )}
               </div>
             </div>
           </div>

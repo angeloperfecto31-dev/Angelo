@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Lightbulb, 
   Maximize, 
@@ -20,10 +20,13 @@ import {
   Clock, 
   AlertTriangle,
   Trash2,
-  Plus
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Grid
 } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import { IlluminationParams, Circuit, MCBType, LoadType } from '../types';
+import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
 
@@ -294,7 +297,58 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 
 export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
   const [showFixtureModal, setShowFixtureModal] = useState(false);
+  const [editingFixtureIndex, setEditingFixtureIndex] = useState<number | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
+  const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag'>('3d');
+  const [draggedFixtureId, setDraggedFixtureId] = useState<string | null>(null);
+  const [rotatingFixtureId, setRotatingFixtureId] = useState<string | null>(null);
+  const dragContainerRef = useRef<HTMLDivElement>(null);
+
+  const isCurrentlyCustom = useMemo(() => {
+    if (editingFixtureIndex !== null && params.activeFixtures && params.activeFixtures[editingFixtureIndex]) {
+      return !!params.activeFixtures[editingFixtureIndex].isCustom;
+    }
+    return !!params.isCustomFixture;
+  }, [editingFixtureIndex, params.activeFixtures, params.isCustomFixture]);
+
+  const currentSelectedFixtureId = useMemo(() => {
+    if (editingFixtureIndex !== null && params.activeFixtures && params.activeFixtures[editingFixtureIndex]) {
+      return params.activeFixtures[editingFixtureIndex].fixtureId;
+    }
+    return params.selectedFixtureId;
+  }, [editingFixtureIndex, params.activeFixtures, params.selectedFixtureId]);
+
+  // Ensure we have at least one active fixture in params.activeFixtures for combined design
+  useEffect(() => {
+    if (!params.activeFixtures || params.activeFixtures.length === 0) {
+      const activeF = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+      const defaults = getPredefinedFixtureDefaults(params.selectedFixtureId || 'ind-panel', !!params.isCustomFixture);
+      const isCustom = !!params.isCustomFixture;
+      
+      const seedFixture = {
+        id: crypto.randomUUID(),
+        fixtureId: params.selectedFixtureId || 'ind-panel',
+        lightType: isCustom ? (params.customLightType || 'Custom Fixture') : activeF.lightType,
+        quantity: 4,
+        wattage: isCustom ? (params.customWattage || 15) : activeF.wattage,
+        lumens: isCustom ? (params.customLumens || 1500) : activeF.lumens,
+        brands: isCustom ? 'Manual Intake Spec' : activeF.brands,
+        isCustom: isCustom,
+        fixtureShape: params.fixtureShape || defaults.fixtureShape,
+        fixtureWidth: params.fixtureWidth !== undefined ? params.fixtureWidth : defaults.fixtureWidth,
+        fixtureLength: params.fixtureLength !== undefined ? params.fixtureLength : defaults.fixtureLength,
+        fixtureDiameter: params.fixtureDiameter !== undefined ? params.fixtureDiameter : defaults.fixtureDiameter,
+        fixtureThickness: params.fixtureThickness !== undefined ? params.fixtureThickness : defaults.fixtureThickness,
+        fixtureBeamAngle: params.fixtureBeamAngle !== undefined ? params.fixtureBeamAngle : defaults.fixtureBeamAngle,
+        fixtureDistributionType: params.fixtureDistributionType || defaults.fixtureDistributionType
+      };
+      
+      setParams(prev => ({
+        ...prev,
+        activeFixtures: [seedFixture]
+      }));
+    }
+  }, [params.selectedFixtureId, params.isCustomFixture, params.activeFixtures]);
 
   // Keep track of previously selected fixture and override values when choice changes
   const [prevFixtureKey, setPrevFixtureKey] = useState('');
@@ -302,19 +356,65 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     const key = `${params.isCustomFixture ? 'custom' : 'lib'}-${params.selectedFixtureId || ''}`;
     if (prevFixtureKey && prevFixtureKey !== key) {
       const defaults = getPredefinedFixtureDefaults(params.selectedFixtureId || 'ind-panel', !!params.isCustomFixture);
-      setParams(current => ({
-        ...current,
-        fixtureShape: defaults.fixtureShape,
-        fixtureWidth: defaults.fixtureWidth,
-        fixtureLength: defaults.fixtureLength,
-        fixtureDiameter: defaults.fixtureDiameter,
-        fixtureThickness: defaults.fixtureThickness,
-        fixtureBeamAngle: defaults.fixtureBeamAngle,
-        fixtureDistributionType: defaults.fixtureDistributionType,
-      }));
+      setParams(current => {
+        const nextParams = {
+          ...current,
+          fixtureShape: defaults.fixtureShape,
+          fixtureWidth: defaults.fixtureWidth,
+          fixtureLength: defaults.fixtureLength,
+          fixtureDiameter: defaults.fixtureDiameter,
+          fixtureThickness: defaults.fixtureThickness,
+          fixtureBeamAngle: defaults.fixtureBeamAngle,
+          fixtureDistributionType: defaults.fixtureDistributionType,
+        };
+
+        if (current.activeFixtures && current.activeFixtures.length === 1) {
+          const activeF = LIGHT_FIXTURES_LIBRARY.find(f => f.id === current.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+          const oldFixtureId = current.activeFixtures[0].fixtureId;
+          const newFixtureId = current.selectedFixtureId || 'ind-panel';
+          const newLightType = current.isCustomFixture ? (current.customLightType || 'Custom Fixture') : activeF.lightType;
+          const newWattage = current.isCustomFixture ? (current.customWattage || 15) : activeF.wattage;
+          const newLumens = current.isCustomFixture ? (current.customLumens || 1500) : activeF.lumens;
+
+          nextParams.activeFixtures = [{
+            ...current.activeFixtures[0],
+            fixtureId: newFixtureId,
+            lightType: newLightType,
+            wattage: newWattage,
+            lumens: newLumens,
+            brands: current.isCustomFixture ? 'Manual Intake Spec' : activeF.brands,
+            isCustom: !!current.isCustomFixture,
+            fixtureShape: defaults.fixtureShape,
+            fixtureWidth: defaults.fixtureWidth,
+            fixtureLength: defaults.fixtureLength,
+            fixtureDiameter: defaults.fixtureDiameter,
+            fixtureThickness: defaults.fixtureThickness,
+            fixtureBeamAngle: defaults.fixtureBeamAngle,
+            fixtureDistributionType: defaults.fixtureDistributionType,
+          }];
+          
+          if (current.customPositions && current.customPositions.length > 0) {
+            nextParams.customPositions = current.customPositions.map(cp => {
+              if (cp.fixtureId === oldFixtureId) {
+                return {
+                  ...cp,
+                  fixtureId: newFixtureId,
+                  lightType: newLightType,
+                  lumens: newLumens,
+                  wattage: newWattage
+                };
+              }
+              return cp;
+            });
+          }
+        }
+
+        return nextParams;
+      });
     }
     setPrevFixtureKey(key);
   }, [params.selectedFixtureId, params.isCustomFixture]);
+
 
   // Backfill on mount if dimension details are missing or empty
   useEffect(() => {
@@ -341,6 +441,185 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     }
   }, []);
 
+  // Synchronize general physical properties from sliders/inputs into activeFixtures when editing a single fixture layout
+  useEffect(() => {
+    if (params.activeFixtures && params.activeFixtures.length === 1) {
+      const first = params.activeFixtures[0];
+      if (
+        first.fixtureShape !== params.fixtureShape ||
+        first.fixtureWidth !== params.fixtureWidth ||
+        first.fixtureLength !== params.fixtureLength ||
+        first.fixtureDiameter !== params.fixtureDiameter ||
+        first.fixtureThickness !== params.fixtureThickness ||
+        first.fixtureBeamAngle !== params.fixtureBeamAngle ||
+        first.fixtureDistributionType !== params.fixtureDistributionType
+      ) {
+        setParams(prev => {
+          if (!prev.activeFixtures || prev.activeFixtures.length !== 1) return prev;
+          const updatedFirst = {
+            ...prev.activeFixtures[0],
+            fixtureShape: prev.fixtureShape ?? prev.activeFixtures[0].fixtureShape,
+            fixtureWidth: prev.fixtureWidth ?? prev.activeFixtures[0].fixtureWidth,
+            fixtureLength: prev.fixtureLength ?? prev.activeFixtures[0].fixtureLength,
+            fixtureDiameter: prev.fixtureDiameter ?? prev.activeFixtures[0].fixtureDiameter,
+            fixtureThickness: prev.fixtureThickness ?? prev.activeFixtures[0].fixtureThickness,
+            fixtureBeamAngle: prev.fixtureBeamAngle ?? prev.activeFixtures[0].fixtureBeamAngle,
+            fixtureDistributionType: prev.fixtureDistributionType ?? prev.activeFixtures[0].fixtureDistributionType,
+          };
+          return {
+            ...prev,
+            activeFixtures: [updatedFirst]
+          };
+        });
+      }
+    }
+  }, [
+    params.fixtureShape,
+    params.fixtureWidth,
+    params.fixtureLength,
+    params.fixtureDiameter,
+    params.fixtureThickness,
+    params.fixtureBeamAngle,
+    params.fixtureDistributionType,
+    params.activeFixtures
+  ]);
+
+  // Synchronize custom positions list with the active selection of fixtures & quantities
+  useEffect(() => {
+    if (params.activeFixtures && params.activeFixtures.length > 0) {
+      const expectedTotalQty = params.activeFixtures.reduce((sum, f) => sum + (f.quantity || 0), 0);
+      const currentQty = params.customPositions ? params.customPositions.length : 0;
+      
+      if (expectedTotalQty > 0) {
+        if (expectedTotalQty !== currentQty) {
+          // Generate uniform spaced coordinates
+          const list: PlacedFixtureDragPosition[] = [];
+          const w = params.roomWidth || 4;
+          const l = params.roomLength || 5;
+          const ratio = w / Math.max(0.1, l);
+          
+          params.activeFixtures.forEach((af, afIdx) => {
+            const q = af.quantity || 0;
+            if (q <= 0) return;
+            
+            let cols = Math.ceil(Math.sqrt(q));
+            let rows = Math.ceil(q / cols);
+            cols = Math.max(1, Math.round(Math.sqrt(q * ratio)));
+            rows = Math.ceil(q / cols);
+            
+            const stepZ = l / rows;
+            for (let r = 0; r < rows; r++) {
+              const startIdx = r * cols;
+              const endIdx = Math.min(q, (r + 1) * cols);
+              const countRow = endIdx - startIdx;
+              if (countRow <= 0) continue;
+              
+              const rowStepX = w / countRow;
+              for (let c = 0; c < countRow; c++) {
+                let staggerX = 0;
+                let staggerZ = 0;
+                if (params.activeFixtures!.length > 1) {
+                  const thetaOffset = (afIdx / params.activeFixtures!.length) * 2 * Math.PI;
+                  const radiusOffset = 0.15; // 15cm shift
+                  staggerX = radiusOffset * Math.cos(thetaOffset);
+                  staggerZ = radiusOffset * Math.sin(thetaOffset);
+                }
+                
+                let proposedX = rowStepX / 2 + c * rowStepX + staggerX;
+                let proposedZ = stepZ / 2 + r * stepZ + staggerZ;
+                proposedX = Math.max(0.05, Math.min(w - 0.05, proposedX));
+                proposedZ = Math.max(0.05, Math.min(l - 0.05, proposedZ));
+                
+                list.push({
+                  id: `fixture-${af.fixtureId}-${afIdx}-${r}-${c}-${Math.random().toString(36).substr(2, 4)}`,
+                  fixtureId: af.fixtureId,
+                  lightType: af.lightType,
+                  x: Number(proposedX.toFixed(3)),
+                  z: Number(proposedZ.toFixed(3)),
+                  lumens: af.lumens,
+                  wattage: af.wattage,
+                  activeFixtureId: af.id
+                });
+              }
+            }
+          });
+          
+          setParams(prev => ({
+            ...prev,
+            customPositions: list
+          }));
+        } else {
+          // Quantities match, but lumens/wattage might have changed. Sync them without resetting x/z.
+          let hasChanges = false;
+          const updatedList = (params.customPositions || []).map(cp => {
+            let matchingAf = cp.activeFixtureId 
+              ? params.activeFixtures!.find(af => af.id === cp.activeFixtureId)
+              : params.activeFixtures!.find(af => af.fixtureId === cp.fixtureId);
+            
+            // If the fixtureId in custom position is out of sync and there's only 1 active fixture, map to it.
+            if (!matchingAf && params.activeFixtures!.length === 1) {
+              matchingAf = params.activeFixtures![0];
+            }
+            
+            if (matchingAf && (matchingAf.fixtureId !== cp.fixtureId || matchingAf.lumens !== cp.lumens || matchingAf.wattage !== cp.wattage || matchingAf.lightType !== cp.lightType || cp.activeFixtureId !== matchingAf.id)) {
+              hasChanges = true;
+              return {
+                ...cp,
+                fixtureId: matchingAf.fixtureId,
+                lumens: matchingAf.lumens,
+                wattage: matchingAf.wattage,
+                lightType: matchingAf.lightType,
+                activeFixtureId: matchingAf.id
+              };
+            }
+            return cp;
+          });
+          
+          if (hasChanges) {
+            setParams(prev => ({
+              ...prev,
+              customPositions: updatedList
+            }));
+          }
+        }
+      }
+    }
+  }, [params.activeFixtures, params.roomWidth, params.roomLength]);
+
+  // Keep existing coordinates within room boundary when room size is edited
+  useEffect(() => {
+    if (params.customPositions && params.customPositions.length > 0) {
+      const w = params.roomWidth || 4;
+      const l = params.roomLength || 5;
+      let shifted = false;
+      
+      const updated = params.customPositions.map(cp => {
+        let newX = cp.x;
+        let newZ = cp.z;
+        if (cp.x > w) {
+          newX = w - 0.1;
+          shifted = true;
+        }
+        if (cp.z > l) {
+          newZ = l - 0.1;
+          shifted = true;
+        }
+        return {
+          ...cp,
+          x: Math.max(0.05, Number(newX.toFixed(3))),
+          z: Math.max(0.05, Number(newZ.toFixed(3)))
+        };
+      });
+      
+      if (shifted) {
+        setParams(prev => ({
+          ...prev,
+          customPositions: updated
+        }));
+      }
+    }
+  }, [params.roomWidth, params.roomLength]);
+
   // Advanced DIALux evo inputs managed inside the component
   const [showFalseColor, setShowFalseColor] = useState(false);
   const [enableDaylight, setEnableDaylight] = useState(false);
@@ -355,6 +634,105 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   const ceilingHeight = params.ceilingHeight || 2.7;
   const workingPlaneHeight = params.workingPlaneHeight || 0.75;
   const mountingHeight = params.mountingHeight !== undefined ? params.mountingHeight : ceilingHeight - workingPlaneHeight;
+
+  // Drag handlers for manual layout positioning within design room area
+  const handleDragStart = (id: string, e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setDraggedFixtureId(id);
+  };
+  
+  const handleRotateStart = (id: string, e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setRotatingFixtureId(id);
+  };
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if ((!draggedFixtureId && !rotatingFixtureId) || !params.customPositions || !dragContainerRef.current) return;
+    
+    let clientX = 0;
+    let clientY = 0;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+
+    const rect = dragContainerRef.current.getBoundingClientRect();
+    
+    if (rotatingFixtureId) {
+      const w = params.roomWidth || 4;
+      const l = params.roomLength || 5;
+      const fixture = params.customPositions.find(p => p.id === rotatingFixtureId);
+      if (fixture) {
+        // Calculate center of fixture in screen pixels
+        const fixtureCenterX = rect.left + (fixture.x / w) * rect.width;
+        const fixtureCenterY = rect.top + (fixture.z / l) * rect.height;
+        
+        // Calculate angle between center and mouse pointer
+        // Mouse straight up (dx=0, dy=-1) should be 0 degrees
+        const dx = clientX - fixtureCenterX;
+        const dy = clientY - fixtureCenterY;
+        let angleRot = Math.atan2(dx, -dy) * 180 / Math.PI;
+        
+        // Snap to nearest 15 degrees if near it
+        angleRot = Math.round(angleRot / 15) * 15;
+        // Normalize 0-360
+        if (angleRot < 0) angleRot += 360;
+
+        setParams(prev => {
+          if (!prev.customPositions) return prev;
+          const updated = prev.customPositions.map(cp => {
+            if (cp.id === rotatingFixtureId) {
+              return { ...cp, rotationDegrees: angleRot };
+            }
+            return cp;
+          });
+          return { ...prev, customPositions: updated };
+        });
+      }
+      return;
+    }
+
+    const relativeX = clientX - rect.left;
+    const relativeY = clientY - rect.top;
+
+    const w = params.roomWidth || 4;
+    const l = params.roomLength || 5;
+    
+    let proposedMeterX = (relativeX / rect.width) * w;
+    let proposedMeterZ = (relativeY / rect.height) * l;
+
+    // Clamp coordinates with a safe boundary buffer (5cm inside walls)
+    proposedMeterX = Math.max(0.05, Math.min(w - 0.05, proposedMeterX));
+    proposedMeterZ = Math.max(0.05, Math.min(l - 0.05, proposedMeterZ));
+
+    setParams(prev => {
+      if (!prev.customPositions) return prev;
+      const updated = prev.customPositions.map(cp => {
+        if (cp.id === draggedFixtureId) {
+          return {
+            ...cp,
+            x: Number(proposedMeterX.toFixed(3)),
+            z: Number(proposedMeterZ.toFixed(3))
+          };
+        }
+        return cp;
+      });
+      return {
+        ...prev,
+        customPositions: updated
+      };
+    });
+  };
+
+  const handleDragEnd = () => {
+    setDraggedFixtureId(null);
+    setRotatingFixtureId(null);
+  };
 
   // Active fixture model derived from selection or manual input
   const activeFixture = useMemo(() => {
@@ -404,6 +782,30 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     };
   }, [params, activeFixture.lumens]);
 
+  // Keep single active fixture's quantity in sync with dynamically calculated quantity for the room
+  const prevCalcFixtures = useRef(calculation.fixtures);
+  useEffect(() => {
+    if (params.activeFixtures && params.activeFixtures.length === 1 && calculation.fixtures > 0) {
+      if (prevCalcFixtures.current !== calculation.fixtures || params.activeFixtures[0].quantity === 4 /* Initial seed */) {
+        prevCalcFixtures.current = calculation.fixtures;
+        if (params.activeFixtures[0].quantity !== calculation.fixtures) {
+          setParams(prev => {
+            if (prev.activeFixtures && prev.activeFixtures.length === 1) {
+              return {
+                ...prev,
+                activeFixtures: [{
+                  ...prev.activeFixtures[0],
+                  quantity: calculation.fixtures
+                }]
+              };
+            }
+            return prev;
+          });
+        }
+      }
+    }
+  }, [calculation.fixtures, params.activeFixtures]);
+
   // Derived properties from Space Standard Limits (ASHRAE 90.1)
   const lpdLimitInfo = useMemo(() => {
     const roomName = Object.entries(RECOMMENDED_LUX_LEVELS).find(([_, lux]) => lux === params.targetLux)?.[0] || 'GENERAL SPACE';
@@ -442,32 +844,76 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     const w = params.roomWidth || 4;
     const l = params.roomLength || 5;
     const h = mountingHeight || 1.95;
-    const fixturesCount = calculation.fixtures;
+    const ratio = w / Math.max(0.1, l);
     
-    // Grid alignment
-    let cols = Math.ceil(Math.sqrt(fixturesCount));
-    let rows = Math.ceil(fixturesCount / cols);
-    if (params.inputMode === 'dimensions') {
-      const ratio = w / l;
-      cols = Math.max(1, Math.round(Math.sqrt(fixturesCount * ratio)));
-      rows = Math.ceil(fixturesCount / cols);
-    }
+    const fixtureCoords: { x: number; z: number; lumens: number; coefficientOfUtilization: number; maintenanceFactor: number }[] = [];
     
-    const fixtureCoords: {x: number, z: number}[] = [];
-    if (fixturesCount > 0 && cols > 0 && rows > 0) {
-      const stepZ = l / rows;
-      for (let r = 0; r < rows; r++) {
-        const startIdx = r * cols;
-        const endIdx = Math.min(fixturesCount, (r + 1) * cols);
-        const fixturesInThisRow = endIdx - startIdx;
-        if (fixturesInThisRow <= 0) continue;
+    if (params.customPositions && params.customPositions.length > 0) {
+      params.customPositions.forEach(cp => {
+        fixtureCoords.push({
+          x: cp.x,
+          z: cp.z,
+          lumens: cp.lumens ?? activeFixture.lumens,
+          coefficientOfUtilization: params.coefficientOfUtilization,
+          maintenanceFactor: params.maintenanceFactor
+        });
+      });
+    } else if (params.activeFixtures && params.activeFixtures.length > 0) {
+      params.activeFixtures.forEach(af => {
+        const q = af.quantity || 0;
+        if (q <= 0) return;
+        
+        let cols = Math.ceil(Math.sqrt(q));
+        let rows = Math.ceil(q / cols);
+        cols = Math.max(1, Math.round(Math.sqrt(q * ratio)));
+        rows = Math.ceil(q / cols);
+        
+        const stepZ = l / rows;
+        for (let r = 0; r < rows; r++) {
+          const startIdx = r * cols;
+          const endIdx = Math.min(q, (r + 1) * cols);
+          const countRow = endIdx - startIdx;
+          if (countRow <= 0) continue;
+          
+          const rowStepX = w / countRow;
+          for (let c = 0; c < countRow; c++) {
+            fixtureCoords.push({
+              x: rowStepX / 2 + c * rowStepX,
+              z: stepZ / 2 + r * stepZ,
+              lumens: af.lumens,
+              coefficientOfUtilization: params.coefficientOfUtilization,
+              maintenanceFactor: params.maintenanceFactor
+            });
+          }
+        }
+      });
+    } else {
+      const fixturesCount = calculation.fixtures;
+      let cols = Math.ceil(Math.sqrt(fixturesCount));
+      let rows = Math.ceil(fixturesCount / cols);
+      if (params.inputMode === 'dimensions') {
+        cols = Math.max(1, Math.round(Math.sqrt(fixturesCount * ratio)));
+        rows = Math.ceil(fixturesCount / cols);
+      }
+      
+      if (fixturesCount > 0 && cols > 0 && rows > 0) {
+        const stepZ = l / rows;
+        for (let r = 0; r < rows; r++) {
+          const startIdx = r * cols;
+          const endIdx = Math.min(fixturesCount, (r + 1) * cols);
+          const fixturesInThisRow = endIdx - startIdx;
+          if (fixturesInThisRow <= 0) continue;
 
-        const rowStepX = w / fixturesInThisRow;
-        for (let c = 0; c < fixturesInThisRow; c++) {
-          fixtureCoords.push({
-            x: rowStepX / 2 + c * rowStepX,
-            z: stepZ / 2 + r * stepZ
-          });
+          const rowStepX = w / fixturesInThisRow;
+          for (let c = 0; c < fixturesInThisRow; c++) {
+            fixtureCoords.push({
+              x: rowStepX / 2 + c * rowStepX,
+              z: stepZ / 2 + r * stepZ,
+              lumens: activeFixture.lumens,
+              coefficientOfUtilization: params.coefficientOfUtilization,
+              maintenanceFactor: params.maintenanceFactor
+            });
+          }
         }
       }
     }
@@ -489,8 +935,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         let directLux = 0;
         fixtureCoords.forEach(fixture => {
           const distSq = (x - fixture.x)**2 + (z - fixture.z)**2 + h**2;
-          // Apply lighting distribution curve (intensity modeled around 50% lumens emitted into general field)
-          const intensity = (activeFixture.lumens * params.coefficientOfUtilization * params.maintenanceFactor) / (2 * Math.PI);
+          const intensity = (fixture.lumens * fixture.coefficientOfUtilization * fixture.maintenanceFactor) / (2 * Math.PI);
           directLux += (intensity * h) / Math.pow(distSq, 1.5);
         });
 
@@ -530,9 +975,13 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
   // Unified Glare Rating (UGR) estimation
   const glareAnalysis = useMemo(() => {
-    const fixtureCount = calculation.fixtures;
-    const lumenWeight = activeFixture.lumens / 3000;
-    const areaWeight = (params.roomWidth * params.roomLength || 20) / 25;
+    const fixtureCount = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
+      : calculation.fixtures;
+    const averageLumens = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0) / Math.max(1, fixtureCount)
+      : activeFixture.lumens;
+    const lumenWeight = averageLumens / 3000;
     const hWeight = 2.0 / (mountingHeight || 2.0);
 
     // Simulated physically aligned UGR index for spacing and fixtures
@@ -563,7 +1012,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     }
 
     return { value: ugrValue, assessment, labelColor, description };
-  }, [calculation.fixtures, activeFixture.lumens, params.roomWidth, params.roomLength, mountingHeight]);
+  }, [params.activeFixtures, calculation.fixtures, activeFixture.lumens, params.roomWidth, params.roomLength, mountingHeight]);
 
   // Smart Daylight Integration Energy Savings
   const daylightSavings = useMemo(() => {
@@ -594,9 +1043,9 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
   // Energy Consumption & Lighting Power Density (LPD) Audit
   const energyAudit = useMemo(() => {
-    const selectedFixture = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
-    const unitWattage = selectedFixture.wattage;
-    const totalPowerW = calculation.fixtures * unitWattage;
+    const totalPowerW = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
+      : calculation.fixtures * (LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId)?.wattage || 15);
     const roomAreaNum = parseFloat(calculation.area) || 1;
     
     // Lighting Power Density
@@ -640,16 +1089,25 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     if (!setCircuits || !circuits) return;
     const newNo = circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
     
-    // Use active fixture spec (manual/library)
-    const estimatedWattage = activeFixture.wattage;
-    const totalVA = estimatedWattage * calculation.fixtures;
+    // Use active fixture spec or sum of activeFixtures of combined design
+    const isCombined = params.activeFixtures && params.activeFixtures.length > 1;
+    const totalVA = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
+      : activeFixture.wattage * calculation.fixtures;
+    const totalQty = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
+      : calculation.fixtures;
     
+    const labelDescription = isCombined 
+      ? `LIGHTING: COMBINED DESIGN (${params.activeFixtures?.length} Types) - ${lpdLimitInfo.roomName}`
+      : `LIGHTING: ${activeFixture.lightType} - ${lpdLimitInfo.roomName}`;
+
     const newCircuit: Circuit = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
-      description: `LIGHTING - ${lpdLimitInfo.roomName}`,
-      wattage: estimatedWattage,
-      quantity: calculation.fixtures,
+      description: labelDescription,
+      wattage: isCombined ? Math.round(totalVA / totalQty) : activeFixture.wattage,
+      quantity: totalQty,
       loadVA: totalVA,
       voltage: 230,
       phases: ['R'],
@@ -671,8 +1129,16 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   };
 
   const handleAddToIlluminationTable = async () => {
-    const estimatedWattage = activeFixture.wattage;
-    const totalVA = estimatedWattage * calculation.fixtures;
+    const isCombined = params.activeFixtures && params.activeFixtures.length > 1;
+    const totalVA = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
+      : activeFixture.wattage * calculation.fixtures;
+    const totalQty = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
+      : calculation.fixtures;
+    const totalLumensVal = params.activeFixtures && params.activeFixtures.length > 0
+      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0)
+      : activeFixture.lumens * calculation.fixtures;
     
     // Unified numbering with circuits
     const nextNo = circuits && circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
@@ -685,13 +1151,13 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       roomName: lpdLimitInfo.roomName,
       targetLux: params.targetLux,
       area: Number(calculation.area),
-      fixtureId: activeFixture.id,
-      fixtureLightType: activeFixture.lightType,
-      fixturesCount: calculation.fixtures,
-      totalLumens: calculation.totalLumens,
+      fixtureId: isCombined ? 'combined' : activeFixture.id,
+      fixtureLightType: isCombined ? `Combined Design (${params.activeFixtures?.length} Types)` : activeFixture.lightType,
+      fixturesCount: totalQty,
+      totalLumens: totalLumensVal,
       totalWattage: totalVA,
-      fixtureWattage: activeFixture.wattage,
-      fixtureLumens: activeFixture.lumens
+      fixtureWattage: isCombined ? Math.round(totalVA / totalQty) : activeFixture.wattage,
+      fixtureLumens: isCombined ? Math.round(totalLumensVal / totalQty) : activeFixture.lumens
     };
 
     if (onSnapshotCapture) {
@@ -853,98 +1319,265 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         </div>
 
         <div className="mb-8 no-print animate-fade-in">
-          <div className="flex justify-between items-center mb-3">
-            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Selected Fixture details</h4>
-            {params.isCustomFixture && (
-              <button 
-                type="button"
-                onClick={() => setParams({ ...params, isCustomFixture: false, selectedFixtureId: 'ind-panel', lumensPerFixture: 3600 })} 
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300"
-              >
-                Use Library Standard
-              </button>
-            )}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <span>Selected Lighting Fixtures (Combined Design)</span>
+              <span className="px-2.5 py-0.5 text-[9px] bg-indigo-150 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-md font-black font-mono">
+                {params.activeFixtures ? params.activeFixtures.length : 1} TYPES IN DESIGN
+              </span>
+            </h4>
+            <button 
+              type="button"
+              onClick={() => {
+                const defaults = getPredefinedFixtureDefaults('ind-downlight', false);
+                const nextNo = (params.activeFixtures || []).length;
+                const newItem: ActiveFixtureSelection = {
+                  id: crypto.randomUUID(),
+                  fixtureId: 'ind-downlight',
+                  lightType: 'Recessed LED Downlight',
+                  quantity: 4,
+                  wattage: 12,
+                  lumens: 1000,
+                  brands: 'Philips / Osram',
+                  isCustom: false,
+                  fixtureShape: defaults.fixtureShape,
+                  fixtureWidth: defaults.fixtureWidth,
+                  fixtureLength: defaults.fixtureLength,
+                  fixtureDiameter: defaults.fixtureDiameter,
+                  fixtureThickness: defaults.fixtureThickness,
+                  fixtureBeamAngle: defaults.fixtureBeamAngle,
+                  fixtureDistributionType: defaults.fixtureDistributionType
+                };
+                setParams(prev => {
+                  let currentList = prev.activeFixtures;
+                  if (!currentList || currentList.length === 0) {
+                    const activeF = LIGHT_FIXTURES_LIBRARY.find(f => f.id === prev.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+                    const defaultsSeed = getPredefinedFixtureDefaults(prev.selectedFixtureId || 'ind-panel', !!prev.isCustomFixture);
+                    const isCustom = !!prev.isCustomFixture;
+                    const seedFixture = {
+                      id: crypto.randomUUID(),
+                      fixtureId: prev.selectedFixtureId || 'ind-panel',
+                      lightType: isCustom ? (prev.customLightType || 'Custom Fixture') : activeF.lightType,
+                      quantity: 4,
+                      wattage: isCustom ? (prev.customWattage || 15) : activeF.wattage,
+                      lumens: isCustom ? (prev.customLumens || 1500) : activeF.lumens,
+                      brands: isCustom ? 'Manual Intake Spec' : activeF.brands,
+                      isCustom: isCustom,
+                      fixtureShape: prev.fixtureShape || defaultsSeed.fixtureShape,
+                      fixtureWidth: prev.fixtureWidth !== undefined ? prev.fixtureWidth : defaultsSeed.fixtureWidth,
+                      fixtureLength: prev.fixtureLength !== undefined ? prev.fixtureLength : defaultsSeed.fixtureLength,
+                      fixtureDiameter: prev.fixtureDiameter !== undefined ? prev.fixtureDiameter : defaultsSeed.fixtureDiameter,
+                      fixtureThickness: prev.fixtureThickness !== undefined ? prev.fixtureThickness : defaultsSeed.fixtureThickness,
+                      fixtureBeamAngle: prev.fixtureBeamAngle !== undefined ? prev.fixtureBeamAngle : defaultsSeed.fixtureBeamAngle,
+                      fixtureDistributionType: prev.fixtureDistributionType || defaultsSeed.fixtureDistributionType
+                    };
+                    currentList = [seedFixture];
+                  }
+                  return {
+                    ...prev,
+                    activeFixtures: [...currentList, newItem]
+                  };
+                });
+              }} 
+              className="text-xs font-black text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-350 flex items-center justify-center gap-1.5 bg-indigo-50/50 dark:bg-indigo-950/20 px-3.5 py-2 rounded-xl border border-indigo-100 dark:border-indigo-900 transition-all shadow-sm"
+            >
+              <Plus className="w-4 h-4 text-indigo-500" /> 
+              <span>Add Another Fixture Type</span>
+            </button>
           </div>
 
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-            <div className="flex-grow min-w-0 flex flex-col">
-            {params.isCustomFixture ? (
-              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900 flex items-center justify-center shrink-0">
-                    <Lightbulb className="w-6 h-6 text-indigo-550" />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
+            {(params.activeFixtures || [
+              {
+                id: 'seeded',
+                fixtureId: params.selectedFixtureId || 'ind-panel',
+                lightType: activeFixture.lightType,
+                quantity: calculation.fixtures || 4,
+                wattage: activeFixture.wattage || 15,
+                lumens: activeFixture.lumens || 1500,
+                brands: activeFixture.brands || 'Pre-configured Spec',
+                isCustom: !!params.isCustomFixture,
+                fixtureShape: params.fixtureShape || 'square',
+                fixtureWidth: params.fixtureWidth || 0.6,
+                fixtureLength: params.fixtureLength || 0.6,
+                fixtureDiameter: params.fixtureDiameter || 0.2,
+                fixtureThickness: params.fixtureThickness || 0.05,
+                fixtureBeamAngle: params.fixtureBeamAngle || 120,
+                fixtureDistributionType: params.fixtureDistributionType || 'conical'
+              }
+            ]).map((af, idx) => {
+              const bCustom = !!af.isCustom;
+              return (
+                <div key={af.id} className="relative bg-slate-50/30 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl flex flex-col md:flex-row md:items-center gap-5 justify-between">
+                  <div className="flex items-center gap-4 flex-grow min-w-0">
+                    <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900 flex items-center justify-center shrink-0">
+                      <Lightbulb className="w-6 h-6 text-indigo-500 dark:text-indigo-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          Fixture Slot #{idx + 1} &middot; {bCustom ? 'Custom specifications' : af.brands}
+                        </span>
+                      </div>
+                      
+                      {bCustom ? (
+                        <div className="space-y-1 mt-1">
+                          <input 
+                            type="text" 
+                            value={af.lightType} 
+                            placeholder="e.g. LED Custom Slot" 
+                            onChange={e => {
+                              const title = e.target.value;
+                              setParams(prev => {
+                                const list = [...(prev.activeFixtures || [])];
+                                if (list[idx]) {
+                                  list[idx] = { ...list[idx], lightType: title };
+                                }
+                                return { ...prev, activeFixtures: list };
+                              });
+                            }} 
+                            className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-750 text-slate-900 dark:text-slate-100 rounded text-xs font-bold outline-none" 
+                          />
+                        </div>
+                      ) : (
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate mt-0.5">{af.lightType}</h4>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {bCustom ? (
+                          <div className="flex gap-2 items-center">
+                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              <span className="text-[10px] text-slate-450 font-bold">lm:</span>
+                              <input 
+                                type="number" 
+                                value={af.lumens || ''} 
+                                onChange={e => {
+                                  const lmVal = Math.max(0, parseInt(e.target.value) || 0);
+                                  setParams(prev => {
+                                    const list = [...(prev.activeFixtures || [])];
+                                    if (list[idx]) {
+                                      list[idx] = { ...list[idx], lumens: lmVal };
+                                    }
+                                    return { ...prev, activeFixtures: list };
+                                  });
+                                }} 
+                                className="w-14 bg-transparent outline-none text-xs font-mono font-bold text-yellow-600 dark:text-yellow-400 p-0"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              <span className="text-[10px] text-slate-450 font-bold">W:</span>
+                              <input 
+                                type="number" 
+                                value={af.wattage || ''} 
+                                onChange={e => {
+                                  const wVal = Math.max(0, parseInt(e.target.value) || 0);
+                                  setParams(prev => {
+                                    const list = [...(prev.activeFixtures || [])];
+                                    if (list[idx]) {
+                                      list[idx] = { ...list[idx], wattage: wVal };
+                                    }
+                                    return { ...prev, activeFixtures: list };
+                                  });
+                                }} 
+                                className="w-10 bg-transparent outline-none text-xs font-mono font-bold text-slate-600 dark:text-slate-400 p-0"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-900/30 px-2.5 py-0.5 rounded-md">
+                              {af.lumens} lm
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-350 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 px-2.5 py-0.5 rounded-md">
+                              {af.wattage}W
+                            </span>
+                          </>
+                        )}
+                        <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200/50 dark:border-indigo-900/30 px-2.5 py-0.5 rounded-md uppercase">
+                          {af.fixtureShape} &middot; {af.fixtureBeamAngle}°
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Custom Light Specification</p>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">{params.customLightType || 'Custom Fixture'}</h4>
+
+                  <div className="flex items-center gap-4 justify-between md:justify-end shrink-0 select-none border-t md:border-t-0 border-slate-100 dark:border-slate-800 pt-3 md:pt-0">
+                    {/* Quantity Selector Spinner */}
+                    <div className="flex flex-col items-center gap-1.5">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Quantity</span>
+                      <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-sm">
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            setParams(prev => {
+                              const list = [...(prev.activeFixtures || [])];
+                              if (list[idx] && list[idx].quantity > 1) {
+                                list[idx] = { ...list[idx], quantity: list[idx].quantity - 1 };
+                              }
+                              return { ...prev, activeFixtures: list };
+                            });
+                          }}
+                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                        >
+                          -
+                        </button>
+                        <span className="w-8 text-center text-xs font-mono font-black text-indigo-600 dark:text-indigo-400">
+                          {af.quantity}
+                        </span>
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setParams(prev => {
+                              const list = [...(prev.activeFixtures || [])];
+                              if (list[idx]) {
+                                list[idx] = { ...list[idx], quantity: list[idx].quantity + 1 };
+                              }
+                              return { ...prev, activeFixtures: list };
+                            });
+                          }}
+                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Actions: Swap and Delete */}
+                    <div className="flex flex-col gap-1.5 self-end">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setEditingFixtureIndex(idx);
+                          setShowFixtureModal(true);
+                        }} 
+                        className="px-3.5 py-1.5 bg-white hover:bg-indigo-50/50 dark:bg-slate-800 dark:hover:bg-indigo-950/40 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 border border-slate-250 dark:border-slate-700 hover:border-indigo-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <List className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Swap fixture</span>
+                      </button>
+                      
+                      {(params.activeFixtures || []).length > 1 && (
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setParams(prev => {
+                              const list = [...(prev.activeFixtures || [])];
+                              list.splice(idx, 1);
+                              return { ...prev, activeFixtures: list };
+                            });
+                          }} 
+                          className="px-3.5 py-1 bg-rose-50/80 hover:bg-rose-100 text-rose-600 border border-rose-100/50 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 dark:text-rose-400 dark:border-rose-900/45 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Light Type / Name</label>
-                    <input 
-                      type="text" 
-                      value={params.customLightType || ''} 
-                      placeholder="e.g. LED Custom Batten" 
-                      onChange={e => setParams({ ...params, customLightType: e.target.value })} 
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Lumens (lm)</label>
-                    <input 
-                      type="number" 
-                      value={params.customLumens || ''} 
-                      placeholder="e.g. 1500" 
-                      onChange={e => {
-                        const lumens = Math.max(0, parseInt(e.target.value) || 0);
-                        setParams({ ...params, customLumens: lumens, lumensPerFixture: lumens });
-                      }} 
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Wattage (W)</label>
-                    <input 
-                      type="number" 
-                      value={params.customWattage || ''} 
-                      placeholder="e.g. 15" 
-                      onChange={e => {
-                        const wattage = Math.max(0, parseInt(e.target.value) || 0);
-                        setParams({ ...params, customWattage: wattage });
-                      }} 
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" 
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm flex-grow h-full">
-                <div className="w-16 h-16 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-center shrink-0">
-                  <Lightbulb className="w-8 h-8 text-indigo-500 dark:text-indigo-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-black text-slate-400 dark:text-slate-550 uppercase tracking-wider mb-1">{activeFixture.category} &middot; {activeFixture.brands}</p>
-                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate mb-1.5">{activeFixture.lightType}</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-900/30 px-2.5 py-1 rounded-md">{activeFixture.lumensRange}</span>
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-350 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 px-2.5 py-1 rounded-md">{activeFixture.wattageRange}</span>
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })}
           </div>
-          <button 
-            type="button"
-            onClick={() => setShowFixtureModal(true)} 
-            className="flex flex-col items-center justify-center gap-2 px-6 py-4 bg-indigo-50/10 dark:bg-indigo-950/20 border-2 border-dashed border-indigo-200 dark:border-indigo-900 rounded-2xl text-indigo-700 dark:text-indigo-400 hover:border-indigo-600 dark:hover:border-indigo-500 hover:bg-indigo-100/25 transition-all font-bold lg:w-[240px] shadow-sm animate-pulse-subtle shrink-0"
-          >
-            <List className="w-5 h-5 mb-1" /> 
-            <span>Browse Fixture Library</span>
-            <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold">Or Select Custom Fixture</span>
-          </button>
         </div>
-      </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
           
@@ -984,9 +1617,13 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
             <div className="relative overflow-hidden bg-slate-900 dark:bg-slate-950 border border-slate-800 rounded-3xl p-6 text-white shadow-lg text-center">
                <div className="relative z-10">
-                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">Quantity of Luminaires</span>
+                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">{params.activeFixtures && params.activeFixtures.length > 1 ? 'Combined Quantity in Layout' : 'Quantity of Luminaires'}</span>
                  <div className="flex items-baseline justify-center gap-1.5">
-                   <p className="text-[80px] leading-[1] font-mono font-black text-amber-400 tracking-tighter">{calculation.fixtures}</p>
+                   <p className="text-[80px] leading-[1] font-mono font-black text-amber-400 tracking-tighter">
+                     {params.activeFixtures && params.activeFixtures.length > 1 
+                       ? params.activeFixtures.reduce((sum, f) => sum + (f.quantity || 0), 0)
+                       : calculation.fixtures}
+                   </p>
                  </div>
                  <p className="text-[10px] font-bold text-slate-500 uppercase mt-2 tracking-wider">Fixtures Distributed</p>
                  
@@ -1035,48 +1672,382 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
             {/* TAB 1: 3D Visualization */}
             {activeSubTab === '3d' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
                    <div>
-                     <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block">Interactive Scene</span>
-                     <span className="text-base font-extrabold text-slate-800">Room 3D CAD Representation</span>
+                     <span className="text-[10px] font-black text-indigo-505 uppercase tracking-widest block text-indigo-600 dark:text-indigo-400">Interactive Scene</span>
+                     <span className="text-base font-extrabold text-slate-800 dark:text-slate-100">Room Physical Layout</span>
                    </div>
-                   <div className="flex items-center gap-2">
-                     <span className="text-xs font-bold text-slate-600">False Color Render</span>
-                     <button 
-                       type="button"
-                       onClick={() => setShowFalseColor(!showFalseColor)}
-                       className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${showFalseColor ? 'bg-indigo-600' : 'bg-slate-300'}`}
-                     >
-                       <div className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${showFalseColor ? 'translate-x-6' : 'translate-x-0'}`} />
-                     </button>
+                   <div className="flex flex-wrap items-center gap-3">
+                     {/* View Mode Toggle */}
+                     <div className="flex bg-slate-100 dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                       <button
+                         type="button"
+                         onClick={() => setLayoutViewMode('3d')}
+                         className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${layoutViewMode === '3d' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                       >
+                         3D Orbit CAD
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => setLayoutViewMode('drag')}
+                         className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${layoutViewMode === 'drag' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                       >
+                         <Maximize className="w-2.5 h-2.5" /> 2D Drag & Place
+                       </button>
+                     </div>
+
+                     {/* False Color Render */}
+                     <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
+                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">False Color</span>
+                       <button 
+                         type="button"
+                         onClick={() => setShowFalseColor(!showFalseColor)}
+                         className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 focus:outline-none ${showFalseColor ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}`}
+                       >
+                         <div className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform duration-200 ${showFalseColor ? 'translate-x-4' : 'translate-x-0'}`} />
+                       </button>
+                     </div>
                    </div>
                 </div>
 
                 {params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0 ? (
                   <>
-                  <Illumination3DModel 
-                    width={params.roomWidth} 
-                    length={params.roomLength} 
-                    height={mountingHeight} 
-                    ceilingHeight={ceilingHeight}
-                    fixtures={calculation.fixtures} 
-                    lumens={params.lumensPerFixture} 
-                    showFalseColor={showFalseColor}
-                    enableDaylight={enableDaylight}
-                    windowArea={windowArea}
-                    skyCondition={skyCondition}
-                    isLpdCompliant={energyAudit.passLPD}
-                    lpdValue={energyAudit.lpd}
-                    lpdLimit={lpdLimitInfo.limit}
-                    targetLux={params.targetLux}
-                    fixtureShape={params.fixtureShape}
-                    fixtureWidth={params.fixtureWidth}
-                    fixtureLength={params.fixtureLength}
-                    fixtureDiameter={params.fixtureDiameter}
-                    fixtureThickness={params.fixtureThickness}
-                    fixtureBeamAngle={params.fixtureBeamAngle}
-                    fixtureDistributionType={params.fixtureDistributionType}
-                  />
+                  {layoutViewMode === '3d' ? (
+                    <Illumination3DModel 
+                      width={params.roomWidth} 
+                      length={params.roomLength} 
+                      height={mountingHeight} 
+                      ceilingHeight={ceilingHeight}
+                      fixtures={calculation.fixtures} 
+                      lumens={params.lumensPerFixture} 
+                      showFalseColor={showFalseColor}
+                      enableDaylight={enableDaylight}
+                      windowArea={windowArea}
+                      skyCondition={skyCondition}
+                      isLpdCompliant={energyAudit.passLPD}
+                      lpdValue={energyAudit.lpd}
+                      lpdLimit={lpdLimitInfo.limit}
+                      targetLux={params.targetLux}
+                      fixtureShape={params.fixtureShape}
+                      fixtureWidth={params.fixtureWidth}
+                      fixtureLength={params.fixtureLength}
+                      fixtureDiameter={params.fixtureDiameter}
+                      fixtureThickness={params.fixtureThickness}
+                      fixtureBeamAngle={params.fixtureBeamAngle}
+                      fixtureDistributionType={params.fixtureDistributionType}
+                      activeFixtures={params.activeFixtures}
+                      customPositions={params.customPositions}
+                    />
+                  ) : (
+                    // 2D Drag-and-drop Layout Panel
+                    <div className="space-y-4">
+                      {/* Interactive Drag SVG/HTML Board */}
+                      <div className="flex flex-col items-center justify-center bg-slate-900 dark:bg-slate-950 p-6 rounded-2xl border border-slate-800 relative select-none touch-none overflow-hidden" style={{ minHeight: '440px' }}>
+                        
+                        {/* Blueprint grid background lines */}
+                        <div className="absolute inset-0 opacity-[0.07] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#38bdf8 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+                        
+                        {/* Heading & stats */}
+                        <div className="absolute top-3 left-4 text-left z-10">
+                          <span className="block text-[9px] font-black text-sky-400 uppercase tracking-widest">Tactile Placement Editor</span>
+                          <span className="block text-xs font-bold text-slate-300">Drag fixtures to reposition. Calculations update instantly.</span>
+                        </div>
+
+                        <div className="absolute top-3 right-4 z-10 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // snap to a crisp 10cm grid
+                              if (params.customPositions) {
+                                const snapped = params.customPositions.map(cp => ({
+                                  ...cp,
+                                  x: Number((Math.round(cp.x * 10) / 10).toFixed(1)),
+                                  z: Number((Math.round(cp.z * 10) / 10).toFixed(1))
+                                }));
+                                setParams(prev => ({ ...prev, customPositions: snapped }));
+                              }
+                            }}
+                            className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-sky-405 px-2.5 py-1 rounded border border-slate-705 transition-colors flex items-center gap-1 text-sky-400"
+                          >
+                            <Grid className="w-3 h-3" /> Snap to 10cm Grid
+                          </button>
+                        </div>
+
+                        {/* Centered Floor Container */}
+                        {(() => {
+                          const w = params.roomWidth || 4;
+                          const l = params.roomLength || 5;
+                          const maxPix = 320;
+                          const scale = maxPix / Math.max(w, l);
+                          const pixW = w * scale;
+                          const pixL = l * scale;
+
+                          return (
+                            <div 
+                              ref={dragContainerRef}
+                              onMouseMove={handleDragMove}
+                              onTouchMove={handleDragMove}
+                              onMouseUp={handleDragEnd}
+                              onTouchEnd={handleDragEnd}
+                              className="relative border-4 border-slate-600/80 bg-slate-950/40 rounded shadow-2xl transition-all overflow-hidden cursor-crosshair select-none touch-none"
+                              style={{ width: `${pixW}px`, height: `${pixL}px` }}
+                            >
+                              {/* Uniformity Grid live background if False Color Render is enabled */}
+                              {showFalseColor && (
+                                <canvas
+                                  id="falseColorCanvas2D"
+                                  className="absolute inset-0 w-full h-full opacity-60 pointer-events-none"
+                                  ref={(canvas) => {
+                                    if (canvas) {
+                                      const ctx = canvas.getContext('2d');
+                                      if (ctx) {
+                                        // Draw a simple, beautiful 64x64 interpolated false color heatmap of the room
+                                        const skyIllum = skyCondition === 'clear' ? 35000 : skyCondition === 'partly' ? 18000 : 7000;
+                                        const imgData = ctx.createImageData(64, 64);
+                                        const activeFixts = params.customPositions || [];
+                                        
+                                        for (let cz = 0; cz < 64; cz++) {
+                                          for (let cx = 0; cx < 64; cx++) {
+                                            const rx = (cx / 63) * w;
+                                            const rz = (cz / 63) * l;
+                                            
+                                            let pointLuxVal = 0;
+                                            activeFixts.forEach(cp => {
+                                              const distSq = (rx - cp.x)**2 + (rz - cp.z)**2 + mountingHeight**2;
+                                              const intensity = (cp.lumens * params.coefficientOfUtilization * params.maintenanceFactor) / (2 * Math.PI);
+                                              pointLuxVal += (intensity * mountingHeight) / Math.pow(distSq, 1.5);
+                                            });
+                                            
+                                            if (enableDaylight) {
+                                              const daylightFactorAtWall = 0.08 * (windowArea / (w * l)) * 100;
+                                              const daylightFactorAtPoint = daylightFactorAtWall * Math.exp(-0.5 * rz);
+                                              pointLuxVal += (daylightFactorAtPoint * skyIllum) / 100;
+                                            }
+                                            
+                                            // Map pointLux to False Color spectrum
+                                            const val = Math.min(1.0, pointLuxVal / Math.max(100, params.targetLux * 1.8));
+                                            
+                                            // Spectrum interpolation: Blue -> Cyan -> Green -> Yellow -> Red
+                                            let rgb = [0, 0, 0];
+                                            if (val < 0.25) {
+                                              const f = val / 0.25;
+                                              rgb = [0, Math.round(f * 255), 255];
+                                            } else if (val < 0.5) {
+                                              const f = (val - 0.25) / 0.25;
+                                              rgb = [0, 255, Math.round((1 - f) * 255)];
+                                            } else if (val < 0.75) {
+                                              const f = (val - 0.5) / 0.25;
+                                              rgb = [Math.round(f * 255), 255, 0];
+                                            } else {
+                                              const f = (val - 0.75) / 0.25;
+                                              rgb = [255, Math.round((1 - f) * 255), 0];
+                                            }
+                                            
+                                            const idx = (cz * 64 + cx) * 4;
+                                            imgData.data[idx] = rgb[0];
+                                            imgData.data[idx+1] = rgb[1];
+                                            imgData.data[idx+2] = rgb[2];
+                                            imgData.data[idx+3] = 255;
+                                          }
+                                        }
+                                        ctx.putImageData(imgData, 0, 0);
+                                      }
+                                    }
+                                  }}
+                                  style={{ imageRendering: 'pixelated' }}
+                                />
+                              )}
+
+                              {/* Floor tick boundary measurements labels */}
+                              <div className="absolute inset-0 pointer-events-none opacity-[0.12] border-t border-b border-sky-400" style={{ backgroundSize: `${scale}px ${scale}px`, backgroundImage: 'linear-gradient(to right, #38bdf8 1px, transparent 1px), linear-gradient(to bottom, #38bdf8 1px, transparent 1px)' }} />
+
+                              {/* Compass indicator representing North wall Window position */}
+                              <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-sky-500 via-sky-400 to-sky-500 shadow flex items-center justify-center pointer-events-none">
+                                <span className="text-[7px] text-sky-950 font-black tracking-widest bg-sky-200 px-2 rounded-b">NORTH WALL (WINDOW LEVEL)</span>
+                              </div>
+
+                              {/* Draw 5x5 Uniformity sensor nodes overlay dynamically on their locations */}
+                              {luxGridData.grid.map((row, rIdx) => {
+                                const sensorZPct = (0.1 + rIdx * 0.2) * 100;
+                                return row.map((luxVal, cIdx) => {
+                                  const sensorXPct = (0.1 + cIdx * 0.2) * 100;
+                                  return (
+                                    <div 
+                                      key={`sensor-${rIdx}-${cIdx}`}
+                                      className="absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center p-0.5 rounded pointer-events-none"
+                                      style={{ left: `${sensorXPct}%`, top: `${sensorZPct}%` }}
+                                    >
+                                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400/80 animate-ping absolute" />
+                                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400/50" />
+                                      <span className="text-[7px] font-mono text-slate-400 bg-slate-950/80 scale-90 px-0.5 rounded font-black mt-0.5">{luxVal} lx</span>
+                                    </div>
+                                  );
+                                });
+                              })}
+
+                              {/* Draggable Fixtures nodes */}
+                              {(params.customPositions || []).map((cp, idx) => {
+                                const isDraggingThis = draggedFixtureId === cp.id;
+                                const matchingAf = params.activeFixtures?.find(f => f.fixtureId === cp.fixtureId);
+                                const shape = matchingAf?.fixtureShape || params.fixtureShape || 'square';
+                                const isLinear = shape === 'linear';
+                                const isCircular = shape === 'circular';
+                                const isRect = shape === 'rectangular';
+                                
+                                // Color assignment for layout legend indexing
+                                const colorClass = idx % 4 === 0 
+                                  ? 'from-amber-450 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 shadow-amber-500/30 text-amber-950' 
+                                  : idx % 4 === 1
+                                    ? 'from-cyan-405 to-teal-500 hover:from-cyan-330 hover:to-teal-400 shadow-cyan-500/30 text-cyan-950'
+                                    : idx % 4 === 2
+                                      ? 'from-pink-405 to-rose-500 hover:from-pink-330 hover:to-rose-400 shadow-pink-500/30 text-rose-955'
+                                      : 'from-violet-405 to-indigo-505 hover:from-violet-330 hover:to-indigo-400 shadow-violet-500/30 text-indigo-950';
+                                
+                                return (
+                                  <div
+                                    id={`drag-fixture-${cp.id}`}
+                                    key={cp.id}
+                                    onMouseDown={(e) => handleDragStart(cp.id, e)}
+                                    onTouchStart={(e) => handleDragStart(cp.id, e)}
+                                    className={`absolute cursor-grab active:cursor-grabbing select-none z-20 group`}
+                                    style={{ 
+                                      left: `${(cp.x / w) * 100}%`, 
+                                      top: `${(cp.z / l) * 100}%`,
+                                      transform: `translate(-50%, -50%) rotate(${cp.rotationDegrees || 0}deg)`
+                                    }}
+                                  >
+                                    {/* Rotate handle */}
+                                    <div 
+                                      className="absolute -top-[28px] left-1/2 -translate-x-1/2 w-6 h-6 flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-white bg-slate-900/60 rounded-full border border-slate-700/50 shadow-lg hover:bg-sky-500 hover:border-sky-400 z-30"
+                                      onMouseDown={(e) => handleRotateStart(cp.id, e)}
+                                      onTouchStart={(e) => handleRotateStart(cp.id, e)}
+                                    >
+                                      <RotateCw className="w-[12px] h-[12px]" />
+                                    </div>
+
+                                    {/* Styled Physical bounding box matching true scaled dimensions with glow */}
+                                    <div 
+                                      className={`relative border flex items-center justify-center bg-gradient-to-br ${colorClass} transition-shadow shadow-md ${(isDraggingThis || rotatingFixtureId === cp.id) ? 'scale-110 shadow-lg cursor-grabbing border-white ring-2 ring-sky-400' : 'border-slate-800/80'}`}
+                                      style={{
+                                        width: isLinear ? '42px' : isCircular ? '32px' : isRect ? '38px' : '32px',
+                                        height: isLinear ? '12px' : isCircular ? '32px' : isRect ? '24px' : '32px',
+                                        borderRadius: isCircular ? '50%' : isLinear ? '4px' : isRect ? '4px' : '2px',
+                                      }}
+                                    >
+                                      {/* Small Lightbulb center point */}
+                                      <Lightbulb className={`w-3.5 h-3.5 text-slate-900 pointer-events-none ${isLinear ? 'scale-75' : ''}`} />
+                                      
+                                      {/* Index indicator */}
+                                      <span className="absolute -top-1.5 -right-1.5 bg-slate-900 text-white text-[8px] font-black rounded-full w-3.5 h-3.5 flex items-center justify-center border border-slate-700 pointer-events-none">
+                                        {idx + 1}
+                                      </span>
+
+                                      {/* Scaled beam angle dispersion coverage indicator circle */}
+                                      <div 
+                                        className="absolute rounded-full border border-yellow-400/25 bg-yellow-400/[0.04] pointer-events-none transition-opacity scale-100 group-hover:opacity-100 opacity-0"
+                                        style={{
+                                          width: `${Math.tan((matchingAf?.fixtureBeamAngle || 120) / 2 * Math.PI / 180) * mountingHeight * scale * 2}px`,
+                                          height: `${Math.tan((matchingAf?.fixtureBeamAngle || 120) / 2 * Math.PI / 180) * mountingHeight * scale * 2}px`,
+                                        }}
+                                      />
+                                    </div>
+
+                                    {/* Tactile Coordinate tooltip overlay */}
+                                    <div 
+                                      className="absolute top-full left-1/2 mt-1.5 bg-slate-950/90 text-[8px] text-sky-400 font-mono tracking-wider whitespace-nowrap rounded px-1.5 py-0.5 border border-slate-800 shadow pointer-events-none transition-all group-hover:opacity-100 group-hover:visible"
+                                      style={{ transform: `translate(-50%, 0) rotate(${-(cp.rotationDegrees || 0)}deg)` }}
+                                    >
+                                      X: {cp.x.toFixed(2)}m | Z: {cp.z.toFixed(2)}m | ∠{Math.round(cp.rotationDegrees || 0)}°
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Drag and Drop instructions instructions footer */}
+                        <div className="absolute bottom-3 text-center w-full px-4 pointer-events-none">
+                          <span className="text-[10px] font-bold text-slate-400">
+                            Hold & Drag any fixture to update illumination results in real-time. Room boundaries: {params.roomWidth}m (width) by {params.roomLength}m (length).
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tactical Reset and Helper Actions Toolbar */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 p-4 rounded-xl shadow-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Tactile Placement Synced: <strong className="font-extrabold text-indigo-600 dark:text-indigo-400">{params.customPositions?.length || 0} Fixtures Connected</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const list: PlacedFixtureDragPosition[] = [];
+                              const w = params.roomWidth || 4;
+                              const l = params.roomLength || 5;
+                              const ratio = w / Math.max(0.1, l);
+                              
+                              if (params.activeFixtures && params.activeFixtures.length > 0) {
+                                params.activeFixtures.forEach((af, afIdx) => {
+                                  const q = af.quantity || 0;
+                                  if (q <= 0) return;
+                                  
+                                  let cols = Math.ceil(Math.sqrt(q));
+                                  let rows = Math.ceil(q / cols);
+                                  cols = Math.max(1, Math.round(Math.sqrt(q * ratio)));
+                                  rows = Math.ceil(q / cols);
+                                  
+                                  const stepZ = l / rows;
+                                  for (let r = 0; r < rows; r++) {
+                                    const startIdx = r * cols;
+                                    const endIdx = Math.min(q, (r + 1) * cols);
+                                    const countRow = endIdx - startIdx;
+                                    if (countRow <= 0) continue;
+                                    
+                                    const rowStepX = w / countRow;
+                                    for (let c = 0; c < countRow; c++) {
+                                      let staggerX = 0;
+                                      let staggerZ = 0;
+                                      if (params.activeFixtures!.length > 1) {
+                                        const thetaOffset = (afIdx / params.activeFixtures!.length) * 2 * Math.PI;
+                                        const radiusOffset = 0.15;
+                                        staggerX = radiusOffset * Math.cos(thetaOffset);
+                                        staggerZ = radiusOffset * Math.sin(thetaOffset);
+                                      }
+                                      
+                                      let proposedX = rowStepX / 2 + c * rowStepX + staggerX;
+                                      let proposedZ = stepZ / 2 + r * stepZ + staggerZ;
+                                      proposedX = Math.max(0.05, Math.min(w - 0.05, proposedX));
+                                      proposedZ = Math.max(0.05, Math.min(l - 0.05, proposedZ));
+                                      
+                                      list.push({
+                                        id: `fixture-${af.fixtureId}-${afIdx}-${r}-${c}-${Math.random().toString(36).substr(2, 4)}`,
+                                        fixtureId: af.fixtureId,
+                                        lightType: af.lightType,
+                                        x: Number(proposedX.toFixed(3)),
+                                        z: Number(proposedZ.toFixed(3)),
+                                        lumens: af.lumens,
+                                        wattage: af.wattage,
+                                        activeFixtureId: af.id
+                                      });
+                                    }
+                                  }
+                                });
+                              }
+                              setParams(prev => ({ ...prev, customPositions: list }));
+                            }}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-850 dark:text-slate-200 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" /> Snap to Spacing Grid
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Dynamic interactive form controls for physical shape/size/spread customization */}
                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-5 rounded-2xl shadow-sm mt-6 space-y-4">
@@ -1720,11 +2691,18 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
             <div className="p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <div>
                 <h3 className="text-xl font-black text-slate-800">Fixture Library</h3>
-                <p className="text-sm font-medium text-slate-500">Select a fixture to use in your calculation.</p>
+                <p className="text-sm font-medium text-slate-500">
+                  {editingFixtureIndex !== null 
+                    ? `Replacing fixture in Design Slot #${editingFixtureIndex + 1}` 
+                    : 'Select a fixture to use in your calculation.'}
+                </p>
               </div>
               <button 
                 type="button"
-                onClick={() => setShowFixtureModal(false)}
+                onClick={() => {
+                  setShowFixtureModal(false);
+                  setEditingFixtureIndex(null);
+                }}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -1737,22 +2715,76 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                 <button
                   type="button"
                   onClick={() => {
-                    setParams({ 
-                      ...params, 
-                      isCustomFixture: true, 
-                      selectedFixtureId: 'custom', 
-                      customLightType: params.customLightType || 'Custom LED Fixture', 
-                      customLumens: params.customLumens || 1500, 
-                      customWattage: params.customWattage || 15, 
-                      lumensPerFixture: params.customLumens || 1500 
-                    });
+                    if (editingFixtureIndex !== null && params.activeFixtures) {
+                      const list = [...params.activeFixtures];
+                      const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
+                      if (list[editingFixtureIndex]) {
+                        list[editingFixtureIndex] = {
+                          ...list[editingFixtureIndex],
+                          fixtureId: 'custom',
+                          lightType: params.customLightType || 'Custom LED Fixture',
+                          lumens: params.customLumens || 1500,
+                          wattage: params.customWattage || 15,
+                          isCustom: true,
+                          brands: 'Manual Intake Spec'
+                        };
+                      }
+
+                      let updatedCustomPositions = params.customPositions;
+                      if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
+                        const targetActiveF = list[editingFixtureIndex];
+                        updatedCustomPositions = params.customPositions.map(cp => {
+                          const isMatch = cp.activeFixtureId 
+                            ? cp.activeFixtureId === targetActiveF?.id
+                            : cp.fixtureId === oldFixtureId;
+                          if (isMatch) {
+                            return {
+                              ...cp,
+                              fixtureId: 'custom',
+                              lightType: params.customLightType || 'Custom LED Fixture',
+                              lumens: params.customLumens || 1500,
+                              wattage: params.customWattage || 15,
+                              activeFixtureId: targetActiveF?.id
+                            };
+                          }
+                          return cp;
+                        });
+                      }
+
+                      if (list.length === 1) {
+                        setParams({ 
+                          ...params, 
+                          activeFixtures: list, 
+                          customPositions: updatedCustomPositions,
+                          isCustomFixture: true, 
+                          selectedFixtureId: 'custom' 
+                        });
+                      } else {
+                        setParams({ 
+                          ...params, 
+                          activeFixtures: list,
+                          customPositions: updatedCustomPositions
+                        });
+                      }
+                    } else {
+                      setParams({ 
+                        ...params, 
+                        isCustomFixture: true, 
+                        selectedFixtureId: 'custom', 
+                        customLightType: params.customLightType || 'Custom LED Fixture', 
+                        customLumens: params.customLumens || 1500, 
+                        customWattage: params.customWattage || 15, 
+                        lumensPerFixture: params.customLumens || 1500 
+                      });
+                    }
                     setShowFixtureModal(false);
+                    setEditingFixtureIndex(null);
                   }}
                   className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group p-5 bg-gradient-to-br from-indigo-50/10 to-white hover:border-indigo-400 hover:shadow-md ${
-                    params.isCustomFixture ? 'border-indigo-500 ring-2 ring-indigo-550/30 scale-[1.02] shadow-md z-10 bg-indigo-50/10' : 'border-slate-200 border-dashed hover:border-indigo-300'
+                    isCurrentlyCustom ? 'border-indigo-500 ring-2 ring-indigo-500/30 scale-[1.02] shadow-md z-10 bg-indigo-50/10' : 'border-slate-200 border-dashed hover:border-indigo-300'
                   }`}
                 >
-                  {params.isCustomFixture && (
+                  {isCurrentlyCustom && (
                     <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm p-0.5 border border-indigo-250">
                       <CheckCircle2 className="w-5 h-5 text-indigo-600" />
                     </div>
@@ -1777,14 +2809,84 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                     type="button"
                     key={fixture.id}
                     onClick={() => {
-                      setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens, isCustomFixture: false });
+                      if (editingFixtureIndex !== null && params.activeFixtures) {
+                        const list = [...params.activeFixtures];
+                        const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
+                        const defaults = getPredefinedFixtureDefaults(fixture.id, false);
+                        if (list[editingFixtureIndex]) {
+                          list[editingFixtureIndex] = {
+                            ...list[editingFixtureIndex],
+                            fixtureId: fixture.id,
+                            lightType: fixture.lightType,
+                            lumens: fixture.lumens,
+                            wattage: fixture.wattage,
+                            brands: fixture.brands,
+                            isCustom: false,
+                            fixtureShape: defaults.fixtureShape,
+                            fixtureWidth: defaults.fixtureWidth,
+                            fixtureLength: defaults.fixtureLength,
+                            fixtureDiameter: defaults.fixtureDiameter,
+                            fixtureThickness: defaults.fixtureThickness,
+                            fixtureBeamAngle: defaults.fixtureBeamAngle,
+                            fixtureDistributionType: defaults.fixtureDistributionType
+                          };
+                        }
+
+                         let updatedCustomPositions = params.customPositions;
+                         if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
+                           const targetActiveF = list[editingFixtureIndex];
+                           updatedCustomPositions = params.customPositions.map(cp => {
+                             const isMatch = cp.activeFixtureId 
+                               ? cp.activeFixtureId === targetActiveF?.id
+                               : cp.fixtureId === oldFixtureId;
+                             if (isMatch) {
+                               return {
+                                 ...cp,
+                                 fixtureId: fixture.id,
+                                 lightType: fixture.lightType,
+                                 lumens: fixture.lumens,
+                                 wattage: fixture.wattage,
+                                 activeFixtureId: targetActiveF?.id
+                               };
+                             }
+                             return cp;
+                           });
+                         }
+
+                        if (list.length === 1) {
+                          setParams({ 
+                            ...params, 
+                            activeFixtures: list,
+                            customPositions: updatedCustomPositions,
+                            selectedFixtureId: fixture.id,
+                            lumensPerFixture: fixture.lumens,
+                            isCustomFixture: false,
+                            fixtureShape: defaults.fixtureShape,
+                            fixtureWidth: defaults.fixtureWidth,
+                            fixtureLength: defaults.fixtureLength,
+                            fixtureDiameter: defaults.fixtureDiameter,
+                            fixtureThickness: defaults.fixtureThickness,
+                            fixtureBeamAngle: defaults.fixtureBeamAngle,
+                            fixtureDistributionType: defaults.fixtureDistributionType
+                          });
+                        } else {
+                          setParams({ 
+                            ...params, 
+                            activeFixtures: list,
+                            customPositions: updatedCustomPositions
+                          });
+                        }
+                      } else {
+                        setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens, isCustomFixture: false });
+                      }
                       setShowFixtureModal(false);
+                      setEditingFixtureIndex(null);
                     }}
                     className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group ${
-                      (!params.isCustomFixture && params.selectedFixtureId === fixture.id) ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
+                      (!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
                     }`}
                   >
-                    {(!params.isCustomFixture && params.selectedFixtureId === fixture.id) && (
+                    {(!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) && (
                       <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm">
                         <CheckCircle2 className="w-5 h-5 text-yellow-500" />
                       </div>

@@ -20,6 +20,8 @@ export function Auth() {
       console.error('Login error:', error);
       if (error.code === 'auth/network-request-failed' || error.message?.includes('network-request-failed')) {
         alert("Authentication failed: Network request blocked.\n\nSince the application is running inside a sandbox/preview iframe, modern browsers restrict third-party authentication context.\n\nPlease click the 'Open in New Tab' button in the top-right of the preview pane to sign in properly.");
+      } else if (error.code === 'auth/cancelled-popup-request' || error.message?.includes('cancelled-popup-request')) {
+         alert("Authentication failed: Popup was cancelled or blocked.\n\nIf you did not close the window manually, your browser might be blocking popups from this preview iframe. Please click the 'Open in New Tab' button in the top-right of the preview pane to authenticate securely.");
       } else {
         alert('Login failed: ' + error.message);
       }

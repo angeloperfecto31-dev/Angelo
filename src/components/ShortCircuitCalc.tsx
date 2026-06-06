@@ -152,7 +152,13 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       }
 
       setParams(p => {
-        if (p.transformerKVA === recommendedKVA && p.transformerVoltage === panel.voltage && p.feederSize === recommendedFeederSize && p.feederRuns === recommendedRuns) {
+        if (
+          p.transformerKVA === recommendedKVA && 
+          p.transformerVoltage === panel.voltage && 
+          p.feederSize === recommendedFeederSize && 
+          p.feederRuns === recommendedRuns &&
+          (!panel.transformerConnection || p.transformerConnection === panel.transformerConnection)
+        ) {
           return p;
         }
         return {
@@ -160,20 +166,41 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           transformerKVA: recommendedKVA,
           transformerVoltage: panel.voltage,
           feederSize: recommendedFeederSize,
-          feederRuns: recommendedRuns
+          feederRuns: recommendedRuns,
+          transformerConnection: panel.transformerConnection || p.transformerConnection
         };
       });
     }
   }, [source, circuits, panel]);
 
   const calculation = useMemo(() => {
+    // Determine connection phase factors based on Philippine Electrical Code (PEC) Practices
+    let connectionMultiplier = 1.0; // Default symmetrical 3-phase fault
+    let groundFaultFactor = 1.0;
+    
+    if (params.transformerConnection?.includes('Open') || false) {
+      // Open Delta (V-V) or Open Wye-Open Delta: Total fault capability is reduced 
+      // typically to 86.6% (0.866) of an equivalent closed 3-phase bank.
+      connectionMultiplier = 0.866; 
+    } 
+    
+    // Check if the secondary is a Wye connection, which can permit high Line-to-Neutral ground fault currents
+    if (params.transformerConnection === 'Wye (Star) Connection' || 
+        params.transformerConnection === 'Delta-Wye (Δ-Y)' || 
+        params.transformerConnection === 'Wye-Wye (Y-Y)' ||
+        params.transformerConnection === 'Open Wye-Open Delta') {
+      // Solidly grounded wye systems can have ground faults up to 125% of 3-Phase fault.
+      groundFaultFactor = 1.25; 
+    }
+
     // 1. Utility Isc
     const baseKVA = params.transformerKVA;
     const baseKV = params.transformerVoltage / 1000;
     const zUtilitypu = baseKVA / (params.utilityShortCircuitMVA * 1000);
     
     // 2. Transformer Isc
-    const zTranspu = params.transformerZ / 100;
+    // Open Delta banks have varying per-unit impedances; assuming baseKVA is bank KVA.
+    const zTranspu = (params.transformerZ / 100) / connectionMultiplier;
 
     // 3. Feeder Impedance Estimate (Simplified pu)
     const feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
@@ -186,6 +213,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
     const iFullLoad = params.transformerKVA / (1.732 * (params.transformerVoltage / 1000));
     
     // Isc at different points
+    // Max Symmetrical Short Circuit Current
     const iscMainBreaker = iFullLoad / (zUtilitypu + zTranspu);
     const iscFaultPoint = iFullLoad / totalZpu;
 
@@ -211,7 +239,9 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       multiplier: multiplier.toFixed(2),
       iscFault1: fault1Isc.toFixed(2),
       iscFault2: iscMainBreaker.toFixed(2),
-      iscFault3: (iscFaultPoint + motorContribution).toFixed(2)
+      iscFault3: (iscFaultPoint + motorContribution).toFixed(2),
+      connectionMultiplier: connectionMultiplier.toFixed(3),
+      groundFaultFactor: groundFaultFactor.toFixed(2)
     };
   }, [params, motorLoadVA]);
 
@@ -258,10 +288,21 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-400 uppercase">Connection</label>
-                  <select value={params.transformerConnection} onChange={e => setParams({...params, transformerConnection: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-950 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
-                     <option value="Delta-Wye" className="dark:bg-slate-900 dark:text-slate-100">Delta-Wye</option>
-                     <option value="Wye-Wye" className="dark:bg-slate-900 dark:text-slate-100">Wye-Wye</option>
-                     <option value="Delta-Delta" className="dark:bg-slate-900 dark:text-slate-100">Delta-Delta</option>
+                  <select disabled={source === 'auto'} value={
+                    params.transformerConnection === 'Delta-Wye' ? 'Delta-Wye (Δ-Y)' :
+                    params.transformerConnection === 'Wye (Star)' ? 'Wye (Star) Connection' :
+                    params.transformerConnection === 'Delta' ? 'Delta Connection' :
+                    params.transformerConnection === 'Wye-Wye' ? 'Wye-Wye (Y-Y)' :
+                    params.transformerConnection
+                  } onChange={e => setParams({...params, transformerConnection: e.target.value})} className={`w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all outline-none ${source === 'auto' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-800 text-slate-950 dark:text-slate-100 focus:ring-2 focus:ring-red-500'}`}>
+                     <option value="Wye (Star) Connection" className="dark:bg-slate-900 dark:text-slate-100">Wye (Star) Connection</option>
+                     <option value="Delta Connection" className="dark:bg-slate-900 dark:text-slate-100">Delta Connection</option>
+                     <option value="Delta-Wye (Δ-Y)" className="dark:bg-slate-900 dark:text-slate-100">Delta-Wye (Δ-Y)</option>
+                     <option value="Wye-Delta (Y-Δ)" className="dark:bg-slate-900 dark:text-slate-100">Wye-Delta (Y-Δ)</option>
+                     <option value="Delta-Delta (Δ-Δ)" className="dark:bg-slate-900 dark:text-slate-100">Delta-Delta (Δ-Δ)</option>
+                     <option value="Wye-Wye (Y-Y)" className="dark:bg-slate-900 dark:text-slate-100">Wye-Wye (Y-Y)</option>
+                     <option value="Open Delta (V-V)" className="dark:bg-slate-900 dark:text-slate-100">Open Delta (V-V)</option>
+                     <option value="Open Wye-Open Delta" className="dark:bg-slate-900 dark:text-slate-100">Open Wye-Open Delta</option>
                   </select>
                 </div>
                 
@@ -900,10 +941,15 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           <div>
             <h3 className="font-bold text-slate-900 mb-2">2. Impedance Multiplier (M)</h3>
             <p className="mb-2">The Multiplier determines the relationship between the Full Load Current and the Short Circuit Current, considering the Utility Fault level (MVA) and Transformer Impedance (%Z).</p>
+            {calculation.connectionMultiplier !== "1.000" && (
+              <p className="mb-2 text-indigo-700 bg-indigo-50 p-2 rounded border border-indigo-100">
+                <strong>PEC Connection Factor Applied:</strong> As an Open configuration is selected, the equivalent 3-phase symmetrical fault duty is reduced by a factor of <strong>{calculation.connectionMultiplier}</strong> compared to a closed delta bank of identical individual base ratings.
+              </p>
+            )}
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>{`Step A: Transformer Multiplier = 100 / %Z`}</span>
-              <span>{`Step B: Utility Contribution Factor = Utilities MVA / Transformer kVA`}</span>
-              <span>{`Combined Multiplier (M) = 1 / ((%Z / 100) + (Transformer kVA / (Utility MVA × 1000)))`}</span>
+              <span>{`Step A: Z_trans_pu = (%Z / 100) / ConnectionFactor(${calculation.connectionMultiplier})`}</span>
+              <span>{`Step B: Z_utility_pu = Transformer kVA / (Utility MVA × 1000)`}</span>
+              <span>{`Combined Multiplier (M) = 1 / (Z_trans_pu + Z_utility_pu)`}</span>
             </div>
             <p className="mt-2 text-red-600 font-bold">Calculated Multiplier (M): {calculation.multiplier}</p>
           </div>
@@ -911,6 +957,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
           <div>
             <h3 className="font-bold text-slate-900 mb-2">3. Secondary Short Circuit Current (Isc)</h3>
             <p className="mb-2">The max available fault current at the secondary of the transformer is crucial for sizing the primary Overcurrent Protection Device (OCPD). Multiplied by 1.25 for Asymmetrical considerations.</p>
+            {calculation.groundFaultFactor !== "1.00" && (
+              <p className="mb-2 text-amber-700 bg-amber-50 p-2 rounded border border-amber-100">
+                <strong>Attention Wye (Star) Connection:</strong> Solidly grounded systems may result in L-N ground faults up to <strong>{calculation.groundFaultFactor}x</strong> higher than the 3-phase symmetrical fault current. Verify equipment ground fault ratings accordingly.
+              </p>
+            )}
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
               <span>{`Isc (Symmetrical) = FLA × Multiplier (M)`}</span>
               <span>{`Isc (Asymmetrical) = Isc (Symmetrical) × 1.25 Asymmetry Factor (PEC Std)`}</span>

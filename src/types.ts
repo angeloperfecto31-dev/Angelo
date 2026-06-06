@@ -57,6 +57,7 @@ export interface PanelConfig {
   type: string;
   system: '230V, 1PH, 2W' | '230V, 3PH, 3W' | '400V/230V, 3PH, 4W';
   connectionType?: 'Line-to-Line' | 'Line-to-Neutral';
+  transformerConnection?: string;
   mounting: string;
   enclosure: string;
   mainBreakerAT: number;
@@ -116,6 +117,36 @@ export interface SavedLightingDetail {
   fixtureLumens?: number;
 }
 
+export interface ActiveFixtureSelection {
+  id: string;
+  fixtureId: string;
+  lightType: string;
+  wattage: number;
+  lumens: number;
+  quantity: number;
+  isCustom?: boolean;
+  brands?: string;
+  fixtureShape: 'rectangular' | 'square' | 'circular' | 'linear';
+  fixtureWidth: number;
+  fixtureLength: number;
+  fixtureDiameter: number;
+  fixtureThickness: number;
+  fixtureBeamAngle: number;
+  fixtureDistributionType: 'conical' | 'oblong' | 'omni' | 'linear';
+}
+
+export interface PlacedFixtureDragPosition {
+  id: string;
+  fixtureId: string;
+  lightType: string;
+  x: number; // 0 to roomWidth
+  z: number; // 0 to roomLength
+  rotationDegrees?: number; // 0 to 360
+  lumens: number;
+  wattage: number;
+  activeFixtureId?: string;
+}
+
 export interface IlluminationParams {
   inputMode: 'dimensions' | 'area';
   roomWidth: number;
@@ -141,6 +172,8 @@ export interface IlluminationParams {
   fixtureThickness?: number;
   fixtureBeamAngle?: number;
   fixtureDistributionType?: 'conical' | 'oblong' | 'omni' | 'linear';
+  activeFixtures?: ActiveFixtureSelection[];
+  customPositions?: PlacedFixtureDragPosition[];
 }
 
 export interface FloorPlanImage {

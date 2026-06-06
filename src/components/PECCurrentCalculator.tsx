@@ -1,361 +1,244 @@
-import React, { useState } from 'react';
-import { Calculator, Zap, ShieldAlert, ArrowRight, Clipboard, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calculator, ShieldAlert, Zap, Layers, RefreshCw } from 'lucide-react';
+import LatexRenderer from './LatexRenderer';
+import { PanelConfig } from '../types';
 
-export default function PECCurrentCalculator() {
-  const [system, setSystem] = useState<'230V_1PH_2W' | '230V_3PH_3W' | '400V_230V_3PH_4W'>('400V_230V_3PH_4W');
-  const [loadType, setLoadType] = useState<'3PH' | '1PH_LN' | '1PH_LL'>('3PH');
+interface Props {
+  panel: PanelConfig;
+  setPanel: (p: PanelConfig) => void;
+}
+
+export default function PECCurrentCalculator({ panel, setPanel }: Props) {
   const [inputType, setInputType] = useState<'VA' | 'P'>('VA');
   const [inputValue, setInputValue] = useState<string>('5000');
   const [powerFactor, setPowerFactor] = useState<string>('0.85');
-  const [copied, setCopied] = useState<boolean>(false);
 
-  // Synchronize appropriate load type options when system change
-  const handleSystemChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value as any;
-    setSystem(val);
-    if (val === '230V_1PH_2W') {
-      setLoadType('1PH_LN');
-    } else if (val === '230V_3PH_3W') {
-      setLoadType('3PH');
-    } else if (val === '400V_230V_3PH_4W') {
-      setLoadType('3PH');
-    }
+  // Load selected connection globally from panel, default to Delta-Wye
+  const connection = panel.transformerConnection || 'Delta-Wye (Δ-Y)';
+
+  // Helper updates global connection
+  const handleConnectionChange = (val: string) => {
+    setPanel({ ...panel, transformerConnection: val });
   };
 
-  // Perform Calculation and Substitution Formatting
-  const getCalculationSummary = () => {
-    const sVal = parseFloat(inputValue) || 0;
-    const pfVal = parseFloat(powerFactor) || 1.0;
+  const getSystemMath = () => {
+    const isWye = connection.includes('Wye') || connection.includes('Star');
+    const isOpen = connection.includes('Open');
     
-    let is3Phase = false;
-    let voltage = 230;
-    let approachIdentified = "";
-    let formulaSelected = "";
-    let stepSubstitution = "";
-    let intermediateStep = "";
-    let calculatedCurrent = 0;
+    // We assume the user inputs S (VA) or P (Watts). We convert generic values to calculate metrics correctly.
+    const S = inputType === 'VA' ? parseFloat(inputValue) || 0 : (parseFloat(inputValue) || 0) / (parseFloat(powerFactor) || 1);
+    const P = inputType === 'P' ? parseFloat(inputValue) || 0 : S * (parseFloat(powerFactor) || 1);
+    const PF = parseFloat(powerFactor) || 1;
+    const Q = Math.sqrt(Math.max(0, S * S - P * P));
 
-    // 1. Systems & Configurations mapping
-    if (system === '230V_1PH_2W') {
-      voltage = 230;
-      is3Phase = false;
-      approachIdentified = "SYSTEM: 230V, 1PH, 2W\nLOAD TYPE: Single-Phase\nAPPROACH: Line-to-Line / Line-to-Neutral (230V Reference)";
-      
-      if (inputType === 'P') {
-        formulaSelected = "I = P / (V * PF)";
-        calculatedCurrent = sVal / (voltage * pfVal);
-        stepSubstitution = `I = ${sVal} / (230 * ${pfVal})`;
-        intermediateStep = `I = ${sVal} / ${(230 * pfVal).toFixed(2)}`;
-      } else {
-        formulaSelected = "I = VA / V";
-        calculatedCurrent = sVal / voltage;
-        stepSubstitution = `I = ${sVal} / 230`;
-        intermediateStep = `I = ${(sVal / 230).toFixed(4)}`;
+    // Assume secondary nominal lines based on Panel properties, or standard default 230/400.
+    let VL = panel.voltage || 230;
+    
+    // Calculate based on specific connection
+    let VPH = VL;
+    let IPH = 0;
+    let IL = 0;
+    let bankCapacity = S;
+
+    const isSinglePhase = panel.system === '230V, 1PH, 2W';
+
+    if (isSinglePhase) {
+      VPH = VL;
+      IL = S / VL;
+      IPH = IL;
+    } else if (connection === 'Wye (Star) Connection' || connection === 'Delta-Wye (Δ-Y)' || connection === 'Wye-Wye (Y-Y)' || connection === 'Open Wye-Open Delta') {
+      VPH = VL / 1.732;
+      IL = S / (1.732 * VL);
+      IPH = IL;
+      if (connection === 'Open Wye-Open Delta') {
+        bankCapacity = S * 0.866; // 86.6% utilization factor
       }
-    } 
-    else if (system === '230V_3PH_3W') {
-      if (loadType === '3PH') {
-        voltage = 230;
-        is3Phase = true;
-        approachIdentified = "SYSTEM: 230V, 3PH, 3W\nLOAD TYPE: 3-Phase\nAPPROACH: Line-to-Line (230V)";
-        
-        if (inputType === 'P') {
-          formulaSelected = "I = P / (1.732 * V * PF)";
-          calculatedCurrent = sVal / (1.732 * voltage * pfVal);
-          stepSubstitution = `I = ${sVal} / (1.732 * 230 * ${pfVal})`;
-          intermediateStep = `I = ${sVal} / ${(1.732 * 230 * pfVal).toFixed(2)}`;
-        } else {
-          formulaSelected = "I = VA / (1.732 * V)";
-          calculatedCurrent = sVal / (1.732 * voltage);
-          stepSubstitution = `I = ${sVal} / (1.732 * 230)`;
-          intermediateStep = `I = ${sVal} / 398.36`;
-        }
-      } else {
-        // Single Phase load from 230V 3PH system
-        voltage = 230;
-        is3Phase = false;
-        approachIdentified = "SYSTEM: 230V, 3PH, 3W\nLOAD TYPE: Single-Phase (Tapped from 3-Phase System)\nAPPROACH: Line-to-Line (230V)";
-        
-        if (inputType === 'P') {
-          formulaSelected = "I = P / (230 * PF)";
-          calculatedCurrent = sVal / (voltage * pfVal);
-          stepSubstitution = `I = ${sVal} / (230 * ${pfVal})`;
-          intermediateStep = `I = ${sVal} / ${(230 * pfVal).toFixed(2)}`;
-        } else {
-          formulaSelected = "I = VA / 230";
-          calculatedCurrent = sVal / voltage;
-          stepSubstitution = `I = ${sVal} / 230`;
-          intermediateStep = `I = ${(sVal / 230).toFixed(4)}`;
-        }
+    } else if (connection === 'Delta Connection' || connection === 'Wye-Delta (Y-Δ)' || connection === 'Delta-Delta (Δ-Δ)' || connection === 'Open Delta (V-V)') {
+      VPH = VL;
+      IL = S / (1.732 * VL);
+      IPH = IL / 1.732;
+      if (connection === 'Open Delta (V-V)') {
+        // Open delta provides only 57.7% of closed delta capacity
+        bankCapacity = S * 0.577;
       }
-    } 
-    else if (system === '400V_230V_3PH_4W') {
-      if (loadType === '3PH') {
-        voltage = 400;
-        is3Phase = true;
-        approachIdentified = "SYSTEM: 400V/230V, 3PH, 4W\nLOAD TYPE: 3-Phase\nAPPROACH: Line-to-Line (400V)";
-        
-        if (inputType === 'P') {
-          formulaSelected = "I = P / (1.732 * V * PF)";
-          calculatedCurrent = sVal / (1.732 * voltage * pfVal);
-          stepSubstitution = `I = ${sVal} / (1.732 * 400 * ${pfVal})`;
-          intermediateStep = `I = ${sVal} / ${(1.732 * 400 * pfVal).toFixed(2)}`;
-        } else {
-          formulaSelected = "I = VA / (1.732 * V)";
-          calculatedCurrent = sVal / (1.732 * voltage);
-          stepSubstitution = `I = ${sVal} / (1.732 * 400)`;
-          intermediateStep = `I = ${sVal} / 692.80`;
-        }
-      } else if (loadType === '1PH_LN') {
-        voltage = 230;
-        is3Phase = false;
-        approachIdentified = "SYSTEM: 400V/230V, 3PH, 4W\nLOAD TYPE: Single-Phase (Line-to-Neutral)\nAPPROACH: Line-to-Neutral (230V)";
-        
-        if (inputType === 'P') {
-          formulaSelected = "I = P / (V * PF)";
-          calculatedCurrent = sVal / (voltage * pfVal);
-          stepSubstitution = `I = ${sVal} / (230 * ${pfVal})`;
-          intermediateStep = `I = ${sVal} / ${(230 * pfVal).toFixed(2)}`;
-        } else {
-          formulaSelected = "I = VA / V";
-          calculatedCurrent = sVal / voltage;
-          stepSubstitution = `I = ${sVal} / 230`;
-          intermediateStep = `I = ${(sVal / 230).toFixed(4)}`;
-        }
-      } else {
-        voltage = 400;
-        is3Phase = false;
-        approachIdentified = "SYSTEM: 400V/230V, 3PH, 4W\nLOAD TYPE: Single-Phase (Line-to-Line)\nAPPROACH: Line-to-Line (400V)";
-        
-        if (inputType === 'P') {
-          formulaSelected = "I = P / (V * PF)";
-          calculatedCurrent = sVal / (voltage * pfVal);
-          stepSubstitution = `I = ${sVal} / (400 * ${pfVal})`;
-          intermediateStep = `I = ${sVal} / ${(400 * pfVal).toFixed(2)}`;
-        } else {
-          formulaSelected = "I = VA / V";
-          calculatedCurrent = sVal / voltage;
-          stepSubstitution = `I = ${sVal} / 400`;
-          intermediateStep = `I = ${(sVal / 400).toFixed(4)}`;
-        }
-      }
+    } else {
+      // Single-phase generic fallback if applicable, though dropdown is full 3PH setups
+      VPH = VL;
+      IL = S / VL;
+      IPH = IL;
     }
 
-    const reportText = `================================================================
-PEC COMPLIANT ELECTRICAL CURRENT CALCULATION
-================================================================
-[1] IDENTIFICATION APPROACH:
-----------------------------------------------------------------
-${approachIdentified}
-
-[2] FORMULA SELECTION:
-----------------------------------------------------------------
-Selected Equation:  ${formulaSelected}
-
-[3] STEP-BY-STEP SUBSTITUTION:
-----------------------------------------------------------------
-Given Load Value:   ${sVal} ${inputType === 'P' ? 'Watts (P)' : 'Volt-Amperes (VA)'}
-System Voltage (V): ${voltage}V
-Power Factor (PF):  ${inputType === 'P' ? pfVal.toFixed(2) : 'N/A (Calculated using VA direct)'}
-
-Substitution:
-   1.  ${formulaSelected}
-   2.  ${stepSubstitution}
-   3.  ${intermediateStep}
-   4.  I = ${calculatedCurrent.toFixed(4)} Amperes
-
-[4] FINAL ROUNDED VALUE:
-----------------------------------------------------------------
-Calculated Current = ${calculatedCurrent.toFixed(2)} Amperes`;
-
-    return {
-      reportText,
-      current: calculatedCurrent,
-      is3Phase,
-      voltage,
-      approachIdentified,
-      formulaSelected,
-      stepSubstitution,
-      intermediateStep
-    };
+    return { S, P, PF, Q, VL, VPH, IL, IPH, bankCapacity };
   };
 
-  const results = getCalculationSummary();
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(results.reportText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const math = getSystemMath();
 
   return (
-    <div id="pec-load-calculator" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
+    <div id="electrical-calculation-module" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 mb-6">
         <div className="flex items-center gap-2">
           <Calculator className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
           <h3 className="font-extrabold text-slate-800 dark:text-slate-100 uppercase text-sm tracking-wider">
-            PEC Current Calculation & Substitution Verifier
+            Electrical Calculation Module (Tx/System Connection)
           </h3>
         </div>
-        <span className="text-[10px] font-black text-slate-400 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md uppercase">
+        <span className="text-[10px] font-black text-slate-400 bg-slate-50 dark:bg-slate-800 border px-2 py-0.5 rounded-md uppercase">
           PEC 2017 Part 1
         </span>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Input Parameters Box */}
         <div className="space-y-6">
           <div className="space-y-4">
-            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Input Parameters</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">System & Transformer Parameter Selection</span>
             
-            {/* System select */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400">System Configuration</label>
+              <label className="text-xs font-bold text-slate-500">Transformer / System Connection</label>
               <select 
-                value={system} 
-                onChange={handleSystemChange} 
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 transition"
+                value={connection} 
+                onChange={(e) => handleConnectionChange(e.target.value)} 
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 transition outline-none"
               >
-                <option value="230V_1PH_2W">230V, 1PH, 2W (1-Phase System)</option>
-                <option value="230V_3PH_3W">230V, 3PH, 3W (3-Phase Delta)</option>
-                <option value="400V_230V_3PH_4W">400V/230V, 3PH, 4W (3-Phase Wye)</option>
+                <option value="Wye (Star) Connection">Wye (Star) Connection</option>
+                <option value="Delta Connection">Delta Connection</option>
+                <option value="Delta-Wye (Δ-Y)">Delta-Wye (Δ-Y)</option>
+                <option value="Wye-Delta (Y-Δ)">Wye-Delta (Y-Δ)</option>
+                <option value="Delta-Delta (Δ-Δ)">Delta-Delta (Δ-Δ)</option>
+                <option value="Wye-Wye (Y-Y)">Wye-Wye (Y-Y)</option>
+                <option value="Open Delta (V-V)">Open Delta (V-V)</option>
+                <option value="Open Wye-Open Delta">Open Wye–Open Delta</option>
               </select>
             </div>
 
-            {/* Load type select */}
-            {system !== '230V_1PH_2W' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400">Connected Load Type</label>
-                <select 
-                  value={loadType} 
-                  onChange={(e) => setLoadType(e.target.value as any)} 
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:border-indigo-500 dark:focus:border-indigo-400 transition"
-                >
-                  {system === '230V_3PH_3W' && (
-                    <>
-                      <option value="3PH">3-Phase Load (230V Line-to-Line)</option>
-                      <option value="1PH_LL">Single-Phase Load (230V Tapped)</option>
-                    </>
-                  )}
-                  {system === '400V_230V_3PH_4W' && (
-                    <>
-                      <option value="3PH">3-Phase Load (400V Line-to-Line)</option>
-                      <option value="1PH_LN">Single-Phase Load (230V Line-to-Neutral)</option>
-                      <option value="1PH_LL">Single-Phase Load (400V Line-to-Line)</option>
-                    </>
-                  )}
-                </select>
-              </div>
-            )}
-
-            {/* Input quantity type */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400">Specify Load value in:</label>
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-6">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="input_calc_type" 
-                    checked={inputType === 'VA'} 
-                    onChange={() => setInputType('VA')} 
-                    className="accent-indigo-600 shrink-0"
-                  />
-                  Volt-Amperes (VA) [Direct Load Capacity]
+              <label className="text-xs font-bold text-slate-500">Load or System Value Type:</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+                  <input type="radio" checked={inputType === 'VA'} onChange={() => setInputType('VA')} className="accent-indigo-600" />
+                  Apparent Power (S) in VA
                 </label>
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="input_calc_type" 
-                    checked={inputType === 'P'} 
-                    onChange={() => setInputType('P')} 
-                    className="accent-indigo-600"
-                  />
-                  Watts (P) [Real Power, PF required]
+                <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
+                  <input type="radio" checked={inputType === 'P'} onChange={() => setInputType('P')} className="accent-indigo-600" />
+                  Real Power (P) in Watts
                 </label>
               </div>
             </div>
 
-            {/* Value slider or Text Box */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  {inputType === 'VA' ? 'Apparent Power S (VA)' : 'Real Power P (Watts)'}
-                </label>
+                <label className="text-xs font-bold text-slate-500">Value</label>
                 <input 
                   type="number" 
                   value={inputValue} 
                   onChange={(e) => setInputValue(e.target.value)} 
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
-                  placeholder="e.g. 5000"
+                  className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono text-sm dark:bg-slate-800 dark:text-white outline-none focus:border-indigo-500"
                 />
               </div>
 
-              {inputType === 'P' && (
+              {(inputType === 'P' || true) && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400">Power Factor (PF)</label>
+                  <label className="text-xs font-bold text-slate-500">Power Factor (PF)</label>
                   <input 
-                    type="number" 
-                    step="0.01" 
-                    min="0.1" 
-                    max="1.0" 
+                    type="number" step="0.01" min="0.1" max="1.0" 
                     value={powerFactor} 
                     onChange={(e) => setPowerFactor(e.target.value)} 
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
-                    placeholder="0.85"
+                    className="w-full px-3 py-2 bg-slate-50 border rounded-lg font-mono text-sm dark:bg-slate-800 dark:text-white outline-none focus:border-indigo-500"
                   />
                 </div>
               )}
             </div>
           </div>
 
-          {/* Quick Technical standards rules help container */}
           <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 space-y-3">
-            <h4 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-              <ShieldAlert className="w-3.5 h-3.5" /> Reference standard formula guides
+            <h4 className="text-[11px] font-black text-indigo-600 uppercase flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" /> Formula Guidelines Evaluated
             </h4>
-            <div className="space-y-3.5 text-[11px] leading-loose text-slate-600 dark:text-slate-400">
-              <p>• <strong>1PH Formula (230V):</strong> Loads tapped L-N or L-L, calculated as <span className="inline-block font-mono bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mx-1">I = VA / 230</span>.</p>
-              <p>• <strong>3PH 3W System (230V L-L):</strong> Three-phase balanced loops use <span className="inline-block font-mono bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mx-1">I = VA / (1.732 * 230)</span>. Single-phase tapped loops use 230V 1-phase formula.</p>
-              <p>• <strong>3PH 4W System (400V L-L, 230V L-N):</strong> Three-phase loads use <span className="inline-block font-mono bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mx-1">I = VA / (1.732 * 400)</span>. Single-phase general wye loads use <span className="inline-block font-mono bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 mx-1">I = VA / 230</span>.</p>
+            <div className="space-y-2 relative text-xs text-slate-700 dark:text-slate-300">
+              {panel.system === '230V, 1PH, 2W' ? (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <LatexRenderer tex="S = V \times I" displayMode={false} />
+                    <LatexRenderer tex="P = V \times I \times \text{PF}" displayMode={false} />
+                    <LatexRenderer tex="Q = V \times I \times \sin\theta" displayMode={false} />
+                  </div>
+                </>
+              ) : (connection === 'Wye (Star) Connection' || connection === 'Delta-Wye (Δ-Y)' || connection === 'Wye-Wye (Y-Y)' || connection === 'Open Wye-Open Delta') ? (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <LatexRenderer tex="V_L = \sqrt{3} \times V_{PH}" displayMode={false} />
+                    <LatexRenderer tex="V_{PH} = \frac{V_L}{\sqrt{3}}" displayMode={false} />
+                    <LatexRenderer tex="I_L = I_{PH}" displayMode={false} />
+                    <LatexRenderer tex="S = \sqrt{3} \times V_L \times I_L" displayMode={false} />
+                    <LatexRenderer tex="P = \sqrt{3} \times V_L \times I_L \times \text{PF}" displayMode={false} />
+                    <LatexRenderer tex="Q = \sqrt{3} \times V_L \times I_L \times \sin\theta" displayMode={false} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <LatexRenderer tex="V_L = V_{PH}" displayMode={false} />
+                    <LatexRenderer tex="I_L = \sqrt{3} \times I_{PH}" displayMode={false} />
+                    <LatexRenderer tex="I_{PH} = \frac{I_L}{\sqrt{3}}" displayMode={false} />
+                    <LatexRenderer tex="S = \sqrt{3} \times V_L \times I_L" displayMode={false} />
+                    <LatexRenderer tex="P = \sqrt{3} \times V_L \times I_L \times \text{PF}" displayMode={false} />
+                    <LatexRenderer tex="Q = \sqrt{3} \times V_L \times I_L \times \sin\theta" displayMode={false} />
+                  </div>
+                </>
+              )}
+              {connection === 'Open Delta (V-V)' && (
+                <div className="mt-3 text-amber-600 border-t border-amber-200/50 pt-2">
+                  <span className="font-bold block mb-1">Open Delta Capacity Limitation:</span>
+                  <LatexRenderer tex="\text{Bank Capacity}_\text{Open} = 0.577 \times \text{Bank Capacity}_\text{Closed}" displayMode={false} />
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Output Engineering Verification Report */}
-        <div className="flex flex-col h-full justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">ENGINEERING CALCULATION REPORT OUT</span>
-              <button 
-                onClick={handleCopy}
-                className="flex items-center gap-1 text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1 bg-indigo-50 dark:bg-indigo-950/30 rounded"
-              >
-                {copied ? (
-                  <>
-                    <CheckCircle className="w-3 h-3" /> Copied!
-                  </>
-                ) : (
-                  <>
-                    <Clipboard className="w-3 h-3" /> Copy Output
-                  </>
-                )}
-              </button>
-            </div>
-            
-            <pre className="w-full bg-slate-950 text-slate-200 p-4 rounded-2xl font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner h-[280px] leading-relaxed select-all">
-              {results.reportText}
-            </pre>
+        <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 border rounded-2xl p-5 shadow-inner">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-4">Calculation Results Matrix</span>
+          
+          <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm">
+             <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-3 rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Line Voltage ($V_L$)</span>
+                <span className="font-mono font-bold">{math.VL.toFixed(2)} V</span>
+             </div>
+             <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-3 rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Phase Voltage ($V_PH$)</span>
+                <span className="font-mono font-bold">{math.VPH.toFixed(2)} V</span>
+             </div>
+             <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-3 rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Line Current ($I_L$)</span>
+                <span className="font-mono font-bold text-indigo-600">{math.IL.toFixed(2)} A</span>
+             </div>
+             <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-3 rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Phase Current ($I_PH$)</span>
+                <span className="font-mono font-bold text-indigo-600">{math.IPH.toFixed(2)} A</span>
+             </div>
+             <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-3 rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Real Power ($P$) kW</span>
+                <span className="font-mono font-bold">{(math.P / 1000).toFixed(2)} kW</span>
+             </div>
+             <div className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-3 rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Reactive Power ($Q$) kVAR</span>
+                <span className="font-mono font-bold">{(math.Q / 1000).toFixed(2)} kVAR</span>
+             </div>
           </div>
 
-          <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 rounded-2xl flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-[10px] uppercase font-black tracking-wider block text-emerald-600 dark:text-emerald-400">PRECISION ROUNDED LOAD</span>
-              <h4 className="text-xl font-black font-mono">
-                {results.current.toFixed(2)} Amperes
-              </h4>
+          <div className="mt-4 p-4 border border-emerald-500/20 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl space-y-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-bold text-emerald-800">Total Connection Apparent Power (S):</span>
+              <span className="font-mono font-bold text-emerald-700">{(math.S / 1000).toFixed(2)} kVA</span>
             </div>
-            <div className="p-2.5 bg-emerald-500 text-white rounded-xl shadow-lg">
-              <CheckCircle className="w-5 h-5" />
+            {math.bankCapacity !== math.S && (
+              <div className="flex justify-between items-center text-xs text-amber-600 border-t border-amber-200 pt-2">
+                <span className="font-bold">Effective Open Bank Utilization:</span>
+                <span className="font-mono font-bold">{(math.bankCapacity / 1000).toFixed(2)} kVA</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center text-xs text-slate-600 border-t border-slate-200 pt-2">
+              <span className="font-bold">Maximum Demand Current (Phase):</span>
+              <span className="font-mono font-bold">{math.IL.toFixed(2)} A</span>
             </div>
           </div>
         </div>

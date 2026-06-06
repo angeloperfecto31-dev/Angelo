@@ -86,6 +86,7 @@ export const INITIAL_PANEL: PanelConfig = {
   type: 'MAIN DISTRIBUTION PANEL',
   system: '230V, 1PH, 2W',
   connectionType: 'Line-to-Line',
+  transformerConnection: 'Delta-Wye (Δ-Y)',
   mounting: 'FLUSH MOUNTED',
   enclosure: 'NEMA 1',
   mainBreakerAT: 60,
@@ -928,7 +929,20 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Connection</label>
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Transformer Connection</label>
+            <select value={panel.transformerConnection || 'Delta-Wye (Δ-Y)'} onChange={e => setPanel({...panel, transformerConnection: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+              <option value="Wye (Star) Connection" className="dark:bg-slate-900 dark:text-slate-100">Wye (Star) Connection</option>
+              <option value="Delta Connection" className="dark:bg-slate-900 dark:text-slate-100">Delta Connection</option>
+              <option value="Delta-Wye (Δ-Y)" className="dark:bg-slate-900 dark:text-slate-100">Delta-Wye (Δ-Y)</option>
+              <option value="Wye-Delta (Y-Δ)" className="dark:bg-slate-900 dark:text-slate-100">Wye-Delta (Y-Δ)</option>
+              <option value="Delta-Delta (Δ-Δ)" className="dark:bg-slate-900 dark:text-slate-100">Delta-Delta (Δ-Δ)</option>
+              <option value="Wye-Wye (Y-Y)" className="dark:bg-slate-900 dark:text-slate-100">Wye-Wye (Y-Y)</option>
+              <option value="Open Delta (V-V)" className="dark:bg-slate-900 dark:text-slate-100">Open Delta (V-V)</option>
+              <option value="Open Wye-Open Delta" className="dark:bg-slate-900 dark:text-slate-100">Open Wye-Open Delta</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Connection (Sub-Circuits)</label>
             <select value={panel.connectionType || 'Line-to-Line'} onChange={e => setPanel({...panel, connectionType: e.target.value as any})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
               <option value="Line-to-Line" className="dark:bg-slate-900 dark:text-slate-100">Line-to-Line</option>
               <option value="Line-to-Neutral" className="dark:bg-slate-900 dark:text-slate-100">Line-to-Neutral</option>
