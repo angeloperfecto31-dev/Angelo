@@ -5,7 +5,20 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
-import { ShieldCheck, Activity, Gauge, AlertTriangle, ArrowUpRight, Layers, HelpCircle, CheckCircle2, Sun, Moon, FolderOpen, Calculator } from "lucide-react";
+import {
+  ShieldCheck,
+  Activity,
+  Gauge,
+  AlertTriangle,
+  ArrowUpRight,
+  Layers,
+  HelpCircle,
+  CheckCircle2,
+  Sun,
+  Moon,
+  FolderOpen,
+  Calculator,
+} from "lucide-react";
 import {
   Zap,
   Layout,
@@ -24,7 +37,9 @@ import LoadSchedule, {
   INITIAL_CIRCUITS,
   INITIAL_PANEL,
 } from "./components/LoadSchedule";
-import ShortCircuitCalc, { getRunsBySystem } from "./components/ShortCircuitCalc";
+import ShortCircuitCalc, {
+  getRunsBySystem,
+} from "./components/ShortCircuitCalc";
 import VoltageDropCalc from "./components/VoltageDropCalc";
 import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
@@ -49,7 +64,10 @@ import {
 import { ProjectData } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
-import { computePanelScheduleValues } from "./utils/computeEngine";
+import {
+  computePanelScheduleValues,
+  calculateCircuitValues,
+} from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 
 import { toPng } from "html-to-image";
@@ -63,7 +81,8 @@ export default function App() {
   const [userPlan, setUserPlan] = useState<"basic" | "premium" | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
-  const isAdmin = user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
+  const isAdmin =
+    user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
   const isActiveRef = useRef(false);
 
   useEffect(() => {
@@ -96,13 +115,15 @@ export default function App() {
           const data = docSnap.data();
           setUserPlan(data.plan || "premium");
           if (!initialLoad && !isActiveRef.current && !isAdmin) {
-             // Transitioned from inactive to active while logged in!
-             // Give a tiny delay for payment screen to unmount or show a message if we wanted, but the prompt says redirect automatically.
-             alert("Your account has been manually approved and activated! Please log in to your account to continue.");
-             signOut(auth).catch(console.error);
+            // Transitioned from inactive to active while logged in!
+            // Give a tiny delay for payment screen to unmount or show a message if we wanted, but the prompt says redirect automatically.
+            alert(
+              "Your account has been manually approved and activated! Please log in to your account to continue.",
+            );
+            signOut(auth).catch(console.error);
           } else {
-             setIsActive(true);
-             isActiveRef.current = true;
+            setIsActive(true);
+            isActiveRef.current = true;
           }
         } else {
           setIsActive(false);
@@ -129,7 +150,15 @@ export default function App() {
   }, [user, isAdmin]);
 
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "schedule" | "isc" | "vd" | "lighting" | "floor-plan" | "verify" | "current-calc" | "system-sld"
+    | "dashboard"
+    | "schedule"
+    | "isc"
+    | "vd"
+    | "lighting"
+    | "floor-plan"
+    | "verify"
+    | "current-calc"
+    | "system-sld"
   >("dashboard");
   const [activeScheduleTab, setActiveScheduleTab] = useState<string>("mdp");
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -170,26 +199,33 @@ export default function App() {
   useEffect(() => {
     if (!illumParams || !illumParams.savedRooms) return;
 
-    setCircuits(prevCircuits => {
+    setCircuits((prevCircuits) => {
       if (!prevCircuits) return prevCircuits;
       let circuitsChanged = false;
 
-      const nextCircuits = prevCircuits.map(c => {
+      const nextCircuits = prevCircuits.map((c) => {
         if (c.loadType === LoadType.LIGHTING) {
           // Find if there's a saved room with matching circuitNo
-          const matchingRoom = illumParams.savedRooms?.find(r => r.circuitNo === c.circuitNo);
+          const matchingRoom = illumParams.savedRooms?.find(
+            (r) => r.circuitNo === c.circuitNo,
+          );
           if (matchingRoom) {
             const estimatedWattage = matchingRoom.fixtureWattage || 15;
             const totalVA = estimatedWattage * matchingRoom.fixturesCount;
-            
-            if (c.quantity !== matchingRoom.fixturesCount || c.wattage !== estimatedWattage || c.loadVA !== totalVA || Math.abs(c.loadA - totalVA / c.voltage) > 0.01) {
+
+            if (
+              c.quantity !== matchingRoom.fixturesCount ||
+              c.wattage !== estimatedWattage ||
+              c.loadVA !== totalVA ||
+              Math.abs(c.loadA - totalVA / c.voltage) > 0.01
+            ) {
               circuitsChanged = true;
               return {
                 ...c,
                 quantity: matchingRoom.fixturesCount,
                 wattage: estimatedWattage,
                 loadVA: totalVA,
-                loadA: Number((totalVA / c.voltage).toFixed(2))
+                loadA: Number((totalVA / c.voltage).toFixed(2)),
               };
             }
           }
@@ -200,46 +236,114 @@ export default function App() {
       return circuitsChanged ? nextCircuits : prevCircuits;
     });
   }, [illumParams, setCircuits]);
-  
-  const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>({});
 
-  const handleAddIllumSnapshot = (circuitId: string, image: string, roomName: string) => {
-    setIllumSnapshots(prev => ({
+  const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
+    {},
+  );
+
+  const handleAddIllumSnapshot = (
+    circuitId: string,
+    image: string,
+    roomName: string,
+  ) => {
+    setIllumSnapshots((prev) => ({
       ...prev,
-      [circuitId]: image
+      [circuitId]: image,
     }));
   };
 
   const [floorPlanImages, setFloorPlanImages] = useState<FloorPlanImage[]>([]);
   const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [isProjectManagerOpen, setIsProjectManagerOpen] = useState<boolean>(false);
+  const [isProjectManagerOpen, setIsProjectManagerOpen] =
+    useState<boolean>(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
 
   const handleLoadProject = (projectId: string, data: ProjectData) => {
     setCurrentProjectId(projectId);
     setPanel({
       ...data.panel,
-      transformerConnection: data.panel.transformerConnection === 'Delta-Wye' ? 'Delta-Wye (Δ-Y)' :
-                             data.panel.transformerConnection === 'Wye (Star)' ? 'Wye (Star) Connection' :
-                             data.panel.transformerConnection === 'Delta' ? 'Delta Connection' :
-                             data.panel.transformerConnection === 'Wye-Wye' ? 'Wye-Wye (Y-Y)' :
-                             data.panel.transformerConnection
+      transformerConnection:
+        data.panel.transformerConnection === "Delta-Wye"
+          ? "Delta-Wye (Δ-Y)"
+          : data.panel.transformerConnection === "Wye (Star)"
+            ? "Wye (Star) Connection"
+            : data.panel.transformerConnection === "Delta"
+              ? "Delta Connection"
+              : data.panel.transformerConnection === "Wye-Wye"
+                ? "Wye-Wye (Y-Y)"
+                : data.panel.transformerConnection,
     });
-    setCircuits(data.circuits);
-    setSubPanels(data.subPanels || []);
-    
+
+    // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
+    // Ensure accurate sizing by passing older circuits through the current compute engine.
+    const migratedSubPanels = (data.subPanels || []).map((sp) => {
+      const updatedCircuits = sp.circuits.map((c) => ({
+        ...c,
+        ...calculateCircuitValues(c, sp.panel, []),
+      })) as Circuit[];
+      return { ...sp, circuits: updatedCircuits };
+    });
+
+    const migratedCircuits = data.circuits.map((c) => ({
+      ...c,
+      ...calculateCircuitValues(c, data.panel, migratedSubPanels),
+    })) as Circuit[];
+
+    setCircuits(migratedCircuits);
+    setSubPanels(migratedSubPanels);
+
     // Normalize short circuit params too
     const normalizedIscParams = { ...data.iscParams };
     if (normalizedIscParams) {
-      if (normalizedIscParams.transformerConnection === 'Delta-Wye') normalizedIscParams.transformerConnection = 'Delta-Wye (Δ-Y)';
-      else if (normalizedIscParams.transformerConnection === 'Wye (Star)') normalizedIscParams.transformerConnection = 'Wye (Star) Connection';
-      else if (normalizedIscParams.transformerConnection === 'Delta') normalizedIscParams.transformerConnection = 'Delta Connection';
-      else if (normalizedIscParams.transformerConnection === 'Wye-Wye') normalizedIscParams.transformerConnection = 'Wye-Wye (Y-Y)';
+      if (normalizedIscParams.transformerConnection === "Delta-Wye")
+        normalizedIscParams.transformerConnection = "Delta-Wye (Δ-Y)";
+      else if (normalizedIscParams.transformerConnection === "Wye (Star)")
+        normalizedIscParams.transformerConnection = "Wye (Star) Connection";
+      else if (normalizedIscParams.transformerConnection === "Delta")
+        normalizedIscParams.transformerConnection = "Delta Connection";
+      else if (normalizedIscParams.transformerConnection === "Wye-Wye")
+        normalizedIscParams.transformerConnection = "Wye-Wye (Y-Y)";
     }
     setIscParams(normalizedIscParams);
-    
+
     setIscSource(data.iscSource);
-    setVdCalculations(data.vdCalculations);
+
+    // MIGRATION: Update Voltage Drop tracking values
+    const newVdCalculations = (data.vdCalculations || []).map((vd) => {
+      // Re-evaluate calculation based on source
+      if (vd.source === "main") {
+        const { mainCurrent, mainFeeder } = computePanelScheduleValues(
+          data.panel,
+          migratedCircuits,
+        );
+        return {
+          ...vd,
+          loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+          wireSize: mainFeeder.wire.size.toString(),
+          voltage: data.panel.voltage,
+          systemType: data.panel.system.includes("3PH") ? "3PH" : "1PH",
+        };
+      } else if (vd.source !== "custom") {
+        // Evaluate for subpanel
+        const sp = migratedSubPanels.find((s) => s.id === vd.source);
+        if (sp) {
+          const { mainCurrent, mainFeeder } = computePanelScheduleValues(
+            sp.panel,
+            sp.circuits,
+          );
+          return {
+            ...vd,
+            loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+            wireSize: mainFeeder.wire.size.toString(),
+            voltage: sp.panel.voltage,
+            systemType: sp.panel.system.includes("3PH") ? "3PH" : "1PH",
+          };
+        }
+      }
+      return vd;
+    });
+
+    setVdCalculations(newVdCalculations);
     setIllumParams(data.illumParams);
   };
 
@@ -250,7 +354,7 @@ export default function App() {
     iscParams,
     iscSource,
     vdCalculations,
-    illumParams
+    illumParams,
   };
 
   const handleNewProject = () => {
@@ -259,7 +363,7 @@ export default function App() {
     setCircuits(INITIAL_CIRCUITS);
     setSubPanels([]);
     setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
-    setIscSource('auto');
+    setIscSource("auto");
     setVdCalculations(INITIAL_VOLTAGE_DROP_CALCULATIONS);
     setIllumParams(INITIAL_ILLUMINATION_PARAMS);
   };
@@ -290,8 +394,15 @@ export default function App() {
     return <PaymentScreen user={user} />;
   }
 
-  if (showUpgrade && (userPlan !== 'premium' || isAdmin)) {
-    return <PaymentScreen user={user} isUpgrade={true} onClose={() => setShowUpgrade(false)} onPaymentSuccess={() => setShowUpgrade(false)} />;
+  if (showUpgrade && (userPlan !== "premium" || isAdmin)) {
+    return (
+      <PaymentScreen
+        user={user}
+        isUpgrade={true}
+        onClose={() => setShowUpgrade(false)}
+        onPaymentSuccess={() => setShowUpgrade(false)}
+      />
+    );
   }
 
   const tabs = [
@@ -351,13 +462,17 @@ export default function App() {
       color: "text-fuchsia-600",
       bg: "bg-fuchsia-50",
     },
-    ...(isAdmin ? [{
-      id: "verify",
-      label: "Verify Users",
-      icon: ShieldCheck,
-      color: "text-amber-600",
-      bg: "bg-amber-50",
-    }] : [])
+    ...(isAdmin
+      ? [
+          {
+            id: "verify",
+            label: "Verify Users",
+            icon: ShieldCheck,
+            color: "text-amber-600",
+            bg: "bg-amber-50",
+          },
+        ]
+      : []),
   ];
 
   // We now import computePanelScheduleValues from computeEngine.ts
@@ -367,7 +482,11 @@ export default function App() {
 
     const allPanelsToExport = [
       { id: "main", panel, circuits },
-      ...subPanels.map((sp) => ({ id: sp.id, panel: sp.panel, circuits: sp.circuits })),
+      ...subPanels.map((sp) => ({
+        id: sp.id,
+        panel: sp.panel,
+        circuits: sp.circuits,
+      })),
     ];
 
     allPanelsToExport.forEach((item, index) => {
@@ -404,7 +523,7 @@ export default function App() {
         p.voltage,
       ]);
       wsData.push([]);
-      
+
       const is3Phase = p.system.includes("3PH");
 
       const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
@@ -441,14 +560,16 @@ export default function App() {
       }
 
       c.forEach((cir) => {
-        const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE;
+        const isSpace =
+          (cir.description && cir.description.toUpperCase() === "SPACE") ||
+          cir.loadType === LoadType.SPACE;
         const row: any[] = [
           cir.circuitNo,
           cir.description,
           isSpace ? "-" : cir.wattage,
           isSpace ? "-" : cir.quantity,
           isSpace ? "-" : cir.loadVA,
-          isSpace ? "-" : (cir.phases ? cir.phases.join(", ") : ""),
+          isSpace ? "-" : cir.phases ? cir.phases.join(", ") : "",
         ];
 
         if (is3Phase) {
@@ -456,9 +577,15 @@ export default function App() {
             row.push("-", "-", "-", "-");
           } else {
             row.push(
-              cir.phases.includes("R") && cir.phases.length < 3 ? cir.loadA.toFixed(2) : "-",
-              cir.phases.includes("Y") && cir.phases.length < 3 ? cir.loadA.toFixed(2) : "-",
-              cir.phases.includes("B") && cir.phases.length < 3 ? cir.loadA.toFixed(2) : "-",
+              cir.phases.includes("R") && cir.phases.length < 3
+                ? cir.loadA.toFixed(2)
+                : "-",
+              cir.phases.includes("Y") && cir.phases.length < 3
+                ? cir.loadA.toFixed(2)
+                : "-",
+              cir.phases.includes("B") && cir.phases.length < 3
+                ? cir.loadA.toFixed(2)
+                : "-",
               cir.phases.length === 3 ? cir.loadA.toFixed(2) : "-",
             );
           }
@@ -472,7 +599,9 @@ export default function App() {
           isSpace ? "-" : cir.mcbP,
           isSpace ? "-" : cir.mcbKAIC,
           isSpace ? "-" : cir.mcbType,
-          isSpace ? "-" : `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
+          isSpace
+            ? "-"
+            : `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
         );
         wsData.push(row);
       });
@@ -480,7 +609,7 @@ export default function App() {
       const headerRowOffset = is3Phase ? 1 : 0;
 
       wsData.push([]);
-      
+
       const baseTotalRow: any[] = [
         "Total Connected Load", // 0
         "",
@@ -489,18 +618,20 @@ export default function App() {
         `${totalVA.toFixed(0)} VA`, // 4: VA
         `(${(totalVA / 1000).toFixed(2)} kVA)`, // 5: PHASE
       ];
-      
+
       if (is3Phase) {
         baseTotalRow.push(
           `${phaseAmps.R.toFixed(2)} A`, // 6: p1
           `${phaseAmps.Y.toFixed(2)} A`, // 7: p2
           `${phaseAmps.B.toFixed(2)} A`, // 8: p3
-          phaseAmps.threePhase > 0 ? `${phaseAmps.threePhase.toFixed(2)} A` : "-", // 9: 3Ø
+          phaseAmps.threePhase > 0
+            ? `${phaseAmps.threePhase.toFixed(2)} A`
+            : "-", // 9: 3Ø
         );
       } else {
         baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 6: AMPS
       }
-      
+
       const numCols = is3Phase ? 16 : 13;
       const baseRemainingCols = numCols - baseTotalRow.length;
       if (baseRemainingCols > 0) {
@@ -565,8 +696,14 @@ export default function App() {
       }
 
       // Add merges for bottom total row labels
-      merges.push({ s: { r: 4 + headerRowOffset + c.length + 1, c: 0 }, e: { r: 4 + headerRowOffset + c.length + 1, c: 3 } });
-      merges.push({ s: { r: 4 + headerRowOffset + c.length + 2, c: 0 }, e: { r: 4 + headerRowOffset + c.length + 2, c: 3 } });
+      merges.push({
+        s: { r: 4 + headerRowOffset + c.length + 1, c: 0 },
+        e: { r: 4 + headerRowOffset + c.length + 1, c: 3 },
+      });
+      merges.push({
+        s: { r: 4 + headerRowOffset + c.length + 2, c: 0 },
+        e: { r: 4 + headerRowOffset + c.length + 2, c: 3 },
+      });
 
       const wscols: any[] = [];
       for (let col = 0; col < numCols; col++) {
@@ -657,7 +794,18 @@ export default function App() {
     // -----------------------------------------------------
     if (vdCalculations && vdCalculations.length > 0) {
       const vdData: any[][] = [];
-      vdData.push(["VOLTAGE DROP ANALYSIS", "", "", "", "", "", "", "", "", ""]);
+      vdData.push([
+        "VOLTAGE DROP ANALYSIS",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
       vdData.push([]);
       vdData.push([
         "SYSTEM / SOURCE",
@@ -669,16 +817,17 @@ export default function App() {
         "SYSTEM TYPE",
         "VD (V)",
         "VD (%)",
-        "STATUS"
+        "STATUS",
       ]);
-      
+
       vdCalculations.forEach((vd) => {
         const factor = vd.systemType === "3PH" ? 1.732 : 2;
         const cLength = vd.length || 0;
         const cLoad = vd.loadA || 0;
         const cVoltage = vd.voltage || 230;
         const dataStr = vd.wireSize;
-        const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] || WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+        const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
+          WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
         const R = impedanceInfo.r;
 
         const VD_v = (factor * cLength * cLoad * R) / 1000;
@@ -689,9 +838,11 @@ export default function App() {
         if (vd.source === "custom") {
           sourceLabel = "Custom";
         } else {
-          let matchingPanel = allPanelsToExport.find(p => p.id === vd.source);
+          let matchingPanel = allPanelsToExport.find((p) => p.id === vd.source);
           if (!matchingPanel) {
-            matchingPanel = allPanelsToExport.find(p => p.circuits.some(c => c.id === vd.source));
+            matchingPanel = allPanelsToExport.find((p) =>
+              p.circuits.some((c) => c.id === vd.source),
+            );
           }
           if (matchingPanel) {
             sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || (matchingPanel.id === "main" ? "MDP" : "Sub Panel")}`;
@@ -708,12 +859,12 @@ export default function App() {
           vd.systemType,
           VD_v.toFixed(2),
           VD_percent.toFixed(2) + "%",
-          status
+          status,
         ]);
       });
-      
+
       const wsVd = XLSX.utils.aoa_to_sheet(vdData);
-      
+
       const wscolsVd = [
         { wch: 20 },
         { wch: 25 },
@@ -727,7 +878,7 @@ export default function App() {
         { wch: 15 },
       ];
       wsVd["!cols"] = wscolsVd;
-      
+
       const rangeVd = XLSX.utils.decode_range(wsVd["!ref"] || "A1:A1");
       for (let R = rangeVd.s.r; R <= rangeVd.e.r; ++R) {
         for (let C = rangeVd.s.c; C <= rangeVd.e.c; ++C) {
@@ -736,7 +887,7 @@ export default function App() {
           let style: any = {
             font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
             fill: { fgColor: { rgb: "FFFFFF" } },
-            alignment: { horizontal: "center", vertical: "center" }
+            alignment: { horizontal: "center", vertical: "center" },
           };
           if (R === 0) {
             style.font.bold = true;
@@ -760,12 +911,12 @@ export default function App() {
       transformerZ: 5,
       transformerVoltage: panel?.voltage || 230,
       primaryVoltage: 34500,
-      transformerConnection: 'Delta-Wye (Δ-Y)',
+      transformerConnection: "Delta-Wye (Δ-Y)",
       utilityShortCircuitMVA: 500,
       feederLength: 10,
-      feederSize: '30',
+      feederSize: "30",
       feederRuns: getRunsBySystem(panel?.system),
-      conductorType: 'Copper'
+      conductorType: "Copper",
     };
 
     const scBaseKVA = scParams.transformerKVA;
@@ -773,19 +924,30 @@ export default function App() {
     const scZUtilitypu = scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
     const scZTranspu = scParams.transformerZ / 100;
 
-    const scFeederR = 0.7 * (scParams.feederLength / 1000) / (scParams.feederRuns || 1);
-    const scFeederX = 0.08 * (scParams.feederLength / 1000) / (scParams.feederRuns || 1);
+    const scFeederR =
+      (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+    const scFeederX =
+      (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
     const scFeederZ = Math.sqrt(scFeederR * scFeederR + scFeederX * scFeederX);
-    const scZFeederpu = scFeederZ * (scBaseKVA / 1000) / (scBaseKV * scBaseKV);
+    const scZFeederpu =
+      (scFeederZ * (scBaseKVA / 1000)) / (scBaseKV * scBaseKV);
 
     const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
-    const scIFullLoad = scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
+    const scIFullLoad =
+      scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
 
     const scIscMainBreaker = scIFullLoad / (scZUtilitypu + scZTranspu);
     const scIscFaultPoint = scIFullLoad / scTotalZpu;
 
-    const scMotorLoadVA = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
-    const scMotorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4 : 0;
+    const scMotorLoadVA = circuits
+      .filter(
+        (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
+      )
+      .reduce((sum, c) => sum + c.loadVA, 0);
+    const scMotorContribution =
+      scMotorLoadVA > 0
+        ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
+        : 0;
 
     const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
     const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * 1.25;
@@ -795,34 +957,128 @@ export default function App() {
     scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
     scData.push([]);
     scData.push(["INPUT DESIGN PARAMETERS", "VALUE", "UNIT"]);
-    scData.push(["Utility Short Circuit Strength", scParams.utilityShortCircuitMVA, "MVAsc"]);
+    scData.push([
+      "Utility Short Circuit Strength",
+      scParams.utilityShortCircuitMVA,
+      "MVAsc",
+    ]);
     scData.push(["Primary Bus Voltage (HV)", scParams.primaryVoltage, "Volts"]);
-    scData.push(["Secondary Rated Bus Voltage (LV)", scParams.transformerVoltage, "Volts"]);
-    scData.push(["Transformer Sizing Capacity", scParams.transformerKVA, "kVA"]);
-    scData.push(["Transformer Percent Impedance (%Z)", scParams.transformerZ, "%"]);
-    scData.push(["Feeder Conductor Cross-Section", scParams.feederSize, "mm² THHN"]);
+    scData.push([
+      "Secondary Rated Bus Voltage (LV)",
+      scParams.transformerVoltage,
+      "Volts",
+    ]);
+    scData.push([
+      "Transformer Sizing Capacity",
+      scParams.transformerKVA,
+      "kVA",
+    ]);
+    scData.push([
+      "Transformer Percent Impedance (%Z)",
+      scParams.transformerZ,
+      "%",
+    ]);
+    scData.push([
+      "Feeder Conductor Cross-Section",
+      scParams.feederSize,
+      "mm² THHN",
+    ]);
     scData.push(["Feeder Distance Length", scParams.feederLength, "Meters"]);
     scData.push(["Parallel Feeder Conductors", scParams.feederRuns, "Runs"]);
-    scData.push(["Active Conductor Metal Type", scParams.conductorType, "Copper/Aluminum"]);
+    scData.push([
+      "Active Conductor Metal Type",
+      scParams.conductorType,
+      "Copper/Aluminum",
+    ]);
     scData.push([]);
-    scData.push(["PER-UNIT IMPEDANCES (BASE S SYSTEM = " + scParams.transformerKVA + " kVA)", "VALUE", "UNIT"]);
-    scData.push(["Transformer Full Load Current (FLA)", scIFullLoad.toFixed(2), "Amperes"]);
-    scData.push(["Utility Grid Impedance (Z-utility)", scZUtilitypu.toFixed(6), "pu"]);
-    scData.push(["Transformer Leakage Impedance (Z-transformer)", scZTranspu.toFixed(6), "pu"]);
-    scData.push(["Main Feeder Ohmic Resistance (R)", scFeederR.toFixed(5), "Ohms"]);
-    scData.push(["Main Feeder Ohmic Reactance (X)", scFeederX.toFixed(5), "Ohms"]);
-    scData.push(["Main Feeder Absolute Ohmic Impedance (|Z|)", scFeederZ.toFixed(5), "Ohms"]);
-    scData.push(["Feeder Integrated Impedance (Z-feeder)", scZFeederpu.toFixed(6), "pu"]);
-    scData.push(["Total Consolidated System Impedance (Z-total)", scTotalZpu.toFixed(6), "pu"]);
+    scData.push([
+      "PER-UNIT IMPEDANCES (BASE S SYSTEM = " +
+        scParams.transformerKVA +
+        " kVA)",
+      "VALUE",
+      "UNIT",
+    ]);
+    scData.push([
+      "Transformer Full Load Current (FLA)",
+      scIFullLoad.toFixed(2),
+      "Amperes",
+    ]);
+    scData.push([
+      "Utility Grid Impedance (Z-utility)",
+      scZUtilitypu.toFixed(6),
+      "pu",
+    ]);
+    scData.push([
+      "Transformer Leakage Impedance (Z-transformer)",
+      scZTranspu.toFixed(6),
+      "pu",
+    ]);
+    scData.push([
+      "Main Feeder Ohmic Resistance (R)",
+      scFeederR.toFixed(5),
+      "Ohms",
+    ]);
+    scData.push([
+      "Main Feeder Ohmic Reactance (X)",
+      scFeederX.toFixed(5),
+      "Ohms",
+    ]);
+    scData.push([
+      "Main Feeder Absolute Ohmic Impedance (|Z|)",
+      scFeederZ.toFixed(5),
+      "Ohms",
+    ]);
+    scData.push([
+      "Feeder Integrated Impedance (Z-feeder)",
+      scZFeederpu.toFixed(6),
+      "pu",
+    ]);
+    scData.push([
+      "Total Consolidated System Impedance (Z-total)",
+      scTotalZpu.toFixed(6),
+      "pu",
+    ]);
     scData.push([]);
     scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
-    scData.push(["Symmetrical Fault Current at Transformer (Isc Main)", scIscMainBreaker.toFixed(2), "Amps"]);
-    scData.push(["Symmetrical Fault Current at Panel (Isc Panel)", scIscFaultPoint.toFixed(2), "Amps"]);
-    scData.push(["Rotating Motor Feedback Symmetrical Contribution (Imotor)", scMotorContribution.toFixed(2), "Amps"]);
-    scData.push(["Combined Total Symmetrical Fault Current (Isc sym)", scCombinedSymmetricalCurrent.toFixed(2), "Amps"]);
-    scData.push(["Factored Asymmetrical Fault Current (Isc asym)", scCombinedAsymmetricalCurrent.toFixed(2), "Amps"]);
-    scData.push(["Ultimate Fault Breaking Intensity Assessment", scBreakingkAIC.toFixed(2), "kAIC"]);
-    scData.push(["Interrupting Protection Level Class", scBreakingkAIC > 22 ? "35 kAIC Required" : scBreakingkAIC > 10 ? "22 kAIC" : "10 kAIC", ""]);
+    scData.push([
+      "Symmetrical Fault Current at Transformer (Isc Main)",
+      scIscMainBreaker.toFixed(2),
+      "Amps",
+    ]);
+    scData.push([
+      "Symmetrical Fault Current at Panel (Isc Panel)",
+      scIscFaultPoint.toFixed(2),
+      "Amps",
+    ]);
+    scData.push([
+      "Rotating Motor Feedback Symmetrical Contribution (Imotor)",
+      scMotorContribution.toFixed(2),
+      "Amps",
+    ]);
+    scData.push([
+      "Combined Total Symmetrical Fault Current (Isc sym)",
+      scCombinedSymmetricalCurrent.toFixed(2),
+      "Amps",
+    ]);
+    scData.push([
+      "Factored Asymmetrical Fault Current (Isc asym)",
+      scCombinedAsymmetricalCurrent.toFixed(2),
+      "Amps",
+    ]);
+    scData.push([
+      "Ultimate Fault Breaking Intensity Assessment",
+      scBreakingkAIC.toFixed(2),
+      "kAIC",
+    ]);
+    scData.push([
+      "Interrupting Protection Level Class",
+      scBreakingkAIC > 22
+        ? "35 kAIC Required"
+        : scBreakingkAIC > 10
+          ? "22 kAIC"
+          : "10 kAIC",
+      "",
+    ]);
 
     const wsSc = XLSX.utils.aoa_to_sheet(scData);
     const wscolsSc = [{ wch: 45 }, { wch: 25 }, { wch: 15 }];
@@ -836,7 +1092,7 @@ export default function App() {
         let style: any = {
           font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
           fill: { fgColor: { rgb: "FFFFFF" } },
-          alignment: { horizontal: "center", vertical: "center" }
+          alignment: { horizontal: "center", vertical: "center" },
         };
         if (R === 0) {
           style.font.bold = true;
@@ -854,9 +1110,25 @@ export default function App() {
     // -----------------------------------------------------
     // Illumination Export
     // -----------------------------------------------------
-    if (illumParams && illumParams.savedRooms && illumParams.savedRooms.length > 0) {
+    if (
+      illumParams &&
+      illumParams.savedRooms &&
+      illumParams.savedRooms.length > 0
+    ) {
       const illData: any[][] = [];
-      illData.push(["ILLUMINATION (LUMEN METHOD) ANALYSIS", "", "", "", "", "", "", "", "", "", ""]);
+      illData.push([
+        "ILLUMINATION (LUMEN METHOD) ANALYSIS",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
       illData.push([]);
       illData.push([
         "ROOM NAME",
@@ -869,9 +1141,9 @@ export default function App() {
         "LPD (W/m²)",
         "ASHRAE LIMIT (W/m²)",
         "STATUS",
-        "CIRCUIT NO."
+        "CIRCUIT NO.",
       ]);
-      
+
       illumParams.savedRooms.forEach((room) => {
         const roomLPD = room.totalWattage / room.area;
         const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
@@ -887,10 +1159,10 @@ export default function App() {
           Number(roomLPD.toFixed(2)),
           limitLPD,
           status,
-          room.circuitNo ? room.circuitNo : "-"
+          room.circuitNo ? room.circuitNo : "-",
         ]);
       });
-      
+
       const wsIll = XLSX.utils.aoa_to_sheet(illData);
       const wscolsIll = [
         { wch: 25 },
@@ -906,7 +1178,7 @@ export default function App() {
         { wch: 15 },
       ];
       wsIll["!cols"] = wscolsIll;
-      
+
       const rangeIll = XLSX.utils.decode_range(wsIll["!ref"] || "A1:A1");
       for (let R = rangeIll.s.r; R <= rangeIll.e.r; ++R) {
         for (let C = rangeIll.s.c; C <= rangeIll.e.c; ++C) {
@@ -915,7 +1187,7 @@ export default function App() {
           let style: any = {
             font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
             fill: { fgColor: { rgb: "FFFFFF" } },
-            alignment: { horizontal: "center", vertical: "center" }
+            alignment: { horizontal: "center", vertical: "center" },
           };
           if (R === 0) {
             style.font.bold = true;
@@ -931,7 +1203,10 @@ export default function App() {
       XLSX.utils.book_append_sheet(wb, wsIll, "Illumination");
     }
 
-    XLSX.writeFile(wb, `Engineering_Reports_${panel.designation || "Project"}.xlsx`);
+    XLSX.writeFile(
+      wb,
+      `Engineering_Reports_${panel.designation || "Project"}.xlsx`,
+    );
   };
 
   const handleExportWord = async () => {
@@ -946,11 +1221,11 @@ export default function App() {
         try {
           const isSld = id.startsWith("sld-");
           const pRatio = isSld ? 1 : 1.5;
-          
+
           let width = el.scrollWidth;
           let height = el.scrollHeight;
           const isIllumination = id === "illumination-diagram";
-          
+
           if (id === "short-circuit-diagram") {
             width = 1050;
             height = 950;
@@ -958,7 +1233,7 @@ export default function App() {
             width = el.clientWidth || 1000;
             height = el.clientHeight || 550;
           }
-          
+
           return await toPng(el, {
             quality: 1,
             backgroundColor: isIllumination ? "#020617" : "#ffffff",
@@ -975,7 +1250,7 @@ export default function App() {
               margin: "0",
               position: "relative",
               overflow: "hidden", // Removes the scrollbars when capturing!
-              border: "none",     // Ensures clean unconstrained look
+              border: "none", // Ensures clean unconstrained look
               boxShadow: "none",
               width: `${width}px`,
               height: `${height}px`,
@@ -1010,7 +1285,15 @@ export default function App() {
         }
       }
 
-      await exportToWord(panel, circuits, subPanels, vdCalculations, illumParams, images, iscParams);
+      await exportToWord(
+        panel,
+        circuits,
+        subPanels,
+        vdCalculations,
+        illumParams,
+        images,
+        iscParams,
+      );
     } catch (e) {
       console.error("Error generating Word doc:", e);
       let errorMsg = "Unknown error";
@@ -1048,15 +1331,23 @@ export default function App() {
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
-              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              title={
+                isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"
+              }
             >
-              {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-400" />}
+              {isDarkMode ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-400" />
+              )}
             </button>
           </div>
-          
+
           {/* Navigation Menu */}
           <div className="p-4 space-y-1">
-            <p className="px-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 mt-4">Modules</p>
+            <p className="px-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 mt-4">
+              Modules
+            </p>
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -1067,21 +1358,23 @@ export default function App() {
                     : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
                 }`}
               >
-                <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-indigo-400' : 'text-slate-500'}`} />
+                <tab.icon
+                  className={`w-4 h-4 ${activeTab === tab.id ? "text-indigo-400" : "text-slate-500"}`}
+                />
                 <span>{tab.label}</span>
                 {activeTab === tab.id && (
                   <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
                 )}
               </button>
             ))}
-            
+
             {/* Verify Users for Admin */}
             {isAdmin && (
               <button
                 onClick={() => setActiveTab("verify")}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 mt-8 rounded-lg text-sm font-semibold transition-all ${
-                  activeTab === "verify" 
-                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                  activeTab === "verify"
+                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                     : "text-amber-400/70 hover:text-amber-400 hover:bg-slate-800/50"
                 }`}
               >
@@ -1094,15 +1387,15 @@ export default function App() {
 
         {/* Bottom Sidebar - User Profile & Actions */}
         <div className="p-4 border-t border-slate-800/50 space-y-3 bg-slate-900/50">
-        {(userPlan !== 'premium' || isAdmin) && (
-          <button
-            onClick={() => setShowUpgrade(true)}
-            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 mb-2 border border-amber-400/50"
-          >
-            <Zap className="w-4 h-4 fill-white" />
-            Upgrade to Premium {isAdmin && "(Admin Test)"}
-          </button>
-        )}
+          {(userPlan !== "premium" || isAdmin) && (
+            <button
+              onClick={() => setShowUpgrade(true)}
+              className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 mb-2 border border-amber-400/50"
+            >
+              <Zap className="w-4 h-4 fill-white" />
+              Upgrade to Premium {isAdmin && "(Admin Test)"}
+            </button>
+          )}
 
           <button
             onClick={() => setIsProjectManagerOpen(true)}
@@ -1111,14 +1404,26 @@ export default function App() {
             <FolderOpen className="w-4 h-4" />
             <span>Manage Projects</span>
           </button>
-          
+
           <button
-            onClick={userPlan === 'premium' || isAdmin ? handleExportWord : () => setShowUpgrade(true)}
-            className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 ${userPlan === 'premium' || isAdmin ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20`}
-            title={userPlan !== 'premium' && !isAdmin ? "Available on Premium Plan" : "Generate Word Report"}
+            onClick={
+              userPlan === "premium" || isAdmin
+                ? handleExportWord
+                : () => setShowUpgrade(true)
+            }
+            className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 ${userPlan === "premium" || isAdmin ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"} rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20`}
+            title={
+              userPlan !== "premium" && !isAdmin
+                ? "Available on Premium Plan"
+                : "Generate Word Report"
+            }
           >
             <FileText className="w-4 h-4" />
-            <span>{userPlan !== 'premium' && !isAdmin ? "Report (Premium)" : "Generate Report"}</span>
+            <span>
+              {userPlan !== "premium" && !isAdmin
+                ? "Report (Premium)"
+                : "Generate Report"}
+            </span>
           </button>
           <button
             onClick={exportToExcel}
@@ -1129,21 +1434,38 @@ export default function App() {
           </button>
           <button
             onClick={() => {
-              if (userPlan === 'premium' || isAdmin) {
-                exportToCAD(panel, circuits, subPanels, iscParams, 'ALL', vdCalculations);
+              if (userPlan === "premium" || isAdmin) {
+                exportToCAD(
+                  panel,
+                  circuits,
+                  subPanels,
+                  iscParams,
+                  "ALL",
+                  vdCalculations,
+                );
               } else {
                 setShowUpgrade(true);
               }
             }}
             className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 rounded-lg text-xs font-bold transition-all border ${
-              userPlan === 'premium' || isAdmin
-                ? 'bg-sky-950/45 text-sky-400 hover:bg-sky-900/60 border-sky-800/60 cursor-pointer'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700/50 cursor-pointer'
+              userPlan === "premium" || isAdmin
+                ? "bg-sky-950/45 text-sky-400 hover:bg-sky-900/60 border-sky-800/60 cursor-pointer"
+                : "bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700/50 cursor-pointer"
             }`}
-            title={userPlan !== 'premium' && !isAdmin ? "AutoCAD Export is available on the Premium Plan" : "Export complete Load Schedule Table and Short Circuit calculations directly to DWG/DXF AutoCAD format"}
+            title={
+              userPlan !== "premium" && !isAdmin
+                ? "AutoCAD Export is available on the Premium Plan"
+                : "Export complete Load Schedule Table and Short Circuit calculations directly to DWG/DXF AutoCAD format"
+            }
           >
-            <Layers className={`w-4 h-4 ${userPlan === 'premium' || isAdmin ? 'text-sky-400' : 'text-slate-500'}`} />
-            <span>{userPlan !== 'premium' && !isAdmin ? "Export AutoCAD (Premium)" : "Export AutoCAD Drawing"}</span>
+            <Layers
+              className={`w-4 h-4 ${userPlan === "premium" || isAdmin ? "text-sky-400" : "text-slate-500"}`}
+            />
+            <span>
+              {userPlan !== "premium" && !isAdmin
+                ? "Export AutoCAD (Premium)"
+                : "Export AutoCAD Drawing"}
+            </span>
           </button>
           <div className="pt-2 flex justify-center">
             <Auth />
@@ -1153,40 +1475,49 @@ export default function App() {
 
       {/* Main Layout Wrapper */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 relative transition-colors duration-200">
-        
         {/* Mobile Navbar */}
         <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sticky top-0 z-20 shrink-0 shadow-sm no-print">
-           <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-yellow-400 rounded-md">
-                <Zap className="w-4 h-4 text-yellow-900" />
-              </div>
-              <span className="font-extrabold text-slate-900 dark:text-white text-lg tracking-tight">ElectricalPH</span>
-           </div>
-           
-           <div className="flex items-center gap-1">
-             {/* Mobile Theme Toggle Button */}
-             <button
-               onClick={() => setIsDarkMode(!isDarkMode)}
-               className="p-1.5 mr-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-               title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-             >
-               {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-500" />}
-             </button>
-           </div>
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-yellow-400 rounded-md">
+              <Zap className="w-4 h-4 text-yellow-900" />
+            </div>
+            <span className="font-extrabold text-slate-900 dark:text-white text-lg tracking-tight">
+              ElectricalPH
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {/* Mobile Theme Toggle Button */}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-1.5 mr-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              title={
+                isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"
+              }
+            >
+              {isDarkMode ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-500" />
+              )}
+            </button>
+          </div>
         </header>
 
         {/* Mobile secondary navigation bar */}
         <div className="md:hidden bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-2 sticky top-16 z-20 overflow-x-auto whitespace-nowrap hide-scrollbar flex gap-2 no-print backdrop-blur-md">
           {tabs.map((tab) => (
-             <button
-               key={tab.id}
-               onClick={() => setActiveTab(tab.id as any)}
-               className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                 activeTab === tab.id ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm" : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
-               }`}
-             >
-               {tab.label}
-             </button>
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                activeTab === tab.id
+                  ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
+                  : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
+              }`}
+            >
+              {tab.label}
+            </button>
           ))}
         </div>
 
@@ -1197,691 +1528,974 @@ export default function App() {
         >
           <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-8 pb-32">
             <div className="w-full">
-          {/* Dashboard Tab */}
-          <div className={activeTab === "dashboard" ? "w-full animate-fade" : "hidden"}>
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={activeTab === "dashboard" ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="space-y-8"
-            >
-              {/* Engineering Hero Header */}
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 rounded-3xl p-6 sm:p-8 text-white border border-slate-800 shadow-xl relative overflow-hidden">
-                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
-                  backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.4), transparent 50%), linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
-                  backgroundSize: '100% 100%, 30px 30px, 30px 30px'
-                }} />
-                
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                  <div className="space-y-2">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-yellow-300 text-xs font-bold uppercase tracking-wider">
-                      ⚡ Active Session Station
-                    </span>
-                    <h2 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
-                      {panel.project || 'Untitled Project Station'}
-                    </h2>
-                    <p className="text-slate-300 text-sm max-w-2xl">
-                      Engineering dashboard for PEC compliant system design and safety audits. Real-time telemetry is active. All components verified against standard electrical wire sizes and conductor tolerances.
-                    </p>
-                  </div>
-                  
-                  <div className="bg-white/10 shrink-0 backdrop-blur-md border border-white/10 px-6 py-4 rounded-2xl flex flex-col gap-1 shadow-lg text-slate-100">
-                    <span className="text-xs text-indigo-200 uppercase font-black tracking-widest">Local Time (Manila)</span>
-                    <span className="font-mono text-xl font-bold text-yellow-300">
-                      {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' })}
-                    </span>
-                    <span className="text-xs text-slate-400">PEC Standards Version: PEC 2017</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bento Grid: Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                
-                {/* Connected Load Schedule Telemetry */}
-                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">CONNECTED CAPACITY</span>
-                      <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                        {(circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) / 1000).toFixed(2)} kVA
-                      </h3>
-                    </div>
-                    <div className="p-3 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
-                      <Layout className="w-5 h-5" />
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span className="font-bold text-slate-700 dark:text-slate-300">{circuits.length} Registered Loops</span>
-                    <button onClick={() => setActiveTab("schedule")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
-                      Configure <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Short Circuit Fault Adequacy */}
-                {(() => {
-                  const baseKVA = iscParams.transformerKVA || 500;
-                  const baseKV = (iscParams.transformerVoltage || 230) / 1000;
-                  const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 250) * 1000);
-                  const zTranspu = (iscParams.transformerZ || 5) / 100;
-                  const iFullLoad = baseKVA / (1.732 * baseKV);
-                  const iscMainBreakerVal = iFullLoad / (zUtilitypu + zTranspu) || 12500; 
-                  const iscKAIC = (iscMainBreakerVal / 1000);
-                  const panelLimitKAIC = parseFloat(panel.icRating) || 10;
-                  const scStatus = iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
-
-                  return (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">CALCULATED ISC</span>
-                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                            {iscKAIC.toFixed(2)} kA
-                          </h3>
-                        </div>
-                        <div className={`p-3 rounded-xl shadow-sm transition-all ${
-                          scStatus === 'COMPLIANT' 
-                            ? 'bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' 
-                            : 'bg-rose-50 dark:bg-rose-950/35 text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white'
-                        }`}>
-                          <ShieldAlert className="w-5 h-5" />
-                        </div>
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                        <span className={`font-extrabold flex items-center gap-1.5 ${
-                          scStatus === 'COMPLIANT' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                        }`}>
-                          <span className={`w-2 h-2 rounded-full ${scStatus === 'COMPLIANT' ? 'bg-emerald-500' : 'bg-rose-500 animate-pulse'}`} /> 
-                          {scStatus} Limit ({panelLimitKAIC}kA pf)
-                        </span>
-                        <button onClick={() => setActiveTab("isc")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
-                          Audit <ArrowUpRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Voltage Drop Audit */}
-                {(() => {
-                  let maxVDPercent = 0;
-                  vdCalculations.forEach((vd) => {
-                    const data = WIRE_IMPEDANCE_TABLE[vd.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-                    const r = data ? data.r : 0.0172 / (parseFloat(vd.wireSize) || 3.5);
-                    const factor = vd.systemType === '3PH' ? 1.732 : 2;
-                    const divisor = data ? 1000 : 1;
-                    const dropV = (factor * vd.loadA * vd.length * r) / divisor;
-                    const pct = (dropV / vd.voltage) * 100;
-                    if (pct > maxVDPercent) maxVDPercent = pct;
-                  });
-                  if (vdCalculations.length === 0) {
-                    maxVDPercent = 1.15; 
+              {/* Dashboard Tab */}
+              <div
+                className={
+                  activeTab === "dashboard" ? "w-full animate-fade" : "hidden"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={
+                    activeTab === "dashboard" ? { opacity: 1, y: 0 } : {}
                   }
-                  const isVDPass = maxVDPercent <= 3.0;
+                  transition={{ duration: 0.2 }}
+                  className="space-y-8"
+                >
+                  {/* Engineering Hero Header */}
+                  <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 rounded-3xl p-6 sm:p-8 text-white border border-slate-800 shadow-xl relative overflow-hidden">
+                    <div
+                      className="absolute inset-0 opacity-10 pointer-events-none"
+                      style={{
+                        backgroundImage:
+                          "radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.4), transparent 50%), linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
+                        backgroundSize: "100% 100%, 30px 30px, 30px 30px",
+                      }}
+                    />
 
-                  return (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">MAX VOLTAGE DROP</span>
-                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                            {maxVDPercent.toFixed(2)}%
-                          </h3>
-                        </div>
-                        <div className={`p-3 rounded-xl shadow-sm transition-all ${
-                          isVDPass 
-                            ? 'bg-green-50 dark:bg-emerald-950/35 text-green-600 dark:text-emerald-400 group-hover:bg-green-600 group-hover:text-white' 
-                            : 'bg-amber-50 dark:bg-amber-950/35 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white'
-                        }`}>
-                          <Ruler className="w-5 h-5" />
-                        </div>
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                        <span className={`font-extrabold flex items-center gap-1.5 ${
-                          isVDPass ? 'text-green-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400 hover:text-amber-700'
-                        }`}>
-                          <span className={`w-2 h-2 rounded-full ${isVDPass ? 'bg-green-500' : 'bg-amber-500 animate-ping'}`} /> 
-                          {isVDPass ? 'PEC Compliant (<3%)' : 'Exceeds PEC Limit'}
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div className="space-y-2">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-yellow-300 text-xs font-bold uppercase tracking-wider">
+                          ⚡ Active Session Station
                         </span>
-                        <button onClick={() => setActiveTab("vd")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
-                          Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
-                        </button>
+                        <h2 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
+                          {panel.project || "Untitled Project Station"}
+                        </h2>
+                        <p className="text-slate-300 text-sm max-w-2xl">
+                          Engineering dashboard for PEC compliant system design
+                          and safety audits. Real-time telemetry is active. All
+                          components verified against standard electrical wire
+                          sizes and conductor tolerances.
+                        </p>
                       </div>
-                    </div>
-                  );
-                })()}
 
-                {/* Illumination target status */}
-                {(() => {
-                  const illumArea = illumParams.inputMode === 'area' ? illumParams.userArea : illumParams.roomWidth * illumParams.roomLength;
-                  const calculatedLux = Math.ceil((illumParams.lumensPerFixture * (illumParams.coefficientOfUtilization || 0.6) * (illumParams.maintenanceFactor || 0.8)) / (illumArea || 20));
-                  const isLCompliance = calculatedLux >= illumParams.targetLux;
-
-                  return (
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">EST. ILLUMINATION</span>
-                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                            {calculatedLux || 0} Lux
-                          </h3>
-                        </div>
-                        <div className={`p-3 rounded-xl shadow-sm transition-all ${
-                          isLCompliance 
-                            ? 'bg-yellow-50 dark:bg-yellow-950/35 text-yellow-600 dark:text-yellow-400 group-hover:bg-yellow-500 group-hover:text-white' 
-                            : 'bg-orange-50 dark:bg-orange-950/35 text-orange-600 dark:text-orange-400 group-hover:bg-orange-600 group-hover:text-white'
-                        }`}>
-                          <Lightbulb className="w-5 h-5" />
-                        </div>
-                      </div>
-                      
-                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                        <span className={`font-extrabold flex items-center gap-1.5 ${
-                          isLCompliance ? 'text-emerald-600 dark:text-emerald-200' : 'text-orange-600 dark:text-orange-300'
-                        }`}>
-                          <span className={`w-2 h-2 rounded-full ${isLCompliance ? 'bg-emerald-500' : 'bg-orange-500 animate-pulse'}`} /> 
-                          {isLCompliance ? 'Target Met' : 'Low Illum vs Target'}
+                      <div className="bg-white/10 shrink-0 backdrop-blur-md border border-white/10 px-6 py-4 rounded-2xl flex flex-col gap-1 shadow-lg text-slate-100">
+                        <span className="text-xs text-indigo-200 uppercase font-black tracking-widest">
+                          Local Time (Manila)
                         </span>
-                        <button onClick={() => setActiveTab("lighting")} className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1">
-                          Simulate <ArrowUpRight className="w-3.5 h-3.5" />
-                        </button>
+                        <span className="font-mono text-xl font-bold text-yellow-300">
+                          {new Date().toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "2-digit",
+                            year: "numeric",
+                          })}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          PEC Standards Version: PEC 2017
+                        </span>
                       </div>
-                    </div>
-                  );
-                })()}
-
-              </div>
-
-              {/* Sub-panels and System parameters side-by-side */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Panel board specifications summary */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm lg:col-span-2 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-sm">Specification Standards Overview (PEC Part 1)</h4>
-                    </div>
-                    <span className="text-xs font-bold text-slate-400 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
-                      Feeder: {panel.type || 'Main Panelboard'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">SYSTEM VOLTAGE</span>
-                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.system}</p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">ENCLOSURE STYLE</span>
-                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.enclosure || "NEMA 1 Indoors"}</p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">MOUNTING METHOD</span>
-                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.mounting || "Wall Surface"}</p>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
-                      <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">INTERRUPTING COMPLIANCE</span>
-                      <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{panel.icRating || "10kA KAIC"}</p>
                     </div>
                   </div>
 
-                  {/* Quick System loads bar-analysis */}
-                  <div className="space-y-3">
-                    <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">LOAD DISTRIBUTION BY COMPONENT TYPE</h5>
+                  {/* Bento Grid: Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {/* Connected Load Schedule Telemetry */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                            CONNECTED CAPACITY
+                          </span>
+                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                            {(
+                              circuits.reduce(
+                                (sum, c) => sum + (c.loadVA || 0),
+                                0,
+                              ) / 1000
+                            ).toFixed(2)}{" "}
+                            kVA
+                          </h3>
+                        </div>
+                        <div className="p-3 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
+                          <Layout className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span className="font-bold text-slate-700 dark:text-slate-300">
+                          {circuits.length} Registered Loops
+                        </span>
+                        <button
+                          onClick={() => setActiveTab("schedule")}
+                          className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
+                        >
+                          Configure <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Short Circuit Fault Adequacy */}
                     {(() => {
-                      const totalVA = circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) || 1;
-                      const lightingVA = circuits.filter(c => c.loadType === 'L').reduce((sum, c) => sum + (c.loadVA || 0), 0);
-                      const outletVA = circuits.filter(c => c.loadType === 'S').reduce((sum, c) => sum + (c.loadVA || 0), 0);
-                      const motorVA = circuits.filter(c => c.loadType === 'AC' || c.loadType === 'M').reduce((sum, c) => sum + (c.loadVA || 0), 0);
-                      const othersVA = totalVA - (lightingVA + outletVA + motorVA);
-
-                      const lightPct = (lightingVA / totalVA) * 100;
-                      const outletPct = (outletVA / totalVA) * 100;
-                      const motorPct = (motorVA / totalVA) * 100;
-                      const otherPct = (othersVA / totalVA) * 100;
+                      const baseKVA = iscParams.transformerKVA || 500;
+                      const baseKV =
+                        (iscParams.transformerVoltage || 230) / 1000;
+                      const zUtilitypu =
+                        baseKVA /
+                        ((iscParams.utilityShortCircuitMVA || 250) * 1000);
+                      const zTranspu = (iscParams.transformerZ || 5) / 100;
+                      const iFullLoad = baseKVA / (1.732 * baseKV);
+                      const iscMainBreakerVal =
+                        iFullLoad / (zUtilitypu + zTranspu) || 12500;
+                      const iscKAIC = iscMainBreakerVal / 1000;
+                      const panelLimitKAIC = parseFloat(panel.icRating) || 10;
+                      const scStatus =
+                        iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
 
                       return (
-                        <div className="space-y-4">
-                          <div className="h-4 w-full bg-slate-100 rounded-full flex overflow-hidden">
-                            <div style={{ width: `${lightPct}%` }} className="bg-indigo-500 h-full transition-all" title={`Lighting: ${lightPct.toFixed(1)}%`} />
-                            <div style={{ width: `${outletPct}%` }} className="bg-emerald-500 h-full transition-all" title={`Convenience Outlets: ${outletPct.toFixed(1)}%`} />
-                            <div style={{ width: `${motorPct}%` }} className="bg-amber-500 h-full transition-all" title={`Motors / AC: ${motorPct.toFixed(1)}%`} />
-                            <div style={{ width: `${otherPct}%` }} className="bg-slate-400 h-full transition-all" title={`Others: ${otherPct.toFixed(1)}%`} />
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                CALCULATED ISC
+                              </span>
+                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                {iscKAIC.toFixed(2)} kA
+                              </h3>
+                            </div>
+                            <div
+                              className={`p-3 rounded-xl shadow-sm transition-all ${
+                                scStatus === "COMPLIANT"
+                                  ? "bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white"
+                                  : "bg-rose-50 dark:bg-rose-950/35 text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white"
+                              }`}
+                            >
+                              <ShieldAlert className="w-5 h-5" />
+                            </div>
                           </div>
-                          
-                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-indigo-500" /> Lighting (<strong>{lightPct.toFixed(1)}%</strong>)</span>
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-500" /> Outlets (<strong>{outletPct.toFixed(1)}%</strong>)</span>
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-500" /> Motors/AC (<strong>{motorPct.toFixed(1)}%</strong>)</span>
-                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-slate-400" /> Others (<strong>{otherPct.toFixed(1)}%</strong>)</span>
+
+                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                            <span
+                              className={`font-extrabold flex items-center gap-1.5 ${
+                                scStatus === "COMPLIANT"
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400"
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full ${scStatus === "COMPLIANT" ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`}
+                              />
+                              {scStatus} Limit ({panelLimitKAIC}kA pf)
+                            </span>
+                            <button
+                              onClick={() => setActiveTab("isc")}
+                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
+                            >
+                              Audit <ArrowUpRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Voltage Drop Audit */}
+                    {(() => {
+                      let maxVDPercent = 0;
+                      vdCalculations.forEach((vd) => {
+                        const data =
+                          WIRE_IMPEDANCE_TABLE[vd.wireSize] ||
+                          WIRE_IMPEDANCE_TABLE["3.5"];
+                        const r = data
+                          ? data.r
+                          : 0.0172 / (parseFloat(vd.wireSize) || 3.5);
+                        const factor = vd.systemType === "3PH" ? 1.732 : 2;
+                        const divisor = data ? 1000 : 1;
+                        const dropV =
+                          (factor * vd.loadA * vd.length * r) / divisor;
+                        const pct = (dropV / vd.voltage) * 100;
+                        if (pct > maxVDPercent) maxVDPercent = pct;
+                      });
+                      if (vdCalculations.length === 0) {
+                        maxVDPercent = 1.15;
+                      }
+                      const isVDPass = maxVDPercent <= 3.0;
+
+                      return (
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                MAX VOLTAGE DROP
+                              </span>
+                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                {maxVDPercent.toFixed(2)}%
+                              </h3>
+                            </div>
+                            <div
+                              className={`p-3 rounded-xl shadow-sm transition-all ${
+                                isVDPass
+                                  ? "bg-green-50 dark:bg-emerald-950/35 text-green-600 dark:text-emerald-400 group-hover:bg-green-600 group-hover:text-white"
+                                  : "bg-amber-50 dark:bg-amber-950/35 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white"
+                              }`}
+                            >
+                              <Ruler className="w-5 h-5" />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                            <span
+                              className={`font-extrabold flex items-center gap-1.5 ${
+                                isVDPass
+                                  ? "text-green-600 dark:text-emerald-400"
+                                  : "text-amber-600 dark:text-amber-400 hover:text-amber-700"
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full ${isVDPass ? "bg-green-500" : "bg-amber-500 animate-ping"}`}
+                              />
+                              {isVDPass
+                                ? "PEC Compliant (<3%)"
+                                : "Exceeds PEC Limit"}
+                            </span>
+                            <button
+                              onClick={() => setActiveTab("vd")}
+                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
+                            >
+                              Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Illumination target status */}
+                    {(() => {
+                      const illumArea =
+                        illumParams.inputMode === "area"
+                          ? illumParams.userArea
+                          : illumParams.roomWidth * illumParams.roomLength;
+                      const calculatedLux = Math.ceil(
+                        (illumParams.lumensPerFixture *
+                          (illumParams.coefficientOfUtilization || 0.6) *
+                          (illumParams.maintenanceFactor || 0.8)) /
+                          (illumArea || 20),
+                      );
+                      const isLCompliance =
+                        calculatedLux >= illumParams.targetLux;
+
+                      return (
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                EST. ILLUMINATION
+                              </span>
+                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                {calculatedLux || 0} Lux
+                              </h3>
+                            </div>
+                            <div
+                              className={`p-3 rounded-xl shadow-sm transition-all ${
+                                isLCompliance
+                                  ? "bg-yellow-50 dark:bg-yellow-950/35 text-yellow-600 dark:text-yellow-400 group-hover:bg-yellow-500 group-hover:text-white"
+                                  : "bg-orange-50 dark:bg-orange-950/35 text-orange-600 dark:text-orange-400 group-hover:bg-orange-600 group-hover:text-white"
+                              }`}
+                            >
+                              <Lightbulb className="w-5 h-5" />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                            <span
+                              className={`font-extrabold flex items-center gap-1.5 ${
+                                isLCompliance
+                                  ? "text-emerald-600 dark:text-emerald-200"
+                                  : "text-orange-600 dark:text-orange-300"
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full ${isLCompliance ? "bg-emerald-500" : "bg-orange-500 animate-pulse"}`}
+                              />
+                              {isLCompliance
+                                ? "Target Met"
+                                : "Low Illum vs Target"}
+                            </span>
+                            <button
+                              onClick={() => setActiveTab("lighting")}
+                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
+                            >
+                              Simulate <ArrowUpRight className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       );
                     })()}
                   </div>
-                </div>
 
-                {/* PEC Quick Reference Guide */}
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <Zap className="w-4 h-4 text-yellow-500" />
-                      <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs">PEC 2017 Quick Reference Guide</h4>
-                    </div>
-                    <ul className="space-y-4 text-xs text-slate-600 dark:text-slate-400">
-                      <li className="flex items-start gap-2">
-                        <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
-                        <span><strong className="text-slate-800 dark:text-slate-200">Section 2.10.2.1:</strong> Branch circuits branch wire size must possess wire ampacity not less than 125% of continuous load.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
-                        <span><strong className="text-slate-800 dark:text-slate-200">Table 3.10.1.16:</strong> Minimum conductor wire size for general lighting branch loops in residential lands is <strong className="text-slate-900 dark:text-white font-extrabold">2.0 mm² THHN Cooper</strong>.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-yellow-500 shrink-0 font-bold mt-0.5">▪</span>
-                        <span><strong className="text-slate-800 dark:text-slate-200">Section 2.40.1.3:</strong> Breaker standard ratings are 15A, 20A, 30A, 40A, 50A, 60A, 70A, 100A, 115A, 125A.</span>
-                      </li>
-                    </ul>
-                  </div>
+                  {/* Sub-panels and System parameters side-by-side */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Panel board specifications summary */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm lg:col-span-2 space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                          <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-sm">
+                            Specification Standards Overview (PEC Part 1)
+                          </h4>
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
+                          Feeder: {panel.type || "Main Panelboard"}
+                        </span>
+                      </div>
 
-                  <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950/40 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
-                    <span className="text-indigo-950 dark:text-indigo-200 font-bold">Standard Grounding sizes?</span>
-                    <button onClick={() => alert("Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.")} className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0">
-                      View Table
-                    </button>
-                  </div>
-                </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
+                          <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                            SYSTEM VOLTAGE
+                          </span>
+                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                            {panel.system}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
+                          <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                            ENCLOSURE STYLE
+                          </span>
+                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                            {panel.enclosure || "NEMA 1 Indoors"}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
+                          <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                            MOUNTING METHOD
+                          </span>
+                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                            {panel.mounting || "Wall Surface"}
+                          </p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
+                          <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                            INTERRUPTING COMPLIANCE
+                          </span>
+                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                            {panel.icRating || "10kA KAIC"}
+                          </p>
+                        </div>
+                      </div>
 
-              </div>
+                      {/* Quick System loads bar-analysis */}
+                      <div className="space-y-3">
+                        <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                          LOAD DISTRIBUTION BY COMPONENT TYPE
+                        </h5>
+                        {(() => {
+                          const totalVA =
+                            circuits.reduce(
+                              (sum, c) => sum + (c.loadVA || 0),
+                              0,
+                            ) || 1;
+                          const lightingVA = circuits
+                            .filter((c) => c.loadType === "L")
+                            .reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                          const outletVA = circuits
+                            .filter((c) => c.loadType === "S")
+                            .reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                          const motorVA = circuits
+                            .filter(
+                              (c) => c.loadType === "AC" || c.loadType === "M",
+                            )
+                            .reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                          const othersVA =
+                            totalVA - (lightingVA + outletVA + motorVA);
 
-              {/* Interactive PEC Current Calculator & Verifier */}
-              <PECCurrentCalculator panel={panel} setPanel={setPanel} />
+                          const lightPct = (lightingVA / totalVA) * 100;
+                          const outletPct = (outletVA / totalVA) * 100;
+                          const motorPct = (motorVA / totalVA) * 100;
+                          const otherPct = (othersVA / totalVA) * 100;
 
-              {/* Direct Actions & Interactive Quick Launcher Tab */}
-              <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
-                <h4 className="font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest text-[10px]">Jump-switch to Active Calculation Terminals:</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
-                  <button onClick={() => setActiveTab("schedule")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
-                    <Layout className="w-5 h-5 text-indigo-500" />
-                    Load Schedule
-                  </button>
-                  <button onClick={() => setActiveTab("isc")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
-                    <ShieldAlert className="w-5 h-5 text-rose-500" />
-                    Short Circuit
-                  </button>
-                  <button onClick={() => setActiveTab("vd")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
-                    <Ruler className="w-5 h-5 text-emerald-500" />
-                    Voltage Drop
-                  </button>
-                  <button onClick={() => setActiveTab("lighting")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
-                    <Lightbulb className="w-5 h-5 text-yellow-500" />
-                    Illumination
-                  </button>
-                  <button onClick={() => setActiveTab("floor-plan")} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer">
-                    <Map className="w-5 h-5 text-cyan-500" />
-                    Blueprint Preview
-                  </button>
-                </div>
-              </div>
+                          return (
+                            <div className="space-y-4">
+                              <div className="h-4 w-full bg-slate-100 rounded-full flex overflow-hidden">
+                                <div
+                                  style={{ width: `${lightPct}%` }}
+                                  className="bg-indigo-500 h-full transition-all"
+                                  title={`Lighting: ${lightPct.toFixed(1)}%`}
+                                />
+                                <div
+                                  style={{ width: `${outletPct}%` }}
+                                  className="bg-emerald-500 h-full transition-all"
+                                  title={`Convenience Outlets: ${outletPct.toFixed(1)}%`}
+                                />
+                                <div
+                                  style={{ width: `${motorPct}%` }}
+                                  className="bg-amber-500 h-full transition-all"
+                                  title={`Motors / AC: ${motorPct.toFixed(1)}%`}
+                                />
+                                <div
+                                  style={{ width: `${otherPct}%` }}
+                                  className="bg-slate-400 h-full transition-all"
+                                  title={`Others: ${otherPct.toFixed(1)}%`}
+                                />
+                              </div>
 
-            </motion.div>
-          </div>
-
-          {/* Load Schedule Tab */}
-          <div className={(activeTab === "schedule" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={(activeTab === "schedule" || isExporting) ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <div className="flex flex-col gap-8 w-full max-w-full">
-                {/* Custom Inside Panel Tabs */}
-                {!isExporting && (
-                  <div className="bg-slate-100/80 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-2xl p-2.5 flex flex-wrap items-center gap-2 mb-2 no-print shadow-sm">
-                    {/* Main Panel Tag */}
-                    <button
-                      onClick={() => setActiveScheduleTab("mdp")}
-                      className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
-                        activeScheduleTab === "mdp"
-                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px]"
-                          : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
-                      }`}
-                    >
-                      <Layout className="w-4 h-4 text-indigo-500 shadow-sm" />
-                      <span>{panel.designation || "Main Panel (MDP)"}</span>
-                    </button>
-
-                    {/* Sub Panels Tags */}
-                    {subPanels.map((sp) => (
-                      <button
-                        key={sp.id}
-                        onClick={() => setActiveScheduleTab(sp.id)}
-                        className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
-                          activeScheduleTab === sp.id
-                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px]"
-                            : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
-                        }`}
-                      >
-                        <Network className="w-3.5 h-3.5 text-cyan-500" />
-                        <span>{sp.panel.designation || "Subpanel"}</span>
-                      </button>
-                    ))}
-
-                    {/* Plus Quick Tab Action */}
-                    <button
-                      onClick={() => {
-                        const newId = crypto.randomUUID();
-                        setSubPanels((prev) => [
-                          ...prev,
-                          {
-                            id: newId,
-                            panel: {
-                              ...INITIAL_PANEL,
-                              designation: `Sub-Panel ${prev.length + 1}`,
-                            },
-                            circuits: INITIAL_CIRCUITS,
-                          },
-                        ]);
-                        setActiveScheduleTab(newId);
-                      }}
-                      className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 border border-dashed border-indigo-300 dark:border-indigo-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ml-auto"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Sub-Panel
-                    </button>
-                  </div>
-                )}
-
-                {/* 1. Main Distribution Panel Schedule */}
-                {(isExporting || activeScheduleTab === "mdp") && (
-                  <LoadSchedule
-                    panel={panel}
-                    setPanel={setPanel}
-                    circuits={circuits}
-                    setCircuits={setCircuits}
-                    availableSubPanels={subPanels}
-                    iscParams={iscParams}
-                    isPremium={userPlan === 'premium' || isAdmin}
-                    onRequestUpgrade={() => setShowUpgrade(true)}
-                  />
-                )}
-
-                {/* 2. Sub-Panels Schedules */}
-                {subPanels.map((sp, index) => {
-                  const isVisible = isExporting || activeScheduleTab === sp.id;
-                  if (!isVisible) return null;
-
-                  return (
-                    <React.Fragment key={sp.id}>
-                      <LoadSchedule
-                        panel={sp.panel}
-                        setPanel={(newPanel) => {
-                          setSubPanels((prev) => {
-                            const currentPanel = prev[index]?.panel;
-                            if (!currentPanel) return prev;
-                            const updatedPanel =
-                              typeof newPanel === "function"
-                                ? newPanel(currentPanel)
-                                : newPanel;
-                            if (currentPanel === updatedPanel) return prev;
-                            return prev.map((p, i) =>
-                              i === index ? { ...p, panel: updatedPanel } : p,
-                            );
-                          });
-                        }}
-                        circuits={sp.circuits}
-                        setCircuits={(newCircuits) => {
-                          setSubPanels((prev) => {
-                            const currentCircuits = prev[index]?.circuits;
-                            if (!currentCircuits) return prev;
-                            const updatedCircuits =
-                              typeof newCircuits === "function"
-                                ? newCircuits(currentCircuits)
-                                : newCircuits;
-                            if (currentCircuits === updatedCircuits) return prev;
-                            return prev.map((p, i) =>
-                              i === index
-                                ? { ...p, circuits: updatedCircuits }
-                                : p,
-                            );
-                          });
-                        }}
-                        isSubPanel={true}
-                        onRemoveSubPanel={() => {
-                          setSubPanels((prev) =>
-                            prev.filter((p) => p.id !== sp.id),
+                              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-full bg-indigo-500" />{" "}
+                                  Lighting (
+                                  <strong>{lightPct.toFixed(1)}%</strong>)
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-full bg-emerald-500" />{" "}
+                                  Outlets (
+                                  <strong>{outletPct.toFixed(1)}%</strong>)
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-full bg-amber-500" />{" "}
+                                  Motors/AC (
+                                  <strong>{motorPct.toFixed(1)}%</strong>)
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-3 h-3 rounded-full bg-slate-400" />{" "}
+                                  Others (
+                                  <strong>{otherPct.toFixed(1)}%</strong>)
+                                </span>
+                              </div>
+                            </div>
                           );
-                          setActiveScheduleTab("mdp");
-                        }}
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* PEC Quick Reference Guide */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-4">
+                          <Zap className="w-4 h-4 text-yellow-500" />
+                          <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs">
+                            PEC 2017 Quick Reference Guide
+                          </h4>
+                        </div>
+                        <ul className="space-y-4 text-xs text-slate-600 dark:text-slate-400">
+                          <li className="flex items-start gap-2">
+                            <span className="text-yellow-500 shrink-0 font-bold mt-0.5">
+                              ▪
+                            </span>
+                            <span>
+                              <strong className="text-slate-800 dark:text-slate-200">
+                                Section 2.10.2.1:
+                              </strong>{" "}
+                              Branch circuits branch wire size must possess wire
+                              ampacity not less than 125% of continuous load.
+                            </span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-yellow-500 shrink-0 font-bold mt-0.5">
+                              ▪
+                            </span>
+                            <span>
+                              <strong className="text-slate-800 dark:text-slate-200">
+                                Table 3.10.1.16:
+                              </strong>{" "}
+                              Minimum conductor wire size for general lighting
+                              branch loops in residential lands is{" "}
+                              <strong className="text-slate-900 dark:text-white font-extrabold">
+                                2.0 mm² THHN Cooper
+                              </strong>
+                              .
+                            </span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-yellow-500 shrink-0 font-bold mt-0.5">
+                              ▪
+                            </span>
+                            <span>
+                              <strong className="text-slate-800 dark:text-slate-200">
+                                Section 2.40.1.3:
+                              </strong>{" "}
+                              Breaker standard ratings are 15A, 20A, 30A, 40A,
+                              50A, 60A, 70A, 100A, 115A, 125A.
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950/40 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
+                        <span className="text-indigo-950 dark:text-indigo-200 font-bold">
+                          Standard Grounding sizes?
+                        </span>
+                        <button
+                          onClick={() =>
+                            alert(
+                              "Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.",
+                            )
+                          }
+                          className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
+                        >
+                          View Table
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Interactive PEC Current Calculator & Verifier */}
+                  <PECCurrentCalculator panel={panel} setPanel={setPanel} />
+
+                  {/* Direct Actions & Interactive Quick Launcher Tab */}
+                  <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+                    <h4 className="font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest text-[10px]">
+                      Jump-switch to Active Calculation Terminals:
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
+                      <button
+                        onClick={() => setActiveTab("schedule")}
+                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
+                      >
+                        <Layout className="w-5 h-5 text-indigo-500" />
+                        Load Schedule
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("isc")}
+                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
+                      >
+                        <ShieldAlert className="w-5 h-5 text-rose-500" />
+                        Short Circuit
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("vd")}
+                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
+                      >
+                        <Ruler className="w-5 h-5 text-emerald-500" />
+                        Voltage Drop
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("lighting")}
+                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
+                      >
+                        <Lightbulb className="w-5 h-5 text-yellow-500" />
+                        Illumination
+                      </button>
+                      <button
+                        onClick={() => setActiveTab("floor-plan")}
+                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
+                      >
+                        <Map className="w-5 h-5 text-cyan-500" />
+                        Blueprint Preview
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Load Schedule Tab */}
+              <div
+                className={
+                  activeTab === "schedule" || isExporting
+                    ? "w-full"
+                    : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "schedule" || isExporting
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <div className="flex flex-col gap-8 w-full max-w-full">
+                    {/* Custom Inside Panel Tabs */}
+                    {!isExporting && (
+                      <div className="bg-slate-100/80 dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-2xl p-2.5 flex flex-wrap items-center gap-2 mb-2 no-print shadow-sm">
+                        {/* Main Panel Tag */}
+                        <button
+                          onClick={() => setActiveScheduleTab("mdp")}
+                          className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                            activeScheduleTab === "mdp"
+                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px]"
+                              : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
+                          }`}
+                        >
+                          <Layout className="w-4 h-4 text-indigo-500 shadow-sm" />
+                          <span>{panel.designation || "Main Panel (MDP)"}</span>
+                        </button>
+
+                        {/* Sub Panels Tags */}
+                        {subPanels.map((sp) => (
+                          <button
+                            key={sp.id}
+                            onClick={() => setActiveScheduleTab(sp.id)}
+                            className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
+                              activeScheduleTab === sp.id
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px]"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
+                            }`}
+                          >
+                            <Network className="w-3.5 h-3.5 text-cyan-500" />
+                            <span>{sp.panel.designation || "Subpanel"}</span>
+                          </button>
+                        ))}
+
+                        {/* Plus Quick Tab Action */}
+                        <button
+                          onClick={() => {
+                            const newId = crypto.randomUUID();
+                            setSubPanels((prev) => [
+                              ...prev,
+                              {
+                                id: newId,
+                                panel: {
+                                  ...INITIAL_PANEL,
+                                  designation: `Sub-Panel ${prev.length + 1}`,
+                                },
+                                circuits: INITIAL_CIRCUITS,
+                              },
+                            ]);
+                            setActiveScheduleTab(newId);
+                          }}
+                          className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 border border-dashed border-indigo-300 dark:border-indigo-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ml-auto"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add Sub-Panel
+                        </button>
+                      </div>
+                    )}
+
+                    {/* 1. Main Distribution Panel Schedule */}
+                    {(isExporting || activeScheduleTab === "mdp") && (
+                      <LoadSchedule
+                        panel={panel}
+                        setPanel={setPanel}
+                        circuits={circuits}
+                        setCircuits={setCircuits}
+                        availableSubPanels={subPanels}
                         iscParams={iscParams}
-                        isPremium={userPlan === 'premium' || isAdmin}
+                        isPremium={userPlan === "premium" || isAdmin}
                         onRequestUpgrade={() => setShowUpgrade(true)}
                       />
-                    </React.Fragment>
-                  );
-                })}
+                    )}
 
-                {/* Fallback Large "Add Subpanel" helper at the bottom ONLY if mdp is visible on screen */}
-                {!isExporting && activeScheduleTab === "mdp" && (
-                  <button
-                    onClick={() => {
-                      const newId = crypto.randomUUID();
-                      setSubPanels((prev) => [
-                        ...prev,
-                        {
-                          id: newId,
-                          panel: {
-                            ...INITIAL_PANEL,
-                            designation: `Sub-Panel ${prev.length + 1}`,
-                          },
-                          circuits: INITIAL_CIRCUITS,
-                        },
-                      ]);
-                      setActiveScheduleTab(newId);
-                    }}
-                    className="w-full py-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 font-bold hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all no-print cursor-pointer shadow-sm"
-                  >
-                    <Plus className="w-5 h-5 animate-pulse" />
-                    Create New Sub-Panel Board
-                  </button>
-                )}
+                    {/* 2. Sub-Panels Schedules */}
+                    {subPanels.map((sp, index) => {
+                      const isVisible =
+                        isExporting || activeScheduleTab === sp.id;
+                      if (!isVisible) return null;
+
+                      return (
+                        <React.Fragment key={sp.id}>
+                          <LoadSchedule
+                            panel={sp.panel}
+                            setPanel={(newPanel) => {
+                              setSubPanels((prev) => {
+                                const currentPanel = prev[index]?.panel;
+                                if (!currentPanel) return prev;
+                                const updatedPanel =
+                                  typeof newPanel === "function"
+                                    ? newPanel(currentPanel)
+                                    : newPanel;
+                                if (currentPanel === updatedPanel) return prev;
+                                return prev.map((p, i) =>
+                                  i === index
+                                    ? { ...p, panel: updatedPanel }
+                                    : p,
+                                );
+                              });
+                            }}
+                            circuits={sp.circuits}
+                            setCircuits={(newCircuits) => {
+                              setSubPanels((prev) => {
+                                const currentCircuits = prev[index]?.circuits;
+                                if (!currentCircuits) return prev;
+                                const updatedCircuits =
+                                  typeof newCircuits === "function"
+                                    ? newCircuits(currentCircuits)
+                                    : newCircuits;
+                                if (currentCircuits === updatedCircuits)
+                                  return prev;
+                                return prev.map((p, i) =>
+                                  i === index
+                                    ? { ...p, circuits: updatedCircuits }
+                                    : p,
+                                );
+                              });
+                            }}
+                            isSubPanel={true}
+                            onRemoveSubPanel={() => {
+                              setSubPanels((prev) =>
+                                prev.filter((p) => p.id !== sp.id),
+                              );
+                              setActiveScheduleTab("mdp");
+                            }}
+                            iscParams={iscParams}
+                            isPremium={userPlan === "premium" || isAdmin}
+                            onRequestUpgrade={() => setShowUpgrade(true)}
+                          />
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* Fallback Large "Add Subpanel" helper at the bottom ONLY if mdp is visible on screen */}
+                    {!isExporting && activeScheduleTab === "mdp" && (
+                      <button
+                        onClick={() => {
+                          const newId = crypto.randomUUID();
+                          setSubPanels((prev) => [
+                            ...prev,
+                            {
+                              id: newId,
+                              panel: {
+                                ...INITIAL_PANEL,
+                                designation: `Sub-Panel ${prev.length + 1}`,
+                              },
+                              circuits: INITIAL_CIRCUITS,
+                            },
+                          ]);
+                          setActiveScheduleTab(newId);
+                        }}
+                        className="w-full py-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 font-bold hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all no-print cursor-pointer shadow-sm"
+                      >
+                        <Plus className="w-5 h-5 animate-pulse" />
+                        Create New Sub-Panel Board
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
               </div>
-            </motion.div>
-          </div>
 
-          {/* Short Circuit Tab */}
-          <div className={(activeTab === "isc" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={(activeTab === "isc" || isExporting) ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <ShortCircuitCalc
-                panel={panel}
-                circuits={circuits}
-                subPanels={subPanels}
-                params={iscParams}
-                setParams={setIscParams}
-                source={iscSource}
-                setSource={setIscSource}
-                isPremium={userPlan === 'premium' || isAdmin}
-                onRequestUpgrade={() => setShowUpgrade(true)}
-              />
-            </motion.div>
-          </div>
+              {/* Short Circuit Tab */}
+              <div
+                className={
+                  activeTab === "isc" || isExporting
+                    ? "w-full"
+                    : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "isc" || isExporting
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <ShortCircuitCalc
+                    panel={panel}
+                    circuits={circuits}
+                    subPanels={subPanels}
+                    params={iscParams}
+                    setParams={setIscParams}
+                    source={iscSource}
+                    setSource={setIscSource}
+                    isPremium={userPlan === "premium" || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                  />
+                </motion.div>
+              </div>
 
-          {/* Voltage Drop Tab */}
-          <div className={(activeTab === "vd" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={(activeTab === "vd" || isExporting) ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <VoltageDropCalc
-                panel={panel}
-                circuits={circuits}
-                calculations={vdCalculations}
-                setCalculations={setVdCalculations}
-                isPremium={userPlan === 'premium' || isAdmin}
-                onRequestUpgrade={() => setShowUpgrade(true)}
-              />
-            </motion.div>
-          </div>
+              {/* Voltage Drop Tab */}
+              <div
+                className={
+                  activeTab === "vd" || isExporting
+                    ? "w-full"
+                    : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "vd" || isExporting
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <VoltageDropCalc
+                    panel={panel}
+                    circuits={circuits}
+                    calculations={vdCalculations}
+                    setCalculations={setVdCalculations}
+                    isPremium={userPlan === "premium" || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                  />
+                </motion.div>
+              </div>
 
-          {/* Illumination Tab */}
-          <div className={(activeTab === "lighting" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={(activeTab === "lighting" || isExporting) ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <IlluminationCalc
-                circuits={circuits}
-                setCircuits={setCircuits}
-                setActiveTab={setActiveTab}
-                activeTab={activeTab}
-                params={illumParams}
-                setParams={setIllumParams}
-                onSnapshotCapture={handleAddIllumSnapshot}
-                snapshots={illumSnapshots}
-              />
-            </motion.div>
-          </div>
+              {/* Illumination Tab */}
+              <div
+                className={
+                  activeTab === "lighting" || isExporting
+                    ? "w-full"
+                    : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "lighting" || isExporting
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <IlluminationCalc
+                    circuits={circuits}
+                    setCircuits={setCircuits}
+                    setActiveTab={setActiveTab}
+                    activeTab={activeTab}
+                    params={illumParams}
+                    setParams={setIllumParams}
+                    onSnapshotCapture={handleAddIllumSnapshot}
+                    snapshots={illumSnapshots}
+                  />
+                </motion.div>
+              </div>
 
-          {/* System SLD Tab */}
-          <div className={(activeTab === "system-sld" || isExporting) ? "w-full" : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={(activeTab === "system-sld" || isExporting) ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <SystemSLD 
-                panel={panel} 
-                circuits={circuits} 
-                subPanels={subPanels} 
-                iscParams={iscParams} 
-                isPremium={userPlan === 'premium' || isAdmin}
-                onRequestUpgrade={() => setShowUpgrade(true)}
-              />
-            </motion.div>
-          </div>
+              {/* System SLD Tab */}
+              <div
+                className={
+                  activeTab === "system-sld" || isExporting
+                    ? "w-full"
+                    : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "system-sld" || isExporting
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <SystemSLD
+                    panel={panel}
+                    circuits={circuits}
+                    subPanels={subPanels}
+                    iscParams={iscParams}
+                    isPremium={userPlan === "premium" || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                  />
+                </motion.div>
+              </div>
 
-          {/* Floor Plan Tab */}
-          <div className={activeTab === "floor-plan" ? "w-full" : "hidden"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "floor-plan" ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <FloorPlanUploader
-                images={floorPlanImages}
-                setImages={setFloorPlanImages}
-              />
-            </motion.div>
-          </div>
+              {/* Floor Plan Tab */}
+              <div className={activeTab === "floor-plan" ? "w-full" : "hidden"}>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "floor-plan" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <FloorPlanUploader
+                    images={floorPlanImages}
+                    setImages={setFloorPlanImages}
+                  />
+                </motion.div>
+              </div>
 
-          {/* PEC Calculator Tab */}
-          <div className={activeTab === "current-calc" ? "w-full" : "hidden"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "current-calc" ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full"
-            >
-              <div className="max-w-4xl mx-auto space-y-6">
-                <div className="bg-gradient-to-r from-fuchsia-600 to-indigo-650 rounded-2xl p-6 text-white shadow-md">
-                  <h3 className="text-xl font-bold uppercase tracking-wider mb-2">PEC Current Verification Suite</h3>
-                  <p className="text-xs text-fuchsia-100 leading-relaxed">
-                    Verify connection parameters, trace standard equation steps, and evaluate the final design currents 
-                    fully compliant with Philippine Electrical Code (PEC) 2017 Part 1 standards.
+              {/* PEC Calculator Tab */}
+              <div
+                className={activeTab === "current-calc" ? "w-full" : "hidden"}
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "current-calc" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full"
+                >
+                  <div className="max-w-4xl mx-auto space-y-6">
+                    <div className="bg-gradient-to-r from-fuchsia-600 to-indigo-650 rounded-2xl p-6 text-white shadow-md">
+                      <h3 className="text-xl font-bold uppercase tracking-wider mb-2">
+                        PEC Current Verification Suite
+                      </h3>
+                      <p className="text-xs text-fuchsia-100 leading-relaxed">
+                        Verify connection parameters, trace standard equation
+                        steps, and evaluate the final design currents fully
+                        compliant with Philippine Electrical Code (PEC) 2017
+                        Part 1 standards.
+                      </p>
+                    </div>
+                    <PECCurrentCalculator panel={panel} setPanel={setPanel} />
+                  </div>
+                </motion.div>
+              </div>
+
+              {/* Verify Admin Tab */}
+              <div className={activeTab === "verify" ? "w-full" : "hidden"}>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={activeTab === "verify" ? { opacity: 1, y: 0 } : {}}
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <div className="w-full">
+                    <PaymentScreen
+                      user={user}
+                      forceAdmin={true}
+                      onPaymentSuccess={() => setActiveTab("schedule")}
+                    />
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+
+            {isExporting && (
+              <div className="fixed inset-0 z-[9999] bg-white dark:bg-slate-900 flex flex-col items-center justify-center shadow-2xl">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-600 dark:border-indigo-400 mb-6 shadow-sm"></div>
+                <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">
+                  Compiling Report
+                </h2>
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-2">
+                  Please wait while the documents and diagrams are being
+                  generated...
+                </p>
+              </div>
+            )}
+
+            <ProjectManagerModal
+              isOpen={isProjectManagerOpen}
+              onClose={() => setIsProjectManagerOpen(false)}
+              currentProjectData={currentProjectData}
+              onLoadProject={handleLoadProject}
+              onNewProject={handleNewProject}
+              currentProjectId={currentProjectId}
+              setCurrentProjectId={setCurrentProjectId}
+            />
+
+            <footer className="w-full bg-white/50 border-t border-slate-200 mt-12 py-8 rounded-2xl no-print">
+              <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div className="flex flex-col items-center md:items-start">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 bg-yellow-400 rounded flex items-center justify-center">
+                      <Zap className="w-4 h-4 text-yellow-900" />
+                    </div>
+                    <span className="font-bold text-slate-900">
+                      ElectricalPH
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-xs text-center md:text-left">
+                    Professional calculators based on PEC Part 1 and Part 2.
+                    High-fidelity design for electrical engineers and
+                    contractors.
                   </p>
                 </div>
-                <PECCurrentCalculator panel={panel} setPanel={setPanel} />
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Verify Admin Tab */}
-          <div className={activeTab === "verify" ? "w-full" : "hidden"}>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={activeTab === "verify" ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.2 }}
-              className="w-full flex justify-center"
-            >
-              <div className="w-full">
-                <PaymentScreen
-                  user={user}
-                  forceAdmin={true}
-                  onPaymentSuccess={() => setActiveTab("schedule")}
-                />
-              </div>
-            </motion.div>
-          </div>
-        </div>
-
-      {isExporting && (
-        <div className="fixed inset-0 z-[9999] bg-white dark:bg-slate-900 flex flex-col items-center justify-center shadow-2xl">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-600 dark:border-indigo-400 mb-6 shadow-sm"></div>
-          <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Compiling Report</h2>
-          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-2">Please wait while the documents and diagrams are being generated...</p>
-        </div>
-      )}
-
-      <ProjectManagerModal
-        isOpen={isProjectManagerOpen}
-        onClose={() => setIsProjectManagerOpen(false)}
-        currentProjectData={currentProjectData}
-        onLoadProject={handleLoadProject}
-        onNewProject={handleNewProject}
-        currentProjectId={currentProjectId}
-        setCurrentProjectId={setCurrentProjectId}
-      />
-
-        <footer className="w-full bg-white/50 border-t border-slate-200 mt-12 py-8 rounded-2xl no-print">
-          <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="flex flex-col items-center md:items-start">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-6 h-6 bg-yellow-400 rounded flex items-center justify-center">
-                  <Zap className="w-4 h-4 text-yellow-900" />
-                </div>
-                <span className="font-bold text-slate-900">
-                  ElectricalPH
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 max-w-xs text-center md:text-left">
-                Professional calculators based on PEC Part 1 and Part 2.
-                High-fidelity design for electrical engineers and contractors.
-              </p>
-            </div>
-            <div className="flex gap-8">
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase letter tracking-widest text-center md:text-left">
-                  Standards Supported
-                </span>
-                <div className="flex gap-4 opacity-50 grayscale items-center h-8">
-                  <span className="text-xs font-bold text-slate-900">
-                    PEC 2017 & ASHRAE 90.1
-                  </span>
+                <div className="flex gap-8">
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-black text-slate-400 uppercase letter tracking-widest text-center md:text-left">
+                      Standards Supported
+                    </span>
+                    <div className="flex gap-4 opacity-50 grayscale items-center h-8">
+                      <span className="text-xs font-bold text-slate-900">
+                        PEC 2017 & ASHRAE 90.1
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </footer>
           </div>
-        </footer>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
-  </div>
   );
 }
