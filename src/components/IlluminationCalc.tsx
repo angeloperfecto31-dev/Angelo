@@ -23,8 +23,15 @@ import {
   Plus,
   RefreshCw,
   RotateCw,
-  Grid
+  Grid,
+  Search,
+  Globe,
+  Database,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
+import { auth, db } from '../firebase';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { toPng } from 'html-to-image';
 import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
@@ -41,8 +48,129 @@ export interface IlluminationCalcProps {
   snapshots?: Record<string, string>;
 }
 
+function calcSinglePointLux(
+  rx: number,
+  rz: number,
+  cp: { x: number; z: number; lumens?: number; fixtureId?: string; rotationDegrees?: number; y?: number },
+  activeFixtures: any[] | undefined,
+  coe: number,
+  maintenance: number,
+  mountingHeight: number,
+  defaultLumens: number
+): number {
+  let matchingAf = activeFixtures?.find(f => f.fixtureId === cp.fixtureId);
+  if (!matchingAf && activeFixtures && activeFixtures.length === 1) {
+    matchingAf = activeFixtures[0];
+  }
+  const defaults = getPredefinedFixtureDefaults(cp.fixtureId || '', false);
+  const fBeamAngle = matchingAf?.fixtureBeamAngle ?? defaults.fixtureBeamAngle;
+  const fDistType = matchingAf?.fixtureDistributionType ?? defaults.fixtureDistributionType;
+  const fLength = matchingAf?.fixtureLength ?? defaults.fixtureLength;
+
+  let dx = rx - cp.x;
+  let dz = rz - cp.z;
+
+  if (cp.rotationDegrees) {
+    const rad = -cp.rotationDegrees * Math.PI / 180;
+    const cosR = Math.cos(rad);
+    const sinR = Math.sin(rad);
+    const tX = dx * cosR - dz * sinR;
+    const tZ = dx * sinR + dz * cosR;
+    dx = tX;
+    dz = tZ;
+  }
+
+  const lum = cp.lumens ?? matchingAf?.lumens ?? defaultLumens;
+  const intensity = (lum * coe * maintenance) / (2 * Math.PI);
+  let ptLux = 0;
+
+  if (fDistType === 'linear') {
+    const halfL = fLength / 2;
+    const zClamped = Math.max(-halfL, Math.min(halfL, dz));
+    const distSq = dx*dx + (dz - zClamped)*(dz - zClamped) + mountingHeight**2;
+    const dist = Math.sqrt(distSq);
+    const cosTheta = mountingHeight / dist;
+    const theta = Math.acos(cosTheta);
+    const beamHalfAngleRad = (fBeamAngle / 2) * (Math.PI / 180);
+    let factor = 0;
+    if (theta <= beamHalfAngleRad) {
+      factor = Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2));
+    }
+    ptLux = ((intensity * mountingHeight) / Math.pow(distSq, 1.5)) * factor;
+  } else if (fDistType === 'oblong') {
+    const odx = dx * 1.6;
+    const odz = dz * 0.7;
+    const distSq = odx*odx + odz*odz + mountingHeight**2;
+    const dist = Math.sqrt(distSq);
+    const cosTheta = mountingHeight / dist;
+    const theta = Math.acos(cosTheta);
+    const beamHalfAngleRad = (fBeamAngle / 2) * (Math.PI / 180);
+    let factor = 0;
+    if (theta <= beamHalfAngleRad) {
+      factor = Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2));
+    }
+    ptLux = ((intensity * mountingHeight) / Math.pow(distSq, 1.5)) * factor;
+  } else if (fDistType === 'omni') {
+    const distSq = dx*dx + dz*dz + mountingHeight**2;
+    const dist = Math.sqrt(distSq);
+    const cosTheta = mountingHeight / dist;
+    const factor = Math.cos(Math.acos(cosTheta) * 0.6);
+    ptLux = ((intensity * mountingHeight) / Math.pow(distSq, 1.5)) * factor;
+  } else { // conical standard
+    const distSq = dx*dx + dz*dz + mountingHeight**2;
+    const dist = Math.sqrt(distSq);
+    const cosTheta = mountingHeight / dist;
+    const theta = Math.acos(cosTheta);
+    const beamHalfAngleRad = (fBeamAngle / 2) * (Math.PI / 180);
+    let factor = 0;
+    if (theta <= beamHalfAngleRad) {
+      factor = Math.pow(Math.cos((theta / beamHalfAngleRad) * (Math.PI / 2)), 1.5);
+    } else if (theta <= beamHalfAngleRad * 1.3) {
+      const ratio = 1 - (theta - beamHalfAngleRad) / (beamHalfAngleRad * 0.3);
+      factor = 0.08 * Math.pow(ratio, 2);
+    }
+    ptLux = ((intensity * mountingHeight) / Math.pow(distSq, 1.5)) * factor;
+  }
+
+  return ptLux;
+}
+
 function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
   if (isCustom || !fixtureId) {
+    const idLower = (fixtureId || '').toLowerCase();
+    if (idLower.includes('bulb') || idLower.includes('spot') || idLower.includes('downlight')) {
+      return {
+        fixtureShape: 'circular' as const,
+        fixtureWidth: 0.1,
+        fixtureLength: 0.1,
+        fixtureDiameter: 0.12,
+        fixtureThickness: 0.15,
+        fixtureBeamAngle: 60,
+        fixtureDistributionType: 'conical' as const
+      };
+    }
+    if (idLower.includes('linear') || idLower.includes('tube') || idLower.includes('strip') || idLower.includes('t5') || idLower.includes('t8')) {
+      return {
+        fixtureShape: 'linear' as const,
+        fixtureWidth: 0.05,
+        fixtureLength: 1.2,
+        fixtureDiameter: 0.05,
+        fixtureThickness: 0.05,
+        fixtureBeamAngle: 120,
+        fixtureDistributionType: 'linear' as const
+      };
+    }
+    if (idLower.includes('panel') || idLower.includes('troffer')) {
+      return {
+        fixtureShape: 'square' as const,
+        fixtureWidth: 0.6,
+        fixtureLength: 0.6,
+        fixtureDiameter: 0.6,
+        fixtureThickness: 0.02,
+        fixtureBeamAngle: 110,
+        fixtureDistributionType: 'conical' as const
+      };
+    }
     return {
       fixtureShape: 'square' as const,
       fixtureWidth: 0.6,
@@ -295,9 +423,246 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
   }
 }
 
+import { handleFirestoreError, OperationType } from '../utils/firestoreError';
+
 export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
+  // Synchronized custom imported fixtures state
+  const [importedFixtures, setImportedFixtures] = useState<any[]>([]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) {
+      setImportedFixtures([]);
+      return;
+    }
+
+    const colRef = collection(db, "users", user.uid, "importedFixtures");
+    const unsubscribe = onSnapshot(colRef, (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        list.push({
+          id: d.id,
+          category: d.category || 'Special',
+          lightType: d.lightType || 'Custom LED',
+          wattage: d.wattage || 15,
+          lumens: d.lumens || 1500,
+          brands: d.brands || 'Custom Import',
+          wattageRange: d.wattageRange || `${d.wattage}W`,
+          lumensRange: d.lumensRange || `${d.lumens} lm`,
+          description: d.description || '',
+          modelNumber: d.modelNumber || '',
+          manufacturer: d.manufacturer || d.brands || ''
+        });
+      });
+      setImportedFixtures(list);
+    }, (error) => {
+      console.error("Error loading synchronized imported fixtures:", error);
+      try {
+        handleFirestoreError(error, OperationType.LIST, "users/" + user.uid + "/importedFixtures");
+      } catch (e) {
+        // Prevent crashing entire view, just log
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const allFixtures = useMemo(() => {
+    const merged = [...LIGHT_FIXTURES_LIBRARY];
+    importedFixtures.forEach((custom) => {
+      if (!merged.some(f => f.id === custom.id)) {
+        merged.push(custom);
+      }
+    });
+    return merged;
+  }, [importedFixtures]);
+
+  const getFixtureById = (id: string) => {
+    return allFixtures.find(f => f.id === id) || allFixtures[0] || LIGHT_FIXTURES_LIBRARY[0];
+  };
+
   const [showFixtureModal, setShowFixtureModal] = useState(false);
   const [editingFixtureIndex, setEditingFixtureIndex] = useState<number | null>(null);
+  
+  // Advanced search states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchTab, setSearchTab] = useState<'local' | 'online'>('local');
+  const [onlineResults, setOnlineResults] = useState<any[]>([]);
+  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [importingFixtureId, setImportingFixtureId] = useState<string | null>(null);
+  const [successBanner, setSuccessBanner] = useState<string | null>(null);
+  const [onlineSearchError, setOnlineSearchError] = useState<string | null>(null);
+
+  // Filter local fixtures recursively
+  const filteredLocalFixtures = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return allFixtures;
+
+    return allFixtures.filter((fixture) => {
+      const matchBrand = (fixture.brands || '').toLowerCase().includes(q);
+      const matchName = (fixture.lightType || '').toLowerCase().includes(q);
+      const matchCategory = (fixture.category || '').toLowerCase().includes(q);
+      const matchDescription = (fixture.description || '').toLowerCase().includes(q);
+      const matchModel = (fixture.modelNumber || '').toLowerCase().includes(q);
+      return matchBrand || matchName || matchCategory || matchDescription || matchModel;
+    });
+  }, [searchQuery, allFixtures]);
+
+  // Handle internet-grounded fixture model queries
+  useEffect(() => {
+    if (searchTab !== 'online' || !searchQuery.trim()) {
+      setOnlineResults([]);
+      setOnlineSearchError(null);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      setIsSearchingOnline(true);
+      setOnlineSearchError(null);
+      try {
+        const response = await fetch('/api/fixtures/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ q: searchQuery })
+        });
+        const data = await response.json();
+        
+        if (response.status === 429) {
+          setOnlineSearchError("Search limit reached. Please try again later.");
+          setOnlineResults([]);
+        } else if (response.ok && data.fixtures) {
+          setOnlineResults(data.fixtures);
+        } else {
+          setOnlineSearchError("Failed connecting to fixture database. Try a different query.");
+          setOnlineResults([]);
+        }
+      } catch (err) {
+        console.error("Online search failed:", err);
+        setOnlineSearchError("Network failure occurred during online search.");
+        setOnlineResults([]);
+      } finally {
+        setIsSearchingOnline(false);
+      }
+    }, 600); // 600ms debounce buffer
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, searchTab]);
+
+  const handleImportFixture = async (fixture: any) => {
+    const user = auth.currentUser;
+    if (!user) {
+      alert("Please sign in to import custom-spec fixtures into your persistent database library.");
+      return;
+    }
+
+    setImportingFixtureId(fixture.id);
+    try {
+      const docRef = doc(db, "users", user.uid, "importedFixtures", fixture.id);
+      const payload = {
+        id: fixture.id,
+        category: fixture.category || "Indoor",
+        lightType: fixture.lightType || "Imported LED Fixture",
+        brands: fixture.brands || fixture.manufacturer || "Custom Import",
+        wattage: Number(fixture.wattage) || 15,
+        lumens: Number(fixture.lumens) || 1500,
+        wattageRange: fixture.wattageRange || `${fixture.wattage}W`,
+        lumensRange: fixture.lumensRange || `${fixture.lumens} lm`,
+        description: fixture.description || 'Imported catalog fixture.',
+        modelNumber: fixture.modelNumber || 'N/A',
+        manufacturer: fixture.manufacturer || fixture.brands || 'N/A',
+        importedAt: new Date().toISOString(),
+        ownerId: user.uid
+      };
+
+      await setDoc(docRef, payload);
+
+      if (editingFixtureIndex !== null && params.activeFixtures) {
+        const list = [...params.activeFixtures];
+        const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
+        const defaults = getPredefinedFixtureDefaults(fixture.id, false);
+        if (list[editingFixtureIndex]) {
+          list[editingFixtureIndex] = {
+            ...list[editingFixtureIndex],
+            fixtureId: fixture.id,
+            lightType: fixture.lightType,
+            lumens: fixture.lumens,
+            wattage: fixture.wattage,
+            brands: fixture.brands || fixture.manufacturer,
+            isCustom: false,
+            fixtureShape: defaults.fixtureShape,
+            fixtureWidth: defaults.fixtureWidth,
+            fixtureLength: defaults.fixtureLength,
+            fixtureDiameter: defaults.fixtureDiameter,
+            fixtureThickness: defaults.fixtureThickness,
+            fixtureBeamAngle: defaults.fixtureBeamAngle,
+            fixtureDistributionType: defaults.fixtureDistributionType
+          };
+        }
+
+        let updatedCustomPositions = params.customPositions;
+        if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
+          const targetActiveF = list[editingFixtureIndex];
+          updatedCustomPositions = params.customPositions.map(cp => {
+            const isMatch = cp.activeFixtureId 
+              ? cp.activeFixtureId === targetActiveF?.id
+              : cp.fixtureId === oldFixtureId;
+            if (isMatch) {
+              return {
+                ...cp,
+                fixtureId: fixture.id,
+                lightType: fixture.lightType,
+                lumens: fixture.lumens,
+                wattage: fixture.wattage,
+                activeFixtureId: targetActiveF?.id
+              };
+            }
+            return cp;
+          });
+        }
+
+        if (list.length === 1) {
+          setParams({ 
+            ...params, 
+            activeFixtures: list,
+            customPositions: updatedCustomPositions,
+            selectedFixtureId: fixture.id,
+            lumensPerFixture: fixture.lumens,
+            isCustomFixture: false,
+            fixtureShape: defaults.fixtureShape,
+            fixtureWidth: defaults.fixtureWidth,
+            fixtureLength: defaults.fixtureLength,
+            fixtureDiameter: defaults.fixtureDiameter,
+            fixtureThickness: defaults.fixtureThickness,
+            fixtureBeamAngle: defaults.fixtureBeamAngle,
+            fixtureDistributionType: defaults.fixtureDistributionType
+          });
+        } else {
+          setParams({ 
+            ...params, 
+            activeFixtures: list,
+            customPositions: updatedCustomPositions
+          });
+        }
+      } else {
+        setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens, isCustomFixture: false });
+      }
+
+      setSuccessBanner(`Successfully imported "${fixture.lightType}" into your persistent library database!`);
+      setTimeout(() => setSuccessBanner(null), 4000);
+      
+      setShowFixtureModal(false);
+      setEditingFixtureIndex(null);
+    } catch (err) {
+      console.error("Failed to import custom fixture to Firestore collection:", err);
+      alert("Import operation failed. Make sure your network is connected and you are logged in.");
+    } finally {
+      setImportingFixtureId(null);
+    }
+  };
+
   const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
   const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag'>('3d');
   const [draggedFixtureId, setDraggedFixtureId] = useState<string | null>(null);
@@ -321,7 +686,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   // Ensure we have at least one active fixture in params.activeFixtures for combined design
   useEffect(() => {
     if (!params.activeFixtures || params.activeFixtures.length === 0) {
-      const activeF = LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+      const activeF = getFixtureById(params.selectedFixtureId || 'ind-panel');
       const defaults = getPredefinedFixtureDefaults(params.selectedFixtureId || 'ind-panel', !!params.isCustomFixture);
       const isCustom = !!params.isCustomFixture;
       
@@ -369,7 +734,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         };
 
         if (current.activeFixtures && current.activeFixtures.length === 1) {
-          const activeF = LIGHT_FIXTURES_LIBRARY.find(f => f.id === current.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+          const activeF = getFixtureById(current.selectedFixtureId || 'ind-panel');
           const oldFixtureId = current.activeFixtures[0].fixtureId;
           const newFixtureId = current.selectedFixtureId || 'ind-panel';
           const newLightType = current.isCustomFixture ? (current.customLightType || 'Custom Fixture') : activeF.lightType;
@@ -445,26 +810,35 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   useEffect(() => {
     if (params.activeFixtures && params.activeFixtures.length === 1) {
       const first = params.activeFixtures[0];
+      
+      const targetShape = params.fixtureShape !== undefined ? params.fixtureShape : first.fixtureShape;
+      const targetWidth = params.fixtureWidth !== undefined ? params.fixtureWidth : first.fixtureWidth;
+      const targetLength = params.fixtureLength !== undefined ? params.fixtureLength : first.fixtureLength;
+      const targetDiameter = params.fixtureDiameter !== undefined ? params.fixtureDiameter : first.fixtureDiameter;
+      const targetThickness = params.fixtureThickness !== undefined ? params.fixtureThickness : first.fixtureThickness;
+      const targetBeamAngle = params.fixtureBeamAngle !== undefined ? params.fixtureBeamAngle : first.fixtureBeamAngle;
+      const targetDistributionType = params.fixtureDistributionType !== undefined ? params.fixtureDistributionType : first.fixtureDistributionType;
+
       if (
-        first.fixtureShape !== params.fixtureShape ||
-        first.fixtureWidth !== params.fixtureWidth ||
-        first.fixtureLength !== params.fixtureLength ||
-        first.fixtureDiameter !== params.fixtureDiameter ||
-        first.fixtureThickness !== params.fixtureThickness ||
-        first.fixtureBeamAngle !== params.fixtureBeamAngle ||
-        first.fixtureDistributionType !== params.fixtureDistributionType
+        first.fixtureShape !== targetShape ||
+        first.fixtureWidth !== targetWidth ||
+        first.fixtureLength !== targetLength ||
+        first.fixtureDiameter !== targetDiameter ||
+        first.fixtureThickness !== targetThickness ||
+        first.fixtureBeamAngle !== targetBeamAngle ||
+        first.fixtureDistributionType !== targetDistributionType
       ) {
         setParams(prev => {
           if (!prev.activeFixtures || prev.activeFixtures.length !== 1) return prev;
           const updatedFirst = {
             ...prev.activeFixtures[0],
-            fixtureShape: prev.fixtureShape ?? prev.activeFixtures[0].fixtureShape,
-            fixtureWidth: prev.fixtureWidth ?? prev.activeFixtures[0].fixtureWidth,
-            fixtureLength: prev.fixtureLength ?? prev.activeFixtures[0].fixtureLength,
-            fixtureDiameter: prev.fixtureDiameter ?? prev.activeFixtures[0].fixtureDiameter,
-            fixtureThickness: prev.fixtureThickness ?? prev.activeFixtures[0].fixtureThickness,
-            fixtureBeamAngle: prev.fixtureBeamAngle ?? prev.activeFixtures[0].fixtureBeamAngle,
-            fixtureDistributionType: prev.fixtureDistributionType ?? prev.activeFixtures[0].fixtureDistributionType,
+            fixtureShape: prev.fixtureShape !== undefined ? prev.fixtureShape : prev.activeFixtures[0].fixtureShape,
+            fixtureWidth: prev.fixtureWidth !== undefined ? prev.fixtureWidth : prev.activeFixtures[0].fixtureWidth,
+            fixtureLength: prev.fixtureLength !== undefined ? prev.fixtureLength : prev.activeFixtures[0].fixtureLength,
+            fixtureDiameter: prev.fixtureDiameter !== undefined ? prev.fixtureDiameter : prev.activeFixtures[0].fixtureDiameter,
+            fixtureThickness: prev.fixtureThickness !== undefined ? prev.fixtureThickness : prev.activeFixtures[0].fixtureThickness,
+            fixtureBeamAngle: prev.fixtureBeamAngle !== undefined ? prev.fixtureBeamAngle : prev.activeFixtures[0].fixtureBeamAngle,
+            fixtureDistributionType: prev.fixtureDistributionType !== undefined ? prev.fixtureDistributionType : prev.activeFixtures[0].fixtureDistributionType,
           };
           return {
             ...prev,
@@ -750,8 +1124,8 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         lumens: curL
       };
     }
-    return LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
-  }, [params.isCustomFixture, params.selectedFixtureId, params.customLightType, params.customWattage, params.customLumens]);
+    return getFixtureById(params.selectedFixtureId || 'ind-panel');
+  }, [params.isCustomFixture, params.selectedFixtureId, params.customLightType, params.customWattage, params.customLumens, allFixtures]);
 
   // Primary calculations
   const calculation = useMemo(() => {
@@ -808,36 +1182,40 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
   // Derived properties from Space Standard Limits (ASHRAE 90.1)
   const lpdLimitInfo = useMemo(() => {
-    const roomName = Object.entries(RECOMMENDED_LUX_LEVELS).find(([_, lux]) => lux === params.targetLux)?.[0] || 'GENERAL SPACE';
+    let roomName = params.targetRoomName;
+    if (!roomName) {
+      roomName = Object.entries(RECOMMENDED_LUX_LEVELS).find(([_, lux]) => lux === params.targetLux)?.[0] || 'GENERAL SPACE';
+    }
+    const roomNameUpper = roomName.toUpperCase();
     
     let limit = 6.0; // standard W/m² limit for standard spaces
     let description = 'General lighting standards';
 
-    if (roomName.includes('OFFICE')) {
+    if (roomNameUpper.includes('OFFICE')) {
       limit = 6.0;
       description = 'ASHRAE 90.1 Office boundary (max 6.0 W/m²)';
-    } else if (roomName.includes('CONFERENCE')) {
+    } else if (roomNameUpper.includes('CONFERENCE')) {
       limit = 6.5;
       description = 'ASHRAE 90.1 Conference Space boundary (max 6.5 W/m²)';
-    } else if (roomName.includes('WAREHOUSE') || roomName.includes('STORAGE')) {
+    } else if (roomNameUpper.includes('WAREHOUSE') || roomNameUpper.includes('STORAGE')) {
       limit = 3.8;
       description = 'ASHRAE 90.1 Storage / Warehouse space (max 3.8 W/m²)';
-    } else if (roomName.includes('STAIRWAY') || roomName.includes('CORRIDOR')) {
+    } else if (roomNameUpper.includes('STAIRWAY') || roomNameUpper.includes('CORRIDOR')) {
       limit = 4.5;
       description = 'ASHRAE 90.1 Circulation Corridor boundary (max 4.5 W/m²)';
-    } else if (roomName.includes('CLASSROOM') || roomName.includes('SCHOOL')) {
+    } else if (roomNameUpper.includes('CLASSROOM') || roomNameUpper.includes('SCHOOL')) {
       limit = 5.4;
       description = 'ASHRAE 90.1 Education classrooms (max 5.4 W/m²)';
-    } else if (roomName.includes('LOBBY') || roomName.includes('RECEPTION')) {
+    } else if (roomNameUpper.includes('LOBBY') || roomNameUpper.includes('RECEPTION')) {
       limit = 7.0;
       description = 'ASHRAE 90.1 Entrance Lobbies (max 7.0 W/m²)';
-    } else if (roomName.includes('TOILET') || roomName.includes('RESTROOM')) {
+    } else if (roomNameUpper.includes('TOILET') || roomNameUpper.includes('RESTROOM')) {
       limit = 4.8;
       description = 'ASHRAE 90.1 Sanitary Rooms (max 4.8 W/m²)';
     }
 
     return { limit, description, roomName };
-  }, [params.targetLux]);
+  }, [params.targetLux, params.targetRoomName]);
 
   // Generate 5x5 dynamic Measurement Grid values representing Lux distribution (DIALux calculation points)
   const luxGridData = useMemo(() => {
@@ -846,7 +1224,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
     const h = mountingHeight || 1.95;
     const ratio = w / Math.max(0.1, l);
     
-    const fixtureCoords: { x: number; z: number; lumens: number; coefficientOfUtilization: number; maintenanceFactor: number }[] = [];
+    const fixtureCoords: { x: number; z: number; lumens: number; coefficientOfUtilization: number; maintenanceFactor: number; fixtureId?: string; rotationDegrees?: number }[] = [];
     
     if (params.customPositions && params.customPositions.length > 0) {
       params.customPositions.forEach(cp => {
@@ -855,7 +1233,9 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
           z: cp.z,
           lumens: cp.lumens ?? activeFixture.lumens,
           coefficientOfUtilization: params.coefficientOfUtilization,
-          maintenanceFactor: params.maintenanceFactor
+          maintenanceFactor: params.maintenanceFactor,
+          fixtureId: cp.fixtureId,
+          rotationDegrees: cp.rotationDegrees
         });
       });
     } else if (params.activeFixtures && params.activeFixtures.length > 0) {
@@ -882,7 +1262,9 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
               z: stepZ / 2 + r * stepZ,
               lumens: af.lumens,
               coefficientOfUtilization: params.coefficientOfUtilization,
-              maintenanceFactor: params.maintenanceFactor
+              maintenanceFactor: params.maintenanceFactor,
+              fixtureId: af.fixtureId,
+              rotationDegrees: 0
             });
           }
         }
@@ -911,7 +1293,9 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
               z: stepZ / 2 + r * stepZ,
               lumens: activeFixture.lumens,
               coefficientOfUtilization: params.coefficientOfUtilization,
-              maintenanceFactor: params.maintenanceFactor
+              maintenanceFactor: params.maintenanceFactor,
+              fixtureId: activeFixture.id,
+              rotationDegrees: 0
             });
           }
         }
@@ -934,9 +1318,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
         
         let directLux = 0;
         fixtureCoords.forEach(fixture => {
-          const distSq = (x - fixture.x)**2 + (z - fixture.z)**2 + h**2;
-          const intensity = (fixture.lumens * fixture.coefficientOfUtilization * fixture.maintenanceFactor) / (2 * Math.PI);
-          directLux += (intensity * h) / Math.pow(distSq, 1.5);
+          directLux += calcSinglePointLux(x, z, fixture, params.activeFixtures, fixture.coefficientOfUtilization, fixture.maintenanceFactor, h, activeFixture.lumens);
         });
 
         // Add Daylight Gradient if enabled
@@ -1045,7 +1427,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
   const energyAudit = useMemo(() => {
     const totalPowerW = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
-      : calculation.fixtures * (LIGHT_FIXTURES_LIBRARY.find(f => f.id === params.selectedFixtureId)?.wattage || 15);
+      : calculation.fixtures * (getFixtureById(params.selectedFixtureId || 'ind-panel')?.wattage || 15);
     const roomAreaNum = parseFloat(calculation.area) || 1;
     
     // Lighting Power Density
@@ -1201,8 +1583,8 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       if (r.id === id) {
         const updated = { ...r, [field]: value };
         const isCustom = updated.fixtureId === 'custom';
-        const fixWattage = isCustom ? (updated.fixtureWattage || params.customWattage || 15) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.wattage || 0);
-        const fixLumens = isCustom ? (updated.fixtureLumens || params.customLumens || 1500) : (LIGHT_FIXTURES_LIBRARY.find(f => f.id === updated.fixtureId)?.lumens || 1000 || 1);
+        const fixWattage = isCustom ? (updated.fixtureWattage || params.customWattage || 15) : (getFixtureById(updated.fixtureId)?.wattage || 0);
+        const fixLumens = isCustom ? (updated.fixtureLumens || params.customLumens || 1500) : (getFixtureById(updated.fixtureId)?.lumens || 1000 || 1);
         const cu = params.coefficientOfUtilization || 0.6;
         const mf = params.maintenanceFactor || 0.8;
         const areaVal = Number(updated.area) || 1;
@@ -1279,11 +1661,20 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
 
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Target Lux Standard</label>
-              <select value={params.targetLux} onChange={e => setParams({...params, targetLux: parseInt(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+              <select value={params.targetRoomName || Object.entries(RECOMMENDED_LUX_LEVELS).find(([_, lux]) => lux === params.targetLux)?.[0] || ""} onChange={e => {
+                const val = e.target.value;
+                const luxVal = RECOMMENDED_LUX_LEVELS[val];
+                if (luxVal !== undefined) {
+                  setParams({...params, targetRoomName: val, targetLux: luxVal});
+                } else {
+                  // Fallback if parsing old state
+                  setParams({...params, targetLux: parseInt(val) || 0});
+                }
+              }} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
                 {RECOMMENDED_LUX_LEVELS_CATEGORIZED && Object.entries(RECOMMENDED_LUX_LEVELS_CATEGORIZED).map(([category, items]) => (
                   <optgroup key={category} label={category} className="dark:bg-slate-900 dark:text-slate-100">
                     {items.map(item => (
-                      <option key={item.name} value={item.lux} className="dark:bg-slate-900 dark:text-slate-100">{item.name} ({item.lux} Lux)</option>
+                      <option key={item.name} value={item.name} className="dark:bg-slate-900 dark:text-slate-100">{item.name} ({item.lux} Lux)</option>
                     ))}
                   </optgroup>
                 ))}
@@ -1351,7 +1742,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                 setParams(prev => {
                   let currentList = prev.activeFixtures;
                   if (!currentList || currentList.length === 0) {
-                    const activeF = LIGHT_FIXTURES_LIBRARY.find(f => f.id === prev.selectedFixtureId) || LIGHT_FIXTURES_LIBRARY[0];
+                    const activeF = getFixtureById(prev.selectedFixtureId || 'ind-panel');
                     const defaultsSeed = getPredefinedFixtureDefaults(prev.selectedFixtureId || 'ind-panel', !!prev.isCustomFixture);
                     const isCustom = !!prev.isCustomFixture;
                     const seedFixture = {
@@ -1813,9 +2204,7 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                                             
                                             let pointLuxVal = 0;
                                             activeFixts.forEach(cp => {
-                                              const distSq = (rx - cp.x)**2 + (rz - cp.z)**2 + mountingHeight**2;
-                                              const intensity = (cp.lumens * params.coefficientOfUtilization * params.maintenanceFactor) / (2 * Math.PI);
-                                              pointLuxVal += (intensity * mountingHeight) / Math.pow(distSq, 1.5);
+                                              pointLuxVal += calcSinglePointLux(rx, rz, cp, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens);
                                             });
                                             
                                             if (enableDaylight) {
@@ -1948,6 +2337,9 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                                         style={{
                                           width: `${Math.tan((matchingAf?.fixtureBeamAngle || 120) / 2 * Math.PI / 180) * mountingHeight * scale * 2}px`,
                                           height: `${Math.tan((matchingAf?.fixtureBeamAngle || 120) / 2 * Math.PI / 180) * mountingHeight * scale * 2}px`,
+                                          left: '50%',
+                                          top: '50%',
+                                          transform: 'translate(-50%, -50%)',
                                         }}
                                       />
                                     </div>
@@ -2702,221 +3094,393 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
                 onClick={() => {
                   setShowFixtureModal(false);
                   setEditingFixtureIndex(null);
+                  setSearchQuery('');
+                  setSearchTab('local');
                 }}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
-            <div className="p-6 overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Manual Specification Selection Entry */}
+
+            {/* Success Notification Banner */}
+            {successBanner && (
+              <div className="mx-6 mt-4 p-3.5 bg-green-50 rounded-xl border border-green-200 flex items-center gap-2 text-sm text-green-800 font-semibold animate-fade-in">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <span>{successBanner}</span>
+              </div>
+            )}
+
+            {/* Advanced Search & Filtering Controls */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="relative w-full md:max-w-md flex-grow">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
+                  <Search className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={searchTab === "local" ? "Search brand, model, lumens, watts..." : "Enter keyword or model to search web catalog..."}
+                  className="w-full text-sm rounded-lg pl-10 pr-10 py-2.5 bg-white border border-slate-200 text-slate-850 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-550 transition-all font-medium"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Advanced Source Tabs */}
+              <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto self-stretch md:self-auto">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (editingFixtureIndex !== null && params.activeFixtures) {
-                      const list = [...params.activeFixtures];
-                      const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
-                      if (list[editingFixtureIndex]) {
-                        list[editingFixtureIndex] = {
-                          ...list[editingFixtureIndex],
-                          fixtureId: 'custom',
-                          lightType: params.customLightType || 'Custom LED Fixture',
-                          lumens: params.customLumens || 1500,
-                          wattage: params.customWattage || 15,
-                          isCustom: true,
-                          brands: 'Manual Intake Spec'
-                        };
-                      }
-
-                      let updatedCustomPositions = params.customPositions;
-                      if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
-                        const targetActiveF = list[editingFixtureIndex];
-                        updatedCustomPositions = params.customPositions.map(cp => {
-                          const isMatch = cp.activeFixtureId 
-                            ? cp.activeFixtureId === targetActiveF?.id
-                            : cp.fixtureId === oldFixtureId;
-                          if (isMatch) {
-                            return {
-                              ...cp,
+                  onClick={() => setSearchTab('local')}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all flex-1 md:flex-none cursor-pointer ${
+                    searchTab === 'local'
+                      ? 'bg-white shadow-sm text-slate-850'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Local Library ({filteredLocalFixtures.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchTab('online')}
+                  className={`flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all flex-1 md:flex-none cursor-pointer ${
+                    searchTab === 'online'
+                      ? 'bg-white shadow-sm text-slate-850'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Online Web Catalog</span>
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6 overflow-y-auto w-full flex-grow">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {searchTab === 'local' ? (
+                  <>
+                    {/* Manual Specification Selection Entry */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingFixtureIndex !== null && params.activeFixtures) {
+                          const list = [...params.activeFixtures];
+                          const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
+                          if (list[editingFixtureIndex]) {
+                            list[editingFixtureIndex] = {
+                              ...list[editingFixtureIndex],
                               fixtureId: 'custom',
                               lightType: params.customLightType || 'Custom LED Fixture',
                               lumens: params.customLumens || 1500,
                               wattage: params.customWattage || 15,
-                              activeFixtureId: targetActiveF?.id
+                              isCustom: true,
+                              brands: 'Manual Intake Spec'
                             };
                           }
-                          return cp;
-                        });
-                      }
 
-                      if (list.length === 1) {
-                        setParams({ 
-                          ...params, 
-                          activeFixtures: list, 
-                          customPositions: updatedCustomPositions,
-                          isCustomFixture: true, 
-                          selectedFixtureId: 'custom' 
-                        });
-                      } else {
-                        setParams({ 
-                          ...params, 
-                          activeFixtures: list,
-                          customPositions: updatedCustomPositions
-                        });
-                      }
-                    } else {
-                      setParams({ 
-                        ...params, 
-                        isCustomFixture: true, 
-                        selectedFixtureId: 'custom', 
-                        customLightType: params.customLightType || 'Custom LED Fixture', 
-                        customLumens: params.customLumens || 1500, 
-                        customWattage: params.customWattage || 15, 
-                        lumensPerFixture: params.customLumens || 1500 
-                      });
-                    }
-                    setShowFixtureModal(false);
-                    setEditingFixtureIndex(null);
-                  }}
-                  className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group p-5 bg-gradient-to-br from-indigo-50/10 to-white hover:border-indigo-400 hover:shadow-md ${
-                    isCurrentlyCustom ? 'border-indigo-500 ring-2 ring-indigo-500/30 scale-[1.02] shadow-md z-10 bg-indigo-50/10' : 'border-slate-200 border-dashed hover:border-indigo-300'
-                  }`}
-                >
-                  {isCurrentlyCustom && (
-                    <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm p-0.5 border border-indigo-250">
-                      <CheckCircle2 className="w-5 h-5 text-indigo-600" />
-                    </div>
-                  )}
-                  <div className="w-full flex flex-col h-full">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Manual entry</span>
-                    </div>
-                    <p className="text-base font-bold text-slate-800 leading-tight mb-2">Custom Fixture Specifications</p>
-                    <p className="text-xs text-slate-500 font-medium leading-relaxed mb-4">
-                      No matching item in library? Manually define Light type, Lumens, and Watts parameters.
-                    </p>
-                    <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between text-indigo-700 font-bold text-xs gap-1">
-                      <span>Specify manually</span>
-                      <Plus className="w-4 h-4" />
-                    </div>
-                  </div>
-                </button>
+                          let updatedCustomPositions = params.customPositions;
+                          if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
+                            const targetActiveF = list[editingFixtureIndex];
+                            updatedCustomPositions = params.customPositions.map(cp => {
+                              const isMatch = cp.activeFixtureId 
+                                ? cp.activeFixtureId === targetActiveF?.id
+                                : cp.fixtureId === oldFixtureId;
+                              if (isMatch) {
+                                return {
+                                  ...cp,
+                                  fixtureId: 'custom',
+                                  lightType: params.customLightType || 'Custom LED Fixture',
+                                  lumens: params.customLumens || 1500,
+                                  wattage: params.customWattage || 15,
+                                  activeFixtureId: targetActiveF?.id
+                                };
+                              }
+                              return cp;
+                            });
+                          }
 
-                {LIGHT_FIXTURES_LIBRARY.map((fixture) => (
-                  <button
-                    type="button"
-                    key={fixture.id}
-                    onClick={() => {
-                      if (editingFixtureIndex !== null && params.activeFixtures) {
-                        const list = [...params.activeFixtures];
-                        const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
-                        const defaults = getPredefinedFixtureDefaults(fixture.id, false);
-                        if (list[editingFixtureIndex]) {
-                          list[editingFixtureIndex] = {
-                            ...list[editingFixtureIndex],
-                            fixtureId: fixture.id,
-                            lightType: fixture.lightType,
-                            lumens: fixture.lumens,
-                            wattage: fixture.wattage,
-                            brands: fixture.brands,
-                            isCustom: false,
-                            fixtureShape: defaults.fixtureShape,
-                            fixtureWidth: defaults.fixtureWidth,
-                            fixtureLength: defaults.fixtureLength,
-                            fixtureDiameter: defaults.fixtureDiameter,
-                            fixtureThickness: defaults.fixtureThickness,
-                            fixtureBeamAngle: defaults.fixtureBeamAngle,
-                            fixtureDistributionType: defaults.fixtureDistributionType
-                          };
-                        }
-
-                         let updatedCustomPositions = params.customPositions;
-                         if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
-                           const targetActiveF = list[editingFixtureIndex];
-                           updatedCustomPositions = params.customPositions.map(cp => {
-                             const isMatch = cp.activeFixtureId 
-                               ? cp.activeFixtureId === targetActiveF?.id
-                               : cp.fixtureId === oldFixtureId;
-                             if (isMatch) {
-                               return {
-                                 ...cp,
-                                 fixtureId: fixture.id,
-                                 lightType: fixture.lightType,
-                                 lumens: fixture.lumens,
-                                 wattage: fixture.wattage,
-                                 activeFixtureId: targetActiveF?.id
-                               };
-                             }
-                             return cp;
-                           });
-                         }
-
-                        if (list.length === 1) {
-                          setParams({ 
-                            ...params, 
-                            activeFixtures: list,
-                            customPositions: updatedCustomPositions,
-                            selectedFixtureId: fixture.id,
-                            lumensPerFixture: fixture.lumens,
-                            isCustomFixture: false,
-                            fixtureShape: defaults.fixtureShape,
-                            fixtureWidth: defaults.fixtureWidth,
-                            fixtureLength: defaults.fixtureLength,
-                            fixtureDiameter: defaults.fixtureDiameter,
-                            fixtureThickness: defaults.fixtureThickness,
-                            fixtureBeamAngle: defaults.fixtureBeamAngle,
-                            fixtureDistributionType: defaults.fixtureDistributionType
-                          });
+                          if (list.length === 1) {
+                            setParams({ 
+                              ...params, 
+                              activeFixtures: list, 
+                              customPositions: updatedCustomPositions,
+                              isCustomFixture: true, 
+                              selectedFixtureId: 'custom' 
+                            });
+                          } else {
+                            setParams({ 
+                              ...params, 
+                              activeFixtures: list,
+                              customPositions: updatedCustomPositions
+                            });
+                          }
                         } else {
                           setParams({ 
                             ...params, 
-                            activeFixtures: list,
-                            customPositions: updatedCustomPositions
+                            isCustomFixture: true, 
+                            selectedFixtureId: 'custom', 
+                            customLightType: params.customLightType || 'Custom LED Fixture', 
+                            customLumens: params.customLumens || 1500, 
+                            customWattage: params.customWattage || 15, 
+                            lumensPerFixture: params.customLumens || 1500 
                           });
                         }
-                      } else {
-                        setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens, isCustomFixture: false });
-                      }
-                      setShowFixtureModal(false);
-                      setEditingFixtureIndex(null);
-                    }}
-                    className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group ${
-                      (!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
-                    }`}
-                  >
-                    {(!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) && (
-                      <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm">
-                        <CheckCircle2 className="w-5 h-5 text-yellow-500" />
+                        setShowFixtureModal(false);
+                        setEditingFixtureIndex(null);
+                      }}
+                      className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group p-5 bg-gradient-to-br from-indigo-50/10 to-white hover:border-indigo-400 hover:shadow-md cursor-pointer ${
+                        isCurrentlyCustom ? 'border-indigo-500 ring-2 ring-indigo-500/30 scale-[1.02] shadow-md z-10 bg-indigo-50/10' : 'border-slate-200 border-dashed hover:border-indigo-300'
+                      }`}
+                    >
+                      {isCurrentlyCustom && (
+                        <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm p-0.5 border border-indigo-250">
+                          <CheckCircle2 className="w-5 h-5 text-indigo-600" />
+                        </div>
+                      )}
+                      <div className="w-full flex flex-col h-full">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">Manual entry</span>
+                        </div>
+                        <p className="text-base font-bold text-slate-800 leading-tight mb-2">Custom Fixture Specifications</p>
+                        <p className="text-xs text-slate-500 font-medium leading-relaxed mb-4">
+                          No matching item in library? Manually define Light type, Lumens, and Watts parameters.
+                        </p>
+                        <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between text-indigo-700 font-bold text-xs gap-1">
+                          <span>Specify manually</span>
+                          <Plus className="w-4 h-4" />
+                        </div>
                       </div>
+                    </button>
+
+                    {filteredLocalFixtures.length === 0 ? (
+                      <div className="col-span-full py-12 text-center text-slate-500 bg-slate-50 border border-slate-200 border-dashed rounded-xl p-6">
+                        <AlertTriangle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
+                        <p className="font-bold text-slate-700">No matching library fixtures found</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">We couldn't find any fixture in our database matching "{searchQuery}". Try searching the web online for active manufacturer specs.</p>
+                        <button
+                          type="button"
+                          onClick={() => setSearchTab('online')}
+                          className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>Search Web Online</span>
+                        </button>
+                      </div>
+                    ) : (
+                      filteredLocalFixtures.map((fixture) => (
+                        <button
+                          type="button"
+                          key={fixture.id}
+                          onClick={() => {
+                            if (editingFixtureIndex !== null && params.activeFixtures) {
+                              const list = [...params.activeFixtures];
+                              const oldFixtureId = list[editingFixtureIndex]?.fixtureId;
+                              const defaults = getPredefinedFixtureDefaults(fixture.id, false);
+                              if (list[editingFixtureIndex]) {
+                                list[editingFixtureIndex] = {
+                                  ...list[editingFixtureIndex],
+                                  fixtureId: fixture.id,
+                                  lightType: fixture.lightType,
+                                  lumens: fixture.lumens,
+                                  wattage: fixture.wattage,
+                                  brands: fixture.brands,
+                                  isCustom: false,
+                                  fixtureShape: defaults.fixtureShape,
+                                  fixtureWidth: defaults.fixtureWidth,
+                                  fixtureLength: defaults.fixtureLength,
+                                  fixtureDiameter: defaults.fixtureDiameter,
+                                  fixtureThickness: defaults.fixtureThickness,
+                                  fixtureBeamAngle: defaults.fixtureBeamAngle,
+                                  fixtureDistributionType: defaults.fixtureDistributionType
+                                };
+                              }
+
+                               let updatedCustomPositions = params.customPositions;
+                               if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
+                                 const targetActiveF = list[editingFixtureIndex];
+                                 updatedCustomPositions = params.customPositions.map(cp => {
+                                   const isMatch = cp.activeFixtureId 
+                                     ? cp.activeFixtureId === targetActiveF?.id
+                                     : cp.fixtureId === oldFixtureId;
+                                   if (isMatch) {
+                                     return {
+                                       ...cp,
+                                       fixtureId: fixture.id,
+                                       lightType: fixture.lightType,
+                                       lumens: fixture.lumens,
+                                       wattage: fixture.wattage,
+                                       activeFixtureId: targetActiveF?.id
+                                     };
+                                   }
+                                   return cp;
+                                 });
+                               }
+
+                              if (list.length === 1) {
+                                setParams({ 
+                                  ...params, 
+                                  activeFixtures: list,
+                                  customPositions: updatedCustomPositions,
+                                  selectedFixtureId: fixture.id,
+                                  lumensPerFixture: fixture.lumens,
+                                  isCustomFixture: false,
+                                  fixtureShape: defaults.fixtureShape,
+                                  fixtureWidth: defaults.fixtureWidth,
+                                  fixtureLength: defaults.fixtureLength,
+                                  fixtureDiameter: defaults.fixtureDiameter,
+                                  fixtureThickness: defaults.fixtureThickness,
+                                  fixtureBeamAngle: defaults.fixtureBeamAngle,
+                                  fixtureDistributionType: defaults.fixtureDistributionType
+                                });
+                              } else {
+                                setParams({ 
+                                  ...params, 
+                                  activeFixtures: list,
+                                  customPositions: updatedCustomPositions
+                                });
+                              }
+                            } else {
+                              setParams({ ...params, selectedFixtureId: fixture.id, lumensPerFixture: fixture.lumens, isCustomFixture: false });
+                            }
+                            setShowFixtureModal(false);
+                            setEditingFixtureIndex(null);
+                          }}
+                          className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group cursor-pointer ${
+                            (!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
+                          }`}
+                        >
+                          {(!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) && (
+                            <div className="absolute top-4 right-4 bg-white rounded-full z-10 shadow-sm">
+                              <CheckCircle2 className="w-5 h-5 text-yellow-500" />
+                            </div>
+                          )}
+                          <div className="p-5 w-full flex flex-col h-full">
+                            <div className="flex items-center gap-2 mb-2">
+                               <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{fixture.category}</span>
+                            </div>
+                            <p className="text-base font-bold text-slate-800 leading-tight mb-2 truncate" title={fixture.lightType}>{fixture.lightType}</p>
+                            
+                            <div className="mt-auto space-y-3">
+                              <div>
+                                <p className="text-xs text-slate-500 font-medium truncate mb-0.5">Typical Brands</p>
+                                <p className="text-[10px] text-slate-400 truncate" title={fixture.brands}>{fixture.brands}</p>
+                              </div>
+                              
+                              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                                <div className="flex flex-col">
+                                  <span className="text-[9px] text-slate-400 uppercase tracking-wider mb-0.5">Wattage</span>
+                                  <span className="text-xs font-bold text-slate-600">{fixture.wattageRange}</span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[9px] text-slate-400 uppercase tracking-wider mb-0.5">Lumens</span>
+                                  <span className="text-xs font-bold text-yellow-600">{fixture.lumensRange}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      ))
                     )}
-                    <div className="p-5 w-full flex flex-col h-full">
-                      <div className="flex items-center gap-2 mb-2">
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{fixture.category}</span>
+                  </>
+                ) : (
+                  <>
+                    {!searchQuery.trim() ? (
+                      <div className="col-span-full py-12 text-center text-slate-500 bg-slate-50 border border-slate-200 border-dashed rounded-xl p-6">
+                        <Globe className="w-8 h-8 mx-auto text-indigo-400 mb-2 animate-bounce" />
+                        <p className="font-bold text-slate-700">Ready to search online catalogs</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Enter light brand names, model numbers, or descriptions in the search bar to query live web data securely using Gemini Search grounding.</p>
                       </div>
-                      <p className="text-base font-bold text-slate-800 leading-tight mb-2 truncate" title={fixture.lightType}>{fixture.lightType}</p>
-                      
-                      <div className="mt-auto space-y-3">
-                        <div>
-                          <p className="text-xs text-slate-500 font-medium truncate mb-0.5">Typical Brands</p>
-                          <p className="text-[10px] text-slate-400 truncate" title={fixture.brands}>{fixture.brands}</p>
-                        </div>
-                        
-                        <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                          <div className="flex flex-col">
-                            <span className="text-[9px] text-slate-400 uppercase tracking-wider mb-0.5">Wattage</span>
-                            <span className="text-xs font-bold text-slate-600">{fixture.wattageRange}</span>
-                          </div>
-                          <div className="flex flex-col items-end">
-                            <span className="text-[9px] text-slate-400 uppercase tracking-wider mb-0.5">Lumens</span>
-                            <span className="text-xs font-bold text-yellow-600">{fixture.lumensRange}</span>
-                          </div>
-                        </div>
+                    ) : isSearchingOnline ? (
+                      <div className="col-span-full py-12 text-center text-slate-500 bg-indigo-50/20 border border-indigo-100 rounded-xl p-6 flex flex-col items-center justify-center animate-pulse">
+                        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
+                        <p className="font-bold text-indigo-900">Querying Global Manufacturer Specs...</p>
+                        <p className="text-xs text-indigo-650 mt-1 max-w-sm mx-auto">AI is actively searching live supplier documentation & industrial catalogs to discover specifications for "{searchQuery}".</p>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    ) : onlineSearchError ? (
+                      <div className="col-span-full py-12 text-center text-rose-500 bg-rose-50 border border-rose-200 border-dashed rounded-xl p-6">
+                        <AlertTriangle className="w-8 h-8 mx-auto text-rose-500 mb-2" />
+                        <p className="font-bold text-rose-700 font-sans">Search Unavailable</p>
+                        <p className="text-xs text-rose-500 mt-1 max-w-sm mx-auto">{onlineSearchError}</p>
+                      </div>
+                    ) : onlineResults.length === 0 ? (
+                      <div className="col-span-full py-12 text-center text-slate-500 bg-slate-50 border border-slate-200 border-dashed rounded-xl p-6">
+                        <Search className="w-8 h-8 mx-auto text-slate-400 mb-2" />
+                        <p className="font-bold text-slate-700 font-sans">No web matches found</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">We couldn't find matches on the web for your query. Try searching general terminology like "Cree troffer", "Lithonia round LED", or "Philips recessed panel".</p>
+                      </div>
+                    ) : (
+                      onlineResults.map((fixture) => (
+                        <div
+                          key={fixture.id}
+                          className="relative flex flex-col border border-slate-200 rounded-2xl overflow-hidden bg-white hover:border-indigo-300 hover:shadow-md transition-all p-5 text-left"
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 uppercase tracking-wider">
+                              {fixture.category || "Indoor"}
+                            </span>
+                            {fixture.modelNumber && (
+                              <span className="text-[10px] text-slate-400 font-mono" title="Model Number">
+                                {fixture.modelNumber}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-base font-bold text-slate-800 leading-snug mb-1 truncate" title={fixture.lightType}>
+                            {fixture.lightType}
+                          </p>
+                          <p className="text-xs text-slate-500 font-bold mb-3">
+                            by {fixture.brands || fixture.manufacturer || "Unknown Brand"}
+                          </p>
+                          <p className="text-xs text-slate-400 line-clamp-3 mb-4 leading-relaxed font-medium">
+                            {fixture.description || "Verified industrial lighting catalog specification."}
+                          </p>
+                          
+                          <div className="mt-auto space-y-4">
+                            <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Power Spec</span>
+                                <span className="text-xs font-black text-slate-700">{fixture.wattage} Watts</span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-0.5">Brightness</span>
+                                <span className="text-xs font-black text-yellow-600">{fixture.lumens} Lumens</span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={importingFixtureId !== null}
+                              onClick={() => handleImportFixture(fixture)}
+                              className={`w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer ${
+                                importingFixtureId === fixture.id ? 'opacity-70' : ''
+                              }`}
+                            >
+                              {importingFixtureId === fixture.id ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Importing...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Import & Select</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>

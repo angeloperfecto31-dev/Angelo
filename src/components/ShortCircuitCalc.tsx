@@ -2,6 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } from 'lucide-react';
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS } from '../constants';
+import { exportToCAD } from '../utils/exportDxf';
+import { computePanelScheduleValues } from '../utils/computeEngine';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -11,7 +13,26 @@ export interface ShortCircuitCalcProps {
   setParams: React.Dispatch<React.SetStateAction<ShortCircuitParams>>;
   source: string;
   setSource: React.Dispatch<React.SetStateAction<string>>;
+  isPremium?: boolean;
+  onRequestUpgrade?: () => void;
 }
+
+export const getRunsBySystem = (system?: string): number => {
+  if (!system) return 1;
+  if (system === '230V, 1PH, 2W') return 2;
+  if (
+    system === '230V, 3PH, 3W' ||
+    system === '400V, 3PH, 3W' ||
+    system === '440V, 3PH, 3W' ||
+    system === '480V, 3PH, 3W'
+  ) return 3;
+  if (
+    system === '400V/230V, 3PH, 4W' ||
+    system === '440V/230V, 3PH, 4W' ||
+    system === '480V/230V, 3PH, 4W'
+  ) return 4;
+  return 1;
+};
 
 const DraggableBox = ({ 
   defaultPos, 
@@ -87,7 +108,7 @@ const DraggableBox = ({
   );
 };
 
-export default function ShortCircuitCalc({ panel, circuits, subPanels, params, setParams, source, setSource }: ShortCircuitCalcProps) {
+export default function ShortCircuitCalc({ panel, circuits, subPanels, params, setParams, source, setSource, isPremium = true, onRequestUpgrade }: ShortCircuitCalcProps) {
 
   const [isBWMode, setIsBWMode] = useState(false);
 
@@ -105,50 +126,19 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
     if (!circuits || !panel) return;
     
     if (source === 'auto') {
-      const totalVA = circuits.reduce((sum, c) => sum + c.loadVA, 0);
+      const { mainCurrent, mainFeeder, totalVA } = computePanelScheduleValues(panel, circuits);
       const totalKVA = totalVA / 1000;
       
       // Standard transformer ratings in kVA
       const standardKVA = [10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500, 2000, 2500];
       const recommendedKVA = standardKVA.find(k => k >= totalKVA) || standardKVA[standardKVA.length - 1];
 
-      const phaseLoads = { R: 0, Y: 0, B: 0 };
-      circuits.forEach(c => {
-        c.phases.forEach(p => {
-          const key = p as keyof typeof phaseLoads;
-          phaseLoads[key] = (phaseLoads[key] || 0) + c.loadVA / c.phases.length;
-        });
-      });
-      const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
-      
-      let mainCurrent = 0;
-      if (panel.system.includes('3PH')) {
-          mainCurrent = (maxPhaseLoad * 3) / (panel.voltage * 1.732);
-      } else {
-          mainCurrent = (totalKVA * 1000) / panel.voltage;
-      }
-      
-      const designAmp = mainCurrent * 1.25;
-      const cb = panel.mainBreakerAT || STANDARD_CB_RATINGS.find(r => r >= designAmp) || 100;
-      
-      let minSize = 2.0;
-      if (cb > 15 && cb <= 20) minSize = 3.5;
-      else if (cb > 20 && cb <= 30) minSize = 5.5;
+      let recommendedFeederSize = mainFeeder.wire.size.toString();
+      let recommendedRuns = getRunsBySystem(panel.system);
 
-      const requiredAmpacity = Math.max(designAmp, cb);
-      const wire = WIRE_AMPACITY_TABLE.find(w => w.ampacity >= requiredAmpacity && w.size >= minSize) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-      let recommendedFeederSize = wire.size.toString();
-      let recommendedRuns = 1;
-
-      if (cb > 250) {
-        recommendedRuns = 2;
-        if (cb > 500) recommendedRuns = 3;
-        if (cb > 800) recommendedRuns = 4;
-        
-        const targetAmpacityPerRun = requiredAmpacity / recommendedRuns;
-        const singleWire = WIRE_AMPACITY_TABLE.find(w => w.size >= 50 && w.ampacity >= targetAmpacityPerRun) 
-                     || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-        recommendedFeederSize = singleWire.size.toString();
+      if (mainFeeder.cb > 250) {
+        recommendedRuns = mainFeeder.wire.runs; 
+        recommendedFeederSize = mainFeeder.wire.size.toString();
       }
 
       setParams(p => {
@@ -172,6 +162,18 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       });
     }
   }, [source, circuits, panel]);
+
+  // Synchronize feederRuns with the system voltage configuration throughout the Short Circuit calculation process
+  useEffect(() => {
+    if (!panel?.system) return;
+    const expectedRuns = getRunsBySystem(panel.system);
+    if (params.feederRuns !== expectedRuns) {
+      setParams(current => ({
+        ...current,
+        feederRuns: expectedRuns
+      }));
+    }
+  }, [panel?.system, params.feederRuns, setParams]);
 
   const calculation = useMemo(() => {
     // Determine connection phase factors based on Philippine Electrical Code (PEC) Practices
@@ -351,9 +353,33 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight font-sans">Short Circuit Calculation Report</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">PEC 2017 Requirement Section 1.10.1.24 — Electrical Safety Conformity</p>
           </div>
-          <div className="mt-4 md:mt-0 px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl shadow-xs text-center md:text-right">
-            <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase block tracking-wider">Audit Stamp</span>
-            <span className="text-xs font-black text-slate-700 dark:text-slate-300 font-mono tracking-tight">STATUS: LOCAL PEC VERIFIED</span>
+          <div className="mt-4 md:mt-0 flex flex-wrap items-center gap-4 justify-center md:justify-end">
+            <button
+              onClick={() => {
+                if (!isPremium) {
+                  if (onRequestUpgrade) onRequestUpgrade();
+                  return;
+                }
+                if (panel && circuits) {
+                  exportToCAD(panel, circuits, subPanels || [], params, 'SHORT_CIRCUIT');
+                } else {
+                  alert("Please ensure panels and circuits are fully loaded before exporting.");
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer border ${
+                isPremium
+                  ? 'bg-sky-600 hover:bg-sky-500 hover:text-white dark:bg-sky-700 dark:hover:bg-sky-600 text-white border-sky-500 hover:shadow-sky-500/10'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200 hover:text-slate-600'
+              }`}
+              title={isPremium ? "Download editable DWG/DXF AutoCAD drawing block compliant with professional engineering standards" : "Export AutoCad is available on the Premium Plan"}
+            >
+              <Download className="w-4 h-4" />
+              <span>{isPremium ? "Export AutoCAD Drawing" : "Export AutoCAD (Premium)"}</span>
+            </button>
+            <div className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl shadow-xs text-center md:text-right">
+              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase block tracking-wider">Audit Stamp</span>
+              <span className="text-xs font-black text-slate-700 dark:text-slate-300 font-mono tracking-tight">STATUS: LOCAL PEC VERIFIED</span>
+            </div>
           </div>
         </div>
 
@@ -622,7 +648,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
                   {/* ROW 4: MAIN BREAKER */}
                   <rect x="171" y="360" width="18" height="26" rx="2" className="sld-line sld-symbol-bg" />
                   <line x1="171" y1="373" x2="189" y2="373" className="sld-line" strokeWidth="1.5" />
-                  <text x="200" y="377" className="sld-text-val">{panel ? `${panel.mainBreakerAT}A/${panel.mainBreakerAF}AF` : '100A'}</text>
+                  <text x="200" y="377" className="sld-text-val">{panel ? `${panel.mainBreakerAT} AT / ${panel.mainBreakerAF} AF` : '100 AT / 100 AF'}</text>
 
                   <line x1="180" y1="386" x2="180" y2="420" className="sld-line" />
 

@@ -89,6 +89,73 @@
         "ownerId"
       ]
     },
+    "Fixture": {
+      "title": "Fixture",
+      "description": "Custom imported lighting fixture details",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique fixture identifier"
+        },
+        "category": {
+          "type": "string",
+          "description": "Indoor, Outdoor, or Special"
+        },
+        "lightType": {
+          "type": "string",
+          "description": "The name/type of light fixture"
+        },
+        "wattageRange": {
+          "type": "string",
+          "description": "The operating wattage range"
+        },
+        "lumensRange": {
+          "type": "string",
+          "description": "The lumen output range"
+        },
+        "brands": {
+          "type": "string",
+          "description": "Manufacturer name"
+        },
+        "wattage": {
+          "type": "number",
+          "description": "Default operating wattage"
+        },
+        "lumens": {
+          "type": "number",
+          "description": "Default lumen output"
+        },
+        "description": {
+          "type": "string",
+          "description": "Direct specification details"
+        },
+        "manufacturer": {
+          "type": "string",
+          "description": "Specific brand manufacturer"
+        },
+        "modelNumber": {
+          "type": "string",
+          "description": "Exact commercial model number"
+        },
+        "importedAt": {
+          "type": "string",
+          "description": "Timestamp of when it was imported to Firestore"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Owner user ID"
+        }
+      },
+      "required": [
+        "id",
+        "category",
+        "lightType",
+        "wattage",
+        "lumens",
+        "ownerId"
+      ]
+    },
     "Settings": {
       "title": "Settings",
       "description": "Global application configuration documents",
@@ -145,6 +212,10 @@
     "users/{userId}/projects/{projectId}": {
       "schema": "Project",
       "description": "Saved projects owned by the user"
+    },
+    "users/{userId}/importedFixtures/{fixtureId}": {
+      "schema": "Fixture",
+      "description": "Imported or customized lighting fixtures stored securely by user"
     },
     "settings/{settingId}": {
       "schema": "Settings",

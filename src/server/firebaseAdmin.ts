@@ -18,9 +18,10 @@ try {
     });
     
     // Initialize firestore with the specific database ID if present
-    db = getFirestore(app);
     if (config.firestoreDatabaseId) {
-      db.settings({ databaseId: config.firestoreDatabaseId });
+      db = getFirestore(app, config.firestoreDatabaseId);
+    } else {
+      db = getFirestore(app);
     }
     console.log('Firebase Admin initialized successfully');
   } else {

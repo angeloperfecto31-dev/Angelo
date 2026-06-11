@@ -27,6 +27,28 @@ import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { computePanelScheduleValues } from './computeEngine';
 
+const getPanelSystemVoltageFallback = (system: string, is3Phase: boolean, connectionType?: string): number => {
+  if (system === '400V/230V, 3PH, 4W') {
+    return is3Phase ? 400 : (connectionType === 'Line-to-Line' ? 400 : 230);
+  }
+  if (system === '440V/230V, 3PH, 4W') {
+    return is3Phase ? 440 : (connectionType === 'Line-to-Line' ? 440 : 230);
+  }
+  if (system === '480V/230V, 3PH, 4W') {
+    return is3Phase ? 480 : (connectionType === 'Line-to-Line' ? 480 : 230);
+  }
+  if (system === '400V, 3PH, 3W') {
+    return 400;
+  }
+  if (system === '440V, 3PH, 3W') {
+    return 440;
+  }
+  if (system === '480V, 3PH, 3W') {
+    return 480;
+  }
+  return 230;
+};
+
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
 function getMathSymbol(macro: string): string {
   switch (macro) {
@@ -723,7 +745,7 @@ export const exportToWord = async (
       c.forEach((cir) => {
         if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
         const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || (p.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (p.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
         if (cir.loadType === LoadType.SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
@@ -741,7 +763,7 @@ export const exportToWord = async (
       let HML = 0;
       motorCircuits.forEach((cir) => {
         const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || (p.system === "400V/230V, 3PH, 4W" ? (is3Phase ? 400 : (p.connectionType === "Line-to-Line" ? 400 : 230)) : 230);
+        let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
         const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
         if (loadI > HML) {
           HML = loadI;
@@ -856,7 +878,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
           createCell(cir.voltage?.toString() || "230"),
           createCell(cir.loadVA?.toString() || "0"),
           createCell(cir.loadA?.toFixed(2) || "0.00"),
-          createCell(`${cir.mcbAT || 20}AT/${cir.mcbAF || 50}AF`),
+          createCell(`${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF`),
           createCell(`${cir.wireSize || '3.5'} mm² THHN`),
           createCell(`${cir.conduitSize || '20'}mm uPVC`),
         ]
@@ -895,6 +917,23 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     }
   }
 
+  const getRunsBySystemLocal = (system?: string): number => {
+    if (!system) return 1;
+    if (system === '230V, 1PH, 2W') return 2;
+    if (
+      system === '230V, 3PH, 3W' ||
+      system === '400V, 3PH, 3W' ||
+      system === '440V, 3PH, 3W' ||
+      system === '480V, 3PH, 3W'
+    ) return 3;
+    if (
+      system === '400V/230V, 3PH, 4W' ||
+      system === '440V/230V, 3PH, 4W' ||
+      system === '480V/230V, 3PH, 4W'
+    ) return 4;
+    return 1;
+  };
+
   // === 2. SHORT CIRCUIT FAULT FINDING ANALYSIS ===
   const params = iscParams || {
     transformerKVA: 100,
@@ -905,7 +944,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     utilityShortCircuitMVA: 500,
     feederLength: 10,
     feederSize: '30',
-    feederRuns: 1,
+    feederRuns: getRunsBySystemLocal(panel?.system),
     conductorType: 'Copper'
   };
 

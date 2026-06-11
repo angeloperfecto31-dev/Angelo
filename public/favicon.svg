@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Rounded high-contrast yellow background matching bg-yellow-400 of ElectricalPH custom logo -->
+  <rect width="32" height="32" rx="8" fill="#FACC15"/>
+  <!-- Elegant, high-fidelity engineering lightning bolt styled cleanly with perfect centering -->
+  <g transform="translate(4, 4)">
+    <polygon points="13 2 3 14 12 14 11 30 21 16 12 16 13 2" fill="#713F12"/>
+  </g>
+</svg>

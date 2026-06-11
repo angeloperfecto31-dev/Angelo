@@ -104,8 +104,40 @@ export const getConduitSizeForWiresLocal = (wireSize: number, groundSizeString: 
   return conduit.size;
 };
 
+const getSystemVoltage = (system: string): number => {
+  if (system === '400V, 3PH, 3W') return 400;
+  if (system === '440V, 3PH, 3W') return 440;
+  if (system === '480V, 3PH, 3W') return 480;
+  if (system === '400V/230V, 3PH, 4W') return 400;
+  if (system === '440V/230V, 3PH, 4W') return 440;
+  if (system === '480V/230V, 3PH, 4W') return 480;
+  return 230;
+};
+
+const getPanelSystemVoltageFallback = (system: string, is3Phase: boolean, connectionType?: string): number => {
+  if (system === '400V/230V, 3PH, 4W') {
+    return is3Phase ? 400 : (connectionType === 'Line-to-Line' ? 400 : 230);
+  }
+  if (system === '440V/230V, 3PH, 4W') {
+    return is3Phase ? 440 : (connectionType === 'Line-to-Line' ? 440 : 230);
+  }
+  if (system === '480V/230V, 3PH, 4W') {
+    return is3Phase ? 480 : (connectionType === 'Line-to-Line' ? 480 : 230);
+  }
+  if (system === '400V, 3PH, 3W') {
+    return 400;
+  }
+  if (system === '440V, 3PH, 3W') {
+    return 440;
+  }
+  if (system === '480V, 3PH, 3W') {
+    return 480;
+  }
+  return 230;
+};
+
 export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
-  const systemVoltage = p.system === '400V/230V, 3PH, 4W' ? 400 : 230;
+  const systemVoltage = getSystemVoltage(p.system);
   const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
 
   let lightingReceptacleVA = 0;
@@ -183,7 +215,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
 
     const activeLines = getCircuitActiveLines(cir.phases || [], p.connectionType);
     const is3Phase = cir.phases && cir.phases.length === 3;
-    let cirV = cir.voltage || (p.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (p.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+    let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
     
     if (cir.loadType === LoadType.SUB_PANEL) {
       cirV = cir.voltage || cirV;
@@ -213,8 +245,8 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   if (motorCircuits.length > 0) {
     let largestMotorCir = motorCircuits[0];
     motorCircuits.forEach((mc) => {
-      const mcV = mc.voltage || (p.system === '400V/230V, 3PH, 4W' ? (mc.phases.length === 3 ? 400 : (p.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
-      const largestV = largestMotorCir.voltage || (p.system === '400V/230V, 3PH, 4W' ? (largestMotorCir.phases.length === 3 ? 400 : (p.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+      const mcV = mc.voltage || getPanelSystemVoltageFallback(p.system, mc.phases.length === 3, p.connectionType);
+      const largestV = largestMotorCir.voltage || getPanelSystemVoltageFallback(p.system, largestMotorCir.phases.length === 3, p.connectionType);
       
       const mcI = mc.phases.length === 3 ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
       const largestI = largestMotorCir.phases.length === 3 ? largestMotorCir.loadVA / (largestV * 1.732) : largestMotorCir.loadVA / largestV;
@@ -225,7 +257,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
     });
 
     const isLargest3Phase = largestMotorCir.phases.length === 3;
-    const largestMotorV = largestMotorCir.voltage || (p.system === '400V/230V, 3PH, 4W' ? (isLargest3Phase ? 400 : (p.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+    const largestMotorV = largestMotorCir.voltage || getPanelSystemVoltageFallback(p.system, isLargest3Phase, p.connectionType);
     const largestMotorI = isLargest3Phase ? largestMotorCir.loadVA / (largestMotorV * 1.732) : largestMotorCir.loadVA / largestMotorV;
 
     const extraI = largestMotorI * 0.25;
@@ -254,7 +286,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
       
       const is3Phase = cir.phases && cir.phases.length === 3;
-      let cirV = cir.voltage || (p.system === "400V/230V, 3PH, 4W" ? (is3Phase ? 400 : (p.connectionType === "Line-to-Line" ? 400 : 230)) : 230);
+      let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
       if (cir.loadType === LoadType.SUB_PANEL) {
         cirV = cir.voltage || cirV;
       }
@@ -273,7 +305,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
     let HML = 0;
     motorCircuits.forEach((cir) => {
       const is3Phase = cir.phases && cir.phases.length === 3;
-      let cirV = cir.voltage || (p.system === "400V/230V, 3PH, 4W" ? (is3Phase ? 400 : (p.connectionType === "Line-to-Line" ? 400 : 230)) : 230);
+      let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
       const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
       if (loadI > HML) {
         HML = loadI;

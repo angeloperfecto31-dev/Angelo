@@ -73,6 +73,23 @@ service cloud.firestore {
         && data.ownerId is string && data.ownerId == request.auth.uid;
     }
 
+    function isValidFixture(data) {
+      return data.keys().hasAll(["id", "category", "lightType", "wattage", "lumens", "ownerId"])
+        && data.id is string && data.id.size() <= 128
+        && data.category is string && data.category.size() <= 128
+        && data.lightType is string && data.lightType.size() <= 128
+        && (data.wattage is int || data.wattage is float)
+        && (data.lumens is int || data.lumens is float)
+        && data.ownerId is string && data.ownerId == request.auth.uid
+        && (!("brands" in data) || data.brands is string)
+        && (!("wattageRange" in data) || data.wattageRange is string)
+        && (!("lumensRange" in data) || data.lumensRange is string)
+        && (!("description" in data) || data.description is string)
+        && (!("manufacturer" in data) || data.manufacturer is string)
+        && (!("modelNumber" in data) || data.modelNumber is string)
+        && (!("importedAt" in data) || data.importedAt is string);
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -123,6 +140,14 @@ service cloud.firestore {
           incoming().name is string && incoming().name.size() <= 300 &&
           (incoming().lastModified is int || incoming().lastModified is float) &&
           incoming().data is map;
+        allow delete: if isOwner(userId) || isAdmin();
+      }
+
+      // 3.6 Imported Fixtures Subcollection (Automatic synchronization of imported fixture data with project database)
+      match /importedFixtures/{fixtureId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isOwner(userId) && isValidId(fixtureId) && isValidFixture(incoming());
+        allow update: if isOwner(userId) && isValidId(fixtureId) && isValidFixture(incoming());
         allow delete: if isOwner(userId) || isAdmin();
       }
     }

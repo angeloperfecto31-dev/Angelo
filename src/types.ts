@@ -24,6 +24,13 @@ export enum MCBType {
   MPCB = 'MPCB'
 }
 
+export interface SubLoad {
+  id: string;
+  description: string;
+  quantity: number;
+  wattage: number;
+}
+
 export interface Circuit {
   id: string;
   circuitNo: number;
@@ -48,6 +55,7 @@ export interface Circuit {
   vaPerUnit?: number;
   linkedSubPanelId?: string;
   pf?: number;
+  subLoads?: SubLoad[];
 }
 
 export interface PanelConfig {
@@ -55,7 +63,7 @@ export interface PanelConfig {
   location: string;
   designation: string;
   type: string;
-  system: '230V, 1PH, 2W' | '230V, 3PH, 3W' | '400V/230V, 3PH, 4W';
+  system: '230V, 1PH, 2W' | '230V, 3PH, 3W' | '400V, 3PH, 3W' | '440V, 3PH, 3W' | '480V, 3PH, 3W' | '400V/230V, 3PH, 4W' | '440V/230V, 3PH, 4W' | '480V/230V, 3PH, 4W';
   connectionType?: 'Line-to-Line' | 'Line-to-Neutral';
   transformerConnection?: string;
   mounting: string;
@@ -100,6 +108,9 @@ export interface LightFixture {
   brands: string;
   wattage: number;
   lumens: number;
+  description?: string;
+  modelNumber?: string;
+  manufacturer?: string;
 }
 
 export interface SavedLightingDetail {
@@ -156,6 +167,7 @@ export interface IlluminationParams {
   workingPlaneHeight: number;
   mountingHeight?: number; // Optional since it can be derived, or explicit
   targetLux: number;
+  targetRoomName?: string;
   selectedFixtureId?: string;
   lumensPerFixture: number;
   coefficientOfUtilization: number;

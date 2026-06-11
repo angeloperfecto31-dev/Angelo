@@ -11,15 +11,18 @@ import {
   Copy,
   ShieldAlert,
   List,
-  X
+  X,
+  Layers
 } from 'lucide-react';
 import { 
   Circuit, 
   PanelConfig, 
   LoadType, 
   Phase,
-  MCBType
+  MCBType,
+  ShortCircuitParams
 } from '../types';
+import { exportToCAD } from '../utils/exportDxf';
 import { 
   WIRE_AMPACITY_TABLE, 
   STANDARD_CB_RATINGS, 
@@ -29,6 +32,28 @@ import {
 } from '../constants';
 import { SingleLineDiagram } from './SingleLineDiagram';
 import LatexRenderer from './LatexRenderer';
+
+const getPanelSystemVoltageFallback = (system: string, is3Phase: boolean, connectionType?: string): number => {
+  if (system === '400V/230V, 3PH, 4W') {
+    return is3Phase ? 400 : (connectionType === 'Line-to-Line' ? 400 : 230);
+  }
+  if (system === '440V/230V, 3PH, 4W') {
+    return is3Phase ? 440 : (connectionType === 'Line-to-Line' ? 440 : 230);
+  }
+  if (system === '480V/230V, 3PH, 4W') {
+    return is3Phase ? 480 : (connectionType === 'Line-to-Line' ? 480 : 230);
+  }
+  if (system === '400V, 3PH, 3W') {
+    return 400;
+  }
+  if (system === '440V, 3PH, 3W') {
+    return 440;
+  }
+  if (system === '480V, 3PH, 3W') {
+    return 480;
+  }
+  return 230;
+};
 
 export const INITIAL_CIRCUITS: Circuit[] = [
   {
@@ -106,6 +131,9 @@ export interface LoadScheduleProps {
   onRemoveSubPanel?: () => void;
   availableSubPanels?: { id: string, panel: PanelConfig, circuits: Circuit[] }[];
   readOnly?: boolean;
+  iscParams?: ShortCircuitParams;
+  isPremium?: boolean;
+  onRequestUpgrade?: () => void;
 }
 
 const WireBundle = ({ system, wireSize, groundSize, isBranch = false, phases = [], className = "", direction = "down" }: { system?: string, wireSize: string | number, groundSize: string | number, isBranch?: boolean, phases?: string[], className?: string, direction?: "down" | "up" | "left" | "right" }) => {
@@ -271,9 +299,10 @@ const VerticalBusBarComponent: React.FC<{ label: string, is3Phase?: boolean }> =
    );
 };
 
-export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, isSubPanel = false, onRemoveSubPanel, availableSubPanels, readOnly = false }: LoadScheduleProps) {
+export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, isSubPanel = false, onRemoveSubPanel, availableSubPanels, readOnly = false, iscParams, isPremium = true, onRequestUpgrade }: LoadScheduleProps) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
+  const [selectedPresets, setSelectedPresets] = useState<any[]>([]);
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
 
   // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
@@ -402,13 +431,13 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE ? 0 : cc.wattage * cc.quantity), 0);
                
                const subPoles = sp.panel.system.includes('3PH') ? 3 : (sp.panel.connectionType === 'Line-to-Neutral' ? 1 : 2);
-               const subVoltage = sp.panel.system.includes('3PH') ? (sp.panel.system.includes('400V') ? 400 : 230) : 230;
+               const subVoltage = sp.panel.system.includes('3PH') ? getPanelSystemVoltageFallback(sp.panel.system, true, sp.panel.connectionType) : 230;
                const subCB = sp.panel.mainBreakerAT || 30;
 
                if (
                  c.loadVA !== subTotalVA || 
                  c.wattage !== subTotalWattage || 
-                 c.description !== sp.panel.designation ||
+                 c.description !== (sp.panel.designation || 'Sub-Panel') ||
                  c.mcbP !== subPoles ||
                  c.voltage !== subVoltage ||
                  c.mcbAT !== subCB
@@ -453,7 +482,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
          const subTotalWattage = sp.circuits.reduce((sum, cc) => sum + (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE ? 0 : cc.wattage * cc.quantity), 0);
          
          const subPoles = sp.panel.system.includes('3PH') ? 3 : (sp.panel.connectionType === 'Line-to-Neutral' ? 1 : 2);
-         const subVoltage = sp.panel.system.includes('3PH') ? (sp.panel.system.includes('400V') ? 400 : 230) : 230;
+         const subVoltage = sp.panel.system.includes('3PH') ? getPanelSystemVoltageFallback(sp.panel.system, true, sp.panel.connectionType) : 230;
          const subCB = sp.panel.mainBreakerAT || 30;
 
          c.wattage = subTotalWattage;
@@ -494,10 +523,20 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
     const isSpace = (c.description && c.description.toUpperCase() === 'SPACE') || c.loadType === LoadType.SPACE;
     
-    const qty = c.quantity || 1;
-    const w = isSpace ? 0 : (c.wattage || 0);
+    let qty = c.quantity || 1;
+    let w = isSpace ? 0 : (c.wattage || 0);
+    let va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : Math.round(qty * w);
+
+    if (c.subLoads && c.subLoads.length > 0) {
+      va = c.subLoads.reduce((sum, sl) => sum + (sl.wattage * sl.quantity), 0);
+      qty = 1;
+      w = va;
+      c.wattage = w;
+      c.quantity = qty;
+      c.description = c.subLoads.map(sl => sl.description).join(', ') || 'Multiple Loads';
+    }
+
     const pf = 1.0;
-    const va = c.loadType === LoadType.SUB_PANEL ? (c.loadVA ?? (qty * w)) : Math.round(qty * w);
     
     let defaultV = 230;
     const is3PhaseLoad = c.phases && c.phases.length === 3;
@@ -506,18 +545,36 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       defaultV = 230;
     } else if (panel.system === '230V, 3PH, 3W') {
       defaultV = 230;
+    } else if (panel.system === '400V, 3PH, 3W') {
+      defaultV = 400;
+    } else if (panel.system === '440V, 3PH, 3W') {
+      defaultV = 440;
+    } else if (panel.system === '480V, 3PH, 3W') {
+      defaultV = 480;
     } else if (panel.system === '400V/230V, 3PH, 4W') {
       if (is3PhaseLoad) {
         defaultV = 400;
       } else {
         defaultV = panel.connectionType === 'Line-to-Line' ? 400 : 230;
       }
+    } else if (panel.system === '440V/230V, 3PH, 4W') {
+      if (is3PhaseLoad) {
+        defaultV = 440;
+      } else {
+        defaultV = panel.connectionType === 'Line-to-Line' ? 440 : 230;
+      }
+    } else if (panel.system === '480V/230V, 3PH, 4W') {
+      if (is3PhaseLoad) {
+        defaultV = 480;
+      } else {
+        defaultV = panel.connectionType === 'Line-to-Line' ? 480 : 230;
+      }
     }
     const v = defaultV;
     c.voltage = v;
     
     let loadA = 0;
-    if ((panel.system === '230V, 3PH, 3W' || panel.system === '400V/230V, 3PH, 4W') && is3PhaseLoad) {
+    if (panel.system.includes('3PH') && is3PhaseLoad) {
       loadA = va / (v * 1.732);
     } else {
       loadA = va / v;
@@ -622,12 +679,45 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     setShowPresetsModal(false);
   };
 
+  const addMultiLoadCircuitFromPresets = () => {
+    if (selectedPresets.length === 0) return;
+    const newNo = circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
+    
+    const subLoads = selectedPresets.map(item => ({
+       id: crypto.randomUUID(),
+       description: item.description,
+       wattage: item.wattage,
+       quantity: 1
+    }));
+
+    const totalVA = subLoads.reduce((sum, sl) => sum + sl.wattage, 0);
+
+    const base: Partial<Circuit> = {
+      id: crypto.randomUUID(),
+      circuitNo: newNo,
+      description: subLoads.map(sl => sl.description).join(', '),
+      wattage: totalVA,
+      quantity: 1,
+      voltage: panel.voltage,
+      phases: ['R'],
+      loadType: selectedPresets[0].loadType as LoadType,
+      mcbType: MCBType.BOLT_ON,
+      wireType: 'THHN',
+      conduitType: 'PVC',
+      subLoads: subLoads
+    };
+    const newCircuit = { ...base, ...calculateCircuit(base) } as Circuit;
+    setCircuits([...circuits, newCircuit]);
+    setShowPresetsModal(false);
+    setSelectedPresets([]);
+  };
+
   const updateCircuit = (id: string, updates: Partial<Circuit>) => {
     setCircuits(prev => prev.map(c => {
       if (c.id === id) {
         const merged = { ...c, ...updates };
         // Trigger recalculation if load parameters OR the circuit breaker itself changes
-        if ('phases' in updates || 'wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates || 'pf' in updates || 'linkedSubPanelId' in updates) {
+        if ('phases' in updates || 'wattage' in updates || 'quantity' in updates || 'voltage' in updates || 'mcbAT' in updates || 'loadType' in updates || 'pf' in updates || 'linkedSubPanelId' in updates || 'subLoads' in updates) {
           return { ...merged, ...calculateCircuit(merged) } as Circuit;
         }
         return merged;
@@ -686,7 +776,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
         if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
         
         const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        let cirV = cir.voltage || getPanelSystemVoltageFallback(panel.system, is3Phase, panel.connectionType);
         if (cir.loadType === LoadType.SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
@@ -705,7 +795,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       let HML = 0;
       motorCircuits.forEach((cir) => {
         const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        let cirV = cir.voltage || getPanelSystemVoltageFallback(panel.system, is3Phase, panel.connectionType);
         const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
         if (loadI > HML) {
           HML = loadI;
@@ -715,6 +805,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
       const baseAmp = (totalAmpere * 1.732) * 0.80 + localPhaseAmps.threePhase + (0.25 * HML);
 
+      const totalConnectedVA = circuits.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
+
       return {
         is3PH,
         systemVoltage,
@@ -723,6 +815,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
         phaseB: localPhaseAmps.B,
         total3Phase: localPhaseAmps.threePhase,
         totalAmpere,
+        totalConnectedVA,
         HML,
         baseAmp,
         connectionType: panel.connectionType || 'Line-to-Line'
@@ -759,7 +852,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
         if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
         
         const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        let cirV = cir.voltage || getPanelSystemVoltageFallback(panel.system, is3Phase, panel.connectionType);
         if (cir.loadType === LoadType.SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
@@ -778,7 +871,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
       let HML = 0;
       motorCircuits.forEach((cir) => {
         const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || (panel.system === '400V/230V, 3PH, 4W' ? (is3Phase ? 400 : (panel.connectionType === 'Line-to-Line' ? 400 : 230)) : 230);
+        let cirV = cir.voltage || getPanelSystemVoltageFallback(panel.system, is3Phase, panel.connectionType);
         const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
         if (loadI > HML) {
           HML = loadI;
@@ -787,6 +880,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
 
       const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
       const maxDemandCurrent = (totalAmpere * 1.732) * 0.80 + localPhaseAmps.threePhase + (0.25 * HML);
+      const totalConnectedVA = circuits.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
       
       maxBaseAmp = maxDemandCurrent;
       maxDesignAmp = maxDemandCurrent;
@@ -807,7 +901,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
     }
 
     return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
-  }, [circuits, panel]);
+  }, [circuits, panel.system, panel.connectionType]);
 
   const mainFeeder = useMemo(() => {
     // The design ampacity correctly incorporates Continuous (125%) + Non-Continuous (100%) + Largest Motor (25%)
@@ -880,15 +974,52 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
             <Settings2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{isSubPanel ? 'Sub-Panel Configuration' : 'Panel Board Configuration'}</h2>
           </div>
-          {isSubPanel && onRemoveSubPanel && (
-            <button 
-              onClick={onRemoveSubPanel}
-              className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-lg flex items-center gap-1.5 transition-colors"
+          <div className="flex items-center gap-2">
+            {isSubPanel && onRemoveSubPanel && (
+              <button 
+                onClick={onRemoveSubPanel}
+                className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-lg flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Remove Sub-Panel
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (!isPremium) {
+                  if (onRequestUpgrade) onRequestUpgrade();
+                  return;
+                }
+                exportToCAD(
+                  panel,
+                  circuits,
+                  availableSubPanels || [],
+                  iscParams || {
+                    transformerKVA: 100,
+                    transformerZ: 5,
+                    transformerVoltage: panel.voltage || 230,
+                    primaryVoltage: 34500,
+                    transformerConnection: 'Delta-Wye (Δ-Y)',
+                    utilityShortCircuitMVA: 500,
+                    feederLength: 10,
+                    feederSize: '30',
+                    feederRuns: 1,
+                    conductorType: 'Copper'
+                  },
+                  'LOAD_SCHEDULE'
+                );
+              }}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-xs border ${
+                isPremium
+                  ? 'text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/30 hover:bg-sky-100 dark:hover:bg-sky-950/50 border-sky-300 dark:border-sky-800'
+                  : 'text-slate-500 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+              title={isPremium ? "Export complete Board Schedule and calculations to editable AutoCAD DXF/DWG standard blueprint drawing" : "Export AutoCad is available on the Premium Plan"}
             >
-              <Trash2 className="w-4 h-4" />
-              Remove Sub-Panel
+              <Layers className="w-4 h-4" />
+              <span>{isPremium ? "Export to AutoCAD" : "AutoCAD Export (Premium)"}</span>
             </button>
-          )}
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-4">
           <div className="space-y-1.5">
@@ -1048,8 +1179,8 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 return (
                 <tr key={c.id} style={{ fontSize: tableFontSize }} className={`${idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-800/50' : 'bg-white dark:bg-slate-900'} hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 group print:bg-white border-b border-slate-100 dark:border-slate-800 text-slate-800 dark:text-slate-100`}>
                   <td className="px-1 py-3 text-center font-bold text-indigo-600 truncate">{c.circuitNo}</td>
-                  <td className="px-2 py-3 overflow-hidden">
-                    <div className="flex items-center gap-1 min-w-0">
+                  <td className="px-2 py-3 overflow-hidden align-top">
+                    <div className="flex items-start gap-1 min-w-0 mt-1">
                       <select value={c.loadType} onChange={e => {
                         const nextType = e.target.value as LoadType;
                         let fallbackSubId = c.linkedSubPanelId;
@@ -1073,16 +1204,84 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                             <option key={sp.id} value={sp.id} className="dark:bg-slate-900 dark:text-slate-100">{sp.panel.designation || 'Unnamed Sub-Panel'}</option>
                           ))}
                         </select>
+                      ) : (c.subLoads && c.subLoads.length > 0) ? (
+                        <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                          {c.subLoads.map((sl, slIndex) => (
+                            <div key={sl.id} className="flex flex-1 items-center gap-1 min-w-0">
+                              <input className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none" value={sl.description} onChange={e => {
+                                const newSl = [...(c.subLoads || [])];
+                                newSl[slIndex] = { ...newSl[slIndex], description: e.target.value };
+                                updateCircuit(c.id, { subLoads: newSl });
+                              }} />
+                            </div>
+                          ))}
+                          <button onClick={() => {
+                             const newSl = [...(c.subLoads || []), { id: crypto.randomUUID(), description: 'New Load', quantity: 1, wattage: 100 }];
+                             updateCircuit(c.id, { subLoads: newSl });
+                          }} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 text-left mt-1 no-print focus:outline-none">+ Add Load</button>
+                        </div>
                       ) : (
-                        <input className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none" value={c.description} onChange={e => updateCircuit(c.id, { description: e.target.value })} />
+                        <div className="flex-1 flex items-center min-w-0">
+                          <input className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none" value={c.description} onChange={e => updateCircuit(c.id, { description: e.target.value })} />
+                          {!isSpace && (
+                            <button onClick={() => {
+                               updateCircuit(c.id, {
+                                 subLoads: [
+                                   { id: crypto.randomUUID(), description: c.description, wattage: c.wattage, quantity: c.quantity },
+                                   { id: crypto.randomUUID(), description: 'New Load', wattage: 100, quantity: 1 }
+                                 ]
+                               });
+                            }} className="text-indigo-400 hover:text-indigo-600 px-1 ml-1 text-xs uppercase font-bold no-print" title="Convert to multi-load circuit">+ Adds</button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </td>
-                  <td className="px-1 py-3 text-center">
-                    {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.wattage} onChange={e => updateCircuit(c.id, { wattage: parseInt(e.target.value) || 0 })} />}
+                  <td className="px-1 py-3 text-center align-top pt-4">
+                    {isSpace ? '-' : c.loadType === 'SUB' ? (
+                        <input type="number" readOnly className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-400 dark:text-slate-500 font-bold`} value={c.wattage} onChange={e => updateCircuit(c.id, { wattage: parseInt(e.target.value) || 0 })} />
+                    ) : (c.subLoads && c.subLoads.length > 0) ? (
+                        <div className="flex flex-col gap-1.5 items-center">
+                          {c.subLoads.map((sl, slIndex) => (
+                             <input key={sl.id} type="number" className="w-16 bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none" value={sl.wattage} onChange={e => {
+                                const newSl = [...(c.subLoads || [])];
+                                newSl[slIndex] = { ...newSl[slIndex], wattage: parseInt(e.target.value) || 0 };
+                                updateCircuit(c.id, { subLoads: newSl });
+                             }} />
+                          ))}
+                          <div className="h-[20px] text-[10px] text-slate-500 font-bold mt-1 px-1 font-mono no-print">T: {c.wattage}</div>
+                        </div>
+                    ) : (
+                        <input type="number" className="w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none" value={c.wattage} onChange={e => updateCircuit(c.id, { wattage: parseInt(e.target.value) || 0 })} />
+                    )}
                   </td>
-                  <td className="px-1 py-3 text-center">
-                    {isSpace ? '-' : <input type="number" readOnly={c.loadType === 'SUB'} className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 ${c.loadType === 'SUB' ? 'text-slate-400 dark:text-slate-500 font-bold' : ''}`} value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />}
+                  <td className="px-1 py-3 text-center align-top pt-4 text-slate-800 dark:text-slate-100">
+                    {isSpace ? '-' : c.loadType === 'SUB' ? (
+                       <input type="number" readOnly className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-400 dark:text-slate-500 font-bold`} value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />
+                    ) : (c.subLoads && c.subLoads.length > 0) ? (
+                         <div className="flex flex-col gap-1.5 items-center relative">
+                          {c.subLoads.map((sl, slIndex) => (
+                             <div key={sl.id} className="flex items-center gap-0 w-full relative">
+                               <input type="number" className="w-12 bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none" value={sl.quantity} onChange={e => {
+                                  const newSl = [...(c.subLoads || [])];
+                                  newSl[slIndex] = { ...newSl[slIndex], quantity: parseInt(e.target.value) || 0 };
+                                  updateCircuit(c.id, { subLoads: newSl });
+                               }} />
+                               <button onClick={() => {
+                                  let newSl = (c.subLoads || []).filter((_, i) => i !== slIndex);
+                                  if (newSl.length <= 1) {
+                                     const remaining = newSl[0] || { description: 'Load', wattage: 100, quantity: 1 };
+                                     updateCircuit(c.id, { subLoads: undefined, description: remaining.description, wattage: remaining.wattage, quantity: remaining.quantity });
+                                  } else {
+                                     updateCircuit(c.id, { subLoads: newSl });
+                                  }
+                               }} className="text-red-400 hover:text-red-600 absolute -right-3 -top-[2px] px-1 text-sm no-print font-bold block">×</button>
+                             </div>
+                          ))}
+                        </div>
+                    ) : (
+                        <input type="number" className="w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none" value={c.quantity} onChange={e => updateCircuit(c.id, { quantity: parseInt(e.target.value) || 0 })} />
+                    )}
                   </td>
                   <td className="px-1 py-3 text-center font-mono font-bold text-slate-400 dark:text-slate-500 truncate">
                     {isSpace ? '-' : c.loadVA}
@@ -1174,7 +1373,7 @@ export default function LoadSchedule({ panel, setPanel, circuits, setCircuits, i
                 <td colSpan={7} className="px-4 py-6">
                   <div className="uppercase opacity-70 flex flex-col gap-1 items-end" style={{ fontSize: tableFontSize - 2 }}>
                     <span>Main Feeder: {mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} sets of ` : ''}{formatWireSize(mainFeeder.wire.size)}mm² THHN, {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize} PVC</span>
-                    <span>Main Breaker: {mainFeeder.cb}A AT / {mainFeeder.af}AF, {mainFeeder.poles}P, {mainFeeder.kaic}kAIC, {mainFeeder.type}</span>
+                    <span>Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF, {mainFeeder.poles}P, {mainFeeder.kaic} kAIC, {mainFeeder.type}</span>
                     <span className={phaseImbalance > 15 ? 'text-red-400' : 'text-green-400'}>Phase Imbalance: {phaseImbalance.toFixed(1)}%</span>
                   </div>
                 </td>
@@ -1464,7 +1663,10 @@ I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times
                 Load Schedule Reference Guide
               </h2>
               <button 
-                onClick={() => setShowPresetsModal(false)}
+                onClick={() => {
+                  setShowPresetsModal(false);
+                  setSelectedPresets([]);
+                }}
                 className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
               >
                 <X className="w-5 h-5" />
@@ -1478,15 +1680,41 @@ I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times
                     {category.category}
                   </h3>
                   <div className="flex flex-col gap-2">
-                    {category.items.map((item, itemIdx) => (
+                    {category.items.map((item, itemIdx) => {
+                      const isSelected = selectedPresets.some(p => p.description === item.description);
+                      return (
                       <button 
                         key={itemIdx}
-                        onClick={() => addCircuitFromPreset(item)}
-                        className="group flex justify-between items-center p-3 bg-white rounded-lg border border-slate-200 hover:border-indigo-500 hover:shadow-md transition-all text-left"
+                        onClick={() => {
+                          if (selectedPresets.length > 0) {
+                            if (isSelected) {
+                               setSelectedPresets(selectedPresets.filter(p => p.description !== item.description));
+                            } else {
+                               setSelectedPresets([...selectedPresets, item]);
+                            }
+                          } else {
+                            addCircuitFromPreset(item);
+                          }
+                        }}
+                        className={`group flex justify-between items-center p-3 rounded-lg border transition-all text-left ${isSelected ? 'bg-indigo-50 border-indigo-500 shadow-sm' : 'bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md'}`}
                       >
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-700 group-hover:text-indigo-700">{item.description}</span>
-                          <span className="text-xs text-slate-500 font-mono mt-1">{item.label}</span>
+                        <div className="flex items-start gap-3">
+                          <div 
+                            onClick={(e) => {
+                               e.stopPropagation();
+                               if (isSelected) {
+                                  setSelectedPresets(selectedPresets.filter(p => p.description !== item.description));
+                               } else {
+                                  setSelectedPresets([...selectedPresets, item]);
+                               }
+                            }}
+                            className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center cursor-pointer shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 hover:border-indigo-500'}`}>
+                            {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className={`font-bold ${isSelected ? 'text-indigo-800' : 'text-slate-700 group-hover:text-indigo-700'}`}>{item.description}</span>
+                            <span className="text-xs text-slate-500 font-mono mt-1">{item.label}</span>
+                          </div>
                         </div>
                         <div className="flex items-center gap-3">
                            <span className="bg-slate-100 text-slate-600 text-xs font-black px-2 py-1 rounded">
@@ -1497,14 +1725,53 @@ I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times
                            </span>
                         </div>
                       </button>
-                    ))}
+                    )})}
                   </div>
                 </div>
               ))}
             </div>
-            <div className="p-4 border-t border-slate-100 shrink-0 flex justify-end text-sm text-slate-400 font-medium">
-              Click any load to instantly add it to your schedule.
-            </div>
+            {selectedPresets.length > 0 ? (
+              <div className="p-4 border-t border-indigo-100 shrink-0 flex items-center justify-between bg-indigo-50/50">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-indigo-700 bg-white px-3 py-1 rounded border border-indigo-200 shadow-sm">{selectedPresets.length} items selected</span>
+                  <span className="text-sm font-bold text-slate-600 border-l border-indigo-200 pl-3">Total combined load: {selectedPresets.reduce((sum, item) => sum + item.wattage, 0)}W</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => {
+                      let nextNo = circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
+                      const newCircuits = [...circuits];
+                      selectedPresets.forEach(preset => {
+                        const base: Partial<Circuit> = {
+                          id: crypto.randomUUID(),
+                          circuitNo: nextNo++,
+                          description: preset.description,
+                          wattage: preset.wattage,
+                          quantity: 1,
+                          voltage: panel.voltage,
+                          phases: ['R'],
+                          loadType: preset.loadType as LoadType,
+                          mcbType: MCBType.BOLT_ON,
+                          wireType: 'THHN',
+                          conduitType: 'PVC'
+                        };
+                        newCircuits.push({ ...base, ...calculateCircuit(base) } as Circuit);
+                      });
+                      setCircuits(newCircuits);
+                      setSelectedPresets([]);
+                      setShowPresetsModal(false);
+                  }} className="text-sm font-bold bg-white text-indigo-600 px-4 py-2 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors">
+                    Add Individually
+                  </button>
+                  <button onClick={addMultiLoadCircuitFromPresets} className="text-sm font-bold bg-indigo-600 text-white px-4 py-2 rounded-lg shadow disabled:opacity-50 hover:bg-indigo-700 transition-colors">
+                    Add as Single Circuit
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 border-t border-slate-100 shrink-0 flex justify-end text-sm text-slate-400 font-medium">
+                Click any load or checkbox to select. Select multiple to combine.
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -81,8 +81,8 @@ function createFixture3D(resolved: ReturnType<typeof resolveFixtureParams>) {
 
   if (resolved.shape === 'linear') {
     // Tube light / linear fitting
-    const housingW = resolved.width + 0.02;
-    const housingL = resolved.length + 0.02;
+    const housingW = resolved.length + 0.02; // length along X (horizontal)
+    const housingL = resolved.width + 0.02;  // width along Z (vertical)
     const housingH = Math.max(0.02, resolved.thickness);
     
     // Housing plate / backplate
@@ -94,18 +94,18 @@ function createFixture3D(resolved: ReturnType<typeof resolveFixtureParams>) {
     const tubeR = resolved.width / 2;
     const tubeL = resolved.length * 0.96;
     const tubeGeo = new THREE.CylinderGeometry(tubeR, tubeR, tubeL, 16);
-    tubeGeo.rotateX(Math.PI / 2); // align along Z-axis (room length)
+    tubeGeo.rotateZ(Math.PI / 2); // align along X-axis (room width)
     const tubeMesh = new THREE.Mesh(tubeGeo, emitterMat);
     tubeMesh.position.y = -housingH / 2 + 0.005;
     group.add(tubeMesh);
     
     // Small chrome/metallic end-caps
     const capGeo = new THREE.CylinderGeometry(tubeR + 0.005, tubeR + 0.005, 0.02, 16);
-    capGeo.rotateX(Math.PI / 2);
+    capGeo.rotateZ(Math.PI / 2); // align along X-axis
     const cap1 = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 }));
-    cap1.position.set(0, -housingH / 2 + 0.005, -tubeL / 2);
+    cap1.position.set(-tubeL / 2, -housingH / 2 + 0.005, 0); // place on X end caps
     const cap2 = cap1.clone();
-    cap2.position.set(0, -housingH / 2 + 0.005, tubeL / 2);
+    cap2.position.set(tubeL / 2, -housingH / 2 + 0.005, 0);
     group.add(cap1);
     group.add(cap2);
     
@@ -173,8 +173,9 @@ function createFixture3D(resolved: ReturnType<typeof resolveFixtureParams>) {
     
   } else {
     // Rectangular office fixture or floodlight plate
-    const w = resolved.width;
-    const l = resolved.length;
+    // Align horizontally with X by default (makes the longer dimension go along room width/X)
+    const w = Math.max(resolved.width, resolved.length);
+    const l = Math.min(resolved.width, resolved.length);
     const h = resolved.thickness;
     
     const frameGeo = new THREE.BoxGeometry(w + 0.02, h, l + 0.02);
@@ -469,11 +470,11 @@ export default function Illumination3DModel({
           }
           
           if (res.distributionType === 'linear') {
-            // Linear light segment spread along Z-axis (length)
+            // Linear light segment spread along X-axis (length)
             const halfL = res.length / 2;
-            const zClamped = Math.max(-halfL, Math.min(halfL, dz));
+            const xClamped = Math.max(-halfL, Math.min(halfL, dx));
             
-            const distSq = dx*dx + (dz - zClamped)*(dz - zClamped) + dHeight**2;
+            const distSq = (dx - xClamped)*(dx - xClamped) + dz*dz + dHeight**2;
             const dist = Math.sqrt(distSq);
             
             const cosTheta = dHeight / dist;
@@ -489,9 +490,9 @@ export default function Illumination3DModel({
             ptLux = rawPtLux * factor;
             
           } else if (res.distributionType === 'oblong') {
-            // Oval-shaped asymmetric spread
-            const odx = dx * 1.6; // squeeze X
-            const odz = dz * 0.7; // extend Z (wide roadway sweep)
+            // Oval-shaped asymmetric spread (extended horizontally along X-axis)
+            const odx = dx * 0.7; // extend X
+            const odz = dz * 1.6; // squeeze Z
             const distSq = odx*odx + odz*odz + dHeight**2;
             const dist = Math.sqrt(distSq);
             const cosTheta = dHeight / dist;
@@ -628,12 +629,23 @@ export default function Illumination3DModel({
             const intensity = pos.lumens / (2 * Math.PI);
             const res = pos.resolved;
 
+            let dx = realX - pos.x;
+            let dz = realZ - pos.z;
+
+            if (pos.rotationDegrees) {
+              const rad = -pos.rotationDegrees * Math.PI / 180;
+              const cosR = Math.cos(rad);
+              const sinR = Math.sin(rad);
+              const tX = dx * cosR - dz * sinR;
+              const tZ = dx * sinR + dz * cosR;
+              dx = tX;
+              dz = tZ;
+            }
+
             if (res.distributionType === 'linear') {
               const halfL = res.length / 2;
-              const zClamped = Math.max(pos.z - halfL, Math.min(pos.z + halfL, realZ));
-              const dx = realX - pos.x;
-              const dz = realZ - zClamped;
-              const distSq = dx*dx + dz*dz + dHeight**2;
+              const xClamped = Math.max(-halfL, Math.min(halfL, dx));
+              const distSq = (dx - xClamped)*(dx - xClamped) + dz*dz + dHeight**2;
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
               const theta = Math.acos(cosTheta);
@@ -644,9 +656,9 @@ export default function Illumination3DModel({
               }
               ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
             } else if (res.distributionType === 'oblong') {
-              const dx = (realX - pos.x) * 1.6;
-              const dz = (realZ - pos.z) * 0.7;
-              const distSq = dx*dx + dz*dz + dHeight**2;
+              const odx = dx * 0.7;
+              const odz = dz * 1.6;
+              const distSq = odx*odx + odz*odz + dHeight**2;
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
               const theta = Math.acos(cosTheta);
@@ -657,16 +669,12 @@ export default function Illumination3DModel({
               }
               ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
             } else if (res.distributionType === 'omni') {
-              const dx = realX - pos.x;
-              const dz = realZ - pos.z;
               const distSq = dx*dx + dz*dz + dHeight**2;
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
               const factor = Math.cos(Math.acos(cosTheta) * 0.6);
               ptLux = ((intensity * dHeight) / Math.pow(distSq, 1.5)) * factor;
             } else {
-              const dx = realX - pos.x;
-              const dz = realZ - pos.z;
               const distSq = dx*dx + dz*dz + dHeight**2;
               const dist = Math.sqrt(distSq);
               const cosTheta = dHeight / dist;
@@ -812,11 +820,13 @@ export default function Illumination3DModel({
       } else if (res.shape === 'linear') {
         const lThickness = Math.max(2, res.width * scale);
         const lLen = Math.max(12, res.length * scale);
-        ctx.fillRect(-lThickness / 2, -lLen / 2, lThickness, lLen);
-        ctx.strokeRect(-lThickness / 2, -lLen / 2, lThickness, lLen);
+        ctx.fillRect(-lLen / 2, -lThickness / 2, lLen, lThickness);
+        ctx.strokeRect(-lLen / 2, -lThickness / 2, lLen, lThickness);
       } else { // square or rectangular
-        const rectW = Math.max(6, res.width * scale);
-        const rectL = Math.max(6, res.length * scale);
+        const wVal = res.shape === 'square' ? res.width : Math.max(res.width, res.length);
+        const lVal = res.shape === 'square' ? res.width : Math.min(res.width, res.length);
+        const rectW = Math.max(6, wVal * scale);
+        const rectL = Math.max(6, lVal * scale);
         ctx.fillRect(-rectW / 2, -rectL / 2, rectW, rectL);
         ctx.strokeRect(-rectW / 2, -rectL / 2, rectW, rectL);
       }
@@ -930,13 +940,7 @@ export default function Illumination3DModel({
       model.position.set(pos.x, pos.y, pos.z);
       
       // Default basic orientation, and then apply custom rotation
-      if (pos.resolved.shape === 'linear') {
-        model.rotation.y = 0; 
-      }
-      
-      if (pos.rotationDegrees) {
-        model.rotation.y = -pos.rotationDegrees * Math.PI / 180;
-      }
+      model.rotation.y = -(pos.rotationDegrees || 0) * Math.PI / 180;
       
       scene.add(model);
     });

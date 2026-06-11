@@ -24,7 +24,7 @@ import LoadSchedule, {
   INITIAL_CIRCUITS,
   INITIAL_PANEL,
 } from "./components/LoadSchedule";
-import ShortCircuitCalc from "./components/ShortCircuitCalc";
+import ShortCircuitCalc, { getRunsBySystem } from "./components/ShortCircuitCalc";
 import VoltageDropCalc from "./components/VoltageDropCalc";
 import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
@@ -50,6 +50,7 @@ import { ProjectData } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
 import { computePanelScheduleValues } from "./utils/computeEngine";
+import { exportToCAD } from "./utils/exportDxf";
 
 import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
@@ -165,67 +166,40 @@ export default function App() {
     INITIAL_ILLUMINATION_PARAMS,
   );
 
-  // Bidirectional sync between circuits and saved lighting rooms
+  // One-way sync: Illumination Saved Rooms -> Circuits
   useEffect(() => {
-    if (!circuits || !illumParams || !illumParams.savedRooms) return;
+    if (!illumParams || !illumParams.savedRooms) return;
 
-    let circuitsChanged = false;
-    let savedRoomsChanged = false;
+    setCircuits(prevCircuits => {
+      if (!prevCircuits) return prevCircuits;
+      let circuitsChanged = false;
 
-    const nextCircuits = circuits.map(c => {
-      if (c.loadType === LoadType.LIGHTING) {
-        // Find if there's a saved room with matching circuitNo
-        const matchingRoom = illumParams.savedRooms?.find(r => r.circuitNo === c.circuitNo);
-        if (matchingRoom) {
-          const estimatedWattage = matchingRoom.fixtureWattage || 15;
-          const totalVA = estimatedWattage * matchingRoom.fixturesCount;
-          
-          if (c.quantity !== matchingRoom.fixturesCount || c.wattage !== estimatedWattage || c.loadVA !== totalVA || Math.abs(c.loadA - totalVA / c.voltage) > 0.01) {
-            circuitsChanged = true;
-            return {
-              ...c,
-              quantity: matchingRoom.fixturesCount,
-              wattage: estimatedWattage,
-              loadVA: totalVA,
-              loadA: Number((totalVA / c.voltage).toFixed(2))
-            };
+      const nextCircuits = prevCircuits.map(c => {
+        if (c.loadType === LoadType.LIGHTING) {
+          // Find if there's a saved room with matching circuitNo
+          const matchingRoom = illumParams.savedRooms?.find(r => r.circuitNo === c.circuitNo);
+          if (matchingRoom) {
+            const estimatedWattage = matchingRoom.fixtureWattage || 15;
+            const totalVA = estimatedWattage * matchingRoom.fixturesCount;
+            
+            if (c.quantity !== matchingRoom.fixturesCount || c.wattage !== estimatedWattage || c.loadVA !== totalVA || Math.abs(c.loadA - totalVA / c.voltage) > 0.01) {
+              circuitsChanged = true;
+              return {
+                ...c,
+                quantity: matchingRoom.fixturesCount,
+                wattage: estimatedWattage,
+                loadVA: totalVA,
+                loadA: Number((totalVA / c.voltage).toFixed(2))
+              };
+            }
           }
         }
-      }
-      return c;
-    });
+        return c;
+      });
 
-    const nextSavedRooms = illumParams.savedRooms.map(r => {
-      if (r.circuitNo) {
-        const matchingCircuit = circuits.find(c => c.circuitNo === r.circuitNo);
-        if (matchingCircuit) {
-          const expectedTotalWattage = matchingCircuit.wattage * matchingCircuit.quantity;
-          if (r.fixturesCount !== matchingCircuit.quantity || r.fixtureWattage !== matchingCircuit.wattage || r.totalWattage !== expectedTotalWattage) {
-            savedRoomsChanged = true;
-            const fixLumens = r.fixtureLumens || 1000;
-            return {
-              ...r,
-              fixturesCount: matchingCircuit.quantity,
-              fixtureWattage: matchingCircuit.wattage,
-              totalWattage: expectedTotalWattage,
-              totalLumens: fixLumens * matchingCircuit.quantity
-            };
-          }
-        }
-      }
-      return r;
+      return circuitsChanged ? nextCircuits : prevCircuits;
     });
-
-    if (circuitsChanged) {
-      setCircuits(nextCircuits);
-    }
-    if (savedRoomsChanged) {
-      setIllumParams(prev => ({
-        ...prev,
-        savedRooms: nextSavedRooms
-      }));
-    }
-  }, [circuits, illumParams, setCircuits, setIllumParams]);
+  }, [illumParams, setCircuits]);
   
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>({});
 
@@ -560,7 +534,7 @@ export default function App() {
       ]);
       wsData.push([
         "Main Breaker:",
-        `${cb}A AT / ${cbAF}AF, ${poles}P, ${kaic}kAIC, ${type}`,
+        `${cb} AT / ${cbAF} AF, ${poles}P, ${kaic} kAIC, ${type}`,
       ]);
       wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
       wsData.push([
@@ -790,7 +764,7 @@ export default function App() {
       utilityShortCircuitMVA: 500,
       feederLength: 10,
       feederSize: '30',
-      feederRuns: 1,
+      feederRuns: getRunsBySystem(panel?.system),
       conductorType: 'Copper'
     };
 
@@ -1152,6 +1126,24 @@ export default function App() {
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>Export to Excel</span>
+          </button>
+          <button
+            onClick={() => {
+              if (userPlan === 'premium' || isAdmin) {
+                exportToCAD(panel, circuits, subPanels, iscParams, 'ALL', vdCalculations);
+              } else {
+                setShowUpgrade(true);
+              }
+            }}
+            className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 rounded-lg text-xs font-bold transition-all border ${
+              userPlan === 'premium' || isAdmin
+                ? 'bg-sky-950/45 text-sky-400 hover:bg-sky-900/60 border-sky-800/60 cursor-pointer'
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700/50 cursor-pointer'
+            }`}
+            title={userPlan !== 'premium' && !isAdmin ? "AutoCAD Export is available on the Premium Plan" : "Export complete Load Schedule Table and Short Circuit calculations directly to DWG/DXF AutoCAD format"}
+          >
+            <Layers className={`w-4 h-4 ${userPlan === 'premium' || isAdmin ? 'text-sky-400' : 'text-slate-500'}`} />
+            <span>{userPlan !== 'premium' && !isAdmin ? "Export AutoCAD (Premium)" : "Export AutoCAD Drawing"}</span>
           </button>
           <div className="pt-2 flex justify-center">
             <Auth />
@@ -1614,6 +1606,9 @@ export default function App() {
                     circuits={circuits}
                     setCircuits={setCircuits}
                     availableSubPanels={subPanels}
+                    iscParams={iscParams}
+                    isPremium={userPlan === 'premium' || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
                   />
                 )}
 
@@ -1664,6 +1659,9 @@ export default function App() {
                           );
                           setActiveScheduleTab("mdp");
                         }}
+                        iscParams={iscParams}
+                        isPremium={userPlan === 'premium' || isAdmin}
+                        onRequestUpgrade={() => setShowUpgrade(true)}
                       />
                     </React.Fragment>
                   );
@@ -1713,6 +1711,8 @@ export default function App() {
                 setParams={setIscParams}
                 source={iscSource}
                 setSource={setIscSource}
+                isPremium={userPlan === 'premium' || isAdmin}
+                onRequestUpgrade={() => setShowUpgrade(true)}
               />
             </motion.div>
           </div>
@@ -1730,6 +1730,8 @@ export default function App() {
                 circuits={circuits}
                 calculations={vdCalculations}
                 setCalculations={setVdCalculations}
+                isPremium={userPlan === 'premium' || isAdmin}
+                onRequestUpgrade={() => setShowUpgrade(true)}
               />
             </motion.div>
           </div>
@@ -1763,7 +1765,14 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="w-full flex justify-center"
             >
-              <SystemSLD panel={panel} circuits={circuits} subPanels={subPanels} />
+              <SystemSLD 
+                panel={panel} 
+                circuits={circuits} 
+                subPanels={subPanels} 
+                iscParams={iscParams} 
+                isPremium={userPlan === 'premium' || isAdmin}
+                onRequestUpgrade={() => setShowUpgrade(true)}
+              />
             </motion.div>
           </div>
 
