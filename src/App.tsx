@@ -1442,6 +1442,7 @@ export default function App() {
                   iscParams,
                   "ALL",
                   vdCalculations,
+                  illumParams,
                 );
               } else {
                 setShowUpgrade(true);

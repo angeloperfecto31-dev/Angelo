@@ -27,10 +27,10 @@ try {
 }
 
 
-function sanitizeStringForDxf(text: string): string {
-  if (!text) return "";
+function sanitizeStringForDxf(text: any): string {
+  if (text === null || text === undefined) return "";
 
-  let res = text;
+  let res = String(text);
 
   // 1. Normalize stray/unintended backslashes to forward slashes first (to prevent DXF errors), and clean Unicode variants
   res = res
@@ -229,7 +229,7 @@ class DxfBuilder {
   }
 
   addText(
-    text: string,
+    text: any,
     x: number,
     y: number,
     height: number = 2.5,
@@ -238,9 +238,11 @@ class DxfBuilder {
     align: "left" | "center" | "right" = "left",
     wrapWidth: number = 0.0
   ) {
-    if (!text || text.trim() === "") return;
+    if (text === null || text === undefined) return;
+    const textStr = String(text);
+    if (textStr.trim() === "") return;
 
-    const cleanedText = sanitizeStringForDxf(text).slice(0, 250);
+    const cleanedText = sanitizeStringForDxf(textStr).slice(0, 250);
     this.drawing.setActiveLayer(layer);
 
     // Compute the visual middle to compensate for old baseline-calibrated Y coordinates
@@ -831,6 +833,7 @@ export const exportToCAD = (
     | "SHORT_CIRCUIT"
     | "VOLTAGE_DROP" = "ALL",
   vdCalculations: VoltageDropCalculation[] = [],
+  illumParams?: any,
 ) => {
   const b = new DxfBuilder();
 
@@ -838,9 +841,9 @@ export const exportToCAD = (
   const calcData = computePanelScheduleValues(panel, circuits);
   const is3Phase = panel.system.includes("3PH");
 
-  const formatLatexForCAD = (text: string) => {
-    if (!text) return "";
-    let res = text;
+  const formatLatexForCAD = (text: any) => {
+    if (text === null || text === undefined) return "";
+    let res = String(text);
 
     // 1. Recursive outer LaTeX structure strip/replacements
     let prev = "";
@@ -925,7 +928,7 @@ export const exportToCAD = (
   };
 
   // Run Short Circuit calculations
-  const scParams = iscParams || {
+  const defaultScParams = {
     transformerKVA: 100,
     transformerZ: 5,
     transformerVoltage: panel.voltage || 230,
@@ -933,9 +936,22 @@ export const exportToCAD = (
     transformerConnection: "Delta-Wye (D-Y)",
     utilityShortCircuitMVA: 500,
     feederLength: 10,
-    feederSize: "30",
+    feederSize: "3.5",
     feederRuns: getRunsBySystemLocal(panel.system),
     conductorType: "Copper",
+  };
+
+  const scParams = {
+    transformerKVA: iscParams?.transformerKVA ?? defaultScParams.transformerKVA,
+    transformerZ: iscParams?.transformerZ ?? defaultScParams.transformerZ,
+    transformerVoltage: iscParams?.transformerVoltage ?? defaultScParams.transformerVoltage,
+    primaryVoltage: iscParams?.primaryVoltage ?? defaultScParams.primaryVoltage,
+    transformerConnection: iscParams?.transformerConnection ?? defaultScParams.transformerConnection,
+    utilityShortCircuitMVA: iscParams?.utilityShortCircuitMVA ?? defaultScParams.utilityShortCircuitMVA,
+    feederLength: iscParams?.feederLength ?? defaultScParams.feederLength,
+    feederSize: iscParams?.feederSize ?? defaultScParams.feederSize,
+    feederRuns: iscParams?.feederRuns ?? defaultScParams.feederRuns,
+    conductorType: iscParams?.conductorType ?? defaultScParams.conductorType,
   };
 
   let connectionMultiplier = 1.0;
@@ -998,15 +1014,21 @@ export const exportToCAD = (
   const MARGIN_BOTTOM = 10;
   const includeSLDSheet =
     exportMode === "ALL" || exportMode === "LOAD_SCHEDULE";
+  const hasIllumination = !!(illumParams?.savedRooms && illumParams.savedRooms.length > 0);
   let totalSheets = 4;
   if (exportMode === "ALL") {
-    totalSheets = 4 + Math.ceil(subPanels.length / 2);
+    let baseSheets = 4 + Math.ceil(subPanels.length / 2);
+    let extra = 2; // Voltage Drop and Short Circuit tables
+    if (hasIllumination) {
+      extra += 1; // plus Illumination table
+    }
+    totalSheets = baseSheets + extra;
   } else if (exportMode === "LOAD_SCHEDULE") {
     totalSheets = 2 + Math.ceil(subPanels.length / 2);
   } else if (exportMode === "SHORT_CIRCUIT") {
-    totalSheets = 2;
+    totalSheets = 3; // Calculations Summary, SLD, and Dedicated SC Table
   } else if (exportMode === "VOLTAGE_DROP") {
-    totalSheets = 1;
+    totalSheets = 2; // Calculations Summary and Dedicated VD Table
   }
 
   // Pre-calculate variable sheet widths and their xOffsets
@@ -1431,7 +1453,7 @@ export const exportToCAD = (
         b.addText(
           cols[i].name,
           cx,
-          ty - headerRowH + 3.0,
+          ty - 5.5,
           2.0,
           0,
           "TEXT_HEADER",
@@ -1460,7 +1482,7 @@ export const exportToCAD = (
           b.addText(
             cols[i].name,
             cx,
-            ty - headerRowH + 6.0,
+            ty - 8.0,
             2.0,
             0,
             "TEXT_HEADER",
@@ -1477,7 +1499,7 @@ export const exportToCAD = (
       b.addText(
         "AMPS",
         (ampsStartX + ampsEndX) / 2,
-        ty - 5.0,
+        ty - 4.5,
         2.0,
         0,
         "TEXT_HEADER",
@@ -1498,7 +1520,7 @@ export const exportToCAD = (
         b.addText(
           cols[i].name,
           cx,
-          ty - headerRowH + 2.0,
+          ty - 11.4,
           1.8,
           0,
           "TEXT_HEADER",
@@ -1513,9 +1535,15 @@ export const exportToCAD = (
     // Print circuit rows
     const rowH = 7.5;
     currentCircuits.forEach((cir) => {
-      b.addRect(xOffset + 20, ty - rowH, tableRight, ty, "TABLE_GRID");
+      // Draw bottom horizontal line
+      b.addLine(xOffset + 20, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
+      // Draw left outer vertical line
+      b.addLine(xOffset + 20, ty - rowH, xOffset + 20, ty, "BORDER");
+      // Draw right outer vertical line
+      b.addLine(tableRight, ty - rowH, tableRight, ty, "BORDER");
 
-      for (let i = 1; i < colPositions.length; i++) {
+      // Draw inner dividers only
+      for (let i = 1; i < colPositions.length - 1; i++) {
         b.addLine(
           colPositions[i],
           ty - rowH,
@@ -1536,7 +1564,7 @@ export const exportToCAD = (
       b.addText(
         cir.circuitNo.toString(),
         colPositions[0] + cols[0].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1547,7 +1575,7 @@ export const exportToCAD = (
       b.addText(
         cir.description,
         colPositions[1] + 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1559,7 +1587,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : cir.wattage.toString(),
         colPositions[2] + cols[2].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1570,7 +1598,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : cir.quantity.toString(),
         colPositions[3] + cols[3].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1581,7 +1609,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : cir.loadVA.toString(),
         colPositions[4] + cols[4].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1600,7 +1628,7 @@ export const exportToCAD = (
       b.addText(
         phaseStr,
         colPositions[5] + cols[5].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1612,7 +1640,7 @@ export const exportToCAD = (
         b.addText(
           isSpace || isSpare ? "-" : `${cir.loadA.toFixed(2)}A`,
           colPositions[6] + cols[6].w / 2,
-          ty - rowH + 2.5,
+          ty - 4.65,
           1.8,
           0,
           "TEXT_DATA",
@@ -1651,7 +1679,7 @@ export const exportToCAD = (
         b.addText(
           phRVal,
           colPositions[6] + cols[6].w / 2,
-          ty - rowH + 2.5,
+          ty - 4.55,
           1.6,
           0,
           "TEXT_DATA",
@@ -1660,7 +1688,7 @@ export const exportToCAD = (
         b.addText(
           phYVal,
           colPositions[7] + cols[7].w / 2,
-          ty - rowH + 2.5,
+          ty - 4.55,
           1.6,
           0,
           "TEXT_DATA",
@@ -1669,7 +1697,7 @@ export const exportToCAD = (
         b.addText(
           phBVal,
           colPositions[8] + cols[8].w / 2,
-          ty - rowH + 2.5,
+          ty - 4.55,
           1.6,
           0,
           "TEXT_DATA",
@@ -1678,7 +1706,7 @@ export const exportToCAD = (
         b.addText(
           ph3PVal,
           colPositions[9] + cols[9].w / 2,
-          ty - rowH + 2.5,
+          ty - 4.55,
           1.6,
           0,
           "TEXT_DATA",
@@ -1692,7 +1720,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbAT} AT`,
         colPositions[baseIdx] + cols[baseIdx].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1703,7 +1731,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbAF} AF`,
         colPositions[baseIdx + 1] + cols[baseIdx + 1].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1714,7 +1742,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbP}P`,
         colPositions[baseIdx + 2] + cols[baseIdx + 2].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1725,7 +1753,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbKAIC}`,
         colPositions[baseIdx + 3] + cols[baseIdx + 3].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1736,7 +1764,7 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbType}`,
         colPositions[baseIdx + 4] + cols[baseIdx + 4].w / 2,
-        ty - rowH + 2.5,
+        ty - 4.65,
         1.8,
         0,
         "TEXT_DATA",
@@ -1752,7 +1780,7 @@ export const exportToCAD = (
       b.addText(
         sizeStr,
         colPositions[baseIdx + 5] + 3,
-        ty - rowH + 2.5,
+        ty - 4.55,
         1.6,
         0,
         "TEXT_DATA",
@@ -1771,7 +1799,7 @@ export const exportToCAD = (
     b.addText(
       "TOTAL CONNECTED LOAD / SUMMARY:",
       xOffset + 23,
-      ty - sumRowH + 2.5,
+      ty - sumRowH + 3.1,
       1.8,
       0,
       "TEXT_HEADER",
@@ -1785,7 +1813,7 @@ export const exportToCAD = (
     b.addText(
       `${currentCalcData.totalVA.toFixed(0)} VA`,
       colPositions[4] + cols[4].w / 2,
-      ty - sumRowH + 2.5,
+      ty - sumRowH + 3.1,
       1.8,
       0,
       "TEXT_HEADER",
@@ -1798,7 +1826,7 @@ export const exportToCAD = (
     b.addText(
       `(${(currentCalcData.totalVA / 1000).toFixed(2)} kVA)`,
       colPositions[5] + cols[5].w / 2,
-      ty - sumRowH + 2.5,
+      ty - sumRowH + 3.1,
       1.8,
       0,
       "TEXT_HEADER",
@@ -1813,7 +1841,7 @@ export const exportToCAD = (
       b.addText(
         `${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
         colPositions[6] + cols[6].w / 2,
-        ty - sumRowH + 2.5,
+        ty - sumRowH + 3.1,
         1.8,
         0,
         "TEXT_HEADER",
@@ -1841,7 +1869,7 @@ export const exportToCAD = (
       b.addText(
         `${currentCalcData.phaseAmps.R.toFixed(2)} A`,
         colPositions[6] + cols[6].w / 2,
-        ty - sumRowH + 2.5,
+        ty - sumRowH + 3.2,
         1.6,
         0,
         "TEXT_HEADER",
@@ -1850,7 +1878,7 @@ export const exportToCAD = (
       b.addText(
         `${currentCalcData.phaseAmps.Y.toFixed(2)} A`,
         colPositions[7] + cols[7].w / 2,
-        ty - sumRowH + 2.5,
+        ty - sumRowH + 3.2,
         1.6,
         0,
         "TEXT_HEADER",
@@ -1859,7 +1887,7 @@ export const exportToCAD = (
       b.addText(
         `${currentCalcData.phaseAmps.B.toFixed(2)} A`,
         colPositions[8] + cols[8].w / 2,
-        ty - sumRowH + 2.5,
+        ty - sumRowH + 3.2,
         1.6,
         0,
         "TEXT_HEADER",
@@ -1872,7 +1900,7 @@ export const exportToCAD = (
       b.addText(
         ph3PVal,
         colPositions[9] + cols[9].w / 2,
-        ty - sumRowH + 2.5,
+        ty - sumRowH + 3.2,
         1.6,
         0,
         "TEXT_HEADER",
@@ -1886,7 +1914,7 @@ export const exportToCAD = (
     b.addText(
       summarySpecStr,
       colPositions[ampsEndIdx] + 3,
-      ty - sumRowH + 2.5,
+      ty - sumRowH + 3.25,
       1.5,
       0,
       "TEXT_DATA",
@@ -3307,6 +3335,455 @@ export const exportToCAD = (
 
     // Summary connecting guide
     b.addLine(xRight + 1.5, y6, xRight + 45, y6, "SLD_DASHED");
+  }
+
+  // === DEDICATED NEW SHEET: VOLTAGE DROP ANALYSIS TABLE ===
+  if (exportMode === "ALL" || exportMode === "VOLTAGE_DROP") {
+    const vdSheetIndex = globalSheetCursor++;
+    drawSheetTemplate(
+      vdSheetIndex,
+      panel,
+      "VOLTAGE DROP ANALYSIS",
+      "FEEDER VOLTAGE REGULATION REPORT",
+    );
+
+    const sConf = sheetConfigs[vdSheetIndex] || { w: baseW, xOffset: vdSheetIndex * 900 };
+    const xOffset = sConf.xOffset;
+    let ty = 500;
+
+    const cols = [
+      { name: "SYSTEM / SOURCE", w: 120 },
+      { name: "LINE NAME", w: 90 },
+      { name: "CURRENT (A)", w: 45 },
+      { name: "LENGTH (m)", w: 45 },
+      { name: "WIRE SIZE (mm\\U+00B2)", w: 70 },
+      { name: "VOLTAGE", w: 45 },
+      { name: "SYSTEM TYPE", w: 45 },
+      { name: "VD (V)", w: 45 },
+      { name: "VD (%)", w: 45 },
+      { name: "STATUS", w: 50 },
+    ];
+
+    const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
+    const tableLeft = xOffset + 50;
+    const tableRight = tableLeft + tableWidth;
+
+    // Header Border
+    b.addRect(tableLeft, ty - 12, tableRight, ty, "BORDER");
+    b.addText(
+      "VOLTAGE DROP ANALYSIS REPORT TABLE",
+      tableLeft + tableWidth / 2,
+      ty - 7.6,
+      3.2,
+      0,
+      "TEXT_TITLE",
+      "center",
+    );
+
+    ty -= 12;
+
+    // Header Row Columns labels
+    b.addRect(tableLeft, ty - 10, tableRight, ty, "BORDER");
+    let currentX = tableLeft;
+    const colPositions: number[] = [];
+    cols.forEach((col) => {
+      colPositions.push(currentX);
+      b.addText(
+        col.name,
+        currentX + col.w / 2,
+        ty - 5.9,
+        1.8,
+        0,
+        "TEXT_HEADER",
+        "center",
+        col.w - 2
+      );
+      currentX += col.w;
+    });
+    colPositions.push(currentX);
+
+    // Grid vertical lines for headers (inner dividers only)
+    for (let i = 1; i < colPositions.length - 1; i++) {
+      b.addLine(colPositions[i], ty - 10, colPositions[i], ty, "BORDER");
+    }
+
+    ty -= 10;
+
+    // Data Row rendering
+    const rowH = 8.0;
+    const calculationsToRender = vdCalculations && vdCalculations.length > 0 ? vdCalculations : [];
+    
+    calculationsToRender.forEach((calc) => {
+      // Draw bottom horizontal line
+      b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
+      // Draw left outer vertical line
+      b.addLine(tableLeft, ty - rowH, tableLeft, ty, "BORDER");
+      // Draw right outer vertical line
+      b.addLine(tableRight, ty - rowH, tableRight, ty, "BORDER");
+
+      // Draw inner vertical divider lines
+      for (let i = 1; i < colPositions.length - 1; i++) {
+        b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
+      }
+
+      // Compute details consistent with Excel export
+      const factor = calc.systemType === "3PH" ? 1.732 : 2.0;
+      const cLength = calc.length || 0;
+      const cLoad = calc.loadA || 0;
+      const cVoltage = calc.voltage || 230;
+      const dataStr = calc.wireSize;
+      const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
+        WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+      const R_val = impedanceInfo.r;
+
+      const VD_v = (factor * cLength * cLoad * R_val) / 1000;
+      const VD_percent = (VD_v / cVoltage) * 100;
+      const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
+
+      let sourceLabel = calc.source;
+      if (calc.source === "custom") {
+        sourceLabel = "Custom";
+      } else {
+        let foundPanel: any = null;
+        if (calc.source === "main" || calc.source === "MDP" || (panel && panel.designation === calc.source)) {
+          foundPanel = { id: "main", panel: panel };
+        } else {
+          foundPanel = subPanels.find((sp) => sp.id === calc.source || sp.panel.designation === calc.source);
+          if (!foundPanel) {
+            if (circuits.some((c) => c.id === calc.source)) {
+              foundPanel = { id: "main", panel: panel };
+            } else {
+              const matchedSp = subPanels.find((sp) => sp.circuits.some((c) => c.id === calc.source));
+              if (matchedSp) foundPanel = matchedSp;
+            }
+          }
+        }
+
+        if (foundPanel) {
+          sourceLabel = `${foundPanel.panel.system} / ${foundPanel.panel.designation || (foundPanel.id === "main" ? "MDP" : "Sub Panel")}`;
+        } else {
+          sourceLabel = calc.source || "Local Distribution";
+        }
+      }
+
+      b.addText(sourceLabel, colPositions[0] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 4);
+      b.addText(calc.name, colPositions[1] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[1].w - 4);
+      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      
+      const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - 4.9, 1.8, 0, statLayer, "center");
+
+      ty -= rowH;
+    });
+
+    if (calculationsToRender.length === 0) {
+      // Draw bottom horizontal line
+      b.addLine(tableLeft, ty - rowH * 2, tableRight, ty - rowH * 2, "TABLE_GRID");
+      // Draw left outer vertical line
+      b.addLine(tableLeft, ty - rowH * 2, tableLeft, ty, "BORDER");
+      // Draw right outer vertical line
+      b.addLine(tableRight, ty - rowH * 2, tableRight, ty, "BORDER");
+
+      b.addText(
+        "NO VOLTAGE DROP ANALYSIS DATA RECORDED IN SCOPE",
+        tableLeft + tableWidth / 2,
+        ty - rowH - 1.0,
+        2.2,
+        0,
+        "TEXT_HEADER",
+        "center"
+      );
+    }
+  }
+
+  // === DEDICATED NEW SHEET: SHORT-CIRCUIT STUDY TABLE ===
+  if (exportMode === "ALL" || exportMode === "SHORT_CIRCUIT") {
+    const scSheetIndex = globalSheetCursor++;
+    drawSheetTemplate(
+      scSheetIndex,
+      panel,
+      "SHORT CIRCUIT STUDY",
+      "FAULT LEVEL CALCULATED RESULTS",
+    );
+
+    const sConf = sheetConfigs[scSheetIndex] || { w: baseW, xOffset: scSheetIndex * 900 };
+    const xOffset = sConf.xOffset;
+    let ty = 500;
+
+    const cols = [
+      { name: "PARAMETER / COMPONENT DESCRIPTION", w: 320 },
+      { name: "VALUE", w: 140 },
+      { name: "UNIT", w: 140 },
+    ];
+
+    const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
+    const tableLeft = xOffset + 50;
+    const tableRight = tableLeft + tableWidth;
+
+    // Header Border
+    b.addRect(tableLeft, ty - 12, tableRight, ty, "BORDER");
+    b.addText(
+      "SHORT CIRCUIT POINT-TO-POINT CALCULATION RESULTS",
+      tableLeft + tableWidth / 2,
+      ty - 7.6,
+      3.2,
+      0,
+      "TEXT_TITLE",
+      "center",
+    );
+
+    ty -= 12;
+
+    // Header Row Column labels
+    b.addRect(tableLeft, ty - 10, tableRight, ty, "BORDER");
+    let currentX = tableLeft;
+    const colPositions: number[] = [];
+    cols.forEach((col) => {
+      colPositions.push(currentX);
+      b.addText(
+        col.name,
+        currentX + col.w / 2,
+        ty - 5.9,
+        1.8,
+        0,
+        "TEXT_HEADER",
+        "center",
+        col.w - 2
+      );
+      currentX += col.w;
+    });
+    colPositions.push(currentX);
+
+    // Grid vertical lines for headers (inner dividers only)
+    for (let i = 1; i < colPositions.length - 1; i++) {
+      b.addLine(colPositions[i], ty - 10, colPositions[i], ty, "BORDER");
+    }
+
+    ty -= 10;
+
+    // Compute Short Circuit values matching Excel EXACTLY
+    const excelBaseKVA = scParams.transformerKVA;
+    const excelBaseKV = scParams.transformerVoltage / 1000;
+    const excelZUtilitypu = excelBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
+    const excelZTranspu = scParams.transformerZ / 100;
+
+    const excelFeederR =
+      (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+    const excelFeederX =
+      (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+    const excelFeederZ = Math.sqrt(excelFeederR * excelFeederR + excelFeederX * excelFeederX);
+    const excelZFeederpu =
+      (excelFeederZ * (excelBaseKVA / 1000)) / (excelBaseKV * excelBaseKV);
+
+    const excelTotalZpu = excelZUtilitypu + excelZTranspu + excelZFeederpu;
+    const excelIFullLoad =
+      scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
+
+    const excelIscMainBreaker = excelIFullLoad / (excelZUtilitypu + excelZTranspu);
+    const excelIscFaultPoint = excelIFullLoad / excelTotalZpu;
+
+    const excelMotorLoadVA = circuits
+      .filter(
+        (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
+      )
+      .reduce((sum, c) => sum + c.loadVA, 0);
+    const excelMotorContribution =
+      excelMotorLoadVA > 0
+        ? (excelMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
+        : 0;
+
+    const excelCombinedSymmetricalCurrent = excelIscFaultPoint + excelMotorContribution;
+    const excelCombinedAsymmetricalCurrent = excelCombinedSymmetricalCurrent * 1.25;
+    const excelBreakingkAIC = excelCombinedAsymmetricalCurrent / 1000;
+
+    const scRows: { label: string; val: string | number; unit: string; isSection?: boolean }[] = [
+      { label: "INPUT DESIGN PARAMETERS", val: "", unit: "", isSection: true },
+      { label: "Utility Short Circuit Strength", val: scParams.utilityShortCircuitMVA, unit: "MVAsc" },
+      { label: "Primary Bus Voltage (HV)", val: scParams.primaryVoltage, unit: "Volts" },
+      { label: "Secondary Rated Bus Voltage (LV)", val: scParams.transformerVoltage, unit: "Volts" },
+      { label: "Transformer Sizing Capacity", val: scParams.transformerKVA, unit: "kVA" },
+      { label: "Transformer Percent Impedance (%Z)", val: scParams.transformerZ, unit: "%" },
+      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize, unit: "mm\\U+00B2 THHN" },
+      { label: "Feeder Distance Length", val: scParams.feederLength, unit: "Meters" },
+      { label: "Parallel Feeder Conductors", val: scParams.feederRuns, unit: "Runs" },
+      { label: "Active Conductor Metal Type", val: scParams.conductorType, unit: "Copper/Aluminum" },
+
+      { label: "PER-UNIT IMPEDANCES (BASE S SYSTEM = " + scParams.transformerKVA + " kVA)", val: "", unit: "", isSection: true },
+      { label: "Transformer Full Load Current (FLA)", val: excelIFullLoad.toFixed(2), unit: "Amperes" },
+      { label: "Utility Grid Impedance (Z-utility)", val: excelZUtilitypu.toFixed(6), unit: "pu" },
+      { label: "Transformer Leakage Impedance (Z-transformer)", val: excelZTranspu.toFixed(6), unit: "pu" },
+      { label: "Main Feeder Ohmic Resistance (R)", val: excelFeederR.toFixed(5), unit: "Ohms" },
+      { label: "Main Feeder Ohmic Reactance (X)", val: excelFeederX.toFixed(5), unit: "Ohms" },
+      { label: "Main Feeder Absolute Ohmic Impedance (|Z|)", val: excelFeederZ.toFixed(5), unit: "Ohms" },
+      { label: "Feeder Integrated Impedance (Z-feeder)", val: excelZFeederpu.toFixed(6), unit: "pu" },
+      { label: "Total Consolidated System Impedance (Z-total)", val: excelTotalZpu.toFixed(6), unit: "pu" },
+
+      { label: "FAULT LEVEL CALCULATED RESULTS", val: "", unit: "", isSection: true },
+      { label: "Symmetrical Fault Current at Transformer (Isc Main)", val: excelIscMainBreaker.toFixed(2), unit: "Amps" },
+      { label: "Symmetrical Fault Current at Panel (Isc Panel)", val: excelIscFaultPoint.toFixed(2), unit: "Amps" },
+      { label: "Rotating Motor Feedback Symmetrical Contribution (Imotor)", val: excelMotorContribution.toFixed(2), unit: "Amps" },
+      { label: "Combined Total Symmetrical Fault Current (Isc sym)", val: excelCombinedSymmetricalCurrent.toFixed(2), unit: "Amps" },
+      { label: "Factored Asymmetrical Fault Current (Isc asym)", val: excelCombinedAsymmetricalCurrent.toFixed(2), unit: "Amps" },
+      { label: "Ultimate Fault Breaking Intensity Assessment", val: excelBreakingkAIC.toFixed(2), unit: "kAIC" },
+      { label: "Interrupting Protection Level Class", val: excelBreakingkAIC > 22 ? "35 kAIC Required" : excelBreakingkAIC > 10 ? "22 kAIC" : "10 kAIC", unit: "" }
+    ];
+
+    scRows.forEach((row) => {
+      if (row.isSection) {
+        const sectH = 9.0;
+        b.addRect(tableLeft, ty - sectH, tableRight, ty, "BORDER");
+        b.addText(
+          row.label,
+          tableLeft + 10,
+          ty - 5.5,
+          2.0,
+          0,
+          "TEXT_HEADER",
+          "left"
+        );
+        ty -= sectH;
+      } else {
+        const rowH = 7.5;
+        // Draw bottom horizontal line
+        b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
+        // Draw left outer vertical line
+        b.addLine(tableLeft, ty - rowH, tableLeft, ty, "BORDER");
+        // Draw right outer vertical line
+        b.addLine(tableRight, ty - rowH, tableRight, ty, "BORDER");
+
+        // Draw inner vertical dividers only
+        for (let i = 1; i < colPositions.length - 1; i++) {
+          b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
+        }
+
+        b.addText(row.label, colPositions[0] + 5, ty - 4.65, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 10);
+        
+        const valStr = row.val !== undefined ? row.val.toString() : "-";
+        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - 4.65, 1.8, 0, "TEXT_DATA", "center");
+        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - 4.65, 1.8, 0, "TEXT_DATA", "center");
+
+        ty -= rowH;
+      }
+    });
+  }
+
+  // === DEDICATED NEW SHEET: ILLUMINATION TABLE ===
+  if (exportMode === "ALL" && hasIllumination) {
+    const illSheetIndex = globalSheetCursor++;
+    drawSheetTemplate(
+      illSheetIndex,
+      panel,
+      "ILLUMINATION ANALYSIS",
+      "LUMEN METHOD LIGHTING REPORT",
+    );
+
+    const sConf = sheetConfigs[illSheetIndex] || { w: baseW, xOffset: illSheetIndex * 900 };
+    const xOffset = sConf.xOffset;
+    let ty = 500;
+
+    const cols = [
+      { name: "ROOM NAME", w: 80 },
+      { name: "TARGET LUX", w: 45 },
+      { name: "AREA (m\\U+00B2)", w: 45 },
+      { name: "FIXTURE TYPE", w: 90 },
+      { name: "FIXTURES COUNT", w: 50 },
+      { name: "TOTAL LUMENS", w: 55 },
+      { name: "TOTAL WATTAGE (W)", w: 60 },
+      { name: "LPD (W/m\\U+00B2)", w: 45 },
+      { name: "ASHRAE LIMIT (W/m\\U+00B2)", w: 65 },
+      { name: "STATUS", w: 45 },
+      { name: "CIRCUIT NO.", w: 50 },
+    ];
+
+    const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
+    const tableLeft = xOffset + 45;
+    const tableRight = tableLeft + tableWidth;
+
+    // Header Border
+    b.addRect(tableLeft, ty - 12, tableRight, ty, "BORDER");
+    b.addText(
+      "ILLUMINATION (LUMEN METHOD) ANALYSIS REPORT",
+      tableLeft + tableWidth / 2,
+      ty - 7.6,
+      3.2,
+      0,
+      "TEXT_TITLE",
+      "center",
+    );
+
+    ty -= 12;
+
+    // Header Row Column labels
+    b.addRect(tableLeft, ty - 10, tableRight, ty, "BORDER");
+    let currentX = tableLeft;
+    const colPositions: number[] = [];
+    cols.forEach((col) => {
+      colPositions.push(currentX);
+      b.addText(
+        col.name,
+        currentX + col.w / 2,
+        ty - 5.9,
+        1.8,
+        0,
+        "TEXT_HEADER",
+        "center",
+        col.w - 2
+      );
+      currentX += col.w;
+    });
+    colPositions.push(currentX);
+
+    // Grid vertical lines for headers (inner dividers only)
+    for (let i = 1; i < colPositions.length - 1; i++) {
+      b.addLine(colPositions[i], ty - 10, colPositions[i], ty, "BORDER");
+    }
+
+    ty -= 10;
+
+    // Data Row rendering
+    const rowH = 8.0;
+    
+    illumParams.savedRooms.forEach((room: any) => {
+      // Draw bottom horizontal line
+      b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
+      // Draw left outer vertical line
+      b.addLine(tableLeft, ty - rowH, tableLeft, ty, "BORDER");
+      // Draw right outer vertical line
+      b.addLine(tableRight, ty - rowH, tableRight, ty, "BORDER");
+
+      // Draw inner dividers only
+      for (let i = 1; i < colPositions.length - 1; i++) {
+        b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
+      }
+
+      const roomLPD = room.totalWattage / room.area;
+      const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
+      const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
+
+      b.addText(room.roomName, colPositions[0] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 4);
+      b.addText(room.targetLux.toString(), colPositions[1] + cols[1].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(room.area.toFixed(2), colPositions[2] + cols[2].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      
+      const fixType = room.fixtureLightType || "Custom";
+      b.addText(fixType, colPositions[3] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[3].w - 4);
+      b.addText(room.fixturesCount.toString(), colPositions[4] + cols[4].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(room.totalLumens.toString(), colPositions[5] + cols[5].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(room.totalWattage.toString(), colPositions[6] + cols[6].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(Number(roomLPD.toFixed(2)).toString(), colPositions[7] + cols[7].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(limitLPD.toString(), colPositions[8] + cols[8].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      
+      const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - 4.9, 1.8, 0, statLayer, "center");
+      b.addText(room.circuitNo ? room.circuitNo.toString() : "-", colPositions[10] + cols[10].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+
+      ty -= rowH;
+    });
   }
 
   const dxfString = b.toDxfString();
