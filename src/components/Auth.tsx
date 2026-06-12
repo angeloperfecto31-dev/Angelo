@@ -37,15 +37,35 @@ export function Auth() {
   };
 
   if (user) {
+    const initial = user.displayName ? user.displayName.charAt(0).toUpperCase() : (user.email?.charAt(0).toUpperCase() || '?');
     return (
-      <div className="flex items-center gap-4">
-        <span className="text-xs font-bold text-slate-500 hidden lg:inline">
-          {user.email}
-        </span>
+      <div className="w-full flex flex-col gap-3 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50 shadow-sm backdrop-blur-sm">
+        <div className="flex items-center gap-3 w-full overflow-hidden">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-500 flex items-center justify-center text-white font-bold text-sm shadow-md ring-2 ring-indigo-500/20 shrink-0">
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="User" className="w-full h-full rounded-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              initial
+            )}
+          </div>
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="text-sm font-bold text-slate-200 truncate">
+              {user.displayName || 'Authorized User'}
+            </span>
+            <span className="text-[10px] font-semibold text-slate-400 truncate mt-0.5">
+              {user.email}
+            </span>
+          </div>
+        </div>
         <button
           onClick={handleSignOut}
-          className="px-4 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-lg transition-colors bg-white shadow-sm"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/80 hover:bg-rose-500/20 border border-slate-700/50 hover:border-rose-500/30 rounded-lg transition-all"
         >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
           Sign Out
         </button>
       </div>
@@ -55,7 +75,7 @@ export function Auth() {
   return (
     <button
       onClick={handleSignIn}
-      className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors shadow-sm flex items-center gap-2"
+      className="w-full px-4 py-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800/50 border border-slate-700/50 hover:bg-slate-700/80 hover:border-slate-600 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 backdrop-blur-sm"
     >
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
