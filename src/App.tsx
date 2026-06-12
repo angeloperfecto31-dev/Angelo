@@ -321,7 +321,7 @@ export default function App() {
           loadA: Number(mainCurrent.baseAmp.toFixed(2)),
           wireSize: mainFeeder.wire.size.toString(),
           voltage: data.panel.voltage,
-          systemType: data.panel.system.includes("3PH") ? "3PH" : "1PH",
+          systemType: (data.panel.system.includes("3PH") ? "3PH" : "1PH") as "1PH" | "3PH",
         };
       } else if (vd.source !== "custom") {
         // Evaluate for subpanel
@@ -336,7 +336,7 @@ export default function App() {
             loadA: Number(mainCurrent.baseAmp.toFixed(2)),
             wireSize: mainFeeder.wire.size.toString(),
             voltage: sp.panel.voltage,
-            systemType: sp.panel.system.includes("3PH") ? "3PH" : "1PH",
+            systemType: (sp.panel.system.includes("3PH") ? "3PH" : "1PH") as "1PH" | "3PH",
           };
         }
       }
