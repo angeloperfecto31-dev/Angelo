@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import { User, signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
 import {
@@ -150,6 +151,7 @@ export default function PaymentScreen({
   const [adminFilter, setAdminFilter] = useState<
     "all" | "pending" | "paid" | "unpaid"
   >("all");
+  const [planFilter, setPlanFilter] = useState<"all" | "basic" | "premium">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [confirmingAction, setConfirmingAction] = useState<{
     uid: string;
@@ -829,14 +831,66 @@ export default function PaymentScreen({
       (u.pendingVerification?.senderName || "").toLowerCase().includes(q);
     if (!matchesSearch) return false;
 
-    if (adminFilter === "all") return true;
+    // Filter by Plan
+    if (planFilter !== "all") {
+      const uPlan = u.plan || "basic";
+      if (uPlan !== planFilter) return false;
+    }
+
     if (adminFilter === "pending")
       return u.paymentStatus === "pending_verification";
     if (adminFilter === "paid") return u.isActive === true;
     if (adminFilter === "unpaid")
       return u.isActive !== true && u.paymentStatus !== "pending_verification";
+    
     return true;
   });
+
+  const handleExportToExcel = () => {
+    // Structure export data based on filteredUsers
+    const exportData = filteredUsers.map((u) => {
+      let regDate = "";
+      if (u.createdAt?.seconds) {
+        regDate = new Date(u.createdAt.seconds * 1000).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+      } else if (u.createdAt) {
+        try {
+          regDate = new Date(u.createdAt).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+        } catch(e) {}
+      }
+
+      let lastLogin = "";
+      if (u.lastLoginAt?.seconds) {
+        lastLogin = new Date(u.lastLoginAt.seconds * 1000).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+      } else if (u.lastLoginAt) {
+         try {
+          lastLogin = new Date(u.lastLoginAt).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+         } catch(e) {}
+      }
+
+      return {
+        "Full Name": u.displayName || u.pendingVerification?.senderName || "Unknown",
+        "Username": u.displayName || (u.email ? u.email.split('@')[0] : "Unknown"),
+        "Email Address": u.email || "",
+        "Subscription Plan": u.plan ? u.plan.charAt(0).toUpperCase() + u.plan.slice(1) : "Basic",
+        "Registration Date": regDate,
+        "Account Status": u.isActive ? "Active" : "Inactive",
+        "Payment Status": u.paymentStatus || (u.isActive ? "Paid" : "Unpaid"),
+        "Last Login Date": lastLogin,
+        "Payment Method": u.paymentSource || "None",
+        "Payment Ref": u.pendingVerification?.referenceNo || "None",
+        "Sender Name": u.pendingVerification?.senderName || "None",
+        "UID": u.uid || ""
+      };
+    });
+
+    // Create a new workbook and add the worksheet
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+
+    // Generate Excel file and trigger download
+    XLSX.writeFile(workbook, "ElectricalPH_Users.xlsx");
+  };
 
   // Admin Dashboard Mode
   const showAdminDashboard = (forceAdmin || isAdminMode) && isAdminUser;
@@ -1425,27 +1479,61 @@ export default function PaymentScreen({
               />
             </div>
 
-            {/* Filter */}
-            <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl shrink-0">
-              {(["all", "pending", "paid", "unpaid"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setAdminFilter(mode)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
-                    adminFilter === mode
-                      ? "bg-white shadow-sm text-indigo-600"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  {mode === "all"
-                    ? "All Users"
-                    : mode === "pending"
-                      ? "Pending Approval"
-                      : mode === "paid"
-                        ? "Active"
-                        : "Unpaid"}
-                </button>
-              ))}
+            <div className="flex flex-col md:flex-row gap-4 items-center shrink-0">
+              {/* Plan Filter */}
+              <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl shrink-0">
+                {(["all", "basic", "premium"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setPlanFilter(mode)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
+                      planFilter === mode
+                        ? "bg-white shadow-sm text-indigo-600"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {mode === "all"
+                      ? "All Plans"
+                      : mode === "basic"
+                        ? "Basic"
+                        : "Premium"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Status Filter */}
+              <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl shrink-0">
+                {(["all", "pending", "paid", "unpaid"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setAdminFilter(mode)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
+                      adminFilter === mode
+                        ? "bg-white shadow-sm text-indigo-600"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {mode === "all"
+                      ? "All Status"
+                      : mode === "pending"
+                        ? "Pending Approval"
+                        : mode === "paid"
+                          ? "Active"
+                          : "Unpaid"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Export Button */}
+              <button
+                onClick={handleExportToExcel}
+                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shrink-0 flex items-center gap-2 shadow-sm"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Export to Excel
+              </button>
             </div>
           </div>
 
