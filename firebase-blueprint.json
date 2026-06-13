@@ -54,6 +54,22 @@
         },
         "rejectedAt": {
           "type": "string"
+        },
+        "amount": {
+          "type": "number",
+          "description": "The exact subscription amount actually paid by the user"
+        },
+        "paymentSource": {
+          "type": "string",
+          "description": "GCash, MariBank, etc."
+        },
+        "paymentReference": {
+          "type": "string",
+          "description": "Validation transaction reference number"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Name of sender for manually submitted payments"
         }
       },
       "required": [

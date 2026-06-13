@@ -203,6 +203,8 @@ app.post("/api/create-checkout", async (req, res) => {
             metadata: {
               userId: userId,
               plan: isUpgrade ? "premium" : plan || "premium",
+              amount: (price / 100).toString(),
+              isUpgrade: isUpgrade ? "true" : "false"
             },
           },
         },
@@ -246,6 +248,9 @@ app.post("/api/verify-checkout", async (req, res) => {
       // Opportunistically update the user's status using Firebase Admin if available
       const userId = attributes.metadata?.userId;
       const plan = attributes.metadata?.plan || "premium";
+      const amountPaid = attributes.metadata?.amount ? parseFloat(attributes.metadata.amount) : null;
+      const isUpgrade = attributes.metadata?.isUpgrade === "true";
+      
       if (userId && db) {
         try {
           await db.collection("users").doc(userId).set(
@@ -253,6 +258,11 @@ app.post("/api/verify-checkout", async (req, res) => {
               paymentStatus: "paid",
               isActive: true,
               plan: plan,
+              amount: amountPaid,
+              isUpgrade: isUpgrade,
+              paymentSource: "GCASH",
+              approvedAt: new Date().toISOString(),
+              approvedBy: "PAYMONGO CHECKOUT",
               pendingVerification: null,
             },
             { merge: true },
@@ -286,15 +296,22 @@ app.post("/api/paymongo-webhook", async (req, res) => {
       const metadata = checkoutSessionInfo.metadata;
       const userId = metadata?.userId;
       const plan = metadata?.plan || "premium";
+      const amountPaid = metadata?.amount ? parseFloat(metadata.amount) : null;
+      const isUpgrade = metadata?.isUpgrade === "true";
 
       if (userId && db) {
         // Find the user and update access
-        console.log(`Webhook received: activating user ${userId} with plan ${plan}`);
+        console.log(`Webhook received: activating user ${userId} with plan ${plan} paid ${amountPaid}`);
         await db.collection("users").doc(userId).set(
           {
             paymentStatus: "paid",
             isActive: true,
             plan: plan,
+            amount: amountPaid,
+            isUpgrade: isUpgrade,
+            paymentSource: "GCASH",
+            approvedAt: new Date().toISOString(),
+            approvedBy: "PAYMONGO CHECKOUT",
             pendingVerification: null,
           },
           { merge: true },

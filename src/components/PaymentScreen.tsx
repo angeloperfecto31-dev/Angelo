@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { User, signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
 import {
@@ -717,12 +717,23 @@ export default function PaymentScreen({
       const userToApprove = allUsers.find(u => u.uid === targetUid);
       const planToSet = userToApprove?.pendingVerification?.plan || "premium"; // default to premium if missing
 
+      const amountVal = userToApprove?.pendingVerification?.amount || null;
+      const paymentSourceVal = userToApprove?.pendingVerification?.method || "None";
+      const paymentReferenceVal = userToApprove?.pendingVerification?.referenceNo || "None";
+      const senderNameVal = userToApprove?.pendingVerification?.senderName || "None";
+      const isUpgradeVal = userToApprove?.pendingVerification?.isUpgrade || false;
+
       await setDoc(
         doc(db, "users", targetUid),
         {
           isActive: true,
           paymentStatus: "paid",
           plan: planToSet,
+          amount: amountVal,
+          paymentSource: paymentSourceVal,
+          paymentReference: paymentReferenceVal,
+          senderName: senderNameVal,
+          isUpgrade: isUpgradeVal,
           pendingVerification: null,
           approvedBy: user.email,
           approvedAt: new Date().toISOString(),
@@ -847,48 +858,275 @@ export default function PaymentScreen({
   });
 
   const handleExportToExcel = () => {
-    // Structure export data based on filteredUsers
-    const exportData = filteredUsers.map((u) => {
-      let regDate = "";
+    // Definining columns headers for professional reporting
+    const headers = [
+      "User ID (UID)",
+      "Full Name",
+      "Username",
+      "Email Address",
+      "Subscription Plan",
+      "Subscription Amount",
+      "Account Status",
+      "Payment Status",
+      "Payment Method",
+      "Payment Reference",
+      "Sender Name",
+      "Registration Date",
+      "Last Login Date",
+      "Approved By",
+      "Approved At",
+      "Rejected By",
+      "Rejected At"
+    ];
+
+    // Map each filtered user to their accurate system records row representation
+    const rows = filteredUsers.map((u) => {
+      // 1. Registration Date
+      let regDate = "N/A";
       if (u.createdAt?.seconds) {
         regDate = new Date(u.createdAt.seconds * 1000).toLocaleString('en-CA', { hour12: false }).replace(',', '');
       } else if (u.createdAt) {
         try {
           regDate = new Date(u.createdAt).toLocaleString('en-CA', { hour12: false }).replace(',', '');
-        } catch(e) {}
+        } catch (e) {}
       }
 
-      let lastLogin = "";
+      // 2. Last Login Date
+      let lastLogin = "N/A";
       if (u.lastLoginAt?.seconds) {
         lastLogin = new Date(u.lastLoginAt.seconds * 1000).toLocaleString('en-CA', { hour12: false }).replace(',', '');
       } else if (u.lastLoginAt) {
          try {
           lastLogin = new Date(u.lastLoginAt).toLocaleString('en-CA', { hour12: false }).replace(',', '');
-         } catch(e) {}
+         } catch (e) {}
       }
 
-      return {
-        "Full Name": u.displayName || u.pendingVerification?.senderName || "Unknown",
-        "Username": u.displayName || (u.email ? u.email.split('@')[0] : "Unknown"),
-        "Email Address": u.email || "",
-        "Subscription Plan": u.plan ? u.plan.charAt(0).toUpperCase() + u.plan.slice(1) : "Basic",
-        "Registration Date": regDate,
-        "Account Status": u.isActive ? "Active" : "Inactive",
-        "Payment Status": u.paymentStatus || (u.isActive ? "Paid" : "Unpaid"),
-        "Last Login Date": lastLogin,
-        "Payment Method": u.paymentSource || "None",
-        "Payment Ref": u.pendingVerification?.referenceNo || "None",
-        "Sender Name": u.pendingVerification?.senderName || "None",
-        "UID": u.uid || ""
+      // 3. Approved At Date
+      let approvedAtStr = "N/A";
+      if (u.approvedAt) {
+        try {
+          approvedAtStr = new Date(u.approvedAt).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+        } catch (e) {}
+      }
+
+      // 4. Rejected At Date
+      let rejectedAtStr = "N/A";
+      if (u.rejectedAt) {
+        try {
+          rejectedAtStr = new Date(u.rejectedAt).toLocaleString('en-CA', { hour12: false }).replace(',', '');
+        } catch (e) {}
+      }
+
+      // 5. Subscription Plan display name formatting
+      const rawPlan = u.plan || u.pendingVerification?.plan || "basic";
+      const formattedPlan = rawPlan.toLowerCase() === "premium" ? "Premium Plan" : "Basic Plan";
+
+      // 6. Subscription Amount computation based on plan defaults, or pending amount, or actual payments
+      const getSubscriptionAmountVal = (userObj: any) => {
+        const isPending = userObj.paymentStatus === "pending_verification";
+        const isPaid = userObj.isActive === true || userObj.paymentStatus === "paid";
+        
+        if (!isPaid && !isPending) {
+          return "₱0.00";
+        }
+        
+        let valueAmount: number | null = null;
+        
+        if (typeof userObj.amount === "number") {
+          valueAmount = userObj.amount;
+        } else if (userObj.amount && !isNaN(Number(userObj.amount))) {
+          valueAmount = Number(userObj.amount);
+        } else if (userObj.pendingVerification?.amount && !isNaN(Number(userObj.pendingVerification.amount))) {
+          valueAmount = Number(userObj.pendingVerification.amount);
+        } else if (userObj.paymentAmount && !isNaN(Number(userObj.paymentAmount))) {
+          valueAmount = Number(userObj.paymentAmount);
+        }
+        
+        // If no explicit amount is stored, check if they availed a promotional offer/discount or fallback to the plan defaults
+        if (valueAmount === null || valueAmount <= 0) {
+          const planStr = (userObj.plan || userObj.pendingVerification?.plan || "basic").toLowerCase();
+          const isPremiumTier = planStr === "premium";
+          const isUpgradeUser = userObj.pendingVerification?.isUpgrade || userObj.isUpgrade;
+          
+          if (isPremiumTier) {
+            if (isUpgradeUser) {
+              valueAmount = pricingSettings.upgradePrice || 500;
+            } else {
+              valueAmount = (isOfferActive && pricingSettings.promoDiscountPremium > 0)
+                ? pricingSettings.promoDiscountPremium
+                : (pricingSettings.premiumPrice || 1499);
+            }
+          } else {
+            valueAmount = (isOfferActive && pricingSettings.promoDiscountBasic > 0)
+              ? pricingSettings.promoDiscountBasic
+              : (pricingSettings.basicPrice || 999);
+          }
+        }
+        
+        return "₱" + valueAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
+
+      // 7. Payment Method computation
+      const getPaymentMethodVal = (userObj: any) => {
+        if (userObj.paymentSource) return userObj.paymentSource.toUpperCase();
+        if (userObj.pendingVerification?.method) return userObj.pendingVerification.method.toUpperCase();
+        if (userObj.paymentMethod) return userObj.paymentMethod.toUpperCase();
+        if (userObj.isActive) return "ADMIN APPROVED";
+        return "NONE";
+      };
+
+      // 8. Accounts & Payment status normalized
+      const accountStatus = u.isActive ? "Active" : "Inactive";
+      
+      const getPaymentStatusVal = (userObj: any) => {
+        const status = userObj.paymentStatus;
+        if (!status) {
+          return userObj.isActive ? "Paid" : "Unpaid";
+        }
+        if (status === "pending_verification") return "Pending Approval";
+        if (status === "paid") return "Paid";
+        if (status === "unpaid") return "Unpaid";
+        return status.charAt(0).toUpperCase() + status.slice(1);
+      };
+
+      const username = u.displayName 
+        ? u.displayName.toLowerCase().replace(/\s+/g, '') 
+        : (u.email ? u.email.split('@')[0] : "Unknown");
+
+      return [
+        u.uid || "N/A",
+        getUserName(u),
+        username,
+        u.email || "N/A",
+        formattedPlan,
+        getSubscriptionAmountVal(u),
+        accountStatus,
+        getPaymentStatusVal(u),
+        getPaymentMethodVal(u),
+        u.pendingVerification?.referenceNo || u.paymentReference || u.referenceNo || "None",
+        u.pendingVerification?.senderName || u.senderName || "None",
+        regDate,
+        lastLogin,
+        u.approvedBy || "N/A",
+        approvedAtStr,
+        u.rejectedBy || "N/A",
+        rejectedAtStr
+      ];
     });
 
-    // Create a new workbook and add the worksheet
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const wsData = [headers, ...rows];
+    
+    // Create Excel elements
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
 
-    // Generate Excel file and trigger download
+    // Decode range to apply responsive layout styles
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!worksheet[cellAddress]) continue;
+
+        // Base styles for clean reading layout
+        worksheet[cellAddress].s = {
+          font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
+          alignment: { vertical: "center", horizontal: "left" },
+          border: {
+            top: { style: "thin", color: { rgb: "E2E8F0" } }, // Slate-200
+            bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+            left: { style: "thin", color: { rgb: "E2E8F0" } },
+            right: { style: "thin", color: { rgb: "E2E8F0" } },
+          }
+        };
+
+        if (R === 0) {
+          // Dynamic Header Row styled with deep Indigo branding and subtle shadows
+          worksheet[cellAddress].s.font = { name: "Segoe UI", sz: 11, bold: true, color: { rgb: "FFFFFF" } };
+          worksheet[cellAddress].s.fill = { fgColor: { rgb: "4F46E5" } }; // Deep Indigo background
+          worksheet[cellAddress].s.alignment = { vertical: "center", horizontal: "center", wrapText: true };
+          worksheet[cellAddress].s.border = {
+            bottom: { style: "medium", color: { rgb: "312E81" } }, // Dark dark indigo border
+          };
+        } else {
+          // Zebra Row Striping for perfect alignment and visual scanning
+          if (R % 2 === 0) {
+            worksheet[cellAddress].s.fill = { fgColor: { rgb: "F8FAFC" } }; // Slate-50 alternating row background
+          }
+          
+          // Technical / ID Columns: monospace & light gray text color
+          if (C === 0) {
+            worksheet[cellAddress].s.font.name = "Consolas";
+            worksheet[cellAddress].s.font.color = { rgb: "64748B" }; // Slate-500
+          }
+          
+          // Numeric columns: currency-aligned right, darker bold font
+          if (C === 5) {
+            worksheet[cellAddress].s.alignment = { vertical: "center", horizontal: "right" };
+            worksheet[cellAddress].s.font.bold = true;
+            worksheet[cellAddress].s.font.color = { rgb: "0F172A" }; // Slate-900
+          }
+
+          // User Activation badge-like styles
+          if (C === 6) {
+            const val = worksheet[cellAddress].v;
+            worksheet[cellAddress].s.alignment = { vertical: "center", horizontal: "center" };
+            worksheet[cellAddress].s.font.bold = true;
+            if (val === "Active") {
+              worksheet[cellAddress].s.font.color = { rgb: "047857" }; // Emerald-700
+              worksheet[cellAddress].s.fill = { fgColor: { rgb: "D1FAE5" } }; // Emerald-100 bg
+            } else {
+              worksheet[cellAddress].s.font.color = { rgb: "475569" }; // Slate-600
+              worksheet[cellAddress].s.fill = { fgColor: { rgb: "F1F5F9" } }; // Slate-100 bg
+            }
+          }
+
+          // Payment Status badge-like styles
+          if (C === 7) {
+            const val = worksheet[cellAddress].v;
+            worksheet[cellAddress].s.alignment = { vertical: "center", horizontal: "center" };
+            worksheet[cellAddress].s.font.bold = true;
+            if (val === "Paid") {
+              worksheet[cellAddress].s.font.color = { rgb: "0284C7" }; // Sky-700
+              worksheet[cellAddress].s.fill = { fgColor: { rgb: "E0F2FE" } }; // Sky-100 bg
+            } else if (val === "Pending Approval") {
+              worksheet[cellAddress].s.font.color = { rgb: "D97706" }; // Amber-600
+              worksheet[cellAddress].s.fill = { fgColor: { rgb: "FEF3C7" } }; // Amber-100 bg
+            } else {
+              worksheet[cellAddress].s.font.color = { rgb: "E11D48" }; // Rose-600
+              worksheet[cellAddress].s.fill = { fgColor: { rgb: "FFE4E6" } }; // Rose-100 bg
+            }
+          }
+        }
+      }
+    }
+
+    // Set precise column padding & width computation to avoid truncating cells
+    const wscols: any[] = [];
+    for (let col = 0; col < headers.length; col++) {
+      let maxLen = headers[col].length;
+      wsData.forEach((row) => {
+        if (row[col] !== undefined && row[col] !== null) {
+          const valLen = row[col].toString().length;
+          if (valLen > maxLen) {
+            maxLen = valLen;
+          }
+        }
+      });
+      // Spacing cushion to make columns beautiful
+      wscols.push({ wch: Math.max(13, maxLen + 3) });
+    }
+    worksheet["!cols"] = wscols;
+
+    // Set exact row heights for vertical spacing padding
+    const wsrows: any[] = [{ hpt: 26 }]; // Header = 26pt height
+    for (let r = 1; r <= rows.length; r++) {
+      wsrows.push({ hpt: 20 }); // Data rows = 20pt height for breathing room
+    }
+    worksheet["!rows"] = wsrows;
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users Overview");
+
+    // Generate sheet and trigger browser download
     XLSX.writeFile(workbook, "ElectricalPH_Users.xlsx");
   };
 
