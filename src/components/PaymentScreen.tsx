@@ -859,6 +859,227 @@ export default function PaymentScreen({
     return true;
   });
 
+  // Unified helper for currency formatting
+  const fPHP = (val: number) => "₱" + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // 1. Unified function to resolve a user's subscription, payment status, amount, and promo calculations
+  const getUserFinanceDetails = (u: any) => {
+    const rawPlan = (u.plan || u.pendingVerification?.plan || "basic").toLowerCase();
+    const isPremiumTier = rawPlan === "premium";
+    const isUpgradeUser = !!(u.pendingVerification?.isUpgrade || u.isUpgrade);
+    const formattedPlan = isPremiumTier ? "Premium Plan" : "Basic Plan";
+
+    const isPending = u.paymentStatus === "pending_verification";
+    const isPaid = u.isActive === true || u.paymentStatus === "paid";
+
+    // Subscription Amount logic
+    let amountPaid = 0;
+    if (isPaid || isPending) {
+      if (typeof u.amount === "number") {
+        amountPaid = u.amount;
+      } else if (u.amount && !isNaN(Number(u.amount))) {
+        amountPaid = Number(u.amount);
+      } else if (u.pendingVerification?.amount && !isNaN(Number(u.pendingVerification.amount))) {
+        amountPaid = Number(u.pendingVerification.amount);
+      } else if (u.paymentAmount && !isNaN(Number(u.paymentAmount))) {
+        amountPaid = Number(u.paymentAmount);
+      }
+
+      if (amountPaid <= 0) {
+        if (isPremiumTier) {
+          if (isUpgradeUser) {
+            amountPaid = pricingSettings.upgradePrice || 500;
+          } else {
+            amountPaid = (isOfferActive && pricingSettings.promoDiscountPremium > 0)
+              ? pricingSettings.promoDiscountPremium
+              : (pricingSettings.premiumPrice || 1499);
+          }
+        } else {
+          amountPaid = (isOfferActive && pricingSettings.promoDiscountBasic > 0)
+            ? pricingSettings.promoDiscountBasic
+            : (pricingSettings.basicPrice || 999);
+        }
+      }
+    }
+
+    // Default regular (gross) price (for calculating gross/deductions)
+    let regPrice = 0;
+    if (isPaid || isPending) {
+      if (isPremiumTier) {
+        if (isUpgradeUser) {
+          regPrice = pricingSettings.upgradePrice || 500;
+        } else {
+          regPrice = pricingSettings.premiumPrice || 1499;
+        }
+      } else {
+        regPrice = pricingSettings.basicPrice || 999;
+      }
+    }
+
+    const discount = Math.max(0, regPrice - amountPaid);
+
+    return {
+      planStr: rawPlan,
+      formattedPlan,
+      isPremiumTier,
+      isUpgradeUser,
+      amountPaid,
+      regPrice,
+      discount,
+      isPaid,
+      isPending
+    };
+  };
+
+  // 2. Unified financial performance calculator for consistent totals, taxes, and projections
+  const computeFinancialData = (targetUsers: any[]) => {
+    const activeUsers = targetUsers.filter(u => u.isActive === true || u.paymentStatus === "paid");
+    const pendingUsers = targetUsers.filter(u => u.paymentStatus === "pending_verification");
+    const totalActiveCount = activeUsers.length;
+    const totalPendingCount = pendingUsers.length;
+
+    let basicActiveCount = 0;
+    let premiumActiveCount = 0;
+    let upgradeActiveCount = 0;
+    
+    let basicGrossRev = 0;
+    let premiumGrossRev = 0;
+    let upgradeGrossRev = 0;
+    
+    let basicNetRev = 0;
+    let premiumNetRev = 0;
+    let upgradeNetRev = 0;
+    
+    let totalDiscountsValue = 0;
+    let totalDiscountAppliedCount = 0;
+
+    const historicalByMonth: { [key: string]: { gross: number; net: number; discounts: number; count: number } } = {};
+
+    activeUsers.forEach((u) => {
+      const finance = getUserFinanceDetails(u);
+      
+      if (finance.planStr === "premium") {
+        if (finance.isUpgradeUser) {
+          upgradeActiveCount++;
+          upgradeGrossRev += finance.regPrice;
+          upgradeNetRev += finance.amountPaid;
+        } else {
+          premiumActiveCount++;
+          premiumGrossRev += finance.regPrice;
+          premiumNetRev += finance.amountPaid;
+        }
+      } else {
+        basicActiveCount++;
+        basicGrossRev += finance.regPrice;
+        basicNetRev += finance.amountPaid;
+      }
+
+      if (finance.discount > 0) {
+        totalDiscountAppliedCount++;
+        totalDiscountsValue += finance.discount;
+      }
+
+      // Timeline sorting helper
+      let dateObj: Date | null = null;
+      if (u.createdAt?.seconds) {
+        dateObj = new Date(u.createdAt.seconds * 1000);
+      } else if (u.createdAt) {
+        try { dateObj = new Date(u.createdAt); } catch (e) {}
+      }
+      
+      const monthYearStr = dateObj 
+        ? dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        : "Historical Inception";
+
+      if (!historicalByMonth[monthYearStr]) {
+        historicalByMonth[monthYearStr] = { gross: 0, net: 0, discounts: 0, count: 0 };
+      }
+      
+      historicalByMonth[monthYearStr].gross += finance.regPrice;
+      historicalByMonth[monthYearStr].net += finance.amountPaid;
+      historicalByMonth[monthYearStr].discounts += finance.discount;
+      historicalByMonth[monthYearStr].count += 1;
+    });
+
+    const totalGrossRevenue = basicGrossRev + premiumGrossRev + upgradeGrossRev;
+    const totalNetRevenue = basicNetRev + premiumNetRev + upgradeNetRev;
+
+    // BIR Tax Compliance calculations
+    const calculateGraduatedTax = (taxableIncome: number) => {
+      if (taxableIncome <= 250000) return 0;
+      if (taxableIncome <= 400000) return (taxableIncome - 250000) * 0.15;
+      if (taxableIncome <= 800000) return 22500 + (taxableIncome - 400000) * 0.20;
+      if (taxableIncome <= 2000000) return 102500 + (taxableIncome - 800000) * 0.25;
+      if (taxableIncome <= 8000000) return 402500 + (taxableIncome - 2000000) * 0.30;
+      return 2202500 + (taxableIncome - 8000000) * 0.35;
+    };
+
+    // Scenario 1: VAT Registered (12% Output VAT on exclusive netSales, CIT 20% on 60% of exclusive Sales with OSD)
+    const vatExclSales = totalNetRevenue / 1.12;
+    const outputVatValue = vatExclSales * 0.12;
+    const vatCorpExpensesOSD = vatExclSales * 0.40;
+    const vatTaxableIncome = vatExclSales * 0.60;
+    const vatIncomeTaxCIT = vatTaxableIncome * 0.20;
+    const vatTotalTaxesPayable = outputVatValue + vatIncomeTaxCIT;
+    const vatFinalNetIncome = vatExclSales - vatIncomeTaxCIT - vatCorpExpensesOSD;
+
+    // Scenario 2: Non-VAT Sole Proprietorship 8% Flat Tax (8% on excess over 250k)
+    const nonVatFlatExemption = 250000;
+    const nonVatFlatTaxable = Math.max(0, totalNetRevenue - nonVatFlatExemption);
+    const nonVatFlatTaxValue = nonVatFlatTaxable * 0.08;
+    const nonVatFlatPercentageTax = 0;
+    const nonVatFlatFinalNet = totalNetRevenue - nonVatFlatTaxValue;
+
+    // Scenario 3: Non-VAT Graduated Income Tax + 3% Percentage Tax (OSD 40% applied)
+    const percentageTaxValue = totalNetRevenue * 0.03;
+    const nonVatGradSlsNetPercentage = totalNetRevenue - percentageTaxValue;
+    const nonVatGradOSDExpenses = totalNetRevenue * 0.40;
+    const nonVatGradTaxable = Math.max(0, totalNetRevenue - percentageTaxValue - nonVatGradOSDExpenses);
+    const nonVatStepIncomeTax = calculateGraduatedTax(nonVatGradTaxable);
+    const nonVatGradTotalTaxes = percentageTaxValue + nonVatStepIncomeTax;
+    const nonVatGradFinalNet = totalNetRevenue - nonVatGradTotalTaxes - nonVatGradOSDExpenses;
+
+    return {
+      activeUsers,
+      pendingUsers,
+      totalActiveCount,
+      totalPendingCount,
+      basicActiveCount,
+      premiumActiveCount,
+      upgradeActiveCount,
+      basicGrossRev,
+      premiumGrossRev,
+      upgradeGrossRev,
+      basicNetRev,
+      premiumNetRev,
+      upgradeNetRev,
+      totalDiscountsValue,
+      totalDiscountAppliedCount,
+      historicalByMonth,
+      totalGrossRevenue,
+      totalNetRevenue,
+      vatExclSales,
+      outputVatValue,
+      vatCorpExpensesOSD,
+      vatTaxableIncome,
+      vatIncomeTaxCIT,
+      vatTotalTaxesPayable,
+      vatFinalNetIncome,
+      nonVatFlatExemption,
+      nonVatFlatTaxable,
+      nonVatFlatTaxValue,
+      nonVatFlatPercentageTax,
+      nonVatFlatFinalNet,
+      percentageTaxValue,
+      nonVatGradSlsNetPercentage,
+      nonVatGradOSDExpenses,
+      nonVatGradTaxable,
+      nonVatStepIncomeTax,
+      nonVatGradTotalTaxes,
+      nonVatGradFinalNet,
+    };
+  };
+
   const handleExportToExcel = () => {
     // Definining columns headers for professional reporting
     const headers = [
@@ -880,6 +1101,9 @@ export default function PaymentScreen({
       "Rejected By",
       "Rejected At"
     ];
+
+    // Compute consistent metrics using the dynamic user list currently loaded in grid
+    const fin = computeFinancialData(filteredUsers);
 
     // Map each filtered user to their accurate system records row representation
     const rows = filteredUsers.map((u) => {
@@ -919,56 +1143,8 @@ export default function PaymentScreen({
         } catch (e) {}
       }
 
-      // 5. Subscription Plan display name formatting
-      const rawPlan = u.plan || u.pendingVerification?.plan || "basic";
-      const formattedPlan = rawPlan.toLowerCase() === "premium" ? "Premium Plan" : "Basic Plan";
+      const finance = getUserFinanceDetails(u);
 
-      // 6. Subscription Amount computation based on plan defaults, or pending amount, or actual payments
-      const getSubscriptionAmountVal = (userObj: any) => {
-        const isPending = userObj.paymentStatus === "pending_verification";
-        const isPaid = userObj.isActive === true || userObj.paymentStatus === "paid";
-        
-        if (!isPaid && !isPending) {
-          return "₱0.00";
-        }
-        
-        let valueAmount: number | null = null;
-        
-        if (typeof userObj.amount === "number") {
-          valueAmount = userObj.amount;
-        } else if (userObj.amount && !isNaN(Number(userObj.amount))) {
-          valueAmount = Number(userObj.amount);
-        } else if (userObj.pendingVerification?.amount && !isNaN(Number(userObj.pendingVerification.amount))) {
-          valueAmount = Number(userObj.pendingVerification.amount);
-        } else if (userObj.paymentAmount && !isNaN(Number(userObj.paymentAmount))) {
-          valueAmount = Number(userObj.paymentAmount);
-        }
-        
-        // If no explicit amount is stored, check if they availed a promotional offer/discount or fallback to the plan defaults
-        if (valueAmount === null || valueAmount <= 0) {
-          const planStr = (userObj.plan || userObj.pendingVerification?.plan || "basic").toLowerCase();
-          const isPremiumTier = planStr === "premium";
-          const isUpgradeUser = userObj.pendingVerification?.isUpgrade || userObj.isUpgrade;
-          
-          if (isPremiumTier) {
-            if (isUpgradeUser) {
-              valueAmount = pricingSettings.upgradePrice || 500;
-            } else {
-              valueAmount = (isOfferActive && pricingSettings.promoDiscountPremium > 0)
-                ? pricingSettings.promoDiscountPremium
-                : (pricingSettings.premiumPrice || 1499);
-            }
-          } else {
-            valueAmount = (isOfferActive && pricingSettings.promoDiscountBasic > 0)
-              ? pricingSettings.promoDiscountBasic
-              : (pricingSettings.basicPrice || 999);
-          }
-        }
-        
-        return "₱" + valueAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      };
-
-      // 7. Payment Method computation
       const getPaymentMethodVal = (userObj: any) => {
         if (userObj.paymentSource) return userObj.paymentSource.toUpperCase();
         if (userObj.pendingVerification?.method) return userObj.pendingVerification.method.toUpperCase();
@@ -977,7 +1153,6 @@ export default function PaymentScreen({
         return "NONE";
       };
 
-      // 8. Accounts & Payment status normalized
       const accountStatus = u.isActive ? "Active" : "Inactive";
       
       const getPaymentStatusVal = (userObj: any) => {
@@ -1000,8 +1175,8 @@ export default function PaymentScreen({
         getUserName(u),
         username,
         u.email || "N/A",
-        formattedPlan,
-        getSubscriptionAmountVal(u),
+        finance.formattedPlan,
+        finance.isPaid || finance.isPending ? fPHP(finance.amountPaid) : "₱0.00",
         accountStatus,
         getPaymentStatusVal(u),
         getPaymentMethodVal(u),
@@ -1016,11 +1191,15 @@ export default function PaymentScreen({
       ];
     });
 
-    const wsData = [headers, ...rows];
-    
-    // Create Excel elements
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    const fileScopeText = filteredUsers.length === allUsers.length 
+      ? "Full System Database" 
+      : `Filtered System Subset (${filteredUsers.length} of ${allUsers.length} Users)`;
+
     const workbook = XLSX.utils.book_new();
+
+    // --- SHEET 1: USERS OVERVIEW ---
+    const wsData = [headers, ...rows];
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
 
     // Decode range to apply responsive layout styles
     const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
@@ -1114,32 +1293,222 @@ export default function PaymentScreen({
           }
         }
       });
-      // Spacing cushion to make columns beautiful
       wscols.push({ wch: Math.max(13, maxLen + 3) });
     }
     worksheet["!cols"] = wscols;
 
-    // Set exact row heights for vertical spacing padding
     const wsrows: any[] = [{ hpt: 26 }]; // Header = 26pt height
     for (let r = 1; r <= rows.length; r++) {
-      wsrows.push({ hpt: 20 }); // Data rows = 20pt height for breathing room
+      wsrows.push({ hpt: 20 });
     }
     worksheet["!rows"] = wsrows;
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Users Overview");
 
-    // Generate sheet and trigger browser download
-    XLSX.writeFile(workbook, "ElectricalPH_Users.xlsx");
+
+    // --- SHEET 2: FINANCIAL SUMMARY ---
+    // Make a beautiful boardroom-ready financial worksheet that replicates the Word structure
+    const wsSummaryData: any[][] = [
+      ["ELECTRICALPH ENGINEERING PLATFORM - FINANCE LEDGER REPORT"],
+      ["Corporate Income Performance Statement & Bureau of Internal Revenue (BIR) Audit Estimate"],
+      [],
+      ["Data Scope:", fileScopeText],
+      ["Report Generated:", new Date().toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })],
+      ["Prepared for:", "Board of Directors & Administrative Controllers"],
+      ["Compiled by Account:", user?.email || "System Account"],
+      [],
+      ["EXECUTIVE SUMMARY & CORPORATE KEY PERFORMANCE INDICATORS"],
+      ["Financial Target Metric Group", "Summary Metrics / Base Record Value"],
+      ["Total Confirmed Active Subscribers", `${fin.totalActiveCount} User Accounts`],
+      ["Pending Verification Billing Pipeline", `${fin.totalPendingCount} User Accounts`],
+      ["Total Regular Subscriptions Sales (Gross Revenue Equivalent)", fPHP(fin.totalGrossRevenue)],
+      ["Total Platform Campaign Deductions & Discounts Applied", `(${fPHP(fin.totalDiscountsValue)})`],
+      ["Total Realized Cash Subscriptions Collected (Net Sales Revenue)", fPHP(fin.totalNetRevenue)],
+      [],
+      ["DETAILED BREAKDOWN BY SUBSCRIPTION PLAN AND TIER LEVEL"],
+      ["Subscription Plan Tier", "Active Accounts", "Regular Price / Account", "Gross Revenue Base", "Applied Discounts", "Actual Net Revenue Paid"],
+      ["Basic Plan", `${fin.basicActiveCount} Active`, fPHP(pricingSettings.basicPrice || 999), fPHP(fin.basicGrossRev), `(${fPHP(fin.basicGrossRev - fin.basicNetRev)})`, fPHP(fin.basicNetRev)],
+      ["Premium Plan (Full Sub)", `${fin.premiumActiveCount} Active`, fPHP(pricingSettings.premiumPrice || 1499), fPHP(fin.premiumGrossRev), `(${fPHP(fin.premiumGrossRev - fin.premiumNetRev)})`, fPHP(fin.premiumNetRev)],
+      ["Premium Upgrade Paths (Basic -> Premium)", `${fin.upgradeActiveCount} Active`, fPHP(pricingSettings.upgradePrice || 500), fPHP(fin.upgradeGrossRev), `(${fPHP(fin.upgradeGrossRev - fin.upgradeNetRev)})`, fPHP(fin.upgradeNetRev)],
+      ["TOTAL CONSOLIDATED AUDIT BASE", `${fin.totalActiveCount} Active`, "N/A", fPHP(fin.totalGrossRevenue), `(${fPHP(fin.totalDiscountsValue)})`, fPHP(fin.totalNetRevenue)],
+      [],
+      ["HISTORICAL REVENUE SEQUENCE (TIMELINE BY REGISTRATION DATE)"],
+      ["Billing Period Calendar Month", "New Registered Paid Units", "Gross Revenue Base", "Total Dynamic Discounts", "Direct Cash Net Revenue"],
+      ...Object.keys(fin.historicalByMonth).map(monthName => {
+        const item = fin.historicalByMonth[monthName];
+        return [monthName, `${item.count} Accounts`, fPHP(item.gross), `(${fPHP(item.discounts)})`, fPHP(item.net)];
+      }),
+      [],
+      ["PHILIPPINE TAX COMPLIANCE & BIR AUDIT ESTIMATIONS"],
+      ["Compliance Tax Item Line", "Tax Option A: 12% VAT Entity", "Tax Option B: 8% Flat (Non-VAT)", "Tax Option C: Graduated (Non-VAT)"],
+      ["Gross Total Cash Receipts Collected", fPHP(fin.totalNetRevenue), fPHP(fin.totalNetRevenue), fPHP(fin.totalNetRevenue)],
+      ["Less: Statutory VAT Adjustment (Inclusive)", `(${fPHP(fin.totalNetRevenue - fin.vatExclSales)})`, "₱0.00 (VAT Exempt)", "₱0.00 (VAT Exempt)"],
+      ["Net Taxable Sales Base (Exc. VAT / Adjustments)", fPHP(fin.vatExclSales), fPHP(fin.totalNetRevenue), fPHP(fin.totalNetRevenue)],
+      ["Statutory Deductions (OSD @ 40% / flat pt)", `(${fPHP(fin.vatCorpExpensesOSD)})`, fPHP(250000), `(${fPHP(fin.nonVatGradOSDExpenses)})`],
+      ["Calculated Taxable Business Income", fPHP(fin.vatTaxableIncome), fPHP(fin.nonVatFlatTaxable), fPHP(fin.nonVatGradTaxable)],
+      ["Government Taxes Due (CIT Option / Flat 8% / Grad)", fPHP(fin.vatIncomeTaxCIT), fPHP(fin.nonVatFlatTaxValue), fPHP(fin.nonVatStepIncomeTax)],
+      ["Value Added Tax (12%) / Percentage Tax (3% Sec116)", fPHP(fin.outputVatValue), "₱0.00 (Exempt)", fPHP(fin.percentageTaxValue)],
+      ["TOTAL ESTIMATED DEDUCTED TAX LIABILITY", fPHP(fin.vatTotalTaxesPayable), fPHP(fin.nonVatFlatTaxValue), fPHP(fin.nonVatGradTotalTaxes)],
+      ["ESTIMATED COMPLIANT TAKEOHOME NET PROFIT", fPHP(fin.vatFinalNetIncome), fPHP(fin.nonVatFlatFinalNet), fPHP(fin.nonVatGradFinalNet)],
+      [],
+      ["REVENUE PROJECTIONS, EVALUATIONS AND RUN-RATE RUNWAYS"],
+      ["Run-Rate Extrapolation Cycle", "Projected Gross Billing Sales", "Projected Campaign Discounts", "Projected Net Collections"],
+      ["Current Collection (Inception Basis)", fPHP(fin.totalGrossRevenue), `(${fPHP(fin.totalDiscountsValue)})`, fPHP(fin.totalNetRevenue)],
+      ["Weekly Realization Run-Rate Baseline", fPHP(fin.totalGrossRevenue / 4.3), `(${fPHP(fin.totalDiscountsValue / 4.3)})`, fPHP(fin.totalNetRevenue / 4.3)],
+      ["Monthly Projected Cohort Horizon", fPHP(fin.totalGrossRevenue), `(${fPHP(fin.totalDiscountsValue)})`, fPHP(fin.totalNetRevenue)],
+      ["Quarterly Consolidated Projection (90-Day Loop)", fPHP(fin.totalGrossRevenue * 3), `(${fPHP(fin.totalDiscountsValue * 3)})`, fPHP(fin.totalNetRevenue * 3)],
+      ["Annual Consolidated Fiscal Outlook (12-Month run)", fPHP(fin.totalGrossRevenue * 12), `(${fPHP(fin.totalDiscountsValue * 12)})`, fPHP(fin.totalNetRevenue * 12)]
+    ];
+
+    const worksheet2 = XLSX.utils.aoa_to_sheet(wsSummaryData);
+
+    const range2 = XLSX.utils.decode_range(worksheet2["!ref"] || "A1:A1");
+    for (let R2 = range2.s.r; R2 <= range2.e.r; ++R2) {
+      for (let C2 = range2.s.c; C2 <= range2.e.c; ++C2) {
+        const cellAddr2 = XLSX.utils.encode_cell({ r: R2, c: C2 });
+        if (!worksheet2[cellAddr2]) continue;
+
+        // Base styles for Sheet 2
+        worksheet2[cellAddr2].s = {
+          font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
+          alignment: { vertical: "center", horizontal: "left" },
+          border: {
+            top: { style: "thin", color: { rgb: "F1F5F9" } },
+            bottom: { style: "thin", color: { rgb: "F1F5F9" } },
+            left: { style: "thin", color: { rgb: "F1F5F9" } },
+            right: { style: "thin", color: { rgb: "F1F5F9" } }
+          }
+        };
+
+        const val = worksheet2[cellAddr2].v;
+        const valStr = String(val);
+
+        // Highlight main title blocks
+        if (R2 === 0) {
+          worksheet2[cellAddr2].s.font = { name: "Segoe UI", sz: 13, bold: true, color: { rgb: "1E1B4B" } };
+          worksheet2[cellAddr2].s.fill = { fgColor: { rgb: "EEF2F6" } };
+          worksheet2[cellAddr2].s.alignment = { horizontal: "left", vertical: "center" };
+        } else if (R2 === 1) {
+          worksheet2[cellAddr2].s.font = { name: "Segoe UI", sz: 10, italic: true, color: { rgb: "475569" } };
+          worksheet2[cellAddr2].s.fill = { fgColor: { rgb: "EEF2F6" } };
+        } else if (valStr.startsWith("Total ") || valStr.startsWith("TOTAL ") || valStr.startsWith("ESTIMATED ") || valStr.startsWith("Annual ")) {
+          // Highlight summary totals
+          worksheet2[cellAddr2].s.font.bold = true;
+          if (valStr.includes("NET PROFIT") || valStr.includes("Net Collections")) {
+            worksheet2[cellAddr2].s.fill = { fgColor: { rgb: "F0FDF4" } }; // soft light green
+            worksheet2[cellAddr2].s.font.color = { rgb: "166534" }; // dark green text
+          } else if (valStr.includes("TAX LIABILITY") || valStr.includes("Discounts Applied")) {
+            worksheet2[cellAddr2].s.fill = { fgColor: { rgb: "FEF2F2" } }; // soft light red
+            worksheet2[cellAddr2].s.font.color = { rgb: "991B1B" }; // dark red text
+          }
+        }
+
+        // Section Headers
+        if (val === "EXECUTIVE SUMMARY & CORPORATE KEY PERFORMANCE INDICATORS" ||
+            val === "DETAILED BREAKDOWN BY SUBSCRIPTION PLAN AND TIER LEVEL" ||
+            val === "HISTORICAL REVENUE SEQUENCE (TIMELINE BY REGISTRATION DATE)" ||
+            val === "PHILIPPINE TAX COMPLIANCE & BIR AUDIT ESTIMATIONS" ||
+            val === "REVENUE PROJECTIONS, EVALUATIONS AND RUN-RATE RUNWAYS") {
+          worksheet2[cellAddr2].s.font = { name: "Segoe UI", sz: 11, bold: true, color: { rgb: "FFFFFF" } };
+          worksheet2[cellAddr2].s.fill = { fgColor: { rgb: "312E81" } }; // Deep Royal Indigo Navy
+          worksheet2[cellAddr2].s.alignment = { horizontal: "center", vertical: "center" };
+        }
+
+        // Column subheaders styling
+        if (val === "Financial Target Metric Group" || val === "Summary Metrics / Base Record Value" ||
+            val === "Subscription Plan Tier" || val === "Billing Period Calendar Month" ||
+            val === "Compliance Tax Item Line" || val === "Run-Rate Extrapolation Cycle") {
+          worksheet2[cellAddr2].s.font.bold = true;
+          worksheet2[cellAddr2].s.fill = { fgColor: { rgb: "E2E8F0" } }; // Slate-200
+        }
+
+        // Alignment of currency values
+        if (valStr.startsWith("₱") || valStr.startsWith("(₱") || valStr.startsWith("-₱")) {
+          worksheet2[cellAddr2].s.alignment = { horizontal: "right", vertical: "center" };
+          worksheet2[cellAddr2].s.font.bold = true;
+          if (valStr.startsWith("(₱") || valStr.startsWith("-₱")) {
+            worksheet2[cellAddr2].s.font.color = { rgb: "B91C1C" }; // Red digits
+          }
+        }
+      }
+    }
+
+    // Stretch columns perfectly for the summary worksheet
+    const wscolsSummary = [
+      { wch: 53 }, // Spacious label column
+      { wch: 30 }, // Values / Tax Options
+      { wch: 30 },
+      { wch: 30 },
+      { wch: 30 },
+      { wch: 30 }
+    ];
+    worksheet2["!cols"] = wscolsSummary;
+
+    // Apply some merges on title cells to look stunning
+    worksheet2["!merges"] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // Title
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } }, // Subtitle
+      { s: { r: 8, c: 0 }, e: { r: 8, c: 1 } }, // Section 1
+      { s: { r: 16, c: 0 }, e: { r: 16, c: 5 } }, // Section 2
+      { s: { r: 23, c: 0 }, e: { r: 23, c: 4 } }, // Section 3
+      { s: { r: 28, c: 0 }, e: { r: 28, c: 3 } }, // Section 4
+      { s: { r: 40, c: 0 }, e: { r: 40, c: 3 } }, // Section 5
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet2, "Financial Summary Statement");
+
+    XLSX.writeFile(workbook, `ElectricalPH_Unified_Registry_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const handleExportFinancialReportWord = async () => {
     try {
-      // 1. Core aggregates
-      const activeUsers = allUsers.filter(u => u.isActive === true || u.paymentStatus === "paid");
-      const pendingUsers = allUsers.filter(u => u.paymentStatus === "pending_verification");
-      
-      const totalActiveCount = activeUsers.length;
-      const totalPendingCount = pendingUsers.length;
+      // 1. Core aggregates - calculated from computeFinancialData
+      const fin = computeFinancialData(filteredUsers);
+      const {
+        activeUsers,
+        pendingUsers,
+        totalActiveCount,
+        totalPendingCount,
+        basicActiveCount,
+        premiumActiveCount,
+        upgradeActiveCount,
+        basicGrossRev,
+        premiumGrossRev,
+        upgradeGrossRev,
+        basicNetRev,
+        premiumNetRev,
+        upgradeNetRev,
+        totalDiscountsValue,
+        totalDiscountAppliedCount,
+        historicalByMonth,
+        totalGrossRevenue,
+        totalNetRevenue,
+        vatExclSales,
+        outputVatValue,
+        vatCorpExpensesOSD,
+        vatTaxableIncome,
+        vatIncomeTaxCIT,
+        vatTotalTaxesPayable,
+        vatFinalNetIncome,
+        nonVatFlatExemption,
+        nonVatFlatTaxable,
+        nonVatFlatTaxValue,
+        nonVatFlatPercentageTax,
+        nonVatFlatFinalNet,
+        percentageTaxValue,
+        nonVatGradSlsNetPercentage,
+        nonVatGradOSDExpenses,
+        nonVatGradTaxable,
+        nonVatStepIncomeTax,
+        nonVatGradTotalTaxes,
+        nonVatGradFinalNet,
+      } = fin;
+
+      const dummyPricingAndRecalculateOption = true;
+      if (dummyPricingAndRecalculateOption) {
+        // Skip redundant local calculations
+      }
+      /*
 
       // 2. Pricing configuration
       const isOfferActive = !!(
@@ -1293,6 +1662,8 @@ export default function PaymentScreen({
       const nonVatStepIncomeTax = calculateGraduatedTax(nonVatGradTaxable);
       const nonVatGradTotalTaxes = percentageTaxValue + nonVatStepIncomeTax;
       const nonVatGradFinalNet = totalNetRevenue - nonVatGradTotalTaxes - nonVatGradOSDExpenses;
+
+      */
 
       // Formatting helper for currency PHP
       const fPHP = (val: number) => "₱" + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
