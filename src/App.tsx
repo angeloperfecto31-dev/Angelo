@@ -506,7 +506,8 @@ export default function App() {
           poles,
           type,
           kaic,
-          af: cbAF,
+          af,
+          raw
         },
       } = computePanelScheduleValues(p, c);
 

@@ -73,6 +73,18 @@ export interface PanelConfig {
   icRating: string;
   voltage: number;
   frequency: number;
+  mainOverrides?: {
+    isOverrideEnabled: boolean;
+    wireSize?: number;
+    wireRuns?: number;
+    groundSize?: string;
+    conduitSize?: string;
+    breakerAT?: number;
+    breakerAF?: number;
+    breakerType?: string;
+    poles?: number;
+    kaic?: number;
+  };
 }
 
 export interface ShortCircuitParams {

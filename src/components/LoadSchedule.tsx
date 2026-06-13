@@ -1062,8 +1062,52 @@ export default function LoadSchedule({
     const af =
       cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
 
-    return { wire, groundSize, cb, conduitSize, poles, type, kaic, af };
-  }, [mainCurrent, panel.system, circuits]);
+    let finalCb = cb;
+    let finalAf = af;
+    let finalType = type;
+    let finalKaic = kaic;
+    let finalPoles = poles;
+    
+    let finalWireSize = wire.size;
+    let finalWireRuns = wire.runs;
+    let finalWireAmpacity = wire.ampacity;
+    let finalGroundSize = groundSize;
+    let finalConduitSize = conduitSize;
+
+    if (panel.mainOverrides?.isOverrideEnabled) {
+      if (panel.mainOverrides.breakerAT) finalCb = panel.mainOverrides.breakerAT;
+      if (panel.mainOverrides.breakerAF) finalAf = panel.mainOverrides.breakerAF;
+      if (panel.mainOverrides.breakerType) finalType = panel.mainOverrides.breakerType as MCBType;
+      if (panel.mainOverrides.kaic) finalKaic = panel.mainOverrides.kaic;
+      if (panel.mainOverrides.poles) finalPoles = panel.mainOverrides.poles;
+
+      if (panel.mainOverrides.wireSize) {
+        finalWireSize = Number(panel.mainOverrides.wireSize);
+        const matchingWire = WIRE_AMPACITY_TABLE.find(w => w.size === finalWireSize);
+        if (matchingWire) finalWireAmpacity = matchingWire.ampacity75 || matchingWire.ampacity;
+      }
+      if (panel.mainOverrides.wireRuns) finalWireRuns = panel.mainOverrides.wireRuns;
+      if (panel.mainOverrides.groundSize) finalGroundSize = panel.mainOverrides.groundSize;
+      if (panel.mainOverrides.conduitSize) finalConduitSize = panel.mainOverrides.conduitSize;
+    }
+
+    return { 
+      wire: { size: finalWireSize, ampacity: finalWireAmpacity, runs: finalWireRuns }, 
+      groundSize: finalGroundSize, 
+      cb: finalCb, 
+      conduitSize: finalConduitSize, 
+      poles: finalPoles, 
+      type: finalType, 
+      kaic: finalKaic, 
+      af: finalAf,
+      raw: {
+        wireSize: wire.size,
+        cb: cb,
+        type: type,
+        kaic: kaic
+      }
+    };
+  }, [mainCurrent, panel.system, circuits, panel.mainOverrides]);
 
   const panelRows = useMemo(() => {
     const maxCircuitNo = Math.max(...circuits.map((c) => c.circuitNo), 0);
@@ -1372,6 +1416,135 @@ export default function LoadSchedule({
               />
             </div>
           </div>
+        </div>
+
+        {/* --- MANAUL OVERRIDES SECTION --- */}
+        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-500" />
+                Engineering Overrides
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Manually override system-calculated values. The system will retain these values but mark them as user-defined.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                className="sr-only peer" 
+                checked={panel.mainOverrides?.isOverrideEnabled || false}
+                onChange={(e) => {
+                  setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...(prev.mainOverrides || {}),
+                      isOverrideEnabled: e.target.checked
+                    }
+                  }));
+                }}
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
+              <span className="ml-3 text-sm font-medium text-slate-700 dark:text-slate-300">Enable Overrides</span>
+            </label>
+          </div>
+
+          {panel.mainOverrides?.isOverrideEnabled && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-4 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/50">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Main Breaker Rating (AT)
+                </label>
+                <select
+                  value={panel.mainOverrides.breakerAT || ""}
+                  onChange={(e) => setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...prev.mainOverrides,
+                      breakerAT: e.target.value ? Number(e.target.value) : undefined,
+                      isOverrideEnabled: true
+                    }
+                  }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">Auto ({mainFeeder.raw.cb} AT)</option>
+                  {STANDARD_CB_RATINGS.map(r => (
+                    <option key={r} value={r}>{r} AT</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Main Feeder Size (mm²)
+                </label>
+                <select
+                  value={panel.mainOverrides.wireSize || ""}
+                  onChange={(e) => setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...prev.mainOverrides,
+                      wireSize: e.target.value ? Number(e.target.value) : undefined,
+                      isOverrideEnabled: true
+                    }
+                  }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">Auto ({formatWireSize(mainFeeder.raw.wireSize)})</option>
+                  {WIRE_AMPACITY_TABLE.map(w => (
+                    <option key={w.size} value={w.size}>{formatWireSize(w.size)} mm²</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Main Breaker Type
+                </label>
+                <select
+                  value={panel.mainOverrides.breakerType || ""}
+                  onChange={(e) => setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...prev.mainOverrides,
+                      breakerType: e.target.value || undefined,
+                      isOverrideEnabled: true
+                    }
+                  }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">Auto ({mainFeeder.raw.type})</option>
+                  {Object.values(MCBType).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Interrupting Capacity
+                </label>
+                <select
+                  value={panel.mainOverrides.kaic || ""}
+                  onChange={(e) => setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...prev.mainOverrides,
+                      kaic: e.target.value ? Number(e.target.value) : undefined,
+                      isOverrideEnabled: true
+                    }
+                  }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">Auto ({mainFeeder.raw.kaic} kAIC)</option>
+                  {[5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100].map(k => (
+                    <option key={k} value={k}>{k} kAIC</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -2087,11 +2260,13 @@ export default function LoadSchedule({
                       {formatWireSize(mainFeeder.wire.size)}mm² THHN,{" "}
                       {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize}{" "}
                       PVC
+                      {panel.mainOverrides?.isOverrideEnabled && panel.mainOverrides.wireSize ? " (Manual)" : ""}
                     </span>
                     <span>
                       Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF,{" "}
                       {mainFeeder.poles}P, {mainFeeder.kaic} kAIC,{" "}
                       {mainFeeder.type}
+                      {panel.mainOverrides?.isOverrideEnabled && (panel.mainOverrides.breakerAT || panel.mainOverrides.kaic || panel.mainOverrides.breakerType) ? " (Manual)" : ""}
                     </span>
                     <span
                       className={

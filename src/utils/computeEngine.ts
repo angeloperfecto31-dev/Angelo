@@ -689,6 +689,35 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   const cbAF =
     cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
 
+  let finalCb = cb;
+  let finalAf = cbAF;
+  let finalType = type;
+  let finalKaic = kaic;
+  let finalPoles = poles;
+  
+  let finalWireSize = wire.size;
+  let finalWireRuns = wire.runs;
+  let finalWireAmpacity = wire.ampacity;
+  let finalGroundSize = groundSize;
+  let finalConduitSize = conduitSize;
+
+  if (p.mainOverrides?.isOverrideEnabled) {
+    if (p.mainOverrides.breakerAT) finalCb = p.mainOverrides.breakerAT;
+    if (p.mainOverrides.breakerAF) finalAf = p.mainOverrides.breakerAF;
+    if (p.mainOverrides.breakerType) finalType = p.mainOverrides.breakerType;
+    if (p.mainOverrides.kaic) finalKaic = p.mainOverrides.kaic;
+    if (p.mainOverrides.poles) finalPoles = p.mainOverrides.poles;
+
+    if (p.mainOverrides.wireSize) {
+      finalWireSize = Number(p.mainOverrides.wireSize);
+      const matchingWire = WIRE_AMPACITY_TABLE.find(w => w.size === finalWireSize);
+      if (matchingWire) finalWireAmpacity = matchingWire.ampacity75 || matchingWire.ampacity;
+    }
+    if (p.mainOverrides.wireRuns) finalWireRuns = p.mainOverrides.wireRuns;
+    if (p.mainOverrides.groundSize) finalGroundSize = p.mainOverrides.groundSize;
+    if (p.mainOverrides.conduitSize) finalConduitSize = p.mainOverrides.conduitSize;
+  }
+
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
   const phaseImbalance =
     maxPhaseLoad > 0
@@ -725,14 +754,20 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       ? Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B) * 3
       : lightingReceptacleVA + motorVAs.reduce((a, b) => a + b, 0),
     mainFeeder: {
-      wire,
-      groundSize,
-      cb,
-      conduitSize,
-      poles,
-      type,
-      kaic,
-      af: cbAF,
+      wire: { size: finalWireSize, ampacity: finalWireAmpacity, runs: finalWireRuns },
+      groundSize: finalGroundSize,
+      cb: finalCb,
+      conduitSize: finalConduitSize,
+      poles: finalPoles,
+      type: finalType,
+      kaic: finalKaic,
+      af: finalAf,
+      raw: {
+        wireSize: wire.size,
+        cb: cb,
+        type: type,
+        kaic: kaic
+      }
     },
   };
 };
