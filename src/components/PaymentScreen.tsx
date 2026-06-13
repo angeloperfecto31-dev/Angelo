@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx-js-style";
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel, BorderStyle } from "docx";
+import { saveAs } from "file-saver";
 import { User, signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
 import {
@@ -1130,8 +1132,577 @@ export default function PaymentScreen({
     XLSX.writeFile(workbook, "ElectricalPH_Users.xlsx");
   };
 
-  // Admin Dashboard Mode
+  const handleExportFinancialReportWord = async () => {
+    try {
+      // 1. Core aggregates
+      const activeUsers = allUsers.filter(u => u.isActive === true || u.paymentStatus === "paid");
+      const pendingUsers = allUsers.filter(u => u.paymentStatus === "pending_verification");
+      
+      const totalActiveCount = activeUsers.length;
+      const totalPendingCount = pendingUsers.length;
+
+      // 2. Pricing configuration
+      const isOfferActive = !!(
+        (pricingSettings.promoDiscountBasic > 0 || pricingSettings.promoDiscountPremium > 0 || pricingSettings.offerTitle) &&
+        (!pricingSettings.offerExpiry || pricingSettings.offerExpiry.trim() === "" || new Date(pricingSettings.offerExpiry) > new Date())
+      );
+
+      // 3. User Categorization states
+      let basicActiveCount = 0;
+      let premiumActiveCount = 0;
+      let upgradeActiveCount = 0;
+      
+      let basicGrossRev = 0;
+      let premiumGrossRev = 0;
+      let upgradeGrossRev = 0;
+      
+      let basicNetRev = 0;
+      let premiumNetRev = 0;
+      let upgradeNetRev = 0;
+      
+      let totalDiscountsValue = 0;
+      let totalDiscountAppliedCount = 0;
+
+      // 4. Group revenue historically
+      const historicalByMonth: { [key: string]: { gross: number; net: number; discounts: number; count: number } } = {};
+
+      activeUsers.forEach((u) => {
+        const planStr = (u.plan || u.pendingVerification?.plan || "basic").toLowerCase();
+        const isUpgradeUser = !!(u.pendingVerification?.isUpgrade || u.isUpgrade);
+        
+        // Find exact actual amount paid
+        let amountPaid = 0;
+        if (typeof u.amount === "number") {
+          amountPaid = u.amount;
+        } else if (u.amount && !isNaN(Number(u.amount))) {
+          amountPaid = Number(u.amount);
+        } else if (u.pendingVerification?.amount && !isNaN(Number(u.pendingVerification.amount))) {
+          amountPaid = Number(u.pendingVerification.amount);
+        } else if (u.paymentAmount && !isNaN(Number(u.paymentAmount))) {
+          amountPaid = Number(u.paymentAmount);
+        }
+        
+        // Default regular (gross) prices
+        let regPrice = 0;
+        if (planStr === "premium") {
+          if (isUpgradeUser) {
+            regPrice = pricingSettings.upgradePrice || 500;
+          } else {
+            regPrice = pricingSettings.premiumPrice || 1499;
+          }
+        } else {
+          regPrice = pricingSettings.basicPrice || 999;
+        }
+        
+        // Fall back to expected amounts if database missing value
+        if (amountPaid <= 0) {
+          if (planStr === "premium") {
+            if (isUpgradeUser) {
+              amountPaid = pricingSettings.upgradePrice || 500;
+            } else {
+              amountPaid = (isOfferActive && pricingSettings.promoDiscountPremium > 0)
+                ? pricingSettings.promoDiscountPremium
+                : (pricingSettings.premiumPrice || 1499);
+            }
+          } else {
+            amountPaid = (isOfferActive && pricingSettings.promoDiscountBasic > 0)
+              ? pricingSettings.promoDiscountBasic
+              : (pricingSettings.basicPrice || 999);
+          }
+        }
+        
+        // Update categorization numbers
+        if (planStr === "premium") {
+          if (isUpgradeUser) {
+            upgradeActiveCount++;
+            upgradeGrossRev += regPrice;
+            upgradeNetRev += amountPaid;
+          } else {
+            premiumActiveCount++;
+            premiumGrossRev += regPrice;
+            premiumNetRev += amountPaid;
+          }
+        } else {
+          basicActiveCount++;
+          basicGrossRev += regPrice;
+          basicNetRev += amountPaid;
+        }
+
+        const discount = Math.max(0, regPrice - amountPaid);
+        if (discount > 0) {
+          totalDiscountAppliedCount++;
+          totalDiscountsValue += discount;
+        }
+
+        // Timeline sorting helper
+        let dateObj: Date | null = null;
+        if (u.createdAt?.seconds) {
+          dateObj = new Date(u.createdAt.seconds * 1000);
+        } else if (u.createdAt) {
+          try { dateObj = new Date(u.createdAt); } catch (e) {}
+        }
+        
+        const monthYearStr = dateObj 
+          ? dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+          : "Historical Inception";
+
+        if (!historicalByMonth[monthYearStr]) {
+          historicalByMonth[monthYearStr] = { gross: 0, net: 0, discounts: 0, count: 0 };
+        }
+        
+        historicalByMonth[monthYearStr].gross += regPrice;
+        historicalByMonth[monthYearStr].net += amountPaid;
+        historicalByMonth[monthYearStr].discounts += discount;
+        historicalByMonth[monthYearStr].count += 1;
+      });
+
+      const totalGrossRevenue = basicGrossRev + premiumGrossRev + upgradeGrossRev;
+      const totalNetRevenue = basicNetRev + premiumNetRev + upgradeNetRev;
+
+      // 5. BIR Tax Compliance calculations
+      const calculateGraduatedTax = (taxableIncome: number) => {
+        if (taxableIncome <= 250000) return 0;
+        if (taxableIncome <= 400000) return (taxableIncome - 250000) * 0.15;
+        if (taxableIncome <= 800000) return 22500 + (taxableIncome - 400000) * 0.20;
+        if (taxableIncome <= 2000000) return 102500 + (taxableIncome - 800000) * 0.25;
+        if (taxableIncome <= 8000000) return 402500 + (taxableIncome - 2000000) * 0.30;
+        return 2202500 + (taxableIncome - 8000000) * 0.35;
+      };
+
+      // Scenario 1: VAT Registered (12% Output VAT on exclusive netSales, CIT 20% on 60% of exclusive Sales with OSD)
+      const vatExclSales = totalNetRevenue / 1.12;
+      const outputVatValue = vatExclSales * 0.12;
+      const vatCorpExpensesOSD = vatExclSales * 0.40;
+      const vatTaxableIncome = vatExclSales * 0.60;
+      const vatIncomeTaxCIT = vatTaxableIncome * 0.20;
+      const vatTotalTaxesPayable = outputVatValue + vatIncomeTaxCIT;
+      const vatFinalNetIncome = vatExclSales - vatIncomeTaxCIT - vatCorpExpensesOSD;
+
+      // Scenario 2: Non-VAT Sole Proprietorship 8% Flat Tax (8% on excess over 250k)
+      const nonVatFlatExemption = 250000;
+      const nonVatFlatTaxable = Math.max(0, totalNetRevenue - nonVatFlatExemption);
+      const nonVatFlatTaxValue = nonVatFlatTaxable * 0.08;
+      const nonVatFlatPercentageTax = 0;
+      const nonVatFlatFinalNet = totalNetRevenue - nonVatFlatTaxValue;
+
+      // Scenario 3: Non-VAT Graduated Income Tax + 3% Percentage Tax (OSD 40% applied)
+      const percentageTaxValue = totalNetRevenue * 0.03;
+      const nonVatGradSlsNetPercentage = totalNetRevenue - percentageTaxValue;
+      const nonVatGradOSDExpenses = totalNetRevenue * 0.40;
+      const nonVatGradTaxable = Math.max(0, totalNetRevenue - percentageTaxValue - nonVatGradOSDExpenses);
+      const nonVatStepIncomeTax = calculateGraduatedTax(nonVatGradTaxable);
+      const nonVatGradTotalTaxes = percentageTaxValue + nonVatStepIncomeTax;
+      const nonVatGradFinalNet = totalNetRevenue - nonVatGradTotalTaxes - nonVatGradOSDExpenses;
+
+      // Formatting helper for currency PHP
+      const fPHP = (val: number) => "₱" + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Docx Style helpers to avoid repetitive nesting
+      const primaryColor = "4F46E5";   // Deep Indigo Indigo-600
+      const secondaryColor = "1E1B4B"; // Slate-950 dark text
+      const headingColor = "312E81";   // Indigo-900
+
+      // Table cell builder (with border styling and padding options)
+      const createCell = (text: string, options: { bold?: boolean; fill?: string; align?: "left" | "right" | "center"; color?: string; italic?: boolean; sz?: number } = {}) => {
+        return new TableCell({
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: text,
+                  bold: options.bold || false,
+                  italics: options.italic || false,
+                  color: options.color || "334155", // Slate-700
+                  font: "Segoe UI",
+                  size: options.sz || 19, // 9.5pt
+                }),
+              ],
+              alignment: options.align === "right" 
+                ? AlignmentType.RIGHT 
+                : (options.align === "center" ? AlignmentType.CENTER : AlignmentType.LEFT),
+              spacing: { before: 100, after: 100 }
+            }),
+          ],
+          shading: options.fill ? { fill: options.fill } : undefined,
+          borders: {
+            top: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
+            bottom: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
+            left: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
+            right: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
+          },
+        });
+      };
+
+      const createRow = (cells: TableCell[]) => new TableRow({ children: cells });
+
+      const headingParagraph = (text: string) => {
+        return new Paragraph({
+          spacing: { before: 280, after: 100 },
+          children: [
+            new TextRun({
+              text: "▪ " + text,
+              bold: true,
+              size: 23, // 11.5pt
+              color: headingColor,
+              font: "Segoe UI",
+            }),
+          ],
+        });
+      };
+
+      const normalParagraph = (text: string, italic: boolean = false) => {
+        return new Paragraph({
+          spacing: { before: 60, after: 80 },
+          children: [
+            new TextRun({
+              text: text,
+              font: "Segoe UI",
+              size: 20, // 10pt
+              color: "334155",
+              italics: italic
+            })
+          ]
+        });
+      };
+
+      // 6. Build report structure
+      const reportChildren: any[] = [
+        // COVER HEADER BLOCK
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 200, after: 120 },
+          children: [
+            new TextRun({
+              text: "ELECTRICALPH ENGINEERING PLATFORM",
+              bold: true,
+              size: 30, // 15pt
+              color: primaryColor,
+              font: "Segoe UI",
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 50, after: 200 },
+          children: [
+            new TextRun({
+              text: "CORPORATE FINANCIAL PERFORMANCE & BIR TAX COMPLIANCE REPORT",
+              bold: true,
+              size: 23, // 11.5pt
+              color: "1E293B",
+              font: "Segoe UI",
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
+          children: [
+            new TextRun({
+              text: `Data Scope: Full System Database • Authorized Audit Record Only\nReport Generated: ${new Date().toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}\nPrepared for: Board & Administrative Review\nCompiled by Server Account: ${user.email}`,
+              italics: true,
+              size: 17, // 8.5pt
+              color: "64748B",
+              font: "Segoe UI",
+            }),
+          ],
+        }),
+
+        new Paragraph({
+          spacing: { after: 250 },
+          children: [
+            new TextRun({
+              text: "_________________________________________________________________________________",
+              color: "CBD5E1",
+              size: 14,
+            })
+          ]
+        }),
+
+        // SECTION 1: EXECUTIVE KPIs
+        headingParagraph("EXECUTIVE SUMMARY & CORPORATE KEY PERFORMANCE INDICATORS"),
+        normalParagraph("The following table shows the comprehensive overview of the platform's financial performance since foundation. Outstanding accounts currently under verification review are classified separate from the actual audited baseline."),
+
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            createRow([
+              createCell("Financial Target Metric Group", { bold: true, fill: "F1F5F9", align: "center", font: "Segoe UI" } as any),
+              createCell("Summary Metrics / Base Record Value", { bold: true, fill: "F1F5F9", align: "center", font: "Segoe UI" } as any),
+            ]),
+            createRow([
+              createCell("Total Confirmed Active Subscribers", { bold: true }),
+              createCell(`${totalActiveCount} User Accounts`, { align: "right" }),
+            ]),
+            createRow([
+              createCell("Pending Verification Billing Pipeline", { bold: false }),
+              createCell(`${totalPendingCount} User Accounts`, { align: "right" }),
+            ]),
+            createRow([
+              createCell("Total Regular Subscriptions Sales (Gross Revenue Equivalent)", { bold: true }),
+              createCell(fPHP(totalGrossRevenue), { align: "right", color: "1E1B4B", bold: true }),
+            ]),
+            createRow([
+              createCell("Total Platform Campaign Deductions & Discounts Applied", { bold: false }),
+              createCell(`(${fPHP(totalDiscountsValue)})`, { align: "right", color: "B91C1C" }),
+            ]),
+            createRow([
+              createCell("Total Realized Cash Subscriptions Collected (Net Sales Revenue)", { bold: true }),
+              createCell(fPHP(totalNetRevenue), { align: "right", color: "15803D", bold: true }),
+            ]),
+          ],
+        }),
+
+        // SECTION 2: CATEGORY PLAN BREAKDOWNS
+        headingParagraph("DETAILED BREAKDOWN BY SUBSCRIPTION PLAN AND TIER LEVEL"),
+        normalParagraph("The table below details subscriber counts, regular price levels, promotional discount amounts, and actual net sales collected per subscription service plan level offered:"),
+
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            createRow([
+              createCell("Subscription Plan Tier", { bold: true, fill: "EEF2F6" }),
+              createCell("Active Accounts", { bold: true, fill: "EEF2F6", align: "center" }),
+              createCell("Regular Price / Account", { bold: true, fill: "EEF2F6", align: "right" }),
+              createCell("Gross Revenue Base", { bold: true, fill: "EEF2F6", align: "right" }),
+              createCell("Applied Discounts", { bold: true, fill: "EEF2F6", align: "right" }),
+              createCell("Actual Net Revenue Paid", { bold: true, fill: "EEF2F6", align: "right" }),
+            ]),
+            createRow([
+              createCell("Basic Plan", { bold: true }),
+              createCell(`${basicActiveCount} Active`, { align: "center" }),
+              createCell(fPHP(pricingSettings.basicPrice || 999), { align: "right" }),
+              createCell(fPHP(basicGrossRev), { align: "right" }),
+              createCell(`(${fPHP(basicGrossRev - basicNetRev)})`, { align: "right", color: "B91C1C" }),
+              createCell(fPHP(basicNetRev), { align: "right", bold: true }),
+            ]),
+            createRow([
+              createCell("Premium Plan (Full Sub)", { bold: true }),
+              createCell(`${premiumActiveCount} Active`, { align: "center" }),
+              createCell(fPHP(pricingSettings.premiumPrice || 1499), { align: "right" }),
+              createCell(fPHP(premiumGrossRev), { align: "right" }),
+              createCell(`(${fPHP(premiumGrossRev - premiumNetRev)})`, { align: "right", color: "B91C1C" }),
+              createCell(fPHP(premiumNetRev), { align: "right", bold: true }),
+            ]),
+            createRow([
+              createCell("Premium Upgrade Paths (Basic -> Premium)", { bold: false }),
+              createCell(`${upgradeActiveCount} Active`, { align: "center" }),
+              createCell(fPHP(pricingSettings.upgradePrice || 500), { align: "right" }),
+              createCell(fPHP(upgradeGrossRev), { align: "right" }),
+              createCell(`(${fPHP(upgradeGrossRev - upgradeNetRev)})`, { align: "right", color: "B91C1C" }),
+              createCell(fPHP(upgradeNetRev), { align: "right", bold: true }),
+            ]),
+            createRow([
+              createCell("TOTAL CONSOLIDATED AUDIT BASE", { bold: true, fill: "F8FAFC" }),
+              createCell(`${totalActiveCount} Active`, { bold: true, fill: "F8FAFC", align: "center" }),
+              createCell("N/A", { fill: "F8FAFC", align: "right" }),
+              createCell(fPHP(totalGrossRevenue), { bold: true, fill: "F8FAFC", align: "right" }),
+              createCell(`(${fPHP(totalDiscountsValue)})`, { bold: true, fill: "F8FAFC", align: "right", color: "B91C1C" }),
+              createCell(fPHP(totalNetRevenue), { bold: true, fill: "F8FAFC", align: "right", color: "15803D" }),
+            ]),
+          ],
+        }),
+
+        // SECTION 3: HISTORICAL TIMELINE
+        headingParagraph("HISTORICAL REVENUE SEQUENCE (TIMELINE BY REGISTRATION DATE)"),
+        normalParagraph("The historic trend analysis below compiles registration monthly cohorts along with actual cash revenues recorded within each respective billing month:"),
+
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            createRow([
+              createCell("Billing Period Calendar Month", { bold: true, fill: "F1F5F9" }),
+              createCell("New Registered Paid Units", { bold: true, fill: "F1F5F9", align: "center" }),
+              createCell("Gross Revenue Base", { bold: true, fill: "F1F5F9", align: "right" }),
+              createCell("Total Dynamic Discounts", { bold: true, fill: "F1F5F9", align: "right" }),
+              createCell("Direct Cash Net Revenue", { bold: true, fill: "F1F5F9", align: "right" }),
+            ]),
+            ...Object.keys(historicalByMonth).map(monthName => {
+              const item = historicalByMonth[monthName];
+              return createRow([
+                createCell(monthName, { bold: true }),
+                createCell(`${item.count} Accounts`, { align: "center" }),
+                createCell(fPHP(item.gross), { align: "right" }),
+                createCell(`(${fPHP(item.discounts)})`, { align: "right", color: "B91C1C" }),
+                createCell(fPHP(item.net), { align: "right", bold: true }),
+              ]);
+            })
+          ],
+        }),
+
+        // SECTION 4: PHILIPPINE TAX LAW COMPLIANCE
+        headingParagraph("PHILIPPINE TAX COMPLIANCE & BIR AUDIT ESTIMATIONS"),
+        normalParagraph("Under standard Bureau of Internal Revenue (BIR) regulations, computing net sales depends on the legal entity structure of the organization. The computations below show detailed estimations comparing VAT Registration versus Non-VAT Schemes (TRAIN Law provisions):"),
+
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            createRow([
+              createCell("Compliance Tax Item Line", { bold: true, fill: "EEF2F6" }),
+              createCell("Tax Option A: 12% VAT Entity", { bold: true, fill: "EEF2F6", align: "center" }),
+              createCell("Tax Option B: 8% Flat (Non-VAT)", { bold: true, fill: "EEF2F6", align: "center" }),
+              createCell("Tax Option C: Graduated (Non-VAT)", { bold: true, fill: "EEF2F6", align: "center" }),
+            ]),
+            createRow([
+              createCell("Gross Total Cash Receipts Collected", { bold: false }),
+              createCell(fPHP(totalNetRevenue), { align: "right" }),
+              createCell(fPHP(totalNetRevenue), { align: "right" }),
+              createCell(fPHP(totalNetRevenue), { align: "right" }),
+            ]),
+            createRow([
+              createCell("Less: Statutory VAT Adjustment (Inclusive)", { bold: false }),
+              createCell(`(${fPHP(totalNetRevenue - vatExclSales)})`, { align: "right", color: "B91C1C" }),
+              createCell("₱0.00 (Exempt)", { align: "right" }),
+              createCell("₱0.00 (Exempt)", { align: "right" }),
+            ]),
+            createRow([
+              createCell("Net Taxable Sales Base (Exc. VAT / Adjustments)", { bold: true }),
+              createCell(fPHP(vatExclSales), { align: "right", bold: true }),
+              createCell(fPHP(totalNetRevenue), { align: "right" }),
+              createCell(fPHP(totalNetRevenue), { align: "right" }),
+            ]),
+            createRow([
+              createCell("Statutory Deductions (OSD @ 40% Allowance)", { bold: false }),
+              createCell(`(${fPHP(vatCorpExpensesOSD)})`, { align: "right", color: "64748B" }),
+              createCell("₱250,000.00 Personal Deduction", { align: "right", color: "64748B" }),
+              createCell(`(${fPHP(nonVatGradOSDExpenses)})`, { align: "right", color: "64748B" }),
+            ]),
+            createRow([
+              createCell("Calculated Taxable Business Income", { bold: true }),
+              createCell(fPHP(vatTaxableIncome), { align: "right" }),
+              createCell(fPHP(nonVatFlatTaxable), { align: "right" }),
+              createCell(fPHP(nonVatGradTaxable), { align: "right" }),
+            ]),
+            createRow([
+              createCell("Government Taxes Due (CIT Option / Flat 8% / Grad)", { bold: true, color: "B91C1C" }),
+              createCell(fPHP(vatIncomeTaxCIT), { align: "right", color: "B91C1C" }),
+              createCell(fPHP(nonVatFlatTaxValue), { align: "right", color: "B91C1C" }),
+              createCell(fPHP(nonVatStepIncomeTax), { align: "right", color: "B91C1C" }),
+            ]),
+            createRow([
+              createCell("Value Added Tax (12%) / Percentage Tax (3% Sec116)", { bold: true, color: "B91C1C" }),
+              createCell(fPHP(outputVatValue), { align: "right", color: "B91C1C" }),
+              createCell("₱0.00 (Exempt)", { align: "right" }),
+              createCell(fPHP(percentageTaxValue), { align: "right", color: "B91C1C" }),
+            ]),
+            createRow([
+              createCell("TOTAL ESTIMATED DEDUCTED TAX LIABILITY", { bold: true, color: "991B1B", fill: "FEF2F2" }),
+              createCell(fPHP(vatTotalTaxesPayable), { bold: true, align: "right", color: "991B1B", fill: "FEF2F2" }),
+              createCell(fPHP(nonVatFlatTaxValue), { bold: true, align: "right", color: "991B1B", fill: "FEF2F2" }),
+              createCell(fPHP(nonVatGradTotalTaxes), { bold: true, align: "right", color: "991B1B", fill: "FEF2F2" }),
+            ]),
+            createRow([
+              createCell("ESTIMATED COMPLIANT TAKEOHOME NET PROFIT", { bold: true, color: "166534", fill: "F0FDF4" }),
+              createCell(fPHP(vatFinalNetIncome), { bold: true, align: "right", color: "166534", fill: "F0FDF4" }),
+              createCell(fPHP(nonVatFlatFinalNet), { bold: true, align: "right", color: "166534", fill: "F0FDF4" }),
+              createCell(fPHP(nonVatGradFinalNet), { bold: true, align: "right", color: "166534", fill: "F0FDF4" }),
+            ]),
+          ],
+        }),
+
+        // SECTION 5: FORECAST & EVALUATIONS RUN-RATES
+        headingParagraph("REVENUE PROJECTIONS, EVALUATIONS AND RUN-RATE RUNWAYS"),
+        normalParagraph("The forecasting block displays immediate annualized projections computed on top of the current active subscriber baseline (extrapolating active core subscriptions value):"),
+
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            createRow([
+              createCell("Run-Rate Extrapolation Cycle", { bold: true, fill: "F1F5F9" }),
+              createCell("Projected Gross Billing Sales", { bold: true, fill: "F1F5F9", align: "right" }),
+              createCell("Projected Campaign Discounts", { bold: true, fill: "F1F5F9", align: "right" }),
+              createCell("Projected Net Collections", { bold: true, fill: "F1F5F9", align: "right" }),
+            ]),
+            createRow([
+              createCell("Current Collection (Inception Basis)", { bold: true }),
+              createCell(fPHP(totalGrossRevenue), { align: "right" }),
+              createCell(`(${fPHP(totalDiscountsValue)})`, { align: "right", color: "B91C1C" }),
+              createCell(fPHP(totalNetRevenue), { align: "right", bold: true, color: "15803D" }),
+            ]),
+            createRow([
+              createCell("Weekly Realization Run-Rate Baseline", { bold: false }),
+              createCell(fPHP(totalGrossRevenue / 4.3), { align: "right" }),
+              createCell(`(${fPHP(totalDiscountsValue / 4.3)})`, { align: "right" }),
+              createCell(fPHP(totalNetRevenue / 4.3), { align: "right", bold: true }),
+            ]),
+            createRow([
+              createCell("Monthly Projected Cohort Horizon", { bold: false }),
+              createCell(fPHP(totalGrossRevenue), { align: "right" }),
+              createCell(`(${fPHP(totalDiscountsValue)})`, { align: "right" }),
+              createCell(fPHP(totalNetRevenue), { align: "right", bold: true }),
+            ]),
+            createRow([
+              createCell("Quarterly Consolidated Projection (90-Day Loop)", { bold: false }),
+              createCell(fPHP(totalGrossRevenue * 3), { align: "right" }),
+              createCell(`(${fPHP(totalDiscountsValue * 3)})`, { align: "right" }),
+              createCell(fPHP(totalNetRevenue * 3), { align: "right", bold: true }),
+            ]),
+            createRow([
+              createCell("Annual Consolidated Fiscal Outlook (12-Month run)", { bold: true, fill: "F8FAFC" }),
+              createCell(fPHP(totalGrossRevenue * 12), { bold: true, fill: "F8FAFC", align: "right" }),
+              createCell(`(${fPHP(totalDiscountsValue * 12)})`, { bold: true, fill: "F8FAFC", align: "right", color: "B91C1C" }),
+              createCell(fPHP(totalNetRevenue * 12), { bold: true, fill: "F8FAFC", align: "right", color: "15803D" }),
+            ]),
+          ],
+        }),
+
+        new Paragraph({
+          spacing: { before: 200, after: 150 },
+          children: [
+            new TextRun({
+              text: "_________________________________________________________________________________",
+              color: "CBD5E1",
+              size: 14,
+            })
+          ]
+        }),
+
+        // VERIFICATION FOOTER MARKER
+        headingParagraph("DOCUMENT SIGN-OFF & ADMIN CONTROL DELEGATION"),
+        normalParagraph("This system compliance document compiles live collections and subscription status directly from the secure Firestore Database. Administrative actions like manually approving pending payment reviews immediately updates the ledger baseline of this document. It is formatted in high compliance to ensure it serves perfectly for management review, taxation filings, audit references, and financial planning."),
+
+        new Paragraph({
+          spacing: { before: 260 },
+          children: [
+            new TextRun({
+              text: "Prepared and verified by:\n\n",
+              size: 18,
+              font: "Segoe UI",
+              color: "475569"
+            }),
+            new TextRun({
+              text: `______________________________________________\nSystem Finance & Administrative Controller Office\nAuthorized Digital Stamp ID: ${auth.currentUser?.uid || "N/A"}\nWeb Service Root: ElectricalPH Enterprise Systems`,
+              bold: true,
+              size: 18,
+              font: "Segoe UI",
+              color: "0F172A"
+            }),
+          ],
+        }),
+      ];
+
+      // 7. Initialize Document in Section
+      const doc = new Document({
+        sections: [
+          {
+            properties: {},
+            children: reportChildren,
+          },
+        ],
+      });
+
+      // 8. Generate and download file using file-saver
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, `ElectricalPH_Financial_Report_${new Date().toISOString().slice(0, 10)}.docx`);
+      setAdminStatusMsg("Financial Report (.docx) exported successfully!");
+    } catch (err: any) {
+      console.error("Error exporting Word report:", err);
+      setAdminStatusMsg("Error exporting Financial Report (Word): " + err.message);
+    }
+  };
+
   const showAdminDashboard = (forceAdmin || isAdminMode) && isAdminUser;
+
   if (showAdminDashboard) {
     return (
       <div
@@ -1704,74 +2275,119 @@ export default function PaymentScreen({
           </div>
 
           {/* Controls Bar */}
-          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 justify-between items-center">
-            {/* Search */}
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search by Email, ID, Ref No, or Name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-xs font-medium border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all font-mono"
-              />
+          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-6 flex flex-col gap-5">
+            {/* Top Row: Search & Actions */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Search */}
+              <div className="relative flex-1 max-w-md w-full">
+                <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by Email, ID, Ref No, or Name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all font-mono"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                    title="Clear Search"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Export Excel */}
+                <button
+                  onClick={handleExportToExcel}
+                  className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl transition-all flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                  </svg>
+                  Export to Excel
+                </button>
+
+                {/* Word Financial Report */}
+                <button
+                  onClick={handleExportFinancialReportWord}
+                  className="px-4 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                  </svg>
+                  Export Financial Report (Word)
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 items-center shrink-0">
-              {/* Plan Filter */}
-              <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl shrink-0">
-                {(["all", "basic", "premium"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setPlanFilter(mode)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
-                      planFilter === mode
-                        ? "bg-white shadow-sm text-indigo-600"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    {mode === "all"
-                      ? "All Plans"
-                      : mode === "basic"
-                        ? "Basic"
-                        : "Premium"}
-                  </button>
-                ))}
+            {/* Divider line between rows */}
+            <hr className="border-slate-100" />
+
+            {/* Bottom Row: Filters (Plan & Status) */}
+            <div className="flex flex-col md:flex-row md:items-center gap-6 justify-between">
+              <div className="flex flex-wrap items-center gap-6">
+                {/* Plan Filter */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 select-none">
+                    Plan Tier
+                  </span>
+                  <div className="flex gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                    {(["all", "basic", "premium"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setPlanFilter(mode)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
+                          planFilter === mode
+                            ? "bg-white shadow-sm text-indigo-600 border border-slate-100/80"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        {mode === "all" ? "All Plans" : mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Status Filter */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 select-none">
+                    Status Group
+                  </span>
+                  <div className="flex gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                    {(["all", "pending", "paid", "unpaid"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setAdminFilter(mode)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
+                          adminFilter === mode
+                            ? "bg-white shadow-sm text-indigo-600 border border-slate-100/80"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        {mode === "all"
+                          ? "All Status"
+                          : mode === "pending"
+                            ? "Pending"
+                            : mode === "paid"
+                              ? "Active"
+                              : "Unpaid"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* Status Filter */}
-              <div className="flex overflow-x-auto gap-1 bg-slate-50 p-1 rounded-xl shrink-0">
-                {(["all", "pending", "paid", "unpaid"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setAdminFilter(mode)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
-                      adminFilter === mode
-                        ? "bg-white shadow-sm text-indigo-600"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    {mode === "all"
-                      ? "All Status"
-                      : mode === "pending"
-                        ? "Pending Approval"
-                        : mode === "paid"
-                          ? "Active"
-                          : "Unpaid"}
-                  </button>
-                ))}
+              {/* Status Indicator counter */}
+              <div className="text-right text-[11px] font-semibold text-slate-400 font-mono">
+                Showing {filteredUsers.length} of {allUsers.length} users
               </div>
-
-              {/* Export Button */}
-              <button
-                onClick={handleExportToExcel}
-                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shrink-0 flex items-center gap-2 shadow-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-                Export to Excel
-              </button>
             </div>
           </div>
 
