@@ -884,7 +884,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
           createCell(cir.voltage?.toString() || "230"),
           createCell(cir.loadVA?.toString() || "0"),
           createCell(cir.loadA?.toFixed(2) || "0.00"),
-          createCell(`${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF`),
+          createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${cir.mcbP || 2}P`),
           createCell(`${cir.wireSize || '3.5'} mm² THHN`),
           createCell(`${cir.conduitSize || '20'}mm uPVC`),
         ]

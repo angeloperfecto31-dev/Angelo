@@ -30,6 +30,8 @@ import {
   Plus,
   Map,
   Network,
+  Copy,
+  X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import * as XLSX from "xlsx-js-style";
@@ -257,6 +259,50 @@ export default function App() {
   const [isProjectManagerOpen, setIsProjectManagerOpen] =
     useState<boolean>(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+
+  const [panelToDuplicate, setPanelToDuplicate] = useState<{ id: string; name: string } | null>(null);
+  const [duplicateName, setDuplicateName] = useState("");
+
+  const handleConfirmDuplicate = () => {
+    if (!panelToDuplicate) return;
+    const targetId = panelToDuplicate.id;
+    const original = subPanels.find((sp) => sp.id === targetId);
+    if (!original) return;
+
+    const newId = crypto.randomUUID();
+    
+    // Deep copy circuits and assign brand-new circuit IDs
+    const duplicatedCircuits = original.circuits.map((c) => ({
+      ...c,
+      id: crypto.randomUUID(),
+      subLoads: c.subLoads ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() })) : undefined,
+    }));
+
+    // Deep copy panel config with the unique duplicated designation
+    const duplicatedPanel = {
+      ...original.panel,
+      designation: duplicateName.trim() || `${original.panel.designation || "Subpanel"} (Copy)`,
+    };
+
+    setSubPanels((prev) => {
+      const idx = prev.findIndex((sp) => sp.id === targetId);
+      const cloned = {
+        id: newId,
+        panel: duplicatedPanel,
+        circuits: duplicatedCircuits,
+      };
+      if (idx !== -1) {
+        const next = [...prev];
+        next.splice(idx + 1, 0, cloned);
+        return next;
+      }
+      return [...prev, cloned];
+    });
+
+    setActiveScheduleTab(newId);
+    setPanelToDuplicate(null);
+    setDuplicateName("");
+  };
 
   const handleLoadProject = (projectId: string, data: ProjectData) => {
     setCurrentProjectId(projectId);
@@ -2219,6 +2265,10 @@ export default function App() {
                               );
                               setActiveScheduleTab("mdp");
                             }}
+                            onDuplicateSubPanel={() => {
+                              setPanelToDuplicate({ id: sp.id, name: `${sp.panel.designation || "Subpanel"} (Copy)` });
+                              setDuplicateName(`${sp.panel.designation || "Subpanel"} (Copy)`);
+                            }}
                             iscParams={iscParams}
                             isPremium={userPlan === "premium" || isAdmin}
                             onRequestUpgrade={() => setShowUpgrade(true)}
@@ -2463,6 +2513,64 @@ export default function App() {
               currentProjectId={currentProjectId}
               setCurrentProjectId={setCurrentProjectId}
             />
+
+            {panelToDuplicate && (
+              <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fade-in no-print">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+                  {/* Modal Header */}
+                  <div className="p-5 border-b border-slate-150 dark:border-slate-800/80 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/30">
+                    <h2 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                      <Copy className="w-5 h-5 text-indigo-500" />
+                      Duplicate Sub-Panel
+                    </h2>
+                    <button
+                      onClick={() => setPanelToDuplicate(null)}
+                      className="p-1.5 hover:bg-slate-150 dark:hover:bg-slate-800/65 rounded-lg transition-colors text-slate-500 hover:text-slate-700 dark:hover:text-slate-350 cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="p-7 space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold tracking-wider text-slate-500 uppercase">
+                        New Designation (Name)
+                      </label>
+                      <input
+                        type="text"
+                        value={duplicateName}
+                        onChange={(e) => setDuplicateName(e.target.value)}
+                        placeholder="e.g. Sub-Panel 2"
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-medium"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            handleConfirmDuplicate();
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-5 border-t border-slate-150 dark:border-slate-800/80 flex justify-end gap-3 bg-slate-50/50 dark:bg-slate-800/10">
+                    <button
+                      onClick={() => setPanelToDuplicate(null)}
+                      className="px-4.5 py-2.5 text-xs font-extrabold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleConfirmDuplicate}
+                      className="px-5 py-2.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-600/15 hover:shadow-none cursor-pointer"
+                    >
+                      Duplicate Design
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <footer className="w-full bg-white/50 border-t border-slate-200 mt-12 py-8 rounded-2xl no-print">
               <div className="mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">

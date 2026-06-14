@@ -140,6 +140,7 @@ export interface LoadScheduleProps {
   isSubPanel?: boolean;
   onAddSubPanel?: () => void;
   onRemoveSubPanel?: () => void;
+  onDuplicateSubPanel?: () => void;
   availableSubPanels?: {
     id: string;
     panel: PanelConfig;
@@ -399,6 +400,7 @@ export default function LoadSchedule({
   setCircuits,
   isSubPanel = false,
   onRemoveSubPanel,
+  onDuplicateSubPanel,
   availableSubPanels,
   readOnly = false,
   iscParams,
@@ -1170,10 +1172,20 @@ export default function LoadSchedule({
             </h2>
           </div>
           <div className="flex items-center gap-2">
+            {isSubPanel && onDuplicateSubPanel && (
+              <button
+                onClick={onDuplicateSubPanel}
+                className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 dark:hover:bg-indigo-950/50 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                id="btn-duplicate-subpanel"
+              >
+                <Copy className="w-4 h-4" />
+                Duplicate
+              </button>
+            )}
             {isSubPanel && onRemoveSubPanel && (
               <button
                 onClick={onRemoveSubPanel}
-                className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-lg flex items-center gap-1.5 transition-colors"
+                className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
                 Remove Sub-Panel
@@ -2144,7 +2156,7 @@ export default function LoadSchedule({
                           }
                           className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === "SUB" ? "text-slate-400 dark:text-slate-500" : ""}`}
                         >
-                          {[1, 2, 3].map((p) => (
+                          {[1, 2, 3, 4].map((p) => (
                             <option
                               key={p}
                               value={p}

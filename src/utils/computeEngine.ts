@@ -230,7 +230,9 @@ export const calculateCircuitValues = (
 
   // Auto-update poles for three-phase circuits when in a three-phase system
   if (panel.system.includes("3PH") && c.phases && c.phases.length === 3) {
-    mcbP = 3;
+    if (mcbP !== 4) {
+      mcbP = 3;
+    }
   } else if (
     c.loadType !== LoadType.SUB_PANEL &&
     !panel.system.includes("3PH")
