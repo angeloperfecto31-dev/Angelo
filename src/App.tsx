@@ -525,413 +525,654 @@ export default function App() {
   // We now import computePanelScheduleValues from computeEngine.ts
 
   const exportToExcel = () => {
-    const wb = XLSX.utils.book_new();
+    try {
+      const wb = XLSX.utils.book_new();
 
-    const allPanelsToExport = [
-      { id: "main", panel, circuits },
-      ...subPanels.map((sp) => ({
-        id: sp.id,
-        panel: sp.panel,
-        circuits: sp.circuits,
-      })),
-    ];
+      const sanitizeSheetName = (name: string): string => {
+        // Excel worksheet names cannot contain: \ / ? * : [ ]
+        // and cannot exceed 31 chars.
+        let sanitized = name.replace(/[\\\/?:*\[\]]/g, "_");
+        if (sanitized.length > 31) {
+          sanitized = sanitized.substring(0, 31);
+        }
+        return sanitized || "Sheet";
+      };
 
-    allPanelsToExport.forEach((item, index) => {
-      const { panel: p, circuits: c } = item;
+      const allPanelsToExport = [
+        { id: "main", panel, circuits },
+        ...subPanels.map((sp) => ({
+          id: sp.id,
+          panel: sp.panel,
+          circuits: sp.circuits,
+        })),
+      ];
 
-      // Extract accurate calculations matching the system's UI engine
-      const {
-        totalVA,
-        phaseImbalance,
-        phaseAmps,
-        mainCurrent,
-        mainFeeder: {
-          wire,
-          groundSize,
-          cb,
-          conduitSize,
-          poles,
-          type,
-          kaic,
-          af,
-          raw
-        },
-      } = computePanelScheduleValues(p, c);
+      allPanelsToExport.forEach((item, index) => {
+        const { panel: p, circuits: c } = item;
 
-      const formatWireSize = (size: number): string =>
-        size <= 8 ? size.toFixed(1) : size.toString();
+        // Extract accurate calculations matching the system's UI engine
+        const {
+          totalVA,
+          phaseImbalance,
+          phaseAmps,
+          mainCurrent,
+          mainFeeder: {
+            wire,
+            groundSize,
+            cb,
+            conduitSize,
+            poles,
+            type,
+            kaic,
+            af,
+          },
+        } = computePanelScheduleValues(p, c);
 
-      const wsData: any[][] = [];
-      wsData.push(["PROJECT:", p.project, "", "SYSTEM:", p.system]);
-      wsData.push([
-        "PANEL DESIGNATION:",
-        p.designation,
-        "",
-        "VOLTAGE:",
-        p.voltage,
-      ]);
-      wsData.push([]);
+        const formatWireSize = (size: number): string =>
+          size <= 8 ? size.toFixed(1) : size.toString();
 
-      const is3Phase = p.system.includes("3PH");
-
-      const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
-      if (is3Phase) {
-        headers.push("AMPS", "", "", ""); // push 4 slots for AMPS
-      } else {
-        headers.push("AMPS");
-      }
-      headers.push("AT", "AF", "P", "KAIC", "TYPE", "WIRE / GND / CONDUIT");
-      wsData.push(headers);
-
-      if (is3Phase) {
-        const p1 = p.connectionType === "Line-to-Neutral" ? "AN" : "AB";
-        const p2 = p.connectionType === "Line-to-Neutral" ? "BN" : "BC";
-        const p3 = p.connectionType === "Line-to-Neutral" ? "CN" : "CA";
+        const wsData: any[][] = [];
+        wsData.push(["PROJECT:", p.project, "", "SYSTEM:", p.system]);
         wsData.push([
+          "PANEL DESIGNATION:",
+          p.designation,
           "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          p1,
-          p2,
-          p3,
-          "3Ø",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
+          "VOLTAGE:",
+          p.voltage,
         ]);
-      }
+        wsData.push([]);
 
-      c.forEach((cir) => {
-        const isSpace =
-          (cir.description && cir.description.toUpperCase() === "SPACE") ||
-          cir.loadType === LoadType.SPACE;
-        const row: any[] = [
-          cir.circuitNo,
-          cir.description,
-          isSpace ? "-" : cir.wattage,
-          isSpace ? "-" : cir.quantity,
-          isSpace ? "-" : cir.loadVA,
-          isSpace ? "-" : cir.phases ? cir.phases.join(", ") : "",
+        const is3Phase = p.system.includes("3PH");
+
+        const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
+        if (is3Phase) {
+          headers.push("AMPS", "", "", ""); // push 4 slots for AMPS
+        } else {
+          headers.push("AMPS");
+        }
+        headers.push("AT", "AF", "P", "KAIC", "TYPE", "WIRE / GND / CONDUIT");
+        wsData.push(headers);
+
+        if (is3Phase) {
+          const p1 = p.connectionType === "Line-to-Neutral" ? "AN" : "AB";
+          const p2 = p.connectionType === "Line-to-Neutral" ? "BN" : "BC";
+          const p3 = p.connectionType === "Line-to-Neutral" ? "CN" : "CA";
+          wsData.push([
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            p1,
+            p2,
+            p3,
+            "3Ø",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+          ]);
+        }
+
+        c.forEach((cir) => {
+          const isSpace =
+            (cir.description && cir.description.toUpperCase() === "SPACE") ||
+            cir.loadType === LoadType.SPACE;
+          const row: any[] = [
+            cir.circuitNo,
+            cir.description,
+            isSpace ? "-" : cir.wattage,
+            isSpace ? "-" : cir.quantity,
+            isSpace ? "-" : cir.loadVA,
+            isSpace ? "-" : cir.phases ? cir.phases.join(", ") : "",
+          ];
+
+          if (is3Phase) {
+            if (isSpace) {
+              row.push("-", "-", "-", "-");
+            } else {
+              row.push(
+                cir.phases.includes("R") && cir.phases.length < 3
+                  ? cir.loadA.toFixed(2)
+                  : "-",
+                cir.phases.includes("Y") && cir.phases.length < 3
+                  ? cir.loadA.toFixed(2)
+                  : "-",
+                cir.phases.includes("B") && cir.phases.length < 3
+                  ? cir.loadA.toFixed(2)
+                  : "-",
+                cir.phases.length === 3 ? cir.loadA.toFixed(2) : "-",
+              );
+            }
+          } else {
+            row.push(isSpace ? "-" : cir.loadA.toFixed(2));
+          }
+
+          row.push(
+            isSpace ? "-" : cir.mcbAT,
+            isSpace ? "-" : cir.mcbAF,
+            isSpace ? "-" : cir.mcbP,
+            isSpace ? "-" : cir.mcbKAIC,
+            isSpace ? "-" : cir.mcbType,
+            isSpace
+              ? "-"
+              : `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
+          );
+          wsData.push(row);
+        });
+
+        const headerRowOffset = is3Phase ? 1 : 0;
+
+        wsData.push([]);
+
+        const baseTotalRow: any[] = [
+          "Total Connected Load", // 0
+          "",
+          "",
+          "",
+          `${totalVA.toFixed(0)} VA`, // 4: VA
+          `(${(totalVA / 1000).toFixed(2)} kVA)`, // 5: PHASE
         ];
 
         if (is3Phase) {
-          if (isSpace) {
-            row.push("-", "-", "-", "-");
-          } else {
-            row.push(
-              cir.phases.includes("R") && cir.phases.length < 3
-                ? cir.loadA.toFixed(2)
-                : "-",
-              cir.phases.includes("Y") && cir.phases.length < 3
-                ? cir.loadA.toFixed(2)
-                : "-",
-              cir.phases.includes("B") && cir.phases.length < 3
-                ? cir.loadA.toFixed(2)
-                : "-",
-              cir.phases.length === 3 ? cir.loadA.toFixed(2) : "-",
-            );
-          }
+          baseTotalRow.push(
+            `${phaseAmps.R.toFixed(2)} A`, // 6: p1
+            `${phaseAmps.Y.toFixed(2)} A`, // 7: p2
+            `${phaseAmps.B.toFixed(2)} A`, // 8: p3
+            phaseAmps.threePhase > 0
+              ? `${phaseAmps.threePhase.toFixed(2)} A`
+              : "-", // 9: 3Ø
+          );
         } else {
-          row.push(isSpace ? "-" : cir.loadA.toFixed(2));
+          baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 6: AMPS
         }
 
-        row.push(
-          isSpace ? "-" : cir.mcbAT,
-          isSpace ? "-" : cir.mcbAF,
-          isSpace ? "-" : cir.mcbP,
-          isSpace ? "-" : cir.mcbKAIC,
-          isSpace ? "-" : cir.mcbType,
-          isSpace
-            ? "-"
-            : `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
-        );
-        wsData.push(row);
-      });
-
-      const headerRowOffset = is3Phase ? 1 : 0;
-
-      wsData.push([]);
-
-      const baseTotalRow: any[] = [
-        "Total Connected Load", // 0
-        "",
-        "",
-        "",
-        `${totalVA.toFixed(0)} VA`, // 4: VA
-        `(${(totalVA / 1000).toFixed(2)} kVA)`, // 5: PHASE
-      ];
-
-      if (is3Phase) {
-        baseTotalRow.push(
-          `${phaseAmps.R.toFixed(2)} A`, // 6: p1
-          `${phaseAmps.Y.toFixed(2)} A`, // 7: p2
-          `${phaseAmps.B.toFixed(2)} A`, // 8: p3
-          phaseAmps.threePhase > 0
-            ? `${phaseAmps.threePhase.toFixed(2)} A`
-            : "-", // 9: 3Ø
-        );
-      } else {
-        baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 6: AMPS
-      }
-
-      const numCols = is3Phase ? 16 : 13;
-      const baseRemainingCols = numCols - baseTotalRow.length;
-      if (baseRemainingCols > 0) {
-        for (let i = 0; i < baseRemainingCols; i++) {
-          baseTotalRow.push("");
-        }
-      }
-      wsData.push(baseTotalRow);
-
-      const totalKvaRow: any[] = [
-        "Total kVA", // 0
-        "",
-        "",
-        "",
-        `${(totalVA / 1000).toFixed(2)} kVA`, // 4: VA
-        "", // 5: PHASE
-      ];
-      const remainingCols = numCols - totalKvaRow.length;
-      if (remainingCols > 0) {
-        for (let i = 0; i < remainingCols; i++) {
-          totalKvaRow.push("");
-        }
-      }
-      wsData.push(totalKvaRow);
-
-      wsData.push([]);
-      wsData.push(["SUMMARY & MAIN FEEDER"]);
-      wsData.push([
-        "Main Feeder:",
-        `${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} PVC`,
-      ]);
-      wsData.push([
-        "Main Breaker:",
-        `${cb} AT / ${af} AF, ${poles}P, ${kaic} kAIC, ${type}`,
-      ]);
-      wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
-      wsData.push([
-        "Max Demand Current:",
-        `${mainCurrent.baseAmp.toFixed(2)} A`,
-      ]);
-
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-      const merges = [];
-      if (is3Phase) {
-        merges.push({ s: { r: 3, c: 0 }, e: { r: 4, c: 0 } });
-        merges.push({ s: { r: 3, c: 1 }, e: { r: 4, c: 1 } });
-        merges.push({ s: { r: 3, c: 2 }, e: { r: 4, c: 2 } });
-        merges.push({ s: { r: 3, c: 3 }, e: { r: 4, c: 3 } });
-        merges.push({ s: { r: 3, c: 4 }, e: { r: 4, c: 4 } });
-        merges.push({ s: { r: 3, c: 5 }, e: { r: 4, c: 5 } });
-        merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 9 } }); // AMPS spans cols 6, 7, 8, 9
-        merges.push({ s: { r: 3, c: 10 }, e: { r: 4, c: 10 } });
-        merges.push({ s: { r: 3, c: 11 }, e: { r: 4, c: 11 } });
-        merges.push({ s: { r: 3, c: 12 }, e: { r: 4, c: 12 } });
-        merges.push({ s: { r: 3, c: 13 }, e: { r: 4, c: 13 } });
-        merges.push({ s: { r: 3, c: 14 }, e: { r: 4, c: 14 } });
-        merges.push({ s: { r: 3, c: 15 }, e: { r: 4, c: 15 } });
-      }
-      if (merges.length > 0) {
-        ws["!merges"] = merges;
-      }
-
-      // Add merges for bottom total row labels
-      merges.push({
-        s: { r: 4 + headerRowOffset + c.length + 1, c: 0 },
-        e: { r: 4 + headerRowOffset + c.length + 1, c: 3 },
-      });
-      merges.push({
-        s: { r: 4 + headerRowOffset + c.length + 2, c: 0 },
-        e: { r: 4 + headerRowOffset + c.length + 2, c: 3 },
-      });
-
-      const wscols: any[] = [];
-      for (let col = 0; col < numCols; col++) {
-        let maxLen = 0;
-        wsData.forEach((row) => {
-          if (row[col] !== undefined && row[col] !== null) {
-            const valLen = row[col].toString().length;
-            if (valLen > maxLen) {
-              maxLen = valLen;
-            }
+        const numCols = is3Phase ? 16 : 13;
+        const baseRemainingCols = numCols - baseTotalRow.length;
+        if (baseRemainingCols > 0) {
+          for (let i = 0; i < baseRemainingCols; i++) {
+            baseTotalRow.push("");
           }
+        }
+        wsData.push(baseTotalRow);
+
+        const totalKvaRow: any[] = [
+          "Total kVA", // 0
+          "",
+          "",
+          "",
+          `${(totalVA / 1000).toFixed(2)} kVA`, // 4: VA
+          "", // 5: PHASE
+        ];
+        const remainingCols = numCols - totalKvaRow.length;
+        if (remainingCols > 0) {
+          for (let i = 0; i < remainingCols; i++) {
+            totalKvaRow.push("");
+          }
+        }
+        wsData.push(totalKvaRow);
+
+        wsData.push([]);
+        wsData.push(["SUMMARY & MAIN FEEDER"]);
+        wsData.push([
+          "Main Feeder:",
+          `${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} PVC`,
+        ]);
+        wsData.push([
+          "Main Breaker:",
+          `${cb} AT / ${af} AF, ${poles}P, ${kaic} kAIC, ${type}`,
+        ]);
+        wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
+        wsData.push([
+          "Max Demand Current:",
+          `${mainCurrent.baseAmp.toFixed(2)} A`,
+        ]);
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+        const merges = [];
+        if (is3Phase) {
+          merges.push({ s: { r: 3, c: 0 }, e: { r: 4, c: 0 } });
+          merges.push({ s: { r: 3, c: 1 }, e: { r: 4, c: 1 } });
+          merges.push({ s: { r: 3, c: 2 }, e: { r: 4, c: 2 } });
+          merges.push({ s: { r: 3, c: 3 }, e: { r: 4, c: 3 } });
+          merges.push({ s: { r: 3, c: 4 }, e: { r: 4, c: 4 } });
+          merges.push({ s: { r: 3, c: 5 }, e: { r: 4, c: 5 } });
+          merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 9 } }); // AMPS spans cols 6, 7, 8, 9
+          merges.push({ s: { r: 3, c: 10 }, e: { r: 4, c: 10 } });
+          merges.push({ s: { r: 3, c: 11 }, e: { r: 4, c: 11 } });
+          merges.push({ s: { r: 3, c: 12 }, e: { r: 4, c: 12 } });
+          merges.push({ s: { r: 3, c: 13 }, e: { r: 4, c: 13 } });
+          merges.push({ s: { r: 3, c: 14 }, e: { r: 4, c: 14 } });
+          merges.push({ s: { r: 3, c: 15 }, e: { r: 4, c: 15 } });
+        }
+        if (merges.length > 0) {
+          ws["!merges"] = merges;
+        }
+
+        // Add merges for bottom total row labels
+        merges.push({
+          s: { r: 4 + headerRowOffset + c.length + 1, c: 0 },
+          e: { r: 4 + headerRowOffset + c.length + 1, c: 3 },
         });
-        wscols.push({ wch: Math.max(5, maxLen + 2) });
-      }
-      ws["!cols"] = wscols;
+        merges.push({
+          s: { r: 4 + headerRowOffset + c.length + 2, c: 0 },
+          e: { r: 4 + headerRowOffset + c.length + 2, c: 3 },
+        });
 
-      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!ws[cellAddress]) ws[cellAddress] = { t: "s", v: "" };
-
-          let style: any = {
-            font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
-            fill: { fgColor: { rgb: "FFFFFF" } },
-          };
-
-          if (R === 0 || R === 1) {
-            style.font.bold = true;
-            style.fill.fgColor.rgb = "F3F4F6";
-          } else if (R >= 3 && R <= 3 + headerRowOffset) {
-            style.font.bold = true;
-            style.font.color = { rgb: "FFFFFF" };
-            style.fill.fgColor.rgb = "000000";
-            style.alignment = { horizontal: "center", vertical: "center" };
-            style.border = {
-              bottom: { style: "medium", color: { rgb: "000000" } },
-              top: { style: "medium", color: { rgb: "000000" } },
-              left: { style: "thin", color: { rgb: "333333" } },
-              right: { style: "thin", color: { rgb: "333333" } },
-            };
-          } else if (
-            R >= 4 + headerRowOffset &&
-            R < 4 + headerRowOffset + c.length
-          ) {
-            style.border = {
-              bottom: { style: "thin", color: { rgb: "CCCCCC" } },
-            };
-            if (R % 2 !== 0) {
-              style.fill.fgColor.rgb = "F9FAFB";
+        const wscols: any[] = [];
+        for (let col = 0; col < numCols; col++) {
+          let maxLen = 0;
+          wsData.forEach((row) => {
+            if (row[col] !== undefined && row[col] !== null) {
+              const valLen = row[col].toString().length;
+              if (valLen > maxLen) {
+                maxLen = valLen;
+              }
             }
-            if (C !== 1) {
-              style.alignment = { horizontal: "center" };
-            }
-          } else if (R === 4 + headerRowOffset + c.length + 1) {
-            style.font.bold = true;
-            style.fill.fgColor.rgb = "000000";
-            style.font.color = { rgb: "FFFFFF" };
-          } else if (R === 4 + headerRowOffset + c.length + 2) {
-            style.font.bold = true;
-            style.fill.fgColor.rgb = "000000";
-            style.font.color = { rgb: "FFFFFF" };
-          } else if (R >= 4 + headerRowOffset + c.length + 4) {
-            style.fill.fgColor.rgb = "F3F4F6";
-            if (C === 0) style.font.bold = true;
-          }
-
-          ws[cellAddress].s = style;
+          });
+          wscols.push({ wch: Math.max(5, maxLen + 2) });
         }
-      }
+        ws["!cols"] = wscols;
 
-      let sheetName = p.designation || `Panel_${index}`;
-      if (sheetName.length > 31) sheetName = sheetName.substring(0, 31);
+        const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          for (let C = range.s.c; C <= range.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            
+            const cellExists = !!ws[cellAddress];
+            const isHeader = (R <= 1) || (R >= 3 && R <= 3 + headerRowOffset);
+            const isTotalRow = (R === 4 + headerRowOffset + c.length + 1) || (R === 4 + headerRowOffset + c.length + 2);
+            const isSummaryRow = (R >= 4 + headerRowOffset + c.length + 4);
 
-      const existingNames = wb.SheetNames;
-      let counter = 1;
-      let finalName = sheetName;
-      while (existingNames.includes(finalName)) {
-        finalName = `${sheetName.substring(0, 28)}_${counter}`;
-        counter++;
-      }
+            if (!cellExists && !isHeader && !isTotalRow && !isSummaryRow) {
+              continue; // Optimization: skip empty elements to save memory
+            }
 
-      XLSX.utils.book_append_sheet(wb, ws, finalName);
-    });
+            if (!ws[cellAddress]) ws[cellAddress] = { t: "s", v: "" };
 
-    // -----------------------------------------------------
-    // Voltage Drop Export
-    // -----------------------------------------------------
-    if (vdCalculations && vdCalculations.length > 0) {
-      const vdData: any[][] = [];
-      vdData.push([
-        "VOLTAGE DROP ANALYSIS",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-      ]);
-      vdData.push([]);
-      vdData.push([
-        "SYSTEM / SOURCE",
-        "LINE NAME",
-        "CURRENT (A)",
-        "LENGTH (m)",
-        "WIRE SIZE (mm²)",
-        "VOLTAGE",
-        "SYSTEM TYPE",
-        "VD (V)",
-        "VD (%)",
-        "STATUS",
-      ]);
+            let style: any = {
+              font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+              fill: { fgColor: { rgb: "FFFFFF" } },
+            };
 
-      vdCalculations.forEach((vd) => {
-        const factor = vd.systemType === "3PH" ? 1.732 : 2;
-        const cLength = vd.length || 0;
-        const cLoad = vd.loadA || 0;
-        const cVoltage = vd.voltage || 230;
-        const dataStr = vd.wireSize;
-        const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
-          WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
-        const R = impedanceInfo.r;
+            if (R === 0 || R === 1) {
+              style.font.bold = true;
+              style.fill.fgColor.rgb = "F3F4F6";
+            } else if (R >= 3 && R <= 3 + headerRowOffset) {
+              style.font.bold = true;
+              style.font.color = { rgb: "FFFFFF" };
+              style.fill.fgColor.rgb = "000000";
+              style.alignment = { horizontal: "center", vertical: "center" };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "000000" } },
+                top: { style: "medium", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "333333" } },
+                right: { style: "thin", color: { rgb: "333333" } },
+              };
+            } else if (
+              R >= 4 + headerRowOffset &&
+              R < 4 + headerRowOffset + c.length
+            ) {
+              style.border = {
+                bottom: { style: "thin", color: { rgb: "CCCCCC" } },
+              };
+              if (R % 2 !== 0) {
+                style.fill.fgColor.rgb = "F9FAFB";
+              }
+              if (C !== 1) {
+                style.alignment = { horizontal: "center" };
+              }
+            } else if (R === 4 + headerRowOffset + c.length + 1) {
+              style.font.bold = true;
+              style.fill.fgColor.rgb = "000000";
+              style.font.color = { rgb: "FFFFFF" };
+            } else if (R === 4 + headerRowOffset + c.length + 2) {
+              style.font.bold = true;
+              style.fill.fgColor.rgb = "000000";
+              style.font.color = { rgb: "FFFFFF" };
+            } else if (R >= 4 + headerRowOffset + c.length + 4) {
+              style.fill.fgColor.rgb = "F3F4F6";
+              if (C === 0) style.font.bold = true;
+            }
 
-        const VD_v = (factor * cLength * cLoad * R) / 1000;
-        const VD_percent = (VD_v / cVoltage) * 100;
-        const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
-
-        let sourceLabel = vd.source;
-        if (vd.source === "custom") {
-          sourceLabel = "Custom";
-        } else {
-          let matchingPanel = allPanelsToExport.find((p) => p.id === vd.source);
-          if (!matchingPanel) {
-            matchingPanel = allPanelsToExport.find((p) =>
-              p.circuits.some((c) => c.id === vd.source),
-            );
-          }
-          if (matchingPanel) {
-            sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || (matchingPanel.id === "main" ? "MDP" : "Sub Panel")}`;
+            ws[cellAddress].s = style;
           }
         }
 
+        let sheetName = sanitizeSheetName(p.designation || `Panel_${index}`);
+        const existingNames = wb.SheetNames;
+        let counter = 1;
+        let finalName = sheetName;
+        while (existingNames.includes(finalName)) {
+          const suffix = `_${counter}`;
+          const maxPrefixLen = 31 - suffix.length;
+          finalName = `${sheetName.substring(0, maxPrefixLen)}${suffix}`;
+          counter++;
+        }
+
+        XLSX.utils.book_append_sheet(wb, ws, finalName);
+      });
+
+      // -----------------------------------------------------
+      // Voltage Drop Export
+      // -----------------------------------------------------
+      if (vdCalculations && vdCalculations.length > 0) {
+        const vdData: any[][] = [];
         vdData.push([
-          sourceLabel,
-          vd.name,
-          vd.loadA,
-          vd.length,
-          vd.wireSize,
-          vd.voltage,
-          vd.systemType,
-          VD_v.toFixed(2),
-          VD_percent.toFixed(2) + "%",
-          status,
+          "VOLTAGE DROP ANALYSIS",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
         ]);
-      });
+        vdData.push([]);
+        vdData.push([
+          "SYSTEM / SOURCE",
+          "LINE NAME",
+          "CURRENT (A)",
+          "LENGTH (m)",
+          "WIRE SIZE (mm²)",
+          "VOLTAGE",
+          "SYSTEM TYPE",
+          "VD (V)",
+          "VD (%)",
+          "STATUS",
+        ]);
 
-      const wsVd = XLSX.utils.aoa_to_sheet(vdData);
+        vdCalculations.forEach((vd) => {
+          const factor = vd.systemType === "3PH" ? 1.732 : 2;
+          const cLength = vd.length || 0;
+          const cLoad = vd.loadA || 0;
+          const cVoltage = vd.voltage || 230;
+          const dataStr = vd.wireSize;
+          const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
+            WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+          const R = impedanceInfo.r;
 
-      const wscolsVd = [
-        { wch: 20 },
-        { wch: 25 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 18 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 15 },
-      ];
-      wsVd["!cols"] = wscolsVd;
+          const VD_v = (factor * cLength * cLoad * R) / 1000;
+          const VD_percent = (VD_v / cVoltage) * 100;
+          const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
 
-      const rangeVd = XLSX.utils.decode_range(wsVd["!ref"] || "A1:A1");
-      for (let R = rangeVd.s.r; R <= rangeVd.e.r; ++R) {
-        for (let C = rangeVd.s.c; C <= rangeVd.e.c; ++C) {
+          let sourceLabel = vd.source;
+          if (vd.source === "custom") {
+            sourceLabel = "Custom";
+          } else {
+            let matchingPanel = allPanelsToExport.find((p) => p.id === vd.source);
+            if (!matchingPanel) {
+              matchingPanel = allPanelsToExport.find((p) =>
+                p.circuits.some((c) => c.id === vd.source),
+              );
+            }
+            if (matchingPanel) {
+              sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || (matchingPanel.id === "main" ? "MDP" : "Sub Panel")}`;
+            }
+          }
+
+          vdData.push([
+            sourceLabel,
+            vd.name,
+            vd.loadA,
+            vd.length,
+            vd.wireSize,
+            vd.voltage,
+            vd.systemType,
+            VD_v.toFixed(2),
+            VD_percent.toFixed(2) + "%",
+            status,
+          ]);
+        });
+
+        const wsVd = XLSX.utils.aoa_to_sheet(vdData);
+
+        const wscolsVd = [
+          { wch: 20 },
+          { wch: 25 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 18 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 12 },
+          { wch: 12 },
+          { wch: 15 },
+        ];
+        wsVd["!cols"] = wscolsVd;
+
+        const rangeVd = XLSX.utils.decode_range(wsVd["!ref"] || "A1:A1");
+        for (let R = rangeVd.s.r; R <= rangeVd.e.r; ++R) {
+          for (let C = rangeVd.s.c; C <= rangeVd.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            
+            const cellExists = !!wsVd[cellAddress];
+            const isHeader = (R === 0 || R === 2);
+
+            if (!cellExists && !isHeader) {
+              continue;
+            }
+
+            if (!wsVd[cellAddress]) wsVd[cellAddress] = { t: "s", v: "" };
+            let style: any = {
+              font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+              fill: { fgColor: { rgb: "FFFFFF" } },
+              alignment: { horizontal: "center", vertical: "center" },
+            };
+            if (R === 0) {
+              style.font.bold = true;
+              style.font.sz = 14;
+              style.alignment = { horizontal: "left", vertical: "center" };
+            } else if (R === 2) {
+              style.font.bold = true;
+              style.fill.fgColor.rgb = "F3F4F6";
+            }
+            wsVd[cellAddress].s = style;
+          }
+        }
+        XLSX.utils.book_append_sheet(wb, wsVd, "Voltage_Drop");
+      }
+
+      // -----------------------------------------------------
+      // Short Circuit Export
+      // -----------------------------------------------------
+      const scParams = iscParams || {
+        transformerKVA: 100,
+        transformerZ: 5,
+        transformerVoltage: panel?.voltage || 230,
+        primaryVoltage: 34500,
+        transformerConnection: "Delta-Wye (Δ-Y)",
+        utilityShortCircuitMVA: 500,
+        feederLength: 10,
+        feederSize: "30",
+        feederRuns: getRunsBySystem(panel?.system),
+        conductorType: "Copper",
+      };
+
+      const scBaseKVA = scParams.transformerKVA;
+      const scBaseKV = scParams.transformerVoltage / 1000;
+      const scZUtilitypu = scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
+      const scZTranspu = scParams.transformerZ / 100;
+
+      const scFeederR =
+        (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+      const scFeederX =
+        (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+      const scFeederZ = Math.sqrt(scFeederR * scFeederR + scFeederX * scFeederX);
+      const scZFeederpu =
+        (scFeederZ * (scBaseKVA / 1000)) / (scBaseKV * scBaseKV);
+
+      const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
+      const scIFullLoad =
+        scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
+
+      const scIscMainBreaker = scIFullLoad / (scZUtilitypu + scZTranspu);
+      const scIscFaultPoint = scIFullLoad / scTotalZpu;
+
+      const scMotorLoadVA = circuits
+        .filter(
+          (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
+        )
+        .reduce((sum, c) => sum + c.loadVA, 0);
+      const scMotorContribution =
+        scMotorLoadVA > 0
+          ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
+          : 0;
+
+      const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
+      const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * 1.25;
+      const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
+
+      const scData: any[][] = [];
+      scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
+      scData.push([]);
+      scData.push(["INPUT DESIGN PARAMETERS", "VALUE", "UNIT"]);
+      scData.push([
+        "Utility Short Circuit Strength",
+        scParams.utilityShortCircuitMVA,
+        "MVAsc",
+      ]);
+      scData.push(["Primary Bus Voltage (HV)", scParams.primaryVoltage, "Volts"]);
+      scData.push([
+        "Secondary Rated Bus Voltage (LV)",
+        scParams.transformerVoltage,
+        "Volts",
+      ]);
+      scData.push([
+        "Transformer Sizing Capacity",
+        scParams.transformerKVA,
+        "kVA",
+      ]);
+      scData.push([
+        "Transformer Percent Impedance (%Z)",
+        scParams.transformerZ,
+        "%",
+      ]);
+      scData.push([
+        "Feeder Conductor Cross-Section",
+        scParams.feederSize,
+        "mm² THHN",
+      ]);
+      scData.push(["Feeder Distance Length", scParams.feederLength, "Meters"]);
+      scData.push(["Parallel Feeder Conductors", scParams.feederRuns, "Runs"]);
+      scData.push([
+        "Active Conductor Metal Type",
+        scParams.conductorType,
+        "Copper/Aluminum",
+      ]);
+      scData.push([]);
+      scData.push([
+        "PER-UNIT IMPEDANCES (BASE S SYSTEM = " +
+          scParams.transformerKVA +
+          " kVA)",
+        "VALUE",
+        "UNIT",
+      ]);
+      scData.push([
+        "Transformer Full Load Current (FLA)",
+        scIFullLoad.toFixed(2),
+        "Amperes",
+      ]);
+      scData.push([
+        "Utility Grid Impedance (Z-utility)",
+        scZUtilitypu.toFixed(6),
+        "pu",
+      ]);
+      scData.push([
+        "Transformer Leakage Impedance (Z-transformer)",
+        scZTranspu.toFixed(6),
+        "pu",
+      ]);
+      scData.push([
+        "Main Feeder Ohmic Resistance (R)",
+        scFeederR.toFixed(5),
+        "Ohms",
+      ]);
+      scData.push([
+        "Main Feeder Ohmic Reactance (X)",
+        scFeederX.toFixed(5),
+        "Ohms",
+      ]);
+      scData.push([
+        "Main Feeder Absolute Ohmic Impedance (|Z|)",
+        scFeederZ.toFixed(5),
+        "Ohms",
+      ]);
+      scData.push([
+        "Feeder Integrated Impedance (Z-feeder)",
+        scZFeederpu.toFixed(6),
+        "pu",
+      ]);
+      scData.push([
+        "Total Consolidated System Impedance (Z-total)",
+        scTotalZpu.toFixed(6),
+        "pu",
+      ]);
+      scData.push([]);
+      scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
+      scData.push([
+        "Symmetrical Fault Current at Transformer (Isc Main)",
+        scIscMainBreaker.toFixed(2),
+        "Amps",
+      ]);
+      scData.push([
+        "Symmetrical Fault Current at Panel (Isc Panel)",
+        scIscFaultPoint.toFixed(2),
+        "Amps",
+      ]);
+      scData.push([
+        "Rotating Motor Feedback Symmetrical Contribution (Imotor)",
+        scMotorContribution.toFixed(2),
+        "Amps",
+      ]);
+      scData.push([
+        "Combined Total Symmetrical Fault Current (Isc sym)",
+        scCombinedSymmetricalCurrent.toFixed(2),
+        "Amps",
+      ]);
+      scData.push([
+        "Factored Asymmetrical Fault Current (Isc asym)",
+        scCombinedAsymmetricalCurrent.toFixed(2),
+        "Amps",
+      ]);
+      scData.push([
+        "Ultimate Fault Breaking Intensity Assessment",
+        scBreakingkAIC.toFixed(2),
+        "kAIC",
+      ]);
+      scData.push([
+        "Interrupting Protection Level Class",
+        scBreakingkAIC > 22
+          ? "35 kAIC Required"
+          : scBreakingkAIC > 10
+            ? "22 kAIC"
+            : "10 kAIC",
+        "",
+      ]);
+
+      const wsSc = XLSX.utils.aoa_to_sheet(scData);
+      const wscolsSc = [{ wch: 45 }, { wch: 25 }, { wch: 15 }];
+      wsSc["!cols"] = wscolsSc;
+
+      const rangeSc = XLSX.utils.decode_range(wsSc["!ref"] || "A1:A1");
+      for (let R = rangeSc.s.r; R <= rangeSc.e.r; ++R) {
+        for (let C = rangeSc.s.c; C <= rangeSc.e.c; ++C) {
           const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!wsVd[cellAddress]) wsVd[cellAddress] = { t: "s", v: "" };
+          
+          const cellExists = !!wsSc[cellAddress];
+          const isHeader = (R === 0 || R === 2 || R === 14 || R === 24);
+
+          if (!cellExists && !isHeader) {
+            continue;
+          }
+
+          if (!wsSc[cellAddress]) wsSc[cellAddress] = { t: "s", v: "" };
           let style: any = {
             font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
             fill: { fgColor: { rgb: "FFFFFF" } },
@@ -941,320 +1182,148 @@ export default function App() {
             style.font.bold = true;
             style.font.sz = 14;
             style.alignment = { horizontal: "left", vertical: "center" };
-          } else if (R === 2) {
+          } else if (R === 2 || R === 14 || R === 24) {
             style.font.bold = true;
             style.fill.fgColor.rgb = "F3F4F6";
           }
-          wsVd[cellAddress].s = style;
+          wsSc[cellAddress].s = style;
         }
       }
-      XLSX.utils.book_append_sheet(wb, wsVd, "Voltage_Drop");
-    }
+      XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
 
-    // -----------------------------------------------------
-    // Short Circuit Export
-    // -----------------------------------------------------
-    const scParams = iscParams || {
-      transformerKVA: 100,
-      transformerZ: 5,
-      transformerVoltage: panel?.voltage || 230,
-      primaryVoltage: 34500,
-      transformerConnection: "Delta-Wye (Δ-Y)",
-      utilityShortCircuitMVA: 500,
-      feederLength: 10,
-      feederSize: "30",
-      feederRuns: getRunsBySystem(panel?.system),
-      conductorType: "Copper",
-    };
-
-    const scBaseKVA = scParams.transformerKVA;
-    const scBaseKV = scParams.transformerVoltage / 1000;
-    const scZUtilitypu = scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
-    const scZTranspu = scParams.transformerZ / 100;
-
-    const scFeederR =
-      (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-    const scFeederX =
-      (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-    const scFeederZ = Math.sqrt(scFeederR * scFeederR + scFeederX * scFeederX);
-    const scZFeederpu =
-      (scFeederZ * (scBaseKVA / 1000)) / (scBaseKV * scBaseKV);
-
-    const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
-    const scIFullLoad =
-      scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
-
-    const scIscMainBreaker = scIFullLoad / (scZUtilitypu + scZTranspu);
-    const scIscFaultPoint = scIFullLoad / scTotalZpu;
-
-    const scMotorLoadVA = circuits
-      .filter(
-        (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
-      )
-      .reduce((sum, c) => sum + c.loadVA, 0);
-    const scMotorContribution =
-      scMotorLoadVA > 0
-        ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
-        : 0;
-
-    const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
-    const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * 1.25;
-    const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
-
-    const scData: any[][] = [];
-    scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
-    scData.push([]);
-    scData.push(["INPUT DESIGN PARAMETERS", "VALUE", "UNIT"]);
-    scData.push([
-      "Utility Short Circuit Strength",
-      scParams.utilityShortCircuitMVA,
-      "MVAsc",
-    ]);
-    scData.push(["Primary Bus Voltage (HV)", scParams.primaryVoltage, "Volts"]);
-    scData.push([
-      "Secondary Rated Bus Voltage (LV)",
-      scParams.transformerVoltage,
-      "Volts",
-    ]);
-    scData.push([
-      "Transformer Sizing Capacity",
-      scParams.transformerKVA,
-      "kVA",
-    ]);
-    scData.push([
-      "Transformer Percent Impedance (%Z)",
-      scParams.transformerZ,
-      "%",
-    ]);
-    scData.push([
-      "Feeder Conductor Cross-Section",
-      scParams.feederSize,
-      "mm² THHN",
-    ]);
-    scData.push(["Feeder Distance Length", scParams.feederLength, "Meters"]);
-    scData.push(["Parallel Feeder Conductors", scParams.feederRuns, "Runs"]);
-    scData.push([
-      "Active Conductor Metal Type",
-      scParams.conductorType,
-      "Copper/Aluminum",
-    ]);
-    scData.push([]);
-    scData.push([
-      "PER-UNIT IMPEDANCES (BASE S SYSTEM = " +
-        scParams.transformerKVA +
-        " kVA)",
-      "VALUE",
-      "UNIT",
-    ]);
-    scData.push([
-      "Transformer Full Load Current (FLA)",
-      scIFullLoad.toFixed(2),
-      "Amperes",
-    ]);
-    scData.push([
-      "Utility Grid Impedance (Z-utility)",
-      scZUtilitypu.toFixed(6),
-      "pu",
-    ]);
-    scData.push([
-      "Transformer Leakage Impedance (Z-transformer)",
-      scZTranspu.toFixed(6),
-      "pu",
-    ]);
-    scData.push([
-      "Main Feeder Ohmic Resistance (R)",
-      scFeederR.toFixed(5),
-      "Ohms",
-    ]);
-    scData.push([
-      "Main Feeder Ohmic Reactance (X)",
-      scFeederX.toFixed(5),
-      "Ohms",
-    ]);
-    scData.push([
-      "Main Feeder Absolute Ohmic Impedance (|Z|)",
-      scFeederZ.toFixed(5),
-      "Ohms",
-    ]);
-    scData.push([
-      "Feeder Integrated Impedance (Z-feeder)",
-      scZFeederpu.toFixed(6),
-      "pu",
-    ]);
-    scData.push([
-      "Total Consolidated System Impedance (Z-total)",
-      scTotalZpu.toFixed(6),
-      "pu",
-    ]);
-    scData.push([]);
-    scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
-    scData.push([
-      "Symmetrical Fault Current at Transformer (Isc Main)",
-      scIscMainBreaker.toFixed(2),
-      "Amps",
-    ]);
-    scData.push([
-      "Symmetrical Fault Current at Panel (Isc Panel)",
-      scIscFaultPoint.toFixed(2),
-      "Amps",
-    ]);
-    scData.push([
-      "Rotating Motor Feedback Symmetrical Contribution (Imotor)",
-      scMotorContribution.toFixed(2),
-      "Amps",
-    ]);
-    scData.push([
-      "Combined Total Symmetrical Fault Current (Isc sym)",
-      scCombinedSymmetricalCurrent.toFixed(2),
-      "Amps",
-    ]);
-    scData.push([
-      "Factored Asymmetrical Fault Current (Isc asym)",
-      scCombinedAsymmetricalCurrent.toFixed(2),
-      "Amps",
-    ]);
-    scData.push([
-      "Ultimate Fault Breaking Intensity Assessment",
-      scBreakingkAIC.toFixed(2),
-      "kAIC",
-    ]);
-    scData.push([
-      "Interrupting Protection Level Class",
-      scBreakingkAIC > 22
-        ? "35 kAIC Required"
-        : scBreakingkAIC > 10
-          ? "22 kAIC"
-          : "10 kAIC",
-      "",
-    ]);
-
-    const wsSc = XLSX.utils.aoa_to_sheet(scData);
-    const wscolsSc = [{ wch: 45 }, { wch: 25 }, { wch: 15 }];
-    wsSc["!cols"] = wscolsSc;
-
-    const rangeSc = XLSX.utils.decode_range(wsSc["!ref"] || "A1:A1");
-    for (let R = rangeSc.s.r; R <= rangeSc.e.r; ++R) {
-      for (let C = rangeSc.s.c; C <= rangeSc.e.c; ++C) {
-        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-        if (!wsSc[cellAddress]) wsSc[cellAddress] = { t: "s", v: "" };
-        let style: any = {
-          font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
-          fill: { fgColor: { rgb: "FFFFFF" } },
-          alignment: { horizontal: "center", vertical: "center" },
-        };
-        if (R === 0) {
-          style.font.bold = true;
-          style.font.sz = 14;
-          style.alignment = { horizontal: "left", vertical: "center" };
-        } else if (R === 2 || R === 14 || R === 24) {
-          style.font.bold = true;
-          style.fill.fgColor.rgb = "F3F4F6";
-        }
-        wsSc[cellAddress].s = style;
-      }
-    }
-    XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
-
-    // -----------------------------------------------------
-    // Illumination Export
-    // -----------------------------------------------------
-    if (
-      illumParams &&
-      illumParams.savedRooms &&
-      illumParams.savedRooms.length > 0
-    ) {
-      const illData: any[][] = [];
-      illData.push([
-        "ILLUMINATION (LUMEN METHOD) ANALYSIS",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-      ]);
-      illData.push([]);
-      illData.push([
-        "ROOM NAME",
-        "TARGET LUX",
-        "AREA (m²)",
-        "FIXTURE TYPE",
-        "FIXTURES COUNT",
-        "TOTAL LUMENS",
-        "TOTAL WATTAGE (W)",
-        "LPD (W/m²)",
-        "ASHRAE LIMIT (W/m²)",
-        "STATUS",
-        "CIRCUIT NO.",
-      ]);
-
-      illumParams.savedRooms.forEach((room) => {
-        const roomLPD = room.totalWattage / room.area;
-        const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
-        const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
+      // -----------------------------------------------------
+      // Illumination Export
+      // -----------------------------------------------------
+      if (
+        illumParams &&
+        illumParams.savedRooms &&
+        illumParams.savedRooms.length > 0
+      ) {
+        const illData: any[][] = [];
         illData.push([
-          room.roomName,
-          room.targetLux,
-          room.area,
-          room.fixtureLightType || "Custom",
-          room.fixturesCount,
-          room.totalLumens,
-          room.totalWattage,
-          Number(roomLPD.toFixed(2)),
-          limitLPD,
-          status,
-          room.circuitNo ? room.circuitNo : "-",
+          "ILLUMINATION (LUMEN METHOD) ANALYSIS",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
         ]);
-      });
+        illData.push([]);
+        illData.push([
+          "ROOM NAME",
+          "TARGET LUX",
+          "AREA (m²)",
+          "FIXTURE TYPE",
+          "FIXTURES COUNT",
+          "TOTAL LUMENS",
+          "TOTAL WATTAGE (W)",
+          "LPD (W/m²)",
+          "ASHRAE LIMIT (W/m²)",
+          "STATUS",
+          "CIRCUIT NO.",
+        ]);
 
-      const wsIll = XLSX.utils.aoa_to_sheet(illData);
-      const wscolsIll = [
-        { wch: 25 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 25 },
-        { wch: 18 },
-        { wch: 18 },
-        { wch: 18 },
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 15 },
-        { wch: 15 },
-      ];
-      wsIll["!cols"] = wscolsIll;
+        illumParams.savedRooms.forEach((room) => {
+          const roomLPD = room.totalWattage / room.area;
+          const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
+          const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
+          illData.push([
+            room.roomName,
+            room.targetLux,
+            room.area,
+            room.fixtureLightType || "Custom",
+            room.fixturesCount,
+            room.totalLumens,
+            room.totalWattage,
+            Number(roomLPD.toFixed(2)),
+            limitLPD,
+            status,
+            room.circuitNo ? room.circuitNo : "-",
+          ]);
+        });
 
-      const rangeIll = XLSX.utils.decode_range(wsIll["!ref"] || "A1:A1");
-      for (let R = rangeIll.s.r; R <= rangeIll.e.r; ++R) {
-        for (let C = rangeIll.s.c; C <= rangeIll.e.c; ++C) {
-          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!wsIll[cellAddress]) wsIll[cellAddress] = { t: "s", v: "" };
-          let style: any = {
-            font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
-            fill: { fgColor: { rgb: "FFFFFF" } },
-            alignment: { horizontal: "center", vertical: "center" },
-          };
-          if (R === 0) {
-            style.font.bold = true;
-            style.font.sz = 14;
-            style.alignment = { horizontal: "left", vertical: "center" };
-          } else if (R === 2) {
-            style.font.bold = true;
-            style.fill.fgColor.rgb = "F3F4F6";
+        const wsIll = XLSX.utils.aoa_to_sheet(illData);
+        const wscolsIll = [
+          { wch: 25 },
+          { wch: 15 },
+          { wch: 15 },
+          { wch: 25 },
+          { wch: 18 },
+          { wch: 18 },
+          { wch: 18 },
+          { wch: 15 },
+          { wch: 20 },
+          { wch: 15 },
+          { wch: 15 },
+        ];
+        wsIll["!cols"] = wscolsIll;
+
+        const rangeIll = XLSX.utils.decode_range(wsIll["!ref"] || "A1:A1");
+        for (let R = rangeIll.s.r; R <= rangeIll.e.r; ++R) {
+          for (let C = rangeIll.s.c; C <= rangeIll.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            
+            const cellExists = !!wsIll[cellAddress];
+            const isHeader = (R === 0 || R === 2);
+
+            if (!cellExists && !isHeader) {
+              continue;
+            }
+
+            if (!wsIll[cellAddress]) wsIll[cellAddress] = { t: "s", v: "" };
+            let style: any = {
+              font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+              fill: { fgColor: { rgb: "FFFFFF" } },
+              alignment: { horizontal: "center", vertical: "center" },
+            };
+            if (R === 0) {
+              style.font.bold = true;
+              style.font.sz = 14;
+              style.alignment = { horizontal: "left", vertical: "center" };
+            } else if (R === 2) {
+              style.font.bold = true;
+              style.fill.fgColor.rgb = "F3F4F6";
+            }
+            wsIll[cellAddress].s = style;
           }
-          wsIll[cellAddress].s = style;
         }
+        XLSX.utils.book_append_sheet(wb, wsIll, "Illumination");
       }
-      XLSX.utils.book_append_sheet(wb, wsIll, "Illumination");
-    }
 
-    XLSX.writeFile(
-      wb,
-      `Engineering_Reports_${panel.designation || "Project"}.xlsx`,
-    );
+      // -----------------------------------------------------
+      // Trigger File Download
+      // -----------------------------------------------------
+      const filename = `Engineering_Reports_${panel.designation || "Project"}.xlsx`;
+      
+      try {
+        XLSX.writeFile(wb, filename);
+      } catch (writeError) {
+        console.warn("Standard XLSX.writeFile failed, using fallback Binary Blob Download:", writeError);
+        const wbout = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
+        const buf = new ArrayBuffer(wbout.length);
+        const view = new Uint8Array(buf);
+        for (let i = 0; i < wbout.length; i++) {
+          view[i] = wbout.charCodeAt(i) & 0xFF;
+        }
+        const blob = new Blob([buf], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (globalErr: any) {
+      console.error("Excel Export fully failed:", globalErr);
+      alert(`Error generating Excel report: ${globalErr.message || globalErr}`);
+    }
   };
 
   const handleExportWord = async () => {
