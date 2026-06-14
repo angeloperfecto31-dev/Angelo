@@ -29,9 +29,11 @@ export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110
 export const SYSTEM_VOLTAGES = {
   '230V, 1PH, 2W': 230,
   '230V, 3PH, 3W': 230,
+  '380V, 3PH, 3W': 380,
   '400V, 3PH, 3W': 400,
   '440V, 3PH, 3W': 440,
   '480V, 3PH, 3W': 480,
+  '380V/230V, 3PH, 4W': 380,
   '400V/230V, 3PH, 4W': 400,
   '440V/230V, 3PH, 4W': 440,
   '480V/230V, 3PH, 4W': 480,

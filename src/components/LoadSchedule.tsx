@@ -39,6 +39,9 @@ const getPanelSystemVoltageFallback = (
   is3Phase: boolean,
   connectionType?: string,
 ): number => {
+  if (system === "380V/230V, 3PH, 4W") {
+    return is3Phase ? 380 : connectionType === "Line-to-Line" ? 380 : 230;
+  }
   if (system === "400V/230V, 3PH, 4W") {
     return is3Phase ? 400 : connectionType === "Line-to-Line" ? 400 : 230;
   }
@@ -47,6 +50,9 @@ const getPanelSystemVoltageFallback = (
   }
   if (system === "480V/230V, 3PH, 4W") {
     return is3Phase ? 480 : connectionType === "Line-to-Line" ? 480 : 230;
+  }
+  if (system === "380V, 3PH, 3W") {
+    return 380;
   }
   if (system === "400V, 3PH, 3W") {
     return 400;
@@ -1084,7 +1090,7 @@ export default function LoadSchedule({
       if (panel.mainOverrides.wireSize) {
         finalWireSize = Number(panel.mainOverrides.wireSize);
         const matchingWire = WIRE_AMPACITY_TABLE.find(w => w.size === finalWireSize);
-        if (matchingWire) finalWireAmpacity = matchingWire.ampacity75 || matchingWire.ampacity;
+        if (matchingWire) finalWireAmpacity = matchingWire.ampacity;
       }
       if (panel.mainOverrides.wireRuns) finalWireRuns = panel.mainOverrides.wireRuns;
       if (panel.mainOverrides.groundSize) finalGroundSize = panel.mainOverrides.groundSize;

@@ -913,12 +913,14 @@ export const exportToCAD = (
     if (system === "230V, 1PH, 2W") return 2;
     if (
       system === "230V, 3PH, 3W" ||
+      system === "380V, 3PH, 3W" ||
       system === "400V, 3PH, 3W" ||
       system === "440V, 3PH, 3W" ||
       system === "480V, 3PH, 3W"
     )
       return 3;
     if (
+      system === "380V/230V, 3PH, 4W" ||
       system === "400V/230V, 3PH, 4W" ||
       system === "440V/230V, 3PH, 4W" ||
       system === "480V/230V, 3PH, 4W"
@@ -1999,6 +2001,9 @@ export const exportToCAD = (
       is3P: boolean,
       connectionType?: string,
     ): number => {
+      if (system === "380V/230V, 3PH, 4W") {
+        return is3P ? 380 : connectionType === "Line-to-Line" ? 380 : 230;
+      }
       if (system === "400V/230V, 3PH, 4W") {
         return is3P ? 400 : connectionType === "Line-to-Line" ? 400 : 230;
       }
@@ -2007,6 +2012,9 @@ export const exportToCAD = (
       }
       if (system === "480V/230V, 3PH, 4W") {
         return is3P ? 480 : connectionType === "Line-to-Line" ? 480 : 230;
+      }
+      if (system === "380V, 3PH, 3W") {
+        return 380;
       }
       if (system === "400V, 3PH, 3W") {
         return 400;

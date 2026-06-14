@@ -28,6 +28,9 @@ import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '
 import { computePanelScheduleValues } from './computeEngine';
 
 const getPanelSystemVoltageFallback = (system: string, is3Phase: boolean, connectionType?: string): number => {
+  if (system === '380V/230V, 3PH, 4W') {
+    return is3Phase ? 380 : (connectionType === 'Line-to-Line' ? 380 : 230);
+  }
   if (system === '400V/230V, 3PH, 4W') {
     return is3Phase ? 400 : (connectionType === 'Line-to-Line' ? 400 : 230);
   }
@@ -36,6 +39,9 @@ const getPanelSystemVoltageFallback = (system: string, is3Phase: boolean, connec
   }
   if (system === '480V/230V, 3PH, 4W') {
     return is3Phase ? 480 : (connectionType === 'Line-to-Line' ? 480 : 230);
+  }
+  if (system === '380V, 3PH, 3W') {
+    return 380;
   }
   if (system === '400V, 3PH, 3W') {
     return 400;
@@ -922,11 +928,13 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     if (system === '230V, 1PH, 2W') return 2;
     if (
       system === '230V, 3PH, 3W' ||
+      system === '380V, 3PH, 3W' ||
       system === '400V, 3PH, 3W' ||
       system === '440V, 3PH, 3W' ||
       system === '480V, 3PH, 3W'
     ) return 3;
     if (
+      system === '380V/230V, 3PH, 4W' ||
       system === '400V/230V, 3PH, 4W' ||
       system === '440V/230V, 3PH, 4W' ||
       system === '480V/230V, 3PH, 4W'

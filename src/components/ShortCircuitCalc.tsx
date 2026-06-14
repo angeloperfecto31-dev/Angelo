@@ -22,11 +22,13 @@ export const getRunsBySystem = (system?: string): number => {
   if (system === '230V, 1PH, 2W') return 2;
   if (
     system === '230V, 3PH, 3W' ||
+    system === '380V, 3PH, 3W' ||
     system === '400V, 3PH, 3W' ||
     system === '440V, 3PH, 3W' ||
     system === '480V, 3PH, 3W'
   ) return 3;
   if (
+    system === '380V/230V, 3PH, 4W' ||
     system === '400V/230V, 3PH, 4W' ||
     system === '440V/230V, 3PH, 4W' ||
     system === '480V/230V, 3PH, 4W'

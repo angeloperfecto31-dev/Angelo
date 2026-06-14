@@ -666,7 +666,7 @@ export default function App() {
       ]);
       wsData.push([
         "Main Breaker:",
-        `${cb} AT / ${cbAF} AF, ${poles}P, ${kaic} kAIC, ${type}`,
+        `${cb} AT / ${af} AF, ${poles}P, ${kaic} kAIC, ${type}`,
       ]);
       wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
       wsData.push([
