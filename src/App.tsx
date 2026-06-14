@@ -282,6 +282,7 @@ export default function App() {
     const duplicatedPanel = {
       ...original.panel,
       designation: duplicateName.trim() || `${original.panel.designation || "Subpanel"} (Copy)`,
+      mainOverrides: original.panel.mainOverrides ? { ...original.panel.mainOverrides } : undefined,
     };
 
     setSubPanels((prev) => {
