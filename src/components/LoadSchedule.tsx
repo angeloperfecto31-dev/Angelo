@@ -131,6 +131,44 @@ export interface LoadScheduleProps {
   onRequestUpgrade?: () => void;
 }
 
+const AmpsInput = ({ c, panel, is3P, onAmpsUpdate, disabled }: { c: Circuit; panel: PanelConfig; is3P: boolean; onAmpsUpdate: (newAmps: number) => void; disabled: boolean }) => {
+  const [val, setVal] = React.useState(c.loadA.toFixed(2));
+  
+  React.useEffect(() => {
+    setVal(c.loadA.toFixed(2));
+  }, [c.loadA]);
+
+  const handleBlur = () => {
+    let parsed = parseFloat(val);
+    if (isNaN(parsed)) parsed = 0;
+    if (Math.abs(parsed - c.loadA) > 0.01) {
+      onAmpsUpdate(parsed);
+    } else {
+      setVal(c.loadA.toFixed(2));
+    }
+  };
+
+  if (disabled) {
+    return <span>{c.loadA.toFixed(2)}</span>;
+  }
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      className={`w-16 bg-transparent text-center font-mono focus:outline-none focus:border-b focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${is3P ? 'text-indigo-600 dark:text-indigo-400' : ''}`}
+      value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+};
+
 const WireBundle = ({
   system,
   wireSize,
@@ -780,6 +818,14 @@ export default function LoadSchedule({
     setCircuits([...circuits, newCircuit]);
     setShowPresetsModal(false);
     setSelectedPresets([]);
+  };
+
+  const handleAmpsUpdate = (id: string, newAmps: number, c: Circuit, is3P: boolean) => {
+    const v = c.voltage || getPanelSystemVoltageFallback(panel.system, is3P, panel.connectionType);
+    const newVA = Math.round(is3P ? newAmps * v * 1.732 : newAmps * v);
+    const qty = c.quantity || 1;
+    const newWattage = Math.round(newVA / qty);
+    updateCircuit(id, { loadVA: newVA, wattage: newWattage, motorHP: "" });
   };
 
   const updateCircuit = (id: string, updates: Partial<Circuit>) => {
@@ -2479,34 +2525,34 @@ export default function LoadSchedule({
                           {isSpace
                             ? "-"
                             : c.phases.includes("R") && c.phases.length < 3
-                              ? c.loadA.toFixed(2)
+                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-yellow-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.includes("Y") && c.phases.length < 3
-                              ? c.loadA.toFixed(2)
+                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-blue-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.includes("B") && c.phases.length < 3
-                              ? c.loadA.toFixed(2)
+                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-indigo-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.length === 3
-                              ? c.loadA.toFixed(2)
+                              ? <AmpsInput c={c} panel={panel} is3P={true} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, true)} />
                               : "-"}
                         </td>
                       </>
                     ) : (
                       <td className="px-1 py-3 text-center font-mono font-bold truncate">
-                        {isSpace ? "-" : c.loadA.toFixed(2)}
+                        {isSpace ? "-" : <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />}
                       </td>
                     )}
                     <td className="px-1 py-3 text-center">
