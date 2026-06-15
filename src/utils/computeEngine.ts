@@ -179,43 +179,29 @@ export const calculateCircuitValues = (
   ) {
     const sp = availableSubPanels.find((s) => s.id === c.linkedSubPanelId);
     if (sp) {
-      const subTotalVA = sp.circuits.reduce(
-        (sum, cc) =>
-          sum +
-          (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
-            ? 0
-            : cc.loadVA),
-        0,
-      );
+      const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+
       const subTotalWattage = sp.circuits.reduce(
         (sum, cc) =>
           sum +
           (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
             ? 0
-            : cc.wattage * cc.quantity),
+            : (cc.wattage || 0) * (cc.quantity || 1)),
         0,
       );
-
-      const subPoles = sp.panel.system.includes("3PH")
-        ? 3
-        : sp.panel.connectionType === "Line-to-Neutral"
-          ? 1
-          : 2;
-      const subVoltage = sp.panel.system.includes("3PH")
-        ? getPanelSystemVoltageFallback(
-            sp.panel.system,
-            true,
-            sp.panel.connectionType,
-          )
-        : 230;
-      const subCB = sp.panel.mainBreakerAT || 30;
 
       c.wattage = subTotalWattage;
       c.loadVA = subTotalVA;
       c.quantity = 1;
-      c.mcbP = subPoles;
-      c.voltage = subVoltage;
-      c.mcbAT = subCB;
+      c.mcbP = subMainFeeder.poles;
+      c.voltage = sp.panel.voltage;
+      c.mcbAT = subMainFeeder.cb;
+      c.mcbAF = subMainFeeder.af;
+      c.mcbKAIC = subMainFeeder.kaic;
+      c.mcbType = subMainFeeder.type as any;
+      c.wireSize = formatWireSizeLocal(subMainFeeder.wire.size);
+      c.groundSize = subMainFeeder.groundSize;
+      c.conduitSize = subMainFeeder.conduitSize;
       c.description = sp.panel.designation || "Sub-Panel";
     }
   }
@@ -346,12 +332,42 @@ export const calculateCircuitValues = (
     requiredMcbAT = STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 15;
   }
 
-  const mcbAT = c.loadType === LoadType.SUB_PANEL ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0);
-  const mcbAF =
-    mcbAT <= 50 ? 50 : mcbAT <= 100 ? 100 : mcbAT <= 225 ? 225 : 400;
-  const mcbKAIC = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
+  const isSubPanelLink =
+    c.loadType === LoadType.SUB_PANEL &&
+    c.linkedSubPanelId &&
+    availableSubPanels &&
+    availableSubPanels.some((s) => s.id === c.linkedSubPanelId);
+
+  const mcbAT = isSubPanelLink
+    ? (c.mcbAT || 30)
+    : (c.loadType === LoadType.SUB_PANEL ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0));
+
+  const mcbAF = isSubPanelLink && c.mcbAF
+    ? c.mcbAF
+    : (mcbAT <= 50 ? 50 : mcbAT <= 100 ? 100 : mcbAT <= 225 ? 225 : 400);
+
+  const mcbKAIC = isSubPanelLink && c.mcbKAIC
+    ? c.mcbKAIC
+    : (mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25);
 
   const wire = getWireForBreakerLocal(mcbAT, designLoadA);
+
+  const finalWireSize = isSubPanelLink && c.wireSize
+    ? c.wireSize
+    : formatWireSizeLocal(wire.size);
+
+  const finalGroundSize = isSubPanelLink && c.groundSize
+    ? c.groundSize
+    : getGroundWireForWireSizeLocal(wire.size, mcbAT);
+
+  const finalConduitSize = isSubPanelLink && c.conduitSize
+    ? c.conduitSize
+    : getConduitSizeForWiresLocal(
+        wire.size,
+        getGroundWireForWireSizeLocal(wire.size, mcbAT),
+        mcbP,
+        panel.system,
+      );
 
   return {
     ...c,
@@ -363,14 +379,9 @@ export const calculateCircuitValues = (
     mcbP: mcbP,
     mcbKAIC: mcbKAIC,
     mcbType: c.mcbType || ("Bolt-on" as any),
-    wireSize: formatWireSizeLocal(wire.size),
-    groundSize: getGroundWireForWireSizeLocal(wire.size, mcbAT),
-    conduitSize: getConduitSizeForWiresLocal(
-      wire.size,
-      getGroundWireForWireSizeLocal(wire.size, mcbAT),
-      mcbP,
-      panel.system,
-    ),
+    wireSize: finalWireSize,
+    groundSize: finalGroundSize,
+    conduitSize: finalConduitSize,
   };
 };
 

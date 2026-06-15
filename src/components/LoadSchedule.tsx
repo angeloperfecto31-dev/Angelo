@@ -32,7 +32,7 @@ import {
 } from "../constants";
 import { SingleLineDiagram } from "./SingleLineDiagram";
 import LatexRenderer from "./LatexRenderer";
-import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription } from "../utils/computeEngine";
+import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal } from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
   saveThreePhaseFLCEntry,
@@ -651,56 +651,58 @@ export default function LoadSchedule({
               (s) => s.id === c.linkedSubPanelId,
             );
             if (sp) {
-              const subTotalVA = sp.circuits.reduce(
-                (sum, cc) =>
-                  sum +
-                  (cc.loadType === LoadType.SPACE ||
-                  cc.loadType === LoadType.SPARE
-                    ? 0
-                    : cc.loadVA),
-                0,
-              );
+              const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+
               const subTotalWattage = sp.circuits.reduce(
                 (sum, cc) =>
                   sum +
-                  (cc.loadType === LoadType.SPACE ||
-                  cc.loadType === LoadType.SPARE
+                  (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
                     ? 0
-                    : cc.wattage * cc.quantity),
+                    : (cc.wattage || 0) * (cc.quantity || 1)),
                 0,
               );
 
-              const subPoles = sp.panel.system.includes("3PH")
-                ? 3
-                : sp.panel.connectionType === "Line-to-Neutral"
-                  ? 1
-                  : 2;
-              const subVoltage = sp.panel.system.includes("3PH")
-                ? getPanelSystemVoltageFallback(
-                    sp.panel.system,
-                    true,
-                    sp.panel.connectionType,
-                  )
-                : 230;
-              const subCB = sp.panel.mainBreakerAT || 30;
+              const subPoles = subMainFeeder.poles;
+              const subCB = subMainFeeder.cb;
+              const subAF = subMainFeeder.af;
+              const subKAIC = subMainFeeder.kaic;
+              const subType = subMainFeeder.type as MCBType;
+              const subWireSize = formatWireSizeLocal(subMainFeeder.wire.size);
+              const subGroundSize = subMainFeeder.groundSize;
+              const subConduitSize = subMainFeeder.conduitSize;
+
+              const subVoltage = sp.panel.voltage;
+              const designation = sp.panel.designation || "Sub-Panel";
 
               if (
                 c.loadVA !== subTotalVA ||
                 c.wattage !== subTotalWattage ||
-                c.description !== (sp.panel.designation || "Sub-Panel") ||
                 c.mcbP !== subPoles ||
+                c.mcbAT !== subCB ||
+                c.mcbAF !== subAF ||
+                c.mcbKAIC !== subKAIC ||
+                c.mcbType !== subType ||
+                c.wireSize !== subWireSize ||
+                c.groundSize !== subGroundSize ||
+                c.conduitSize !== subConduitSize ||
                 c.voltage !== subVoltage ||
-                c.mcbAT !== subCB
+                c.description !== designation
               ) {
                 newCircuits[i] = {
                   ...c,
                   quantity: 1,
                   wattage: subTotalWattage,
                   loadVA: subTotalVA,
-                  description: sp.panel.designation || "Sub-Panel",
                   mcbP: subPoles,
-                  voltage: subVoltage,
                   mcbAT: subCB,
+                  mcbAF: subAF,
+                  mcbKAIC: subKAIC,
+                  mcbType: subType,
+                  wireSize: subWireSize,
+                  groundSize: subGroundSize,
+                  conduitSize: subConduitSize,
+                  voltage: subVoltage,
+                  description: designation,
                 };
                 newCircuits[i] = {
                   ...newCircuits[i],
@@ -2256,33 +2258,46 @@ export default function LoadSchedule({
                               ))}
                             </select>
 
-                            {/* Connection Sync & Discrepancy Warnings */}
-                            {c.linkedSubPanelId ? (() => {
-                              const sp = availableSubPanels?.find(s => s.id === c.linkedSubPanelId);
-                              if (sp) {
-                                const isVoltageMismatch = c.voltage !== sp.panel.voltage;
-                                const isDesignationMismatch = c.description !== sp.panel.designation;
-                                if (isVoltageMismatch || isDesignationMismatch) {
-                                  return (
-                                    <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit no-print">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                                      <span>Discrepancy: Name/V Mismatch!</span>
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 dark:text-emerald-450 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-950/50 w-fit no-print">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    <span>Sync Active</span>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-500 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/40 w-fit no-print">
-                                  <span>Sub-Panel Board Deleted or Lost</span>
-                                </div>
-                              );
-                            })() : (
+                             {/* Connection Sync & Discrepancy Warnings */}
+                             {c.linkedSubPanelId ? (() => {
+                               const sp = availableSubPanels?.find(s => s.id === c.linkedSubPanelId);
+                               if (sp) {
+                                 const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+                                 const isVoltageMismatch = c.voltage !== sp.panel.voltage;
+                                 const isDesignationMismatch = c.description !== sp.panel.designation;
+                                 const isBreakerMismatch = c.mcbAT !== subMainFeeder.cb;
+                                 const isWireSizeMismatch = c.wireSize !== formatWireSizeLocal(subMainFeeder.wire.size);
+
+                                 if (isVoltageMismatch || isDesignationMismatch || isBreakerMismatch || isWireSizeMismatch) {
+                                   const reasons = [];
+                                   if (isVoltageMismatch) reasons.push("Voltage Mismatch");
+                                   if (isDesignationMismatch) reasons.push("Name Mismatch");
+                                   if (isBreakerMismatch) reasons.push(`Breaker Mismatch (${c.mcbAT}AT vs ${subMainFeeder.cb}AT)`);
+                                   if (isWireSizeMismatch) reasons.push(`Wire size Mismatch (${c.wireSize} vs ${formatWireSizeLocal(subMainFeeder.wire.size)} mm²)`);
+                                   
+                                   return (
+                                     <div className="flex flex-col gap-1 mt-1 no-print">
+                                       <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit">
+                                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                         <span>Discrepancy: Mismatch!</span>
+                                       </div>
+                                       <span className="text-[8px] text-rose-500 font-semibold pl-1 leading-tight max-w-xs">{reasons.join(", ")}</span>
+                                     </div>
+                                   );
+                                 }
+                                 return (
+                                   <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 dark:text-emerald-450 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-950/50 w-fit no-print">
+                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                     <span>Sync Active</span>
+                                   </div>
+                                 );
+                               }
+                               return (
+                                 <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-500 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/40 w-fit no-print">
+                                   <span>Sub-Panel Board Deleted or Lost</span>
+                                 </div>
+                               );
+                             })() : (
                               <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-amber-600 dark:text-amber-450 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-950/50 w-fit no-print">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                                 <span>Pending connection</span>
