@@ -3357,41 +3357,65 @@ export const exportToCAD = (
 
     const sConf = sheetConfigs[vdSheetIndex] || { w: baseW, xOffset: vdSheetIndex * 900 };
     const xOffset = sConf.xOffset;
-    let ty = 500;
+    let ty = 521; // Centered vertically
 
-    const cols = [
-      { name: "SYSTEM / SOURCE", w: 120 },
-      { name: "LINE NAME", w: 90 },
-      { name: "CURRENT (A)", w: 45 },
-      { name: "LENGTH (m)", w: 45 },
-      { name: "WIRE SIZE (mm\\U+00B2)", w: 70 },
-      { name: "VOLTAGE", w: 45 },
-      { name: "SYSTEM TYPE", w: 45 },
-      { name: "VD (V)", w: 45 },
-      { name: "VD (%)", w: 45 },
-      { name: "STATUS", w: 50 },
-    ];
+    const baseColWidths = [120, 95, 45, 45, 75, 45, 45, 45, 45, 55];
+    const totalBaseW = baseColWidths.reduce((a, b) => a + b, 0); // 590
+    const targetTableWidth = 680; // Expanded horizontally
 
-    const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
-    const tableLeft = xOffset + 50;
+    const cols = baseColWidths.map((w, idx) => {
+      const names = [
+        "SYSTEM / SOURCE",
+        "LINE NAME",
+        "CURRENT (A)",
+        "LENGTH (m)",
+        "WIRE SIZE (mm\\U+00B2)",
+        "VOLTAGE",
+        "SYSTEM TYPE",
+        "VD (V)",
+        "VD (%)",
+        "STATUS"
+      ];
+      let colW = Math.floor((w / totalBaseW) * targetTableWidth);
+      if (idx === names.length - 1) {
+        const sumSoFar = baseColWidths.slice(0, -1).map(bW => Math.floor((bW / totalBaseW) * targetTableWidth)).reduce((a, b) => a + b, 0);
+        colW = targetTableWidth - sumSoFar;
+      }
+      return { name: names[idx], w: colW };
+    });
+
+    const tableWidth = targetTableWidth;
+    const titleBlockX = sConf.w - 130;
+    const availableCenter = MARGIN_LEFT + (titleBlockX - MARGIN_LEFT) / 2; // 360.5
+    const tableLeft = xOffset + availableCenter - (tableWidth / 2); // Center horizontally in drawing area
     const tableRight = tableLeft + tableWidth;
 
+    const calculationsToRender = vdCalculations && vdCalculations.length > 0 ? vdCalculations : [];
+    const numRows = calculationsToRender.length || 1;
+    
+    // Automatically adjust row height based on content density (budget roughly 350 units)
+    const rowH = Math.min(18.0, Math.max(10.0, Math.floor(350 / numRows)));
+    const dataFontSize = Number((rowH * 0.225).toFixed(2));
+    const headerFontSize = Number((dataFontSize * 1.1).toFixed(2));
+
     // Header Border
-    b.addRect(tableLeft, ty - 12, tableRight, ty, "BORDER");
+    const headH = Math.max(14.0, rowH * 1.3);
+    b.addRect(tableLeft, ty - headH, tableRight, ty, "BORDER");
     b.addText(
       "VOLTAGE DROP ANALYSIS REPORT TABLE",
       tableLeft + tableWidth / 2,
-      ty - 7.6,
-      3.2,
+      ty - headH * 0.6,
+      Math.max(3.2, dataFontSize * 1.6),
       0,
       "TEXT_TITLE",
       "center",
     );
 
-    ty -= 12;
+    ty -= headH;
 
     // Header Row Columns labels
-    b.addRect(tableLeft, ty - 10, tableRight, ty, "BORDER");
+    const labelH = Math.max(12.0, rowH * 1.1);
+    b.addRect(tableLeft, ty - labelH, tableRight, ty, "BORDER");
     let currentX = tableLeft;
     const colPositions: number[] = [];
     cols.forEach((col) => {
@@ -3399,8 +3423,8 @@ export const exportToCAD = (
       b.addText(
         col.name,
         currentX + col.w / 2,
-        ty - 5.9,
-        1.8,
+        ty - labelH * 0.6,
+        Math.max(1.8, headerFontSize),
         0,
         "TEXT_HEADER",
         "center",
@@ -3412,15 +3436,12 @@ export const exportToCAD = (
 
     // Grid vertical lines for headers (inner dividers only)
     for (let i = 1; i < colPositions.length - 1; i++) {
-      b.addLine(colPositions[i], ty - 10, colPositions[i], ty, "BORDER");
+      b.addLine(colPositions[i], ty - labelH, colPositions[i], ty, "BORDER");
     }
 
-    ty -= 10;
+    ty -= labelH;
 
     // Data Row rendering
-    const rowH = 8.0;
-    const calculationsToRender = vdCalculations && vdCalculations.length > 0 ? vdCalculations : [];
-    
     calculationsToRender.forEach((calc) => {
       // Draw bottom horizontal line
       b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
@@ -3474,18 +3495,18 @@ export const exportToCAD = (
         }
       }
 
-      b.addText(sourceLabel, colPositions[0] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 4);
-      b.addText(calc.name, colPositions[1] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[1].w - 4);
-      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(sourceLabel, colPositions[0] + 3, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "left", cols[0].w - 4);
+      b.addText(calc.name, colPositions[1] + 3, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
+      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
       
       const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
-      b.addText(status, colPositions[9] + cols[9].w / 2, ty - 4.9, 1.8, 0, statLayer, "center");
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH * 0.6125, dataFontSize, 0, statLayer, "center");
 
       ty -= rowH;
     });
@@ -3501,8 +3522,8 @@ export const exportToCAD = (
       b.addText(
         "NO VOLTAGE DROP ANALYSIS DATA RECORDED IN SCOPE",
         tableLeft + tableWidth / 2,
-        ty - rowH - 1.0,
-        2.2,
+        ty - rowH - (dataFontSize / 2),
+        Math.max(2.2, dataFontSize * 1.2),
         0,
         "TEXT_HEADER",
         "center"
@@ -3522,34 +3543,38 @@ export const exportToCAD = (
 
     const sConf = sheetConfigs[scSheetIndex] || { w: baseW, xOffset: scSheetIndex * 900 };
     const xOffset = sConf.xOffset;
-    let ty = 500;
+    let ty = 521; // Perfectly centered vertically
 
     const cols = [
-      { name: "PARAMETER / COMPONENT DESCRIPTION", w: 320 },
-      { name: "VALUE", w: 140 },
-      { name: "UNIT", w: 140 },
+      { name: "PARAMETER / COMPONENT DESCRIPTION", w: 360 },
+      { name: "VALUE", w: 160 },
+      { name: "UNIT", w: 160 },
     ];
 
-    const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
-    const tableLeft = xOffset + 50;
+    const tableWidth = cols.reduce((sum, col) => sum + col.w, 0); // 680 mm wide
+    const titleBlockX = sConf.w - 130;
+    const availableCenter = MARGIN_LEFT + (titleBlockX - MARGIN_LEFT) / 2; // 360.5
+    const tableLeft = xOffset + availableCenter - (tableWidth / 2); // Center horizontally in drawing area
     const tableRight = tableLeft + tableWidth;
 
     // Header Border
-    b.addRect(tableLeft, ty - 12, tableRight, ty, "BORDER");
+    const headH = 22.0;
+    b.addRect(tableLeft, ty - headH, tableRight, ty, "BORDER");
     b.addText(
       "SHORT CIRCUIT POINT-TO-POINT CALCULATION RESULTS",
       tableLeft + tableWidth / 2,
-      ty - 7.6,
-      3.2,
+      ty - headH * 0.6,
+      4.5,
       0,
       "TEXT_TITLE",
       "center",
     );
 
-    ty -= 12;
+    ty -= headH;
 
     // Header Row Column labels
-    b.addRect(tableLeft, ty - 10, tableRight, ty, "BORDER");
+    const labelH = 18.0;
+    b.addRect(tableLeft, ty - labelH, tableRight, ty, "BORDER");
     let currentX = tableLeft;
     const colPositions: number[] = [];
     cols.forEach((col) => {
@@ -3557,8 +3582,8 @@ export const exportToCAD = (
       b.addText(
         col.name,
         currentX + col.w / 2,
-        ty - 5.9,
-        1.8,
+        ty - labelH * 0.6,
+        3.5,
         0,
         "TEXT_HEADER",
         "center",
@@ -3570,10 +3595,10 @@ export const exportToCAD = (
 
     // Grid vertical lines for headers (inner dividers only)
     for (let i = 1; i < colPositions.length - 1; i++) {
-      b.addLine(colPositions[i], ty - 10, colPositions[i], ty, "BORDER");
+      b.addLine(colPositions[i], ty - labelH, colPositions[i], ty, "BORDER");
     }
 
-    ty -= 10;
+    ty -= labelH;
 
     // Compute Short Circuit values matching Excel EXACTLY
     const excelBaseKVA = scParams.transformerKVA;
@@ -3644,20 +3669,20 @@ export const exportToCAD = (
 
     scRows.forEach((row) => {
       if (row.isSection) {
-        const sectH = 9.0;
+        const sectH = 16.0;
         b.addRect(tableLeft, ty - sectH, tableRight, ty, "BORDER");
         b.addText(
           row.label,
           tableLeft + 10,
-          ty - 5.5,
-          2.0,
+          ty - sectH * 0.6,
+          3.5,
           0,
           "TEXT_HEADER",
           "left"
         );
         ty -= sectH;
       } else {
-        const rowH = 7.5;
+        const rowH = 15.0;
         // Draw bottom horizontal line
         b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
         // Draw left outer vertical line
@@ -3670,11 +3695,11 @@ export const exportToCAD = (
           b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
         }
 
-        b.addText(row.label, colPositions[0] + 5, ty - 4.65, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 10);
+        b.addText(row.label, colPositions[0] + 5, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "left", cols[0].w - 10);
         
         const valStr = row.val !== undefined ? row.val.toString() : "-";
-        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - 4.65, 1.8, 0, "TEXT_DATA", "center");
-        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - 4.65, 1.8, 0, "TEXT_DATA", "center");
+        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center");
+        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center");
 
         ty -= rowH;
       }
