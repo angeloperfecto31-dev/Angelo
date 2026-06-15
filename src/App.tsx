@@ -54,6 +54,7 @@ import {
   IlluminationParams,
   LoadType,
   FloorPlanImage,
+  MCBType,
 } from "./types";
 import {
   STANDARD_CB_RATINGS,
@@ -69,6 +70,7 @@ import { exportToWord } from "./utils/exportWord";
 import {
   computePanelScheduleValues,
   calculateCircuitValues,
+  formatWireSizeLocal,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 
@@ -293,6 +295,185 @@ export default function App() {
       }));
     }
   }, [circuits]);
+
+  // Wrapper for updating MDP circuits from the Load Schedule that handles reverse propagation to connected Sub-Panels
+  const handleSetMdpCircuits = (
+    newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[])
+  ) => {
+    setCircuits((prevCircuits) => {
+      const nextCircuits =
+        typeof newCircuitsOrFn === "function"
+          ? newCircuitsOrFn(prevCircuits)
+          : newCircuitsOrFn;
+
+      // Check if any SUB_PANEL circuits changed from prev to next
+      nextCircuits.forEach((nextC) => {
+        if (nextC.loadType === LoadType.SUB_PANEL && nextC.linkedSubPanelId) {
+          const prevC = prevCircuits.find((pc) => pc.id === nextC.id);
+          if (prevC) {
+            // Collect any edited fields
+            const changedFields: Partial<Circuit> = {};
+            const fieldsToCheck: (keyof Circuit)[] = [
+              "description",
+              "mcbAT",
+              "mcbAF",
+              "mcbP",
+              "mcbKAIC",
+              "mcbType",
+              "voltage",
+            ];
+            fieldsToCheck.forEach((field) => {
+              if (nextC[field] !== prevC[field]) {
+                (changedFields as any)[field] = nextC[field];
+              }
+            });
+
+            if (Object.keys(changedFields).length > 0) {
+              setSubPanels((prevSubPanels) =>
+                prevSubPanels.map((sp) => {
+                  if (sp.id === nextC.linkedSubPanelId) {
+                    const nextPanel = { ...sp.panel };
+
+                    if ("description" in changedFields) {
+                      nextPanel.designation = nextC.description || "";
+                    }
+
+                    if ("voltage" in changedFields) {
+                      nextPanel.voltage = nextC.voltage || 230;
+                    }
+
+                    const prevOverrides = nextPanel.mainOverrides || { isOverrideEnabled: false };
+                    const nextOverrides = { ...prevOverrides };
+                    let overrideChanged = false;
+
+                    if ("mcbAT" in changedFields) {
+                      nextOverrides.breakerAT = nextC.mcbAT;
+                      nextOverrides.isOverrideEnabled = true;
+                      overrideChanged = true;
+                    }
+                    if ("mcbAF" in changedFields) {
+                      nextOverrides.breakerAF = nextC.mcbAF;
+                      nextOverrides.isOverrideEnabled = true;
+                      overrideChanged = true;
+                    }
+                    if ("mcbType" in changedFields) {
+                      nextOverrides.breakerType = nextC.mcbType;
+                      nextOverrides.isOverrideEnabled = true;
+                      overrideChanged = true;
+                    }
+                    if ("mcbKAIC" in changedFields) {
+                      nextOverrides.kaic = nextC.mcbKAIC;
+                      nextOverrides.isOverrideEnabled = true;
+                      overrideChanged = true;
+                    }
+                    if ("mcbP" in changedFields) {
+                      nextOverrides.poles = nextC.mcbP;
+                      nextOverrides.isOverrideEnabled = true;
+                      overrideChanged = true;
+                    }
+
+                    if (overrideChanged) {
+                      nextPanel.mainOverrides = nextOverrides;
+                      if ("mcbAT" in changedFields) nextPanel.mainBreakerAT = nextC.mcbAT;
+                      if ("mcbAF" in changedFields) nextPanel.mainBreakerAF = nextC.mcbAF;
+                      if ("mcbKAIC" in changedFields) nextPanel.icRating = `${nextC.mcbKAIC}kAIC`;
+                    }
+
+                    return { ...sp, panel: nextPanel };
+                  }
+                  return sp;
+                })
+              );
+            }
+          }
+        }
+      });
+
+      return nextCircuits;
+    });
+  };
+
+  // Synchronize Sub-Panels recalculations back to Main Panel circuits and update the Main Panel in real-time
+  useEffect(() => {
+    setCircuits((prevCircuits) => {
+      if (!prevCircuits) return prevCircuits;
+      let changed = false;
+      const nextCircuits = prevCircuits.map((c) => {
+        if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId) {
+          const sp = subPanels.find((s) => s.id === c.linkedSubPanelId);
+          if (sp) {
+            // Compute sub-panel actual values
+            const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+
+            const subTotalWattage = sp.circuits.reduce(
+              (sum, cc) =>
+                sum +
+                (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
+                  ? 0
+                  : (cc.wattage || 0) * (cc.quantity || 1)),
+              0,
+            );
+
+            const subPoles = subMainFeeder.poles;
+            const subCB = subMainFeeder.cb;
+            const subAF = subMainFeeder.af;
+            const subKAIC = subMainFeeder.kaic;
+            const subType = subMainFeeder.type as MCBType;
+            const subWireSize = formatWireSizeLocal(subMainFeeder.wire.size);
+            const subGroundSize = subMainFeeder.groundSize;
+            const subConduitSize = subMainFeeder.conduitSize;
+
+            const subVoltage = sp.panel.voltage;
+            const designation = sp.panel.designation || "Sub-Panel";
+
+            // Calculate loadA for this sub-panel circuit in the main panel
+            // Since it's connected to the main panel, using the main panel's system/poles for current calculation:
+            const is3PhaseMain = c.phases && c.phases.length === 3;
+            const cirV = c.voltage || subVoltage || 230;
+            const loadI = is3PhaseMain ? subTotalVA / (cirV * 1.732) : subTotalVA / cirV;
+
+            if (
+              c.loadVA !== subTotalVA ||
+              c.wattage !== subTotalWattage ||
+              c.mcbP !== subPoles ||
+              c.mcbAT !== subCB ||
+              c.mcbAF !== subAF ||
+              c.mcbKAIC !== subKAIC ||
+              c.mcbType !== subType ||
+              c.wireSize !== subWireSize ||
+              c.groundSize !== subGroundSize ||
+              c.conduitSize !== subConduitSize ||
+              c.voltage !== subVoltage ||
+              c.description !== designation ||
+              Math.abs((c.loadA || 0) - loadI) > 0.01
+            ) {
+              changed = true;
+              return {
+                ...c,
+                wattage: subTotalWattage,
+                loadVA: subTotalVA,
+                loadA: Number(loadI.toFixed(2)),
+                quantity: 1,
+                mcbP: subPoles,
+                mcbAT: subCB,
+                mcbAF: subAF,
+                mcbKAIC: subKAIC,
+                mcbType: subType,
+                wireSize: subWireSize,
+                groundSize: subGroundSize,
+                conduitSize: subConduitSize,
+                voltage: subVoltage,
+                description: designation,
+              };
+            }
+          }
+        }
+        return c;
+      });
+
+      return changed ? nextCircuits : prevCircuits;
+    });
+  }, [subPanels, setCircuits]);
 
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
     {},
@@ -2345,7 +2526,7 @@ export default function App() {
                         panel={panel}
                         setPanel={setPanel}
                         circuits={circuits}
-                        setCircuits={setCircuits}
+                        setCircuits={handleSetMdpCircuits}
                         availableSubPanels={subPanels}
                         iscParams={iscParams}
                         isPremium={userPlan === "premium" || isAdmin}
@@ -2359,6 +2540,10 @@ export default function App() {
                       const isVisible =
                         isExporting || activeScheduleTab === sp.id;
                       if (!isVisible) return null;
+
+                      const parentMdpConn = circuits.find(
+                        (c) => c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId === sp.id
+                      );
 
                       return (
                         <React.Fragment key={sp.id}>
@@ -2403,6 +2588,19 @@ export default function App() {
                               setSubPanels((prev) =>
                                 prev.filter((p) => p.id !== sp.id),
                               );
+                              // Disconnect sub panel reference from MDP circuits
+                              setCircuits((prevCircuits) =>
+                                prevCircuits.map((c) =>
+                                  c.linkedSubPanelId === sp.id
+                                    ? {
+                                        ...c,
+                                        linkedSubPanelId: undefined,
+                                        loadType: LoadType.SPARE,
+                                        description: `${c.description || "Sub-Panel"} (Disconnected)`,
+                                      }
+                                    : c
+                                )
+                              );
                               setActiveScheduleTab("mdp");
                             }}
                             onDuplicateSubPanel={() => {
@@ -2413,6 +2611,11 @@ export default function App() {
                             isPremium={userPlan === "premium" || isAdmin}
                             onRequestUpgrade={() => setShowUpgrade(true)}
                             isAdmin={isAdmin}
+                            parentMdpConnection={parentMdpConn ? {
+                              circuitNo: parentMdpConn.circuitNo,
+                              description: parentMdpConn.description,
+                              mdpDesignation: panel.designation || "MDP"
+                            } : undefined}
                           />
                         </React.Fragment>
                       );
@@ -2499,6 +2702,7 @@ export default function App() {
                   <VoltageDropCalc
                     panel={panel}
                     circuits={circuits}
+                    subPanels={subPanels}
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
                     isPremium={userPlan === "premium" || isAdmin}

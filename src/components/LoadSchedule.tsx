@@ -129,6 +129,7 @@ export interface LoadScheduleProps {
   iscParams?: ShortCircuitParams;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
+  parentMdpConnection?: { circuitNo: number; description: string; mdpDesignation: string };
 }
 
 const AmpsInput = ({ c, panel, is3P, onAmpsUpdate, disabled }: { c: Circuit; panel: PanelConfig; is3P: boolean; onAmpsUpdate: (newAmps: number) => void; disabled: boolean }) => {
@@ -424,6 +425,7 @@ export default function LoadSchedule({
   isPremium = true,
   onRequestUpgrade,
   isAdmin = false,
+  parentMdpConnection,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
@@ -1978,9 +1980,23 @@ export default function LoadSchedule({
               <FileText className="w-6 h-6 text-white" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter print:text-xl">
-                Panel Board Schedule
-              </h3>
+              <div className="flex flex-wrap items-center gap-3">
+                <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter print:text-xl">
+                  Panel Board Schedule
+                </h3>
+                {isSubPanel && parentMdpConnection && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-xl no-print">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Linked to {parentMdpConnection.mdpDesignation} (Circuit {parentMdpConnection.circuitNo}: {parentMdpConnection.description})</span>
+                  </div>
+                )}
+                {isSubPanel && !parentMdpConnection && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-250 dark:border-amber-900/40 rounded-xl no-print">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                    <span>Independent Sub-Panel (Not Connected to MDP)</span>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 text-sm font-medium mt-3">
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">
@@ -2212,32 +2228,67 @@ export default function LoadSchedule({
                           ))}
                         </select>
                         {c.loadType === "SUB" ? (
-                          <select
-                            value={c.linkedSubPanelId || ""}
-                            onChange={(e) =>
-                              updateCircuit(c.id, {
-                                linkedSubPanelId: e.target.value,
-                              })
-                            }
-                            className="flex-1 bg-transparent dark:bg-slate-900 font-medium min-w-0 truncate text-slate-800 dark:text-slate-100"
-                          >
-                            <option
-                              value=""
-                              disabled
-                              className="dark:bg-slate-900 dark:text-slate-100"
+                          <div className="flex-1 flex flex-col gap-1 min-w-0">
+                            <select
+                              value={c.linkedSubPanelId || ""}
+                              onChange={(e) =>
+                                updateCircuit(c.id, {
+                                  linkedSubPanelId: e.target.value,
+                                })
+                              }
+                              className="flex-1 bg-transparent dark:bg-slate-900 font-medium min-w-0 truncate text-slate-800 dark:text-slate-100"
                             >
-                              Select Sub-Panel
-                            </option>
-                            {availableSubPanels?.map((sp) => (
                               <option
-                                key={sp.id}
-                                value={sp.id}
+                                value=""
+                                disabled
                                 className="dark:bg-slate-900 dark:text-slate-100"
                               >
-                                {sp.panel.designation || "Unnamed Sub-Panel"}
+                                Select Sub-Panel
                               </option>
-                            ))}
-                          </select>
+                              {availableSubPanels?.map((sp) => (
+                                <option
+                                  key={sp.id}
+                                  value={sp.id}
+                                  className="dark:bg-slate-900 dark:text-slate-100"
+                                >
+                                  {sp.panel.designation || "Unnamed Sub-Panel"}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Connection Sync & Discrepancy Warnings */}
+                            {c.linkedSubPanelId ? (() => {
+                              const sp = availableSubPanels?.find(s => s.id === c.linkedSubPanelId);
+                              if (sp) {
+                                const isVoltageMismatch = c.voltage !== sp.panel.voltage;
+                                const isDesignationMismatch = c.description !== sp.panel.designation;
+                                if (isVoltageMismatch || isDesignationMismatch) {
+                                  return (
+                                    <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit no-print">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                      <span>Discrepancy: Name/V Mismatch!</span>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 dark:text-emerald-450 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-950/50 w-fit no-print">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <span>Sync Active</span>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-500 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/40 w-fit no-print">
+                                  <span>Sub-Panel Board Deleted or Lost</span>
+                                </div>
+                              );
+                            })() : (
+                              <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-amber-600 dark:text-amber-450 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-950/50 w-fit no-print">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                <span>Pending connection</span>
+                              </div>
+                            )}
+                          </div>
                         ) : c.subLoads && c.subLoads.length > 0 ? (
                           <div className="flex-1 flex flex-col gap-1.5 min-w-0">
                             {c.subLoads.map((sl, slIndex) => (

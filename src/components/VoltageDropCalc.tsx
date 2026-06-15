@@ -27,6 +27,7 @@ import { computePanelScheduleValues } from "../utils/computeEngine";
 export interface VoltageDropCalcProps {
   panel?: PanelConfig;
   circuits?: Circuit[];
+  subPanels?: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
   calculations: VoltageDropCalculation[];
   setCalculations: React.Dispatch<
     React.SetStateAction<VoltageDropCalculation[]>
@@ -38,6 +39,7 @@ export interface VoltageDropCalcProps {
 export default function VoltageDropCalc({
   panel,
   circuits,
+  subPanels,
   calculations,
   setCalculations,
   isPremium = true,
@@ -94,7 +96,7 @@ export default function VoltageDropCalc({
         });
       }
 
-      // 2. Maintain Branch Circuits from Load Schedule
+      // 2. Maintain Branch Circuits from Main Load Schedule
       circuits.forEach((c) => {
         // Skip spare or space as they have zero active load current/feeders generally
         const ltStr = c.loadType as string;
@@ -147,7 +149,106 @@ export default function VoltageDropCalc({
         }
       });
 
-      // 3. Maintain Custom Circuits
+      // 3. Maintain Sub-Panel Feeders & their branch circuits
+      if (subPanels) {
+        subPanels.forEach((sp) => {
+          const spIs3PH = sp.panel.system.includes("3PH");
+          const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+
+          const spLoadA = Number(spMainCurrent.baseAmp.toFixed(2));
+          const spWireSize = spMainFeeder.wire.size.toString();
+          const spVoltage = sp.panel.voltage;
+          const spSystemType: "1PH" | "3PH" = spIs3PH ? "3PH" : "1PH";
+          const spName = `${sp.panel.designation || "Sub-Panel"} Feeder`;
+
+          const existingSp = prevMap.get(sp.id);
+          if (existingSp) {
+            const hasSpChanged =
+              existingSp.name !== spName ||
+              existingSp.loadA !== spLoadA ||
+              existingSp.wireSize !== spWireSize ||
+              existingSp.voltage !== spVoltage ||
+              existingSp.systemType !== spSystemType;
+            if (hasSpChanged) {
+              changed = true;
+            }
+            updatedCalcs.push({
+              ...existingSp,
+              name: spName,
+              loadA: spLoadA,
+              wireSize: spWireSize,
+              voltage: spVoltage,
+              systemType: spSystemType,
+            });
+          } else {
+            changed = true;
+            updatedCalcs.push({
+              id: crypto.randomUUID(),
+              source: sp.id,
+              name: spName,
+              loadA: spLoadA,
+              length: 30, // Default to 30 meters
+              wireSize: spWireSize,
+              voltage: spVoltage,
+              systemType: spSystemType,
+            });
+          }
+
+          // Maintain branch circuits of this subpanel
+          sp.circuits.forEach((c) => {
+            const ltStr2 = c.loadType as string;
+            if (
+              ltStr2 === "SP" ||
+              ltStr2 === "SPACE" ||
+              ltStr2 === LoadType.SPARE ||
+              ltStr2 === LoadType.SPACE
+            ) {
+              return;
+            }
+
+            const existingSpBranch = prevMap.get(c.id);
+            const branchNameSp = `${sp.panel.designation || "Sub-Panel"} - Circuit ${c.circuitNo}: ${c.description}`;
+            const branchSystemTypeSp: "1PH" | "3PH" =
+              c.phases.length > 2 ? "3PH" : "1PH";
+
+            if (existingSpBranch) {
+              const isLoadADiff = existingSpBranch.loadA !== c.loadA && !(Number.isNaN(existingSpBranch.loadA) && Number.isNaN(c.loadA));
+              const isVoltageDiff = existingSpBranch.voltage !== c.voltage && !(existingSpBranch.voltage == null && c.voltage == null) && !(Number.isNaN(existingSpBranch.voltage) && Number.isNaN(c.voltage));
+              const hasBranchChanged =
+                existingSpBranch.name !== branchNameSp ||
+                isLoadADiff ||
+                existingSpBranch.wireSize !== c.wireSize ||
+                isVoltageDiff ||
+                existingSpBranch.systemType !== branchSystemTypeSp;
+              if (hasBranchChanged) {
+                changed = true;
+              }
+              updatedCalcs.push({
+                ...existingSpBranch,
+                name: branchNameSp,
+                loadA: c.loadA,
+                wireSize: c.wireSize,
+                voltage: c.voltage,
+                systemType: branchSystemTypeSp,
+              });
+            } else {
+              changed = true;
+              updatedCalcs.push({
+                id: crypto.randomUUID(),
+                source: c.id,
+                name: branchNameSp,
+                loadA: c.loadA,
+                length: 30, // Default to 30 meters
+                wireSize: c.wireSize,
+                voltage: c.voltage,
+                systemType: branchSystemTypeSp,
+              });
+            }
+          });
+        });
+      }
+
+      // 4. Maintain Custom Circuits
       (prev || []).forEach((calc) => {
         if (calc.source === "custom") {
           updatedCalcs.push(calc);
@@ -184,7 +285,7 @@ export default function VoltageDropCalc({
 
       return changed ? updatedCalcs : prev;
     });
-  }, [circuits, panel, setCalculations]);
+  }, [circuits, panel, subPanels, setCalculations]);
 
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data =
@@ -236,13 +337,43 @@ export default function VoltageDropCalc({
         systemType: is3PH ? "3PH" : "1PH",
       };
       setCalculations([...calculations, newCalc]);
-    } else if (circuits) {
-      const c = circuits.find((c) => c.id === source);
-      if (c) {
+    } else if (subPanels && subPanels.some(sp => sp.id === source)) {
+      const sp = subPanels.find(sp => sp.id === source)!;
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+      const is3PH = sp.panel.system.includes("3PH");
+
+      const newCalc: VoltageDropCalculation = {
+        id: crypto.randomUUID(),
+        source: sp.id,
+        name: `${sp.panel.designation || "Sub-Panel"} Feeder`,
+        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+        length: newLength,
+        wireSize: mainFeeder.wire.size.toString(),
+        voltage: sp.panel.voltage,
+        systemType: is3PH ? "3PH" : "1PH",
+      };
+      setCalculations([...calculations, newCalc]);
+    } else {
+      let foundCircuit = circuits?.find((c) => c.id === source);
+      let parentPanel: PanelConfig | undefined = panel;
+      
+      if (!foundCircuit && subPanels) {
+        for (const sp of subPanels) {
+          const fc = sp.circuits.find(c => c.id === source);
+          if (fc) {
+            foundCircuit = fc;
+            parentPanel = sp.panel;
+            break;
+          }
+        }
+      }
+
+      if (foundCircuit && parentPanel) {
+        const c = foundCircuit;
         const newCalc: VoltageDropCalculation = {
           id: crypto.randomUUID(),
           source: c.id,
-          name: `Circuit ${c.circuitNo}: ${c.description}`,
+          name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
           loadA: c.loadA,
           length: newLength,
           wireSize: c.wireSize,
@@ -315,7 +446,7 @@ export default function VoltageDropCalc({
                   Main Feeder
                 </option>
                 <optgroup
-                  label="Branch Circuits"
+                  label="MDP Branch Circuits"
                   className="dark:bg-slate-900 dark:text-slate-100"
                 >
                   {circuits.map((c) => (
@@ -324,6 +455,28 @@ export default function VoltageDropCalc({
                     </option>
                   ))}
                 </optgroup>
+                {subPanels && subPanels.map((sp) => (
+                  <React.Fragment key={sp.id}>
+                    <option
+                      value={sp.id}
+                      className="dark:bg-slate-900 dark:text-slate-100 font-semibold"
+                    >
+                      {sp.panel.designation || "Sub-Panel"} Feeder
+                    </option>
+                    {sp.circuits && sp.circuits.length > 0 && (
+                      <optgroup
+                        label={`${sp.panel.designation || "Sub-Panel"} Branch Circuits`}
+                        className="dark:bg-slate-900 dark:text-slate-100"
+                      >
+                        {sp.circuits.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Circuit {c.circuitNo}: {c.description}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </React.Fragment>
+                ))}
               </select>
             </div>
           )}
