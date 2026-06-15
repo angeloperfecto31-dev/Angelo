@@ -362,39 +362,8 @@ export default function App() {
 
   const handleLoadProject = (projectId: string, data: ProjectData) => {
     setCurrentProjectId(projectId);
-    setPanel({
-      ...data.panel,
-      transformerConnection:
-        data.panel.transformerConnection === "Delta-Wye"
-          ? "Delta-Wye (Δ-Y)"
-          : data.panel.transformerConnection === "Wye (Star)"
-            ? "Wye (Star) Connection"
-            : data.panel.transformerConnection === "Delta"
-              ? "Delta Connection"
-              : data.panel.transformerConnection === "Wye-Wye"
-                ? "Wye-Wye (Y-Y)"
-                : data.panel.transformerConnection,
-    });
 
-    // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
-    // Ensure accurate sizing by passing older circuits through the current compute engine.
-    const migratedSubPanels = (data.subPanels || []).map((sp) => {
-      const updatedCircuits = sp.circuits.map((c) => ({
-        ...c,
-        ...calculateCircuitValues(c, sp.panel, []),
-      })) as Circuit[];
-      return { ...sp, circuits: updatedCircuits };
-    });
-
-    const migratedCircuits = data.circuits.map((c) => ({
-      ...c,
-      ...calculateCircuitValues(c, data.panel, migratedSubPanels),
-    })) as Circuit[];
-
-    setCircuits(migratedCircuits);
-    setSubPanels(migratedSubPanels);
-
-    // Normalize short circuit params too
+    // Normalize short circuit params
     const normalizedIscParams = { ...data.iscParams };
     if (normalizedIscParams) {
       if (normalizedIscParams.transformerConnection === "Delta-Wye")
@@ -406,9 +375,55 @@ export default function App() {
       else if (normalizedIscParams.transformerConnection === "Wye-Wye")
         normalizedIscParams.transformerConnection = "Wye-Wye (Y-Y)";
     }
-    setIscParams(normalizedIscParams);
+    setIscParams(normalizedIscParams || INITIAL_SHORT_CIRCUIT_PARAMS);
+    setIscSource(data.iscSource || 'auto');
+    setIllumParams(data.illumParams || INITIAL_ILLUMINATION_PARAMS);
 
-    setIscSource(data.iscSource);
+    // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
+    // Ensure accurate sizing by passing older circuits through the current compute engine.
+    const migratedSubPanels = (data.subPanels || []).map((sp) => {
+      const updatedCircuits = sp.circuits.map((c) => ({
+        ...c,
+        ...calculateCircuitValues(c, sp.panel, []),
+      })) as Circuit[];
+      
+      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits);
+      return { 
+        ...sp, 
+        panel: {
+          ...sp.panel,
+          mainBreakerAT: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAT ? sp.panel.mainOverrides.breakerAT : mainFeeder.cb,
+          mainBreakerAF: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAF ? sp.panel.mainOverrides.breakerAF : mainFeeder.af,
+          icRating: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.kaic ? `${sp.panel.mainOverrides.kaic}kAIC` : `${mainFeeder.kaic}kAIC`,
+        },
+        circuits: updatedCircuits 
+      };
+    });
+
+    const migratedCircuits = data.circuits.map((c) => ({
+      ...c,
+      ...calculateCircuitValues(c, data.panel, migratedSubPanels),
+    })) as Circuit[];
+
+    const { mainFeeder: mainFeederData } = computePanelScheduleValues(data.panel, migratedCircuits);
+
+    let tc = data.panel.transformerConnection;
+    if (tc === "Delta-Wye") tc = "Delta-Wye (Δ-Y)";
+    else if (tc === "Wye (Star)") tc = "Wye (Star) Connection";
+    else if (tc === "Delta") tc = "Delta Connection";
+    else if (tc === "Wye-Wye") tc = "Wye-Wye (Y-Y)";
+    else tc = tc;
+
+    setPanel({
+      ...data.panel,
+      transformerConnection: tc,
+      mainBreakerAT: data.panel.mainOverrides?.isOverrideEnabled && data.panel.mainOverrides.breakerAT ? data.panel.mainOverrides.breakerAT : mainFeederData.cb,
+      mainBreakerAF: data.panel.mainOverrides?.isOverrideEnabled && data.panel.mainOverrides.breakerAF ? data.panel.mainOverrides.breakerAF : mainFeederData.af,
+      icRating: data.panel.mainOverrides?.isOverrideEnabled && data.panel.mainOverrides.kaic ? `${data.panel.mainOverrides.kaic}kAIC` : `${mainFeederData.kaic}kAIC`,
+    });
+
+    setCircuits(migratedCircuits);
+    setSubPanels(migratedSubPanels);
 
     // MIGRATION: Update Voltage Drop tracking values
     const newVdCalculations = (data.vdCalculations || []).map((vd) => {
@@ -446,7 +461,6 @@ export default function App() {
     });
 
     setVdCalculations(newVdCalculations);
-    setIllumParams(data.illumParams);
   };
 
   const currentProjectData: ProjectData = {
@@ -2667,7 +2681,7 @@ export default function App() {
                       </label>
                       <input
                         type="text"
-                        value={duplicateName}
+                        value={duplicateName || ""}
                         onChange={(e) => setDuplicateName(e.target.value)}
                         placeholder="e.g. Sub-Panel 2"
                         className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-medium"

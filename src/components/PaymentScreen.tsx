@@ -2385,7 +2385,7 @@ export default function PaymentScreen({
                       type="number"
                       required
                       min="0"
-                      value={adminBasicPrice}
+                      value={adminBasicPrice || 0}
                       onChange={(e) => setAdminBasicPrice(e.target.value)}
                       placeholder="999"
                       className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
@@ -2404,7 +2404,7 @@ export default function PaymentScreen({
                       type="number"
                       required
                       min="0"
-                      value={adminPremiumPrice}
+                      value={adminPremiumPrice || 0}
                       onChange={(e) => setAdminPremiumPrice(e.target.value)}
                       placeholder="1499"
                       className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
@@ -2423,7 +2423,7 @@ export default function PaymentScreen({
                       type="number"
                       required
                       min="0"
-                      value={adminUpgradePrice}
+                      value={adminUpgradePrice || 0}
                       onChange={(e) => setAdminUpgradePrice(e.target.value)}
                       placeholder="500"
                       className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
@@ -2446,7 +2446,7 @@ export default function PaymentScreen({
                     </label>
                     <input
                       type="text"
-                      value={adminOfferTitle}
+                      value={adminOfferTitle || ""}
                       onChange={(e) => setAdminOfferTitle(e.target.value)}
                       placeholder="e.g. FLASH 20% DISCOUNT, INTRODUCTORY RATE"
                       className="w-full px-3 py-2 border border-indigo-100 rounded-xl text-xs font-semibold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
@@ -2478,7 +2478,7 @@ export default function PaymentScreen({
                       <input
                         type="number"
                         min="0"
-                        value={adminPromoDiscountBasic}
+                        value={adminPromoDiscountBasic || 0}
                         onChange={(e) => setAdminPromoDiscountBasic(e.target.value)}
                         placeholder="0"
                         className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
@@ -2496,7 +2496,7 @@ export default function PaymentScreen({
                       <input
                         type="number"
                         min="0"
-                        value={adminPromoDiscountPremium}
+                        value={adminPromoDiscountPremium || 0}
                         onChange={(e) => setAdminPromoDiscountPremium(e.target.value)}
                         placeholder="0"
                         className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
@@ -2655,7 +2655,7 @@ export default function PaymentScreen({
                 <input
                   type="text"
                   placeholder="Search by Email, ID, Ref No, or Name..."
-                  value={searchQuery}
+                  value={searchQuery || ""}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-10 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all font-mono"
                 />

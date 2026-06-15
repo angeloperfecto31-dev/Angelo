@@ -1421,7 +1421,7 @@ export default function LoadSchedule({
                               step="0.1"
                               disabled={!isAdmin}
                               className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
-                              value={entry.v115}
+                              value={entry.v115 || 0}
                               onChange={async (e) => {
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
@@ -1437,7 +1437,7 @@ export default function LoadSchedule({
                               step="0.1"
                               disabled={!isAdmin}
                               className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
-                              value={entry.v200}
+                              value={entry.v200 || 0}
                               onChange={async (e) => {
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
@@ -1453,7 +1453,7 @@ export default function LoadSchedule({
                               step="0.1"
                               disabled={!isAdmin}
                               className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
-                              value={entry.v208}
+                              value={entry.v208 || 0}
                               onChange={async (e) => {
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
@@ -1469,7 +1469,7 @@ export default function LoadSchedule({
                               step="0.1"
                               disabled={!isAdmin}
                               className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
-                              value={entry.v230}
+                              value={entry.v230 || 0}
                               onChange={async (e) => {
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
@@ -1485,7 +1485,7 @@ export default function LoadSchedule({
                               step="0.1"
                               disabled={!isAdmin}
                               className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
-                              value={entry.v460}
+                              value={entry.v460 || 0}
                               onChange={async (e) => {
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
@@ -1501,7 +1501,7 @@ export default function LoadSchedule({
                               step="0.1"
                               disabled={!isAdmin}
                               className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
-                              value={entry.v575}
+                              value={entry.v575 || 0}
                               onChange={async (e) => {
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
@@ -2247,7 +2247,7 @@ export default function LoadSchedule({
                               >
                                 <input
                                   className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none"
-                                  value={sl.description}
+                                  value={sl.description || ""}
                                   onChange={(e) => {
                                     const newSl = [...(c.subLoads || [])];
                                     newSl[slIndex] = {
@@ -2282,7 +2282,7 @@ export default function LoadSchedule({
                             <div className="flex items-center min-w-0">
                               <input
                                 className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none"
-                                value={c.description}
+                                value={c.description || ""}
                                 onChange={(e) =>
                                   updateCircuit(c.id, {
                                     description: e.target.value,
@@ -2357,7 +2357,7 @@ export default function LoadSchedule({
                           type="number"
                           readOnly
                           className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-400 dark:text-slate-500 font-bold`}
-                          value={c.wattage}
+                          value={c.wattage || 0}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               wattage: parseInt(e.target.value) || 0,
@@ -2371,7 +2371,7 @@ export default function LoadSchedule({
                               key={sl.id}
                               type="number"
                               className="w-16 bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none"
-                              value={sl.wattage}
+                              value={sl.wattage || 0}
                               onChange={(e) => {
                                 const newSl = [...(c.subLoads || [])];
                                 newSl[slIndex] = {
@@ -2391,7 +2391,7 @@ export default function LoadSchedule({
                           type="number"
                           readOnly={c.loadType === LoadType.MOTOR && !!c.motorHP}
                           className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none ${c.loadType === LoadType.MOTOR && !!c.motorHP ? "text-slate-400 dark:text-slate-500 font-bold" : ""}`}
-                          value={c.wattage}
+                          value={c.wattage || 0}
                           title={c.loadType === LoadType.MOTOR && !!c.motorHP ? "Calculated automatically from FLC" : ""}
                           onChange={(e) =>
                             updateCircuit(c.id, {
@@ -2409,7 +2409,7 @@ export default function LoadSchedule({
                           type="number"
                           readOnly
                           className={`w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-400 dark:text-slate-500 font-bold`}
-                          value={c.quantity}
+                          value={c.quantity || 0}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               quantity: parseInt(e.target.value) || 0,
@@ -2426,7 +2426,7 @@ export default function LoadSchedule({
                               <input
                                 type="number"
                                 className="w-12 bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none"
-                                value={sl.quantity}
+                                value={sl.quantity || 0}
                                 onChange={(e) => {
                                   const newSl = [...(c.subLoads || [])];
                                   newSl[slIndex] = {
@@ -2468,7 +2468,7 @@ export default function LoadSchedule({
                         <input
                           type="number"
                           className="w-12 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none"
-                          value={c.quantity}
+                          value={c.quantity || 0}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               quantity: parseInt(e.target.value) || 0,
@@ -2560,7 +2560,7 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <select
-                          value={c.mcbAT}
+                          value={c.mcbAT || ""}
                           disabled={c.loadType === "SUB"}
                           onChange={(e) =>
                             updateCircuit(c.id, {
@@ -2589,7 +2589,7 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <select
-                          value={c.mcbP}
+                          value={c.mcbP || ""}
                           disabled={c.loadType === "SUB"}
                           onChange={(e) =>
                             updateCircuit(c.id, {
@@ -2618,7 +2618,7 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <select
-                          value={c.mcbType}
+                          value={c.mcbType || ""}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbType: e.target.value as MCBType,
