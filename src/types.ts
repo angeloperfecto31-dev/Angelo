@@ -56,6 +56,8 @@ export interface Circuit {
   linkedSubPanelId?: string;
   pf?: number;
   subLoads?: SubLoad[];
+  motorHP?: string;
+  motorFLC?: number;
 }
 
 export interface PanelConfig {

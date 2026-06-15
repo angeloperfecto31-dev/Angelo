@@ -33,11 +33,12 @@ import {
 import { auth, db } from '../firebase';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 import { toPng } from 'html-to-image';
-import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition } from '../types';
+import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition, PanelConfig } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
 
 export interface IlluminationCalcProps {
+  panel?: PanelConfig;
   circuits?: Circuit[];
   setCircuits?: React.Dispatch<React.SetStateAction<Circuit[]>>;
   setActiveTab?: (tab: 'schedule' | 'isc' | 'vd' | 'lighting') => void;
@@ -425,7 +426,7 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 
-export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
+export default function IlluminationCalc({ panel, circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
   // Synchronized custom imported fixtures state
   const [importedFixtures, setImportedFixtures] = useState<any[]>([]);
 
@@ -1484,6 +1485,8 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       ? `LIGHTING: COMBINED DESIGN (${params.activeFixtures?.length} Types) - ${lpdLimitInfo.roomName}`
       : `LIGHTING: ${activeFixture.lightType} - ${lpdLimitInfo.roomName}`;
 
+    const targetVoltage = panel?.voltage || 230;
+
     const newCircuit: Circuit = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
@@ -1491,9 +1494,9 @@ export default function IlluminationCalc({ circuits, setCircuits, setActiveTab, 
       wattage: isCombined ? Math.round(totalVA / totalQty) : activeFixture.wattage,
       quantity: totalQty,
       loadVA: totalVA,
-      voltage: 230,
+      voltage: targetVoltage,
       phases: ['R'],
-      loadA: totalVA / 230,
+      loadA: Number((totalVA / targetVoltage).toFixed(2)),
       mcbAT: 15,
       mcbAF: 50,
       mcbP: 1,

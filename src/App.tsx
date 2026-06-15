@@ -239,6 +239,61 @@ export default function App() {
     });
   }, [illumParams, setCircuits]);
 
+  // Backward sync: Load Schedule Circuits -> Illumination Saved Rooms
+  useEffect(() => {
+    if (!circuits || !illumParams || !illumParams.savedRooms) return;
+
+    let savedRoomsChanged = false;
+
+    const nextSavedRooms = illumParams.savedRooms.map((room) => {
+      // Find matching lighting circuit
+      const matchingCircuit = circuits.find(
+        (c) => c.loadType === LoadType.LIGHTING && c.circuitNo === room.circuitNo
+      );
+
+      if (matchingCircuit) {
+        const fixWattage = matchingCircuit.wattage || 15;
+        const totalVA = matchingCircuit.loadVA || (fixWattage * matchingCircuit.quantity);
+        const fixturesCount = matchingCircuit.quantity || 1;
+
+        // Try extracting roomName if description has "LIGHTING: <type> - <name>"
+        let roomName = room.roomName;
+        const desc = matchingCircuit.description || "";
+        if (desc.includes(" - ")) {
+          const parts = desc.split(" - ");
+          if (parts.length > 1) {
+            roomName = parts[parts.length - 1].trim();
+          }
+        }
+
+        if (
+          room.fixturesCount !== fixturesCount ||
+          room.fixtureWattage !== fixWattage ||
+          room.totalWattage !== totalVA ||
+          room.roomName !== roomName
+        ) {
+          savedRoomsChanged = true;
+          return {
+            ...room,
+            fixturesCount,
+            fixtureWattage: fixWattage,
+            totalWattage: totalVA,
+            totalLumens: (room.fixtureLumens || 1000) * fixturesCount,
+            roomName,
+          };
+        }
+      }
+      return room;
+    });
+
+    if (savedRoomsChanged) {
+      setIllumParams((prev) => ({
+        ...prev,
+        savedRooms: nextSavedRooms,
+      }));
+    }
+  }, [circuits]);
+
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
     {},
   );
@@ -2281,6 +2336,7 @@ export default function App() {
                         iscParams={iscParams}
                         isPremium={userPlan === "premium" || isAdmin}
                         onRequestUpgrade={() => setShowUpgrade(true)}
+                        isAdmin={isAdmin}
                       />
                     )}
 
@@ -2342,6 +2398,7 @@ export default function App() {
                             iscParams={iscParams}
                             isPremium={userPlan === "premium" || isAdmin}
                             onRequestUpgrade={() => setShowUpgrade(true)}
+                            isAdmin={isAdmin}
                           />
                         </React.Fragment>
                       );
@@ -2455,6 +2512,7 @@ export default function App() {
                   className="w-full flex justify-center"
                 >
                   <IlluminationCalc
+                    panel={panel}
                     circuits={circuits}
                     setCircuits={setCircuits}
                     setActiveTab={setActiveTab}

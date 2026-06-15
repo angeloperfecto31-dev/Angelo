@@ -160,14 +160,21 @@ export default function VoltageDropCalc({
       } else {
         const pList = prev || [];
         for (let i = 0; i < updatedCalcs.length; i++) {
-          const isLoadADiff = updatedCalcs[i].loadA !== pList[i].loadA && !(Number.isNaN(updatedCalcs[i].loadA) && Number.isNaN(pList[i].loadA));
-          const isLengthDiff = updatedCalcs[i].length !== pList[i].length && !(Number.isNaN(updatedCalcs[i].length) && Number.isNaN(pList[i].length));
+          const u = updatedCalcs[i];
+          const p = pList[i];
+          const isLoadADiff = u.loadA !== p.loadA && !(Number.isNaN(u.loadA) && Number.isNaN(p.loadA));
+          const isLengthDiff = u.length !== p.length && !(Number.isNaN(u.length) && Number.isNaN(p.length));
+          const isVoltageDiff = u.voltage !== p.voltage && !(Number.isNaN(u.voltage) && Number.isNaN(p.voltage));
 
           if (
-            updatedCalcs[i].id !== pList[i].id ||
+            u.id !== p.id ||
+            u.source !== p.source ||
+            u.name !== p.name ||
             isLoadADiff ||
-            updatedCalcs[i].wireSize !== pList[i].wireSize ||
-            isLengthDiff
+            isLengthDiff ||
+            u.wireSize !== p.wireSize ||
+            isVoltageDiff ||
+            u.systemType !== p.systemType
           ) {
             changed = true;
             break;

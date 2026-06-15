@@ -27,16 +27,26 @@ export const WIRE_AMPACITY_TABLE = [
 export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 160, 175, 200, 225, 250, 300, 400, 450, 500, 600, 700, 800, 1000];
 
 export const SYSTEM_VOLTAGES = {
-  '230V, 1PH, 2W': 230,
+  '115V, 3PH, 3W': 115,
+  '200V, 3PH, 3W': 200,
+  '208V, 3PH, 3W': 208,
   '230V, 3PH, 3W': 230,
   '380V, 3PH, 3W': 380,
   '400V, 3PH, 3W': 400,
   '440V, 3PH, 3W': 440,
+  '460V, 3PH, 3W': 460,
   '480V, 3PH, 3W': 480,
+  '575V, 3PH, 3W': 575,
+  '230V, 1PH, 2W': 230,
+  '115V/66V, 3PH, 4W': 115,
+  '200V/115V, 3PH, 4W': 200,
+  '208V/120V, 3PH, 4W': 208,
   '380V/230V, 3PH, 4W': 380,
   '400V/230V, 3PH, 4W': 400,
   '440V/230V, 3PH, 4W': 440,
+  '460V/265V, 3PH, 4W': 460,
   '480V/230V, 3PH, 4W': 480,
+  '575V/330V, 3PH, 4W': 575,
 };
 
 export const INITIAL_SHORT_CIRCUIT_PARAMS: ShortCircuitParams = {

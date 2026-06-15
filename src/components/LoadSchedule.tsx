@@ -32,39 +32,18 @@ import {
 } from "../constants";
 import { SingleLineDiagram } from "./SingleLineDiagram";
 import LatexRenderer from "./LatexRenderer";
-import { calculateCircuitValues } from "../utils/computeEngine";
-
-const getPanelSystemVoltageFallback = (
-  system: string,
-  is3Phase: boolean,
-  connectionType?: string,
-): number => {
-  if (system === "380V/230V, 3PH, 4W") {
-    return is3Phase ? 380 : connectionType === "Line-to-Line" ? 380 : 230;
-  }
-  if (system === "400V/230V, 3PH, 4W") {
-    return is3Phase ? 400 : connectionType === "Line-to-Line" ? 400 : 230;
-  }
-  if (system === "440V/230V, 3PH, 4W") {
-    return is3Phase ? 440 : connectionType === "Line-to-Line" ? 440 : 230;
-  }
-  if (system === "480V/230V, 3PH, 4W") {
-    return is3Phase ? 480 : connectionType === "Line-to-Line" ? 480 : 230;
-  }
-  if (system === "380V, 3PH, 3W") {
-    return 380;
-  }
-  if (system === "400V, 3PH, 3W") {
-    return 400;
-  }
-  if (system === "440V, 3PH, 3W") {
-    return 440;
-  }
-  if (system === "480V, 3PH, 3W") {
-    return 480;
-  }
-  return 230;
-};
+import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription } from "../utils/computeEngine";
+import {
+  getThreePhaseFLCDatabaseList,
+  saveThreePhaseFLCEntry,
+  deleteThreePhaseFLCEntry,
+  seedThreePhaseFLCBackup,
+  INITIAL_THREE_PHASE_FLC_DATA,
+  SINGLE_PHASE_FLC_TABLE,
+  parseHpToNumber,
+  ThreePhaseFLCEntry,
+  getThreePhaseFLCColumn
+} from "../utils/motorFLCHelper";
 
 export const INITIAL_CIRCUITS: Circuit[] = [
   {
@@ -406,11 +385,89 @@ export default function LoadSchedule({
   iscParams,
   isPremium = true,
   onRequestUpgrade,
-}: LoadScheduleProps) {
+  isAdmin = false,
+}: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
   const [selectedPresets, setSelectedPresets] = useState<any[]>([]);
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
+
+  // FLC Library States
+  const [dbThreePhaseFLC, setDbThreePhaseFLC] = useState<ThreePhaseFLCEntry[]>([]);
+  const [loadingFLC, setLoadingFLC] = useState<boolean>(false);
+  const [showFLCAdminPanel, setShowFLCAdminPanel] = useState<boolean>(false);
+
+  // FLC HP list union helper
+  const hpOptions = useMemo(() => {
+    const defaultHps = INITIAL_THREE_PHASE_FLC_DATA.map((e) => e.hp);
+    const singlePhaseHps = Object.keys(SINGLE_PHASE_FLC_TABLE);
+    const fetchedHps = dbThreePhaseFLC.map((e) => e.hp);
+    const union = Array.from(new Set([...defaultHps, ...singlePhaseHps, ...fetchedHps]));
+    return union.sort((a, b) => parseHpToNumber(a) - parseHpToNumber(b));
+  }, [dbThreePhaseFLC]);
+
+  const dynamicLoadPresets = useMemo(() => {
+    return LOAD_PRESETS.map((category) => {
+      if (category.category === "Air Conditioning (PEC 2017 Based)") {
+        return {
+          ...category,
+          items: category.items.map((item) => {
+            const hp = extractHorsepowerFromDescription(item.description);
+            if (hp) {
+              const is3PH = panel.system.includes("3PH");
+              let flcVal = 0;
+              if (is3PH) {
+                const colName = getThreePhaseFLCColumn(panel.voltage);
+                const match = dbThreePhaseFLC.find(e => e.hp.trim() === hp.trim()) ||
+                              INITIAL_THREE_PHASE_FLC_DATA.find(e => e.hp.trim() === hp.trim());
+                if (match) {
+                  flcVal = match[colName] ?? 0;
+                }
+              } else {
+                flcVal = SINGLE_PHASE_FLC_TABLE[hp] ?? 0;
+              }
+
+              if (flcVal > 0) {
+                const updatedLabel = `${flcVal.toFixed(1)}A FLC @ ${panel.voltage}V (${is3PH ? "3Ø" : "1Ø"})`;
+                const updatedWattage = is3PH
+                  ? Math.round(flcVal * panel.voltage * 1.732)
+                  : Math.round(flcVal * panel.voltage);
+                return {
+                  ...item,
+                  label: updatedLabel,
+                  wattage: updatedWattage,
+                };
+              }
+            }
+            return item;
+          }),
+        };
+      }
+      return category;
+    });
+  }, [dbThreePhaseFLC, panel.system, panel.voltage]);
+
+  // Load FLC values from Firestore
+  useEffect(() => {
+    let active = true;
+    const fetchFLC = async () => {
+      setLoadingFLC(true);
+      try {
+        const data = await getThreePhaseFLCDatabaseList();
+        if (active) {
+          setDbThreePhaseFLC(data);
+        }
+      } catch (err) {
+        console.error("Error loading FLC:", err);
+      } finally {
+        if (active) setLoadingFLC(false);
+      }
+    };
+    fetchFLC();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
   const THHN_WIRE_AREAS: Record<number, number> = {
@@ -632,6 +689,7 @@ export default function LoadSchedule({
     panel.connectionType,
     panel.voltage,
     availableSubPanels,
+    dbThreePhaseFLC,
     setCircuits,
   ]);
 
@@ -677,7 +735,7 @@ export default function LoadSchedule({
       wattage: item.wattage,
       quantity: 1,
       voltage: panel.voltage,
-      phases: ["R"],
+      phases: ((item.loadType === LoadType.MOTOR || item.loadType === LoadType.AIR_CON) && panel.system.includes("3PH")) ? ["R", "Y", "B"] : ["R"],
       loadType: item.loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
       wireType: "THHN",
@@ -711,7 +769,7 @@ export default function LoadSchedule({
       wattage: totalVA,
       quantity: 1,
       voltage: panel.voltage,
-      phases: ["R"],
+      phases: ((selectedPresets[0].loadType === LoadType.MOTOR || selectedPresets[0].loadType === LoadType.AIR_CON) && panel.system.includes("3PH")) ? ["R", "Y", "B"] : ["R"],
       loadType: selectedPresets[0].loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
       wireType: "THHN",
@@ -739,7 +797,8 @@ export default function LoadSchedule({
             "loadType" in updates ||
             "pf" in updates ||
             "linkedSubPanelId" in updates ||
-            "subLoads" in updates
+            "subLoads" in updates ||
+            "motorHP" in updates
           ) {
             return { ...merged, ...calculateCircuit(merged) } as Circuit;
           }
@@ -1161,6 +1220,286 @@ export default function LoadSchedule({
 
   return (
     <div className="w-full max-w-full space-y-6">
+      {/* Three-Phase Motor FLC Library Manager Panel */}
+      {showFLCAdminPanel && (
+        <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 rounded-2xl shadow-sm p-6 space-y-4 no-print transition-all">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                Three-Phase Motor FLC Library (Table 4.30.14.4)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Manage, customize, and add motor Full-Load Current ratings. Overrides are instantly applied to all sizing calculations.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (confirm("Are you sure you want to reset the FLC library to standard PEC 2017 Table 4.30.14.4 values? This will overwrite your custom modifications.")) {
+                    setLoadingFLC(true);
+                    try {
+                      await seedThreePhaseFLCBackup();
+                      const freshData = await getThreePhaseFLCDatabaseList();
+                      setDbThreePhaseFLC(freshData);
+                      alert("FLC Library restored to defaults!");
+                    } catch (e) {
+                      console.error(e);
+                      alert("Failed to reset library.");
+                    } finally {
+                      setLoadingFLC(false);
+                    }
+                  }
+                }}
+                className="px-2.5 py-1 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-950/50 rounded-lg transition-colors cursor-pointer"
+              >
+                Reset to Standard PEC
+              </button>
+              <button
+                onClick={() => setShowFLCAdminPanel(false)}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+          </div>
+
+          {loadingFLC && (
+            <div className="flex items-center justify-center py-10">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 font-sans">Syncing with Firestore Library...</span>
+              </div>
+            </div>
+          )}
+
+          {!loadingFLC && (
+            <div className="space-y-4 font-sans">
+              {/* Add Entry Card */}
+              {isAdmin && (
+                <div className="bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-950/30 rounded-xl p-4 space-y-3">
+                  <h4 className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400 tracking-wider">
+                    + Add New Horsepower / FLC Rating
+                  </h4>
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.currentTarget);
+                      const hp = formData.get("hp")?.toString().trim();
+                      if (!hp) return;
+                      const entry: any = {
+                        hp,
+                        v115: parseFloat(formData.get("v115")?.toString() || "0") || 0,
+                        v200: parseFloat(formData.get("v200")?.toString() || "0") || 0,
+                        v208: parseFloat(formData.get("v208")?.toString() || "0") || 0,
+                        v230: parseFloat(formData.get("v230")?.toString() || "0") || 0,
+                        v460: parseFloat(formData.get("v460")?.toString() || "0") || 0,
+                        v575: parseFloat(formData.get("v575")?.toString() || "0") || 0,
+                      };
+                      setLoadingFLC(true);
+                      try {
+                        await saveThreePhaseFLCEntry(entry);
+                        const fresh = await getThreePhaseFLCDatabaseList();
+                        setDbThreePhaseFLC(fresh);
+                        e.currentTarget.reset();
+                      } catch (err) {
+                        alert("Error saving entry: " + err);
+                      } finally {
+                        setLoadingFLC(false);
+                      }
+                    }}
+                    className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 items-end"
+                  >
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">HP (e.g., "1.25" or "10")</label>
+                      <input name="hp" required placeholder="HP" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">115V (A)</label>
+                      <input name="v115" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">200V (A)</label>
+                      <input name="v200" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">208V (A)</label>
+                      <input name="v208" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">230V (A)</label>
+                      <input name="v230" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">460V (A)</label>
+                      <input name="v460" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">575V (A)</label>
+                      <input name="v575" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <button type="submit" className="w-full py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer transition-colors shadow-xs">
+                        Add Entry
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Data Table */}
+              <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl max-h-[350px] overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2.5">Horsepower (HP)</th>
+                      <th className="px-3 py-2.5">115V</th>
+                      <th className="px-3 py-2.5">200V</th>
+                      <th className="px-3 py-2.5">208V</th>
+                      <th className="px-3 py-2.5">230V</th>
+                      <th className="px-3 py-2.5">460V</th>
+                      <th className="px-3 py-2.5">575V</th>
+                      {isAdmin && <th className="px-4 py-2.5 text-right">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                    {(dbThreePhaseFLC.length > 0 ? dbThreePhaseFLC : INITIAL_THREE_PHASE_FLC_DATA)
+                      .slice()
+                      .sort((a, b) => parseHpToNumber(a.hp) - parseHpToNumber(b.hp))
+                      .map((entry) => (
+                        <tr key={entry.hp} className="hover:bg-slate-50/55 dark:hover:bg-slate-800/30 transition-colors">
+                          <td className="px-4 py-2 font-black text-indigo-600 dark:text-indigo-400">{entry.hp} HP</td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              disabled={!isAdmin}
+                              className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
+                              value={entry.v115}
+                              onChange={async (e) => {
+                                if (!isAdmin) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...entry, v115: val };
+                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                await saveThreePhaseFLCEntry(updated);
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              disabled={!isAdmin}
+                              className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
+                              value={entry.v200}
+                              onChange={async (e) => {
+                                if (!isAdmin) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...entry, v200: val };
+                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                await saveThreePhaseFLCEntry(updated);
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              disabled={!isAdmin}
+                              className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
+                              value={entry.v208}
+                              onChange={async (e) => {
+                                if (!isAdmin) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...entry, v208: val };
+                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                await saveThreePhaseFLCEntry(updated);
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              disabled={!isAdmin}
+                              className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
+                              value={entry.v230}
+                              onChange={async (e) => {
+                                if (!isAdmin) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...entry, v230: val };
+                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                await saveThreePhaseFLCEntry(updated);
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              disabled={!isAdmin}
+                              className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
+                              value={entry.v460}
+                              onChange={async (e) => {
+                                if (!isAdmin) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...entry, v460: val };
+                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                await saveThreePhaseFLCEntry(updated);
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="number"
+                              step="0.1"
+                              disabled={!isAdmin}
+                              className="w-16 bg-transparent disabled:opacity-90 font-mono focus:outline-none focus:border-b focus:border-indigo-500"
+                              value={entry.v575}
+                              onChange={async (e) => {
+                                if (!isAdmin) return;
+                                const val = parseFloat(e.target.value) || 0;
+                                const updated = { ...entry, v575: val };
+                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                await saveThreePhaseFLCEntry(updated);
+                              }}
+                            />
+                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm(`Remove custom horsepower entry "${entry.hp} HP" from the library?`)) {
+                                    setLoadingFLC(true);
+                                    try {
+                                      await deleteThreePhaseFLCEntry(entry.hp);
+                                      const fresh = await getThreePhaseFLCDatabaseList();
+                                      setDbThreePhaseFLC(fresh);
+                                    } catch (err) {
+                                      alert("Error deleting entry: " + err);
+                                    } finally {
+                                      setLoadingFLC(false);
+                                    }
+                                  }
+                                }}
+                                className="text-red-500 hover:text-red-700 p-1 rounded transition-colors"
+                                title="Delete Custom Rating"
+                              >
+                                <Trash2 className="w-4 h-4 cursor-pointer" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 overflow-hidden no-print">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
@@ -1172,6 +1511,13 @@ export default function LoadSchedule({
             </h2>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFLCAdminPanel(!showFLCAdminPanel)}
+              className="px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded-lg flex items-center gap-1.5 transition-colors border border-emerald-200 dark:border-emerald-800 cursor-pointer shadow-2xs mr-2"
+              title="Open Three-Phase Motor Full-Load Current Library (Table 4.30.14.4)"
+            >
+              <span>{showFLCAdminPanel ? "Hide FLC Library" : "Manage FLC Library"}</span>
+            </button>
             {isSubPanel && onDuplicateSubPanel && (
               <button
                 onClick={onDuplicateSubPanel}
@@ -1312,12 +1658,25 @@ export default function LoadSchedule({
               value={panel.system}
               onChange={(e) => {
                 const newSystem = e.target.value as any;
+                const is3PH = newSystem.includes("3PH");
                 setPanel({
                   ...panel,
                   system: newSystem,
                   voltage:
                     SYSTEM_VOLTAGES[newSystem as keyof typeof SYSTEM_VOLTAGES],
                 });
+                setCircuits((prevCircuits) =>
+                  prevCircuits.map((cir) => {
+                    const isAcuOrMotor = cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON;
+                    if (isAcuOrMotor) {
+                      return {
+                        ...cir,
+                        phases: is3PH ? ["R", "Y", "B"] : ["R"],
+                      };
+                    }
+                    return cir;
+                  })
+                );
               }}
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
@@ -1784,10 +2143,14 @@ export default function LoadSchedule({
                               fallbackSubId =
                                 availableSubPanels[targetIndex].id;
                             }
-                            updateCircuit(c.id, {
+                            const updates: Partial<Circuit> = {
                               loadType: nextType,
                               linkedSubPanelId: fallbackSubId,
-                            });
+                            };
+                            if (nextType === LoadType.MOTOR && panel.system.includes("3PH")) {
+                              updates.phases = ["R", "Y", "B"];
+                            }
+                            updateCircuit(c.id, updates);
                           }}
                           className="p-0.5 bg-slate-100 dark:bg-slate-800 border-0 rounded uppercase font-black no-print shrink-0 text-slate-800 dark:text-slate-100"
                           style={{ fontSize: tableFontSize - 3 }}
@@ -1869,41 +2232,72 @@ export default function LoadSchedule({
                             </button>
                           </div>
                         ) : (
-                          <div className="flex-1 flex items-center min-w-0">
-                            <input
-                              className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none"
-                              value={c.description}
-                              onChange={(e) =>
-                                updateCircuit(c.id, {
-                                  description: e.target.value,
-                                })
-                              }
-                            />
-                            {!isSpace && (
-                              <button
-                                onClick={() => {
+                          <div className="flex-1 flex flex-col min-w-0">
+                            <div className="flex items-center min-w-0">
+                              <input
+                                className="flex-1 bg-transparent font-medium min-w-0 text-slate-800 dark:text-slate-100 focus:outline-none"
+                                value={c.description}
+                                onChange={(e) =>
                                   updateCircuit(c.id, {
-                                    subLoads: [
-                                      {
-                                        id: crypto.randomUUID(),
-                                        description: c.description,
-                                        wattage: c.wattage,
-                                        quantity: c.quantity,
-                                      },
-                                      {
-                                        id: crypto.randomUUID(),
-                                        description: "New Load",
-                                        wattage: 100,
-                                        quantity: 1,
-                                      },
-                                    ],
-                                  });
-                                }}
-                                className="text-indigo-400 hover:text-indigo-600 px-1 ml-1 text-xs uppercase font-bold no-print"
-                                title="Convert to multi-load circuit"
-                              >
-                                + Adds
-                              </button>
+                                    description: e.target.value,
+                                  })
+                                }
+                              />
+                              {!isSpace && (
+                                <button
+                                  onClick={() => {
+                                    updateCircuit(c.id, {
+                                      subLoads: [
+                                        {
+                                          id: crypto.randomUUID(),
+                                          description: c.description,
+                                          wattage: c.wattage,
+                                          quantity: c.quantity,
+                                        },
+                                        {
+                                          id: crypto.randomUUID(),
+                                          description: "New Load",
+                                          wattage: 100,
+                                          quantity: 1,
+                                        },
+                                      ],
+                                    });
+                                  }}
+                                  className="text-indigo-400 hover:text-indigo-600 px-1 ml-1 text-xs uppercase font-bold no-print"
+                                  title="Convert to multi-load circuit"
+                                >
+                                  + Adds
+                                </button>
+                              )}
+                            </div>
+                            {c.loadType === LoadType.MOTOR && (
+                              <div className="flex items-center gap-2 mt-1.5 no-print" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">HP:</span>
+                                <select
+                                  value={c.motorHP || ""}
+                                  onChange={(e) => {
+                                    updateCircuit(c.id, { motorHP: e.target.value });
+                                  }}
+                                  className="p-1 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-bold text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer"
+                                >
+                                  <option value="" className="dark:bg-slate-900 dark:text-slate-100">-- Select HP --</option>
+                                  {hpOptions.map((hpVal) => (
+                                    <option key={hpVal} value={hpVal} className="dark:bg-slate-900 dark:text-slate-100">
+                                      {hpVal} HP
+                                    </option>
+                                  ))}
+                                </select>
+                                {c.motorFLC && (
+                                  <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-950/50">
+                                    {c.motorFLC}A FLC
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {c.loadType === LoadType.MOTOR && c.motorHP && (
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold block mt-0.5">
+                                ({c.motorHP} HP Motor, FLC: {c.motorFLC || 0}A)
+                              </span>
                             )}
                           </div>
                         )}
@@ -1949,8 +2343,10 @@ export default function LoadSchedule({
                       ) : (
                         <input
                           type="number"
-                          className="w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none"
+                          readOnly={c.loadType === LoadType.MOTOR && !!c.motorHP}
+                          className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none ${c.loadType === LoadType.MOTOR && !!c.motorHP ? "text-slate-400 dark:text-slate-500 font-bold" : ""}`}
                           value={c.wattage}
+                          title={c.loadType === LoadType.MOTOR && !!c.motorHP ? "Calculated automatically from FLC" : ""}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               wattage: parseInt(e.target.value) || 0,
@@ -2806,7 +3202,7 @@ I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times
             </div>
 
             <div className="p-6 overflow-y-auto w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-              {LOAD_PRESETS.map((category, catIdx) => (
+              {dynamicLoadPresets.map((category, catIdx) => (
                 <div
                   key={catIdx}
                   className="bg-slate-50 rounded-xl p-5 border border-slate-200"

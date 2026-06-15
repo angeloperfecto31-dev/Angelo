@@ -90,6 +90,19 @@ service cloud.firestore {
         && (!("importedAt" in data) || data.importedAt is string);
     }
 
+    function isValidMotorFLC(data) {
+      return data.keys().hasAll(["hp"])
+        && data.hp is string && data.hp.size() <= 128
+        && (!("v115" in data) || data.v115 == null || data.v115 is int || data.v115 is float)
+        && (!("v200" in data) || data.v200 == null || data.v200 is int || data.v200 is float)
+        && (!("v208" in data) || data.v208 == null || data.v208 is int || data.v208 is float)
+        && (!("v230" in data) || data.v230 == null || data.v230 is int || data.v230 is float)
+        && (!("v400" in data) || data.v400 == null || data.v400 is int || data.v400 is float)
+        && (!("v460" in data) || data.v460 == null || data.v460 is int || data.v460 is float)
+        && (!("v575" in data) || data.v575 == null || data.v575 is int || data.v575 is float)
+        && (!("v2300" in data) || data.v2300 == null || data.v2300 is int || data.v2300 is float);
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -160,6 +173,13 @@ service cloud.firestore {
       // Only administrators can manipulate configurations
       allow create, update: if isAdmin() && isValidId(settingId) && isValidSettings(incoming());
       allow delete: if isAdmin() && isValidId(settingId);
+    }
+
+    // 5. Motor FLC Library Collection (Dynamic Table 4.30.14.4)
+    match /motor_flc_library/{entryId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(entryId) && isValidMotorFLC(incoming());
+      allow delete: if isAdmin() && isValidId(entryId);
     }
   }
 }

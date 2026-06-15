@@ -1,5 +1,6 @@
 import { PanelConfig, Circuit, LoadType } from "../types";
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from "../constants";
+import { getMotorFLC } from "./motorFLCHelper";
 
 // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
 const THHN_WIRE_AREAS: Record<number, number> = {
@@ -125,47 +126,40 @@ export const getConduitSizeForWiresLocal = (
 };
 
 const getSystemVoltage = (system: string): number => {
-  if (system === "380V/230V, 3PH, 4W") return 380;
-  if (system === "380V, 3PH, 3W") return 380;
-  if (system === "400V, 3PH, 3W") return 400;
-  if (system === "440V, 3PH, 3W") return 440;
-  if (system === "480V, 3PH, 3W") return 480;
-  if (system === "400V/230V, 3PH, 4W") return 400;
-  if (system === "440V/230V, 3PH, 4W") return 440;
-  if (system === "480V/230V, 3PH, 4W") return 480;
+  const match = system.match(/^(\d+)V/);
+  if (match) return parseInt(match[1]);
   return 230;
 };
+
+export function extractHorsepowerFromDescription(desc: string): string | null {
+  if (!desc) return null;
+  const match = desc.match(/(\d+(?:\.\d+)?|\d+\s+1\/2|\d+\s+3\/4|\d+\/\d+)\s*HP/i);
+  if (match) {
+    const hpVal = match[1].trim();
+    if (hpVal === "0.5") return "1/2";
+    if (hpVal === "0.75") return "3/4";
+    if (hpVal === "1.0") return "1";
+    if (hpVal === "1.5") return "1 1/2";
+    if (hpVal === "2.0") return "2";
+    if (hpVal === "3.0") return "3";
+    if (hpVal === "5.0") return "5";
+    return hpVal;
+  }
+  return null;
+}
 
 export const getPanelSystemVoltageFallback = (
   system: string,
   is3Phase: boolean,
   connectionType?: string,
 ): number => {
-  if (system === "380V/230V, 3PH, 4W") {
-    return is3Phase ? 380 : connectionType === "Line-to-Line" ? 380 : 230;
-  }
-  if (system === "400V/230V, 3PH, 4W") {
-    return is3Phase ? 400 : connectionType === "Line-to-Line" ? 400 : 230;
-  }
-  if (system === "440V/230V, 3PH, 4W") {
-    return is3Phase ? 440 : connectionType === "Line-to-Line" ? 440 : 230;
-  }
-  if (system === "480V/230V, 3PH, 4W") {
-    return is3Phase ? 480 : connectionType === "Line-to-Line" ? 480 : 230;
-  }
-  if (system === "380V, 3PH, 3W") {
-    return 380;
-  }
-  if (system === "400V, 3PH, 3W") {
-    return 400;
-  }
-  if (system === "440V, 3PH, 3W") {
-    return 440;
-  }
-  if (system === "480V, 3PH, 3W") {
-    return 480;
-  }
-  return 230;
+  const lineMatch = system.match(/^(\d+)/);
+  const neutralMatch = system.match(/\/(\d+)/);
+  const vLine = lineMatch ? parseInt(lineMatch[1]) : 230;
+  const vNeutral = neutralMatch ? parseInt(neutralMatch[1]) : 230;
+
+  if (is3Phase) return vLine;
+  return connectionType === "Line-to-Line" ? vLine : vNeutral;
 };
 
 export const calculateCircuitValues = (
@@ -279,38 +273,32 @@ export const calculateCircuitValues = (
   }
 
   const pf = 1.0;
-  let defaultV = 230;
   const is3PhaseLoad = c.phases && c.phases.length === 3;
-
-  if (panel.system === "230V, 1PH, 2W") defaultV = 230;
-  else if (panel.system === "230V, 3PH, 3W") defaultV = 230;
-  else if (panel.system === "380V/230V, 3PH, 4W") {
-    if (is3PhaseLoad) defaultV = 380;
-    else defaultV = panel.connectionType === "Line-to-Line" ? 380 : 230;
-  }
-  else if (panel.system === "380V, 3PH, 3W") defaultV = 380;
-  else if (panel.system === "400V, 3PH, 3W") defaultV = 400;
-  else if (panel.system === "440V, 3PH, 3W") defaultV = 440;
-  else if (panel.system === "480V, 3PH, 3W") defaultV = 480;
-  else if (panel.system === "400V/230V, 3PH, 4W") {
-    if (is3PhaseLoad) defaultV = 400;
-    else defaultV = panel.connectionType === "Line-to-Line" ? 400 : 230;
-  } else if (panel.system === "440V/230V, 3PH, 4W") {
-    if (is3PhaseLoad) defaultV = 440;
-    else defaultV = panel.connectionType === "Line-to-Line" ? 440 : 230;
-  } else if (panel.system === "480V/230V, 3PH, 4W") {
-    if (is3PhaseLoad) defaultV = 480;
-    else defaultV = panel.connectionType === "Line-to-Line" ? 480 : 230;
-  }
+  const defaultV = getPanelSystemVoltageFallback(panel.system, is3PhaseLoad, panel.connectionType);
 
   const v = defaultV;
   c.voltage = v;
 
   let loadA = 0;
-  if (panel.system.includes("3PH") && is3PhaseLoad) {
-    loadA = va / (v * 1.732);
+  const hpFromDesc = extractHorsepowerFromDescription(c.description || "");
+  const effectiveHP = c.motorHP || hpFromDesc;
+
+  if ((c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) && effectiveHP) {
+    const is3P = panel.system.includes("3PH") && is3PhaseLoad;
+    const fVal = getMotorFLC(effectiveHP, v, is3P);
+    c.motorHP = effectiveHP || undefined;
+    c.motorFLC = fVal;
+    loadA = fVal * qty;
+    va = Math.round(is3P ? loadA * v * 1.732 : loadA * v);
+    w = Math.round(is3P ? fVal * v * 1.732 : fVal * v);
+    c.wattage = w;
+    c.loadVA = va;
   } else {
-    loadA = va / v;
+    if (panel.system.includes("3PH") && is3PhaseLoad) {
+      loadA = va / (v * 1.732);
+    } else {
+      loadA = va / v;
+    }
   }
 
   const isContinuous =
@@ -352,11 +340,13 @@ export const calculateCircuitValues = (
       requiredMcbAT =
         under225.length > 0 ? Math.max(15, under225[under225.length - 1]) : 15;
     }
+  } else if (c.loadType === LoadType.SUB_PANEL) {
+    requiredMcbAT = c.mcbAT || 30;
   } else {
     requiredMcbAT = STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 15;
   }
 
-  const mcbAT = Math.max(requiredMcbAT, c.mcbAT || 0);
+  const mcbAT = c.loadType === LoadType.SUB_PANEL ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0);
   const mcbAF =
     mcbAT <= 50 ? 50 : mcbAT <= 100 ? 100 : mcbAT <= 225 ? 225 : 400;
   const mcbKAIC = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;

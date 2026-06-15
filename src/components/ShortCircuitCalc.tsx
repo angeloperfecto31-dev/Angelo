@@ -115,13 +115,39 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
   const [isBWMode, setIsBWMode] = useState(false);
 
   const { motorLoadVA, nonMotorLoadVA } = useMemo(() => {
-    if (!circuits || circuits.length === 0) {
-      return { motorLoadVA: 0, nonMotorLoadVA: 0 };
+    let mVA = 0;
+    let nmVA = 0;
+    
+    // Add main panel circuits
+    if (circuits && circuits.length > 0) {
+      circuits.forEach(c => {
+        const isMotorOrAC = c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON;
+        if (isMotorOrAC) {
+          mVA += c.loadVA || 0;
+        } else {
+          nmVA += c.loadVA || 0;
+        }
+      });
     }
-    const motorLoadVA = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
-    const nonMotorLoadVA = circuits.filter(c => c.loadType !== LoadType.MOTOR && c.loadType !== LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
-    return { motorLoadVA, nonMotorLoadVA };
-  }, [circuits]);
+
+    // Add all sub-panels circuits
+    if (subPanels && subPanels.length > 0) {
+      subPanels.forEach(sp => {
+        if (sp.circuits && sp.circuits.length > 0) {
+          sp.circuits.forEach(c => {
+            const isMotorOrAC = c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON;
+            if (isMotorOrAC) {
+              mVA += c.loadVA || 0;
+            } else {
+              nmVA += c.loadVA || 0;
+            }
+          });
+        }
+      });
+    }
+
+    return { motorLoadVA: mVA, nonMotorLoadVA: nmVA };
+  }, [circuits, subPanels]);
 
   // Calculate nearest standard transformer size based on Load Schedule
   useEffect(() => {

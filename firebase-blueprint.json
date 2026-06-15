@@ -218,6 +218,40 @@
           "description": "ISO timestamp of the last update"
         }
       }
+    },
+    "MotorFLC": {
+      "title": "MotorFLC",
+      "description": "Full-Load Current values for Three-Phase motors",
+      "type": "object",
+      "properties": {
+        "hp": {
+          "type": "string"
+        },
+        "v115": {
+          "type": "number"
+        },
+        "v200": {
+          "type": "number"
+        },
+        "v208": {
+          "type": "number"
+        },
+        "v230": {
+          "type": "number"
+        },
+        "v400": {
+          "type": "number"
+        },
+        "v460": {
+          "type": "number"
+        },
+        "v575": {
+          "type": "number"
+        },
+        "v2300": {
+          "type": "number"
+        }
+      }
     }
   },
   "firestore": {
@@ -236,6 +270,10 @@
     "settings/{settingId}": {
       "schema": "Settings",
       "description": "Global environment settings"
+    },
+    "motor_flc_library/{entryId}": {
+      "schema": "MotorFLC",
+      "description": "Customized or standard Three-Phase motor full load current data library"
     }
   }
 }
