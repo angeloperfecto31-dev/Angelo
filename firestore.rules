@@ -61,7 +61,10 @@ service cloud.firestore {
         && (!("offerTitle" in data) || data.offerTitle == null || data.offerTitle is string)
         && (!("offerExpiry" in data) || data.offerExpiry == null || data.offerExpiry is string)
         && (!("updatedBy" in data) || data.updatedBy == null || data.updatedBy is string)
-        && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
+        && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string)
+        && (!("enableMaribank" in data) || data.enableMaribank == null || data.enableMaribank is bool)
+        && (!("enableGCash" in data) || data.enableGCash == null || data.enableGCash is bool)
+        && (!("enablePayMongo" in data) || data.enablePayMongo == null || data.enablePayMongo is bool);
     }
 
     function isValidProject(data) {
@@ -180,6 +183,12 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isAdmin() && isValidId(entryId) && isValidMotorFLC(incoming());
       allow delete: if isAdmin() && isValidId(entryId);
+    }
+
+    // 6. Admin Activity Logs
+    match /admin_activity_logs/{logId} {
+      allow read, create: if isAdmin();
+      allow update, delete: if false; // Logs are append-only forever
     }
   }
 }

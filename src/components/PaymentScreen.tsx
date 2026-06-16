@@ -10,6 +10,7 @@ import {
   deleteDoc,
   onSnapshot,
   collection,
+  addDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "../utils/firestoreError";
@@ -31,6 +32,7 @@ import {
   ExternalLink,
   Copy,
   ArrowUpRight,
+  ArrowRight,
 } from "lucide-react";
 import axios from "axios";
 
@@ -72,9 +74,9 @@ export default function PaymentScreen({
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Tabs for the customer view: "maribank", or "manual"
-  const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual">(
-    "maribank",
+  // Tabs for the customer view: "maribank", "manual" or "paymongo"
+  const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual" | "paymongo">(
+    "maribank"
   );
 
   // Manual payment inputs
@@ -118,6 +120,9 @@ export default function PaymentScreen({
     basicFeatures: DEFAULT_BASIC_FEATURES,
     premiumFeatures: DEFAULT_PREMIUM_FEATURES,
     upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
+    enableMaribank: true,
+    enableGCash: true,
+    enablePayMongo: true,
   });
 
   // Admin Pricing Input States
@@ -131,6 +136,9 @@ export default function PaymentScreen({
   const [adminBasicFeatures, setAdminBasicFeatures] = useState<string>(DEFAULT_BASIC_FEATURES);
   const [adminPremiumFeatures, setAdminPremiumFeatures] = useState<string>(DEFAULT_PREMIUM_FEATURES);
   const [adminUpgradeFeatures, setAdminUpgradeFeatures] = useState<string>(DEFAULT_UPGRADE_FEATURES);
+  const [adminEnableMaribank, setAdminEnableMaribank] = useState<boolean>(true);
+  const [adminEnableGCash, setAdminEnableGCash] = useState<boolean>(true);
+  const [adminEnablePayMongo, setAdminEnablePayMongo] = useState<boolean>(true);
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
 
@@ -215,6 +223,20 @@ export default function PaymentScreen({
   }, [user.uid, isUpgrade]);
 
   useEffect(() => {
+    // If the currently selected method is disabled, switch to another available method
+    if (paymentMethod === "maribank" && !pricingSettings.enableMaribank) {
+      if (pricingSettings.enableGCash) setPaymentMethod("manual");
+      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
+    } else if (paymentMethod === "manual" && !pricingSettings.enableGCash) {
+      if (pricingSettings.enableMaribank) setPaymentMethod("maribank");
+      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
+    } else if (paymentMethod === "paymongo" && !pricingSettings.enablePayMongo) {
+      if (pricingSettings.enableMaribank) setPaymentMethod("maribank");
+      else if (pricingSettings.enableGCash) setPaymentMethod("manual");
+    }
+  }, [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo, paymentMethod]);
+
+  useEffect(() => {
     // Listen to real-time changes in global GCash payment settings
     const unsubscribeGcash = onSnapshot(
       doc(db, "settings", "gcash"),
@@ -265,6 +287,9 @@ export default function PaymentScreen({
           const basicFeatures = data.basicFeatures || DEFAULT_BASIC_FEATURES;
           const premiumFeatures = data.premiumFeatures || DEFAULT_PREMIUM_FEATURES;
           const upgradeFeatures = data.upgradeFeatures || DEFAULT_UPGRADE_FEATURES;
+          const enableMaribank = data.enableMaribank !== false; // defaults to true
+          const enableGCash = data.enableGCash !== false;
+          const enablePayMongo = data.enablePayMongo !== false;
 
           setPricingSettings({
             basicPrice: basic,
@@ -277,6 +302,9 @@ export default function PaymentScreen({
             basicFeatures: basicFeatures,
             premiumFeatures: premiumFeatures,
             upgradeFeatures: upgradeFeatures,
+            enableMaribank,
+            enableGCash,
+            enablePayMongo,
           });
 
           // Prefill admin panels only on first load, to prevent overwriting active admin edits
@@ -291,6 +319,9 @@ export default function PaymentScreen({
             setAdminBasicFeatures(basicFeatures);
             setAdminPremiumFeatures(premiumFeatures);
             setAdminUpgradeFeatures(upgradeFeatures);
+            setAdminEnableMaribank(enableMaribank);
+            setAdminEnableGCash(enableGCash);
+            setAdminEnablePayMongo(enablePayMongo);
             hasLoadedPricingInputs.current = true;
           }
         } else {
@@ -306,6 +337,9 @@ export default function PaymentScreen({
             basicFeatures: DEFAULT_BASIC_FEATURES,
             premiumFeatures: DEFAULT_PREMIUM_FEATURES,
             upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
+            enableMaribank: true,
+            enableGCash: true,
+            enablePayMongo: true,
           });
 
           if (isAdminUser) {
@@ -321,6 +355,9 @@ export default function PaymentScreen({
                 basicFeatures: DEFAULT_BASIC_FEATURES,
                 premiumFeatures: DEFAULT_PREMIUM_FEATURES,
                 upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
+                enableMaribank: true,
+                enableGCash: true,
+                enablePayMongo: true,
                 updatedBy: "System (Auto-generated)",
                 updatedAt: new Date().toISOString()
               });
@@ -478,6 +515,12 @@ export default function PaymentScreen({
       }
     }
 
+    if (!adminEnableMaribank && !adminEnableGCash && !adminEnablePayMongo) {
+      setAdminStatusMsg("Error: At least one payment method must remain active to prevent checkout issues.");
+      setSavingPricing(false);
+      return;
+    }
+
     try {
       await setDoc(
         doc(db, "settings", "pricing"),
@@ -492,11 +535,30 @@ export default function PaymentScreen({
           basicFeatures: adminBasicFeatures,
           premiumFeatures: adminPremiumFeatures,
           upgradeFeatures: adminUpgradeFeatures,
+          enableMaribank: adminEnableMaribank,
+          enableGCash: adminEnableGCash,
+          enablePayMongo: adminEnablePayMongo,
           updatedBy: user.email || "",
           updatedAt: new Date().toISOString()
         },
         { merge: true }
       );
+
+      // Log the change in Admin Activity Log
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: "update_payment_methods",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          paymentMethodsState: {
+            maribank: adminEnableMaribank,
+            gcash: adminEnableGCash,
+            paymongo: adminEnablePayMongo,
+          },
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log:", logErr);
+      }
 
       setAdminStatusMsg("Pricing configurations updated successfully throughout the system!");
       hasLoadedPricingInputs.current = false;
@@ -2580,6 +2642,57 @@ export default function PaymentScreen({
                 </div>
               </div>
 
+              {/* Payment Methods Section */}
+              <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-200 mt-6 space-y-4">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-800 block select-none">
+                  💳 Payment Method Settings
+                </span>
+                <p className="text-xs text-slate-500 mb-2 leading-relaxed">
+                  Toggle the switches below to activate or deactivate available payment methods globally. Disabled options will be instantly hidden from customers during checkout. At least one must remain enabled.
+                </p>
+
+                <div className="flex flex-col gap-3">
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-all">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-indigo-600 rounded bg-slate-100 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                      checked={adminEnableMaribank}
+                      onChange={(e) => setAdminEnableMaribank(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-900">MariBank QR (InstaPay)</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Enable or disable direct MariBank transfers</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-all">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-[#0157E4] rounded bg-slate-100 border-slate-300 focus:ring-[#0157E4] cursor-pointer"
+                      checked={adminEnableGCash}
+                      onChange={(e) => setAdminEnableGCash(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-[#0157E4]">GCash QR</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Enable or disable GCash direct wallet payments</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-all">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-emerald-600 rounded bg-slate-100 border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                      checked={adminEnablePayMongo}
+                      onChange={(e) => setAdminEnablePayMongo(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-900">PayMongo (Credit/Debit/E-wallets/Online Banking)</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Enable or disable automated GCash/Card checkout limits</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               {/* Inline feedback status message */}
               {adminStatusMsg && (
                 <div className="mt-4 bg-indigo-50 border-l-4 border-indigo-600 p-3 rounded-xl animate-fade-in">
@@ -3420,31 +3533,55 @@ export default function PaymentScreen({
           <div className="mb-6">
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">2. Select Payment Method</h3>
             {/* Selector Tabs */}
-            <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("maribank")}
-                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                  paymentMethod === "maribank"
-                    ? "bg-white text-orange-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <QrCode className="w-3.5 h-3.5 shrink-0" />
-                MariBank QR
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("manual")}
-                className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                  paymentMethod === "manual"
-                    ? "bg-white text-[#0157E4] shadow-sm"
-                    : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <QrCode className="w-3.5 h-3.5 shrink-0" />
-                GCash QR
-              </button>
+            <div className={`grid gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6 ${
+              [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo].filter(Boolean).length === 3 
+                ? 'grid-cols-3' 
+                : [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo].filter(Boolean).length === 2 
+                  ? 'grid-cols-2' 
+                  : 'grid-cols-1'
+            }`}>
+              {pricingSettings.enableMaribank && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("maribank")}
+                  className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    paymentMethod === "maribank"
+                      ? "bg-white text-orange-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5 shrink-0" />
+                  MariBank QR
+                </button>
+              )}
+              {pricingSettings.enableGCash && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("manual")}
+                  className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    paymentMethod === "manual"
+                      ? "bg-white text-[#0157E4] shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5 shrink-0" />
+                  GCash QR
+                </button>
+              )}
+              {pricingSettings.enablePayMongo && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("paymongo")}
+                  className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    paymentMethod === "paymongo"
+                      ? "bg-white text-emerald-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                  Cards / E-Wallets
+                </button>
+              )}
             </div>
           </div>
 
@@ -3584,7 +3721,7 @@ export default function PaymentScreen({
                 </button>
               </form>
             </div>
-          ) : (
+          ) : paymentMethod === "manual" ? (
             <div className="space-y-6">
               {/* GCash QR Card Visualization */}
               <div className="flex justify-center flex-col items-center">
@@ -3721,7 +3858,34 @@ export default function PaymentScreen({
                 </button>
               </form>
             </div>
-          )}
+          ) : paymentMethod === "paymongo" ? (
+            <div className="space-y-6 animate-fade-in origin-top">
+              <div className="flex flex-col items-center justify-center p-8 bg-emerald-50/50 rounded-3xl border border-emerald-100 shadow-inner">
+                <CreditCard className="w-16 h-16 text-emerald-500 mb-5" />
+                <h4 className="text-xl font-black text-slate-800 mb-2 tracking-tight uppercase">Automated Checkout</h4>
+                <p className="text-xs text-slate-500 text-center mb-6 leading-relaxed max-w-sm">
+                  Click the button below to proceed. You will be redirected to our secure payment gateway where you can safely use your Credit Card, Debit Card, GCash, or Maya.
+                </p>
+                <button
+                  onClick={handlePay}
+                  disabled={loading}
+                  className="w-full max-w-xs flex items-center justify-center gap-2 py-4 px-6 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      Processing Checkout...
+                    </>
+                  ) : (
+                    <>
+                      Proceed to PayMongo
+                      <ArrowRight className="w-4 h-4 shrink-0 transition-transform group-hover:translate-x-1" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Master Logout Options */}
           <div className="mt-6 border-t border-slate-100 pt-6">
