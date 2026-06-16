@@ -78,6 +78,14 @@ import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 
+export const getFreshInitialCircuits = (): Circuit[] => {
+  return INITIAL_CIRCUITS.map((c) => ({
+    ...c,
+    id: crypto.randomUUID(),
+    subLoads: c.subLoads ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() })) : undefined,
+  }));
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -180,7 +188,7 @@ export default function App() {
     }
   }, [isDarkMode]);
   const [panel, setPanel] = useState<PanelConfig>(INITIAL_PANEL);
-  const [circuits, setCircuits] = useState<Circuit[]>(INITIAL_CIRCUITS);
+  const [circuits, setCircuits] = useState<Circuit[]>(getFreshInitialCircuits);
   const [subPanels, setSubPanels] = useState<
     { id: string; panel: PanelConfig; circuits: Circuit[] }[]
   >([]);
@@ -562,11 +570,22 @@ export default function App() {
 
     // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
     // Ensure accurate sizing by passing older circuits through the current compute engine.
+    const seenCircuitIds = new Set<string>();
+
     const migratedSubPanels = (data.subPanels || []).map((sp) => {
-      const updatedCircuits = sp.circuits.map((c) => ({
-        ...c,
-        ...calculateCircuitValues(c, sp.panel, []),
-      })) as Circuit[];
+      const updatedCircuits = sp.circuits.map((c) => {
+        let uniqueId = c.id;
+        if (seenCircuitIds.has(uniqueId)) {
+          uniqueId = crypto.randomUUID();
+        }
+        seenCircuitIds.add(uniqueId);
+
+        return {
+          ...c,
+          id: uniqueId,
+          ...calculateCircuitValues(c, sp.panel, []),
+        };
+      }) as Circuit[];
       
       const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits);
       return { 
@@ -581,10 +600,19 @@ export default function App() {
       };
     });
 
-    const migratedCircuits = data.circuits.map((c) => ({
-      ...c,
-      ...calculateCircuitValues(c, data.panel, migratedSubPanels),
-    })) as Circuit[];
+    const migratedCircuits = data.circuits.map((c) => {
+      let uniqueId = c.id;
+      if (seenCircuitIds.has(uniqueId)) {
+        uniqueId = crypto.randomUUID();
+      }
+      seenCircuitIds.add(uniqueId);
+
+      return {
+        ...c,
+        id: uniqueId,
+        ...calculateCircuitValues(c, data.panel, migratedSubPanels),
+      };
+    }) as Circuit[];
 
     const { mainFeeder: mainFeederData } = computePanelScheduleValues(data.panel, migratedCircuits);
 
@@ -657,7 +685,7 @@ export default function App() {
   const handleNewProject = () => {
     setCurrentProjectId(null);
     setPanel(INITIAL_PANEL);
-    setCircuits(INITIAL_CIRCUITS);
+    setCircuits(getFreshInitialCircuits());
     setSubPanels([]);
     setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
     setIscSource("auto");
@@ -2507,7 +2535,7 @@ export default function App() {
                                   ...INITIAL_PANEL,
                                   designation: `Sub-Panel ${prev.length + 1}`,
                                 },
-                                circuits: INITIAL_CIRCUITS,
+                                circuits: getFreshInitialCircuits(),
                               },
                             ]);
                             setActiveScheduleTab(newId);
@@ -2634,7 +2662,7 @@ export default function App() {
                                 ...INITIAL_PANEL,
                                 designation: `Sub-Panel ${prev.length + 1}`,
                               },
-                              circuits: INITIAL_CIRCUITS,
+                              circuits: getFreshInitialCircuits(),
                             },
                           ]);
                           setActiveScheduleTab(newId);
