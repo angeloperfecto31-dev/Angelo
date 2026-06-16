@@ -101,6 +101,11 @@ export default function PaymentScreen({
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
 
+  // Feature List Defaults
+  const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\n-Word File Export feature";
+  const DEFAULT_PREMIUM_FEATURES = "Everything in Basic Plan\nFull Word File Report Generation\nPremium Support Access";
+  const DEFAULT_UPGRADE_FEATURES = "Full Word File Report Generation\nPremium Support Access";
+
   // Dynamic Pricing State
   const [pricingSettings, setPricingSettings] = useState({
     basicPrice: 999,
@@ -110,6 +115,9 @@ export default function PaymentScreen({
     promoDiscountPremium: 0,
     offerTitle: "",
     offerExpiry: "",
+    basicFeatures: DEFAULT_BASIC_FEATURES,
+    premiumFeatures: DEFAULT_PREMIUM_FEATURES,
+    upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
   });
 
   // Admin Pricing Input States
@@ -120,6 +128,9 @@ export default function PaymentScreen({
   const [adminPromoDiscountPremium, setAdminPromoDiscountPremium] = useState<string>("0");
   const [adminOfferTitle, setAdminOfferTitle] = useState<string>("");
   const [adminOfferExpiry, setAdminOfferExpiry] = useState<string>("");
+  const [adminBasicFeatures, setAdminBasicFeatures] = useState<string>(DEFAULT_BASIC_FEATURES);
+  const [adminPremiumFeatures, setAdminPremiumFeatures] = useState<string>(DEFAULT_PREMIUM_FEATURES);
+  const [adminUpgradeFeatures, setAdminUpgradeFeatures] = useState<string>(DEFAULT_UPGRADE_FEATURES);
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
 
@@ -251,6 +262,9 @@ export default function PaymentScreen({
           const promoPremium = typeof data.promoDiscountPremium === 'number' ? data.promoDiscountPremium : 0;
           const title = data.offerTitle || "";
           const expiry = data.offerExpiry || "";
+          const basicFeatures = data.basicFeatures || DEFAULT_BASIC_FEATURES;
+          const premiumFeatures = data.premiumFeatures || DEFAULT_PREMIUM_FEATURES;
+          const upgradeFeatures = data.upgradeFeatures || DEFAULT_UPGRADE_FEATURES;
 
           setPricingSettings({
             basicPrice: basic,
@@ -260,6 +274,9 @@ export default function PaymentScreen({
             promoDiscountPremium: promoPremium,
             offerTitle: title,
             offerExpiry: expiry,
+            basicFeatures: basicFeatures,
+            premiumFeatures: premiumFeatures,
+            upgradeFeatures: upgradeFeatures,
           });
 
           // Prefill admin panels only on first load, to prevent overwriting active admin edits
@@ -271,6 +288,9 @@ export default function PaymentScreen({
             setAdminPromoDiscountPremium(promoPremium.toString());
             setAdminOfferTitle(title);
             setAdminOfferExpiry(expiry);
+            setAdminBasicFeatures(basicFeatures);
+            setAdminPremiumFeatures(premiumFeatures);
+            setAdminUpgradeFeatures(upgradeFeatures);
             hasLoadedPricingInputs.current = true;
           }
         } else {
@@ -283,6 +303,9 @@ export default function PaymentScreen({
             promoDiscountPremium: 0,
             offerTitle: "",
             offerExpiry: "",
+            basicFeatures: DEFAULT_BASIC_FEATURES,
+            premiumFeatures: DEFAULT_PREMIUM_FEATURES,
+            upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
           });
 
           if (isAdminUser) {
@@ -295,6 +318,9 @@ export default function PaymentScreen({
                 promoDiscountPremium: 0,
                 offerTitle: "",
                 offerExpiry: "",
+                basicFeatures: DEFAULT_BASIC_FEATURES,
+                premiumFeatures: DEFAULT_PREMIUM_FEATURES,
+                upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
                 updatedBy: "System (Auto-generated)",
                 updatedAt: new Date().toISOString()
               });
@@ -463,6 +489,9 @@ export default function PaymentScreen({
           promoDiscountPremium: promoPremiumVal,
           offerTitle: adminOfferTitle.trim(),
           offerExpiry: adminOfferExpiry,
+          basicFeatures: adminBasicFeatures,
+          premiumFeatures: adminPremiumFeatures,
+          upgradeFeatures: adminUpgradeFeatures,
           updatedBy: user.email || "",
           updatedAt: new Date().toISOString()
         },
@@ -2432,6 +2461,51 @@ export default function PaymentScreen({
                 </div>
               </div>
 
+              {/* Editable Plan Features Section */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
+                    <span>Basic Plan Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={adminBasicFeatures}
+                    onChange={(e) => setAdminBasicFeatures(e.target.value)}
+                    placeholder={DEFAULT_BASIC_FEATURES}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-sans leading-relaxed resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
+                    <span>Premium Plan Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={adminPremiumFeatures}
+                    onChange={(e) => setAdminPremiumFeatures(e.target.value)}
+                    placeholder={DEFAULT_PREMIUM_FEATURES}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-sans leading-relaxed resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
+                    <span>Upgrade Promo Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={adminUpgradeFeatures}
+                    onChange={(e) => setAdminUpgradeFeatures(e.target.value)}
+                    placeholder={DEFAULT_UPGRADE_FEATURES}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-sans leading-relaxed resize-none"
+                  />
+                </div>
+              </div>
+
               {/* Promo section */}
               <div className="p-4 bg-indigo-50/40 rounded-xl border border-indigo-100/50 space-y-4">
                 <span className="text-[10px] uppercase font-black tracking-widest text-indigo-700 block select-none">
@@ -3185,6 +3259,28 @@ export default function PaymentScreen({
     );
   }
 
+  // Feature renderer helper
+  const renderFeatures = (featuresStr: string, activeTextClass: string = "text-slate-600") => {
+    if (!featuresStr) return null;
+    const lines = featuresStr.split('\n').filter(l => l.trim().length > 0);
+    return lines.map((line, idx) => {
+      const isDisabled = line.trim().startsWith('-');
+      const text = isDisabled ? line.substring(1).trim() : line.trim();
+      return (
+        <li key={idx} className={`flex items-start gap-1.5 ${isDisabled ? 'opacity-40' : ''}`}>
+          {isDisabled ? (
+            <X className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+          ) : (
+            <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+          )}
+          <span className={`text-[10px] font-bold leading-tight ${isDisabled ? 'text-slate-500 line-through' : activeTextClass}`}>
+            {text}
+          </span>
+        </li>
+      );
+    });
+  };
+
   // General Customer View Screen
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
@@ -3260,8 +3356,7 @@ export default function PaymentScreen({
                  )}
                </div>
                <ul className="mt-3 space-y-1.5">
-                 <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-900 leading-tight">Full Word File Report Generation</span></li>
-                 <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-900 leading-tight">Premium Support Access</span></li>
+                 {renderFeatures(pricingSettings.upgradeFeatures, "text-slate-900")}
                </ul>
              </button>
             ) : (
@@ -3287,9 +3382,7 @@ export default function PaymentScreen({
                     )}
                   </div>
                   <ul className="mt-3 space-y-1.5 min-h-[60px]">
-                    <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-600 leading-tight">Access to all design tools</span></li>
-                    <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-600 leading-tight">Export load schedules to Excel</span></li>
-                    <li className="flex items-start gap-1.5 opacity-40"><X className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-500 line-through leading-tight">Word File Export feature</span></li>
+                    {renderFeatures(pricingSettings.basicFeatures, "text-slate-600")}
                   </ul>
                 </button>
                 
@@ -3317,9 +3410,7 @@ export default function PaymentScreen({
                     )}
                   </div>
                   <ul className="mt-3 space-y-1.5 min-h-[60px]">
-                    <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-600 leading-tight">Everything in Basic Plan</span></li>
-                    <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-900 leading-tight">Full Word File Report Generation</span></li>
-                    <li className="flex items-start gap-1.5"><Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" /><span className="text-[10px] font-bold text-slate-900 leading-tight">Premium Support Access</span></li>
+                    {renderFeatures(pricingSettings.premiumFeatures, "text-slate-900")}
                   </ul>
                 </button>
               </div>
