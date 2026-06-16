@@ -172,11 +172,11 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = (props) => {
   const svgWidth = 800;
 
   return (
-    <div className="w-full flex justify-center bg-white border-2 border-slate-800 p-8">
+    <div className="w-full flex items-center justify-center bg-white border-2 border-slate-800 p-8 overflow-x-auto">
+      <div className="min-w-[800px]">
       <svg
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-        className="max-w-full font-sans text-slate-800"
-        style={{ width: '100%', height: 'auto', maxWidth: '800px' }}
+        className="w-[800px] h-auto font-sans text-slate-800"
       >
         <defs>
           <style>
@@ -189,6 +189,7 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = (props) => {
         </defs>
         <SingleLineDiagramContent {...props} />
       </svg>
+      </div>
     </div>
   );
 };

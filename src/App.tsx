@@ -1901,7 +1901,7 @@ export default function App() {
         </header>
 
         {/* Mobile secondary navigation bar */}
-        <div className="md:hidden bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-2 sticky top-16 z-20 overflow-x-auto whitespace-nowrap hide-scrollbar flex gap-2 no-print backdrop-blur-md">
+        <div className="md:hidden bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-2 sticky top-16 z-20 overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex gap-2 no-print backdrop-blur-md">
           {tabs.map((tab) => (
             <button
               key={tab.id}

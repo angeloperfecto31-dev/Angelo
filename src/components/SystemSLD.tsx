@@ -364,13 +364,14 @@ export default function SystemSLD({
         </div>
       )}
 
-      <div className="w-full flex justify-center bg-white border-2 border-slate-800 p-8 overflow-x-auto print-scaling">
+      <div className="w-full flex justify-center items-center bg-white border-2 border-slate-800 p-4 sm:p-8 overflow-x-auto print-scaling">
+        <div style={{ minWidth: `${svgWidth}px` }}>
         <svg
           id={`sld-system-wide`}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           width={svgWidth}
           height={svgHeight}
-          className="max-w-full font-sans text-slate-800 print-svg"
+          className="font-sans text-slate-800 print-svg"
         >
           <defs>
             <style>
@@ -538,6 +539,7 @@ export default function SystemSLD({
             );
           })}
         </svg>
+        </div>
       </div>
     </div>
   );
