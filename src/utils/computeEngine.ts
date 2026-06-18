@@ -622,7 +622,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       localPhaseAmps.B,
     );
     const maxDemandCurrent =
-      totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML;
+      (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
 
     maxBaseAmp = maxDemandCurrent;
     maxDesignAmp = maxDemandCurrent;
@@ -645,7 +645,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
         HML = loadI;
       }
     });
-    const maxDemandCurrent = (totalConnectedVA / 230) * 0.8 + 0.25 * HML;
+    const maxDemandCurrent = ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
     maxBaseAmp = maxDemandCurrent;
     maxDesignAmp = maxDemandCurrent;

@@ -266,7 +266,9 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Window/Split ACU - 1.0 HP", wattage: 1840, loadType: "AC", label: "8.0A FLC @ 230V" },
       { description: "Split Type ACU - 1.5 HP", wattage: 2300, loadType: "AC", label: "10.0A FLC @ 230V" },
       { description: "Split Type ACU - 2.0 HP", wattage: 2760, loadType: "AC", label: "12.0A FLC @ 230V" },
+      { description: "Split Type ACU - 2.5 HP", wattage: 3450, loadType: "AC", label: "15.0A FLC @ 230V" },
       { description: "Package ACU - 3.0 HP", wattage: 3910, loadType: "AC", label: "17.0A FLC @ 230V" },
+      { description: "Floor Mounted ACU - 4.0 HP", wattage: 5060, loadType: "AC", label: "22.0A FLC @ 230V" },
       { description: "Centralized ACU - 5.0 HP", wattage: 6440, loadType: "AC", label: "28.0A FLC @ 230V" },
     ]
   },

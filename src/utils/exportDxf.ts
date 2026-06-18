@@ -2093,7 +2093,7 @@ export const exportToCAD = (
       );
 
       writeCalcLine(
-        `Formula: I_demand = (I_line * 1.732) * 0.80 + I_3ph + 0.25 * HML`,
+        `Formula: I_demand = ((I_line * 1.732) * 0.80 + I_3ph + 0.25 * HML) * 1.25`,
         cy,
       );
       cy -= 6;
@@ -2103,14 +2103,14 @@ export const exportToCAD = (
       );
       cy -= 6;
       writeCalcLine(
-        `Math: (${totalAmpere.toFixed(2)} * 1.732) * 0.80 + ${total3Phase.toFixed(2)} + 0.25 * ${hmlCurrent.toFixed(2)} = ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+        `Math: ((${totalAmpere.toFixed(2)} * 1.732) * 0.80 + ${total3Phase.toFixed(2)} + 0.25 * ${hmlCurrent.toFixed(2)}) * 1.25 = ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );
       cy -= 12;
     } else {
       writeCalcLine(
-        `Formula: I_demand = (Total VA / 230) * 0.80 + 0.25 * HML`,
+        `Formula: I_demand = ((Total VA / 230) * 0.80 + 0.25 * HML) * 1.25`,
         cy,
       );
       cy -= 6;
@@ -2120,7 +2120,7 @@ export const exportToCAD = (
       );
       cy -= 6;
       writeCalcLine(
-        `Math: (${(currentCalcData.totalVA / 230).toFixed(2)}) * 0.80 + 0.25 * ${hmlCurrent.toFixed(2)} = ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+        `Math: ((${(currentCalcData.totalVA / 230).toFixed(2)}) * 0.80 + 0.25 * ${hmlCurrent.toFixed(2)}) * 1.25 = ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );

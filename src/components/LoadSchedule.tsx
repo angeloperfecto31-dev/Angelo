@@ -511,7 +511,7 @@ export default function LoadSchedule({
           setDbThreePhaseFLC(data);
         }
       } catch (err) {
-        console.error("Error loading FLC, falling back to static data:", err);
+        console.warn("Using offline fallback static data table for FLC lookup.");
         if (active) {
           setDbThreePhaseFLC(INITIAL_THREE_PHASE_FLC_DATA);
         }
@@ -886,7 +886,7 @@ export default function LoadSchedule({
         localPhaseAmps.B,
       );
       const baseAmp =
-        totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML;
+        (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
 
       const totalConnectedVA = circuits.reduce(
         (sum, curr) =>
@@ -928,7 +928,7 @@ export default function LoadSchedule({
           HML = loadI;
         }
       });
-      const baseAmp = (totalConnectedVA / 230) * 0.8 + 0.25 * HML;
+      const baseAmp = ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
       return {
         is3PH,
@@ -1002,7 +1002,7 @@ export default function LoadSchedule({
         localPhaseAmps.B,
       );
       const maxDemandCurrent =
-        totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML;
+        (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
       const totalConnectedVA = circuits.reduce(
         (sum, curr) =>
           curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE
@@ -1032,7 +1032,7 @@ export default function LoadSchedule({
           HML = loadI;
         }
       });
-      const maxDemandCurrent = (totalConnectedVA / 230) * 0.8 + 0.25 * HML;
+      const maxDemandCurrent = ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
       maxBaseAmp = maxDemandCurrent;
       maxDesignAmp = maxDemandCurrent;
@@ -2977,7 +2977,7 @@ export default function LoadSchedule({
                     Mathematical Formula (LaTeX)
                   </h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left( \frac{\text{Total Connected VA}}{V_{\text{sys}}} \right) \times 0.80 + 0.25 \times \text{HML}" />
+                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left[ \left( \frac{\text{Total Connected VA}}{V_{\text{sys}}} \right) \times 0.80 + 0.25 \times \text{HML} \right] \times 1.25" />
                   </div>
                 </div>
 
@@ -3024,9 +3024,10 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
-  &= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
-  &= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
+  &= \\left[ \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= \\left[ ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= ${((((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 \\\\
   &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -3039,7 +3040,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
@@ -3056,7 +3057,7 @@ export default function LoadSchedule({
                     Mathematical Formula (3-Phase LaTeX)
                   </h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex="\text{Max Demand Current (3}\Phi\text{)} = (I_{\text{line}} \times 1.732) \times 0.80 + I_{3\Phi} + 0.25 \times \text{HML}" />
+                    <LatexRenderer tex="\text{Max Demand Current (3}\Phi\text{)} = \left[ (I_{\text{line}} \times 1.732) \times 0.80 + I_{3\Phi} + 0.25 \times \text{HML} \right] \times 1.25" />
                   </div>
                 </div>
 
@@ -3070,16 +3071,16 @@ export default function LoadSchedule({
                       <span>Phase currents (Line values):</span>
                       <span className="font-mono text-xs">
                         {maxDemandDetails.connectionType === "Line-to-Line"
-                          ? "AB"
-                          : "AN"}{" "}
+                           ? "AB"
+                           : "AN"}{" "}
                         = {(maxDemandDetails.phaseR || 0).toFixed(2)} A,{" "}
                         {maxDemandDetails.connectionType === "Line-to-Line"
-                          ? "BC"
-                          : "BN"}{" "}
+                           ? "BC"
+                           : "BN"}{" "}
                         = {(maxDemandDetails.phaseY || 0).toFixed(2)} A,{" "}
                         {maxDemandDetails.connectionType === "Line-to-Line"
-                          ? "CA"
-                          : "CN"}{" "}
+                           ? "CA"
+                           : "CN"}{" "}
                         = {(maxDemandDetails.phaseB || 0).toFixed(2)} A
                       </span>
                     </p>
@@ -3121,9 +3122,10 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
-  &= (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
-  &= ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
+  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8) + (maxDemandDetails.total3Phase || 0) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 \\\\
   &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -3132,11 +3134,11 @@ export default function LoadSchedule({
                   <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">
                       Includes 80% demand factor on line currents + separate
-                      3-phase and 25% HML.
+                      3-phase and 25% HML, adjusted by a 1.25 system-wide safety factor.
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (3\\Phi)} = (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (3\\Phi)} = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"

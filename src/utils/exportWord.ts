@@ -792,9 +792,9 @@ export const exportToWord = async (
 - Highest Line Current (I_line) = ${totalAmpere.toFixed(2)} A
 - Total 3-Phase loads current (I_3ph) = ${localPhaseAmps.threePhase.toFixed(2)} A
 - Highest Motor Load (HML) = ${HML.toFixed(2)} A
-Using Philippine Electrical Code (PEC) demand rules, the Maximum Demand Current is computed as:`;
+Using Philippine Electrical Code (PEC) demand rules with a system-wide 1.25 safety factor, the Maximum Demand Current is computed as:`;
 
-      formulaText = `I_{\\text{demand}} = (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} = (${totalAmpere.toFixed(2)} \\times 1.732) \\times 0.80 + ${localPhaseAmps.threePhase.toFixed(2)} + 0.25 \\times ${HML.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 = \\left[ (${totalAmpere.toFixed(2)} \\times 1.732) \\times 0.80 + ${localPhaseAmps.threePhase.toFixed(2)} + 0.25 \\times ${HML.toFixed(2)} \\right] \\times 1.25 = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     } else {
       const totalConnectedVA = c.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
       const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
@@ -809,9 +809,9 @@ Using Philippine Electrical Code (PEC) demand rules, the Maximum Demand Current 
       stepDescription = `The system is Single-Phase (${p.system}).
 - Total Connected Load = ${totalConnectedVA.toFixed(1)} VA
 - Highest Motor Load (HML) = ${HML.toFixed(2)} A
-Using PEC rules, the Maximum Demand Current is calculated as:`;
+Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Current is calculated as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} = \\left( \\frac{${totalConnectedVA.toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${HML.toFixed(2)} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \times 1.25 = \\left[ \\left( \\frac{${totalConnectedVA.toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${HML.toFixed(2)} \\right] \\times 1.25 = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     }
 
     docChildren.push(
