@@ -304,6 +304,7 @@ const drawCadPanelSLD = (
   xBase: number,
   yBase: number,
   isSubPanel: boolean,
+  fedFromLabel: string = "FED FROM MDP",
 ) => {
   const is3Phase = panel.system.includes("3PH");
   const voltage = panel.voltage || 230;
@@ -316,7 +317,7 @@ const drawCadPanelSLD = (
   if (isSubPanel) {
     b.addCircle(xBase, yBase, 1.5, "SLD_GEOMETRY");
     b.addText(
-      "FED FROM MDP",
+      fedFromLabel,
       xBase - 12,
       yBase,
       1.6,
@@ -646,10 +647,12 @@ const drawSystemSLD = (
   subPanelsData: { id: string; panel: PanelConfig; circuits: Circuit[] }[],
   sheetWidth: number = 841,
   sheetOffsetX: number = -1,
+  subSubPanelsData: { id: string; panel: PanelConfig; circuits: Circuit[] }[] = [],
 ) => {
   const xOffset = sheetOffsetX !== -1 ? sheetOffsetX : sheetIndex * 900;
 
   const hasSubPanels = subPanelsData && subPanelsData.length > 0;
+  const hasSubSubPanels = subSubPanelsData && subSubPanelsData.length > 0;
 
   // Available layout space is between left margin and title block boundary
   const layoutAreaW = sheetWidth - 140; // Title block is 130 + 10 margin
@@ -672,11 +675,12 @@ const drawSystemSLD = (
     false,
   );
 
-  const yBase_SP = 220;
+  const yBase_SP = hasSubSubPanels ? 320 : 220;
+  const yBase_SSP = 120;
 
   if (hasSubPanels) {
-    const leftSPs: { sp: any; idx: number; coord?: any }[] = [];
-    const rightSPs: { sp: any; idx: number; coord?: any }[] = [];
+    const leftSPs: { sp: any; idx: number; coord?: any; xBase_SP?: number }[] = [];
+    const rightSPs: { sp: any; idx: number; coord?: any; xBase_SP?: number }[] = [];
 
     // 1. Categorize Sub-Panels based on exactly where their Main Circuit Breaker is drawn
     subPanelsData.forEach((sp, spIdx) => {
@@ -716,42 +720,59 @@ const drawSystemSLD = (
       }
     });
 
+    const drawnSspIds = new Set<string>();
+
+    // Helper to calculate required width of a sub-panel layout group based on its child subsub panels
+    const getRequiredWidth = (sp: { id: string; panel: PanelConfig; circuits: Circuit[] }) => {
+      const children = subSubPanelsData.filter((ssp) =>
+        sp.circuits.some(
+          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id,
+        ),
+      );
+      if (children.length === 0) return 90; // basic compact sub-panel width plus margins
+      return children.length * 110; // width of all children spaced at 110
+    };
+
+    // Calculate proportional positions for left subpanels to avoid horizontal overlaps
+    const leftTotalWidth = leftSPs.reduce((acc, item) => acc + getRequiredWidth(item.sp), 0);
+    const leftSpan = xBase_MDP - 100 - (xOffset + 60);
+    const leftS = leftSpan - leftTotalWidth;
+    const leftGap = leftSPs.length > 0 ? leftS / (leftSPs.length + 1) : 0;
+
+    let currentLeftX = xOffset + 60;
+    leftSPs.forEach((item, idx) => {
+      const w = getRequiredWidth(item.sp);
+      const centerSP = currentLeftX + leftGap + w / 2;
+      item.xBase_SP = centerSP;
+      currentLeftX = centerSP + w / 2;
+    });
+
+    // Calculate proportional positions for right subpanels to avoid horizontal overlaps
+    const rightTotalWidth = rightSPs.reduce((acc, item) => acc + getRequiredWidth(item.sp), 0);
+    const rightSpan = (xOffset + layoutAreaW - 60) - (xBase_MDP + 100);
+    const rightS = rightSpan - rightTotalWidth;
+    const rightGap = rightSPs.length > 0 ? rightS / (rightSPs.length + 1) : 0;
+
+    let currentRightX = xBase_MDP + 100;
+    rightSPs.forEach((item, idx) => {
+      const w = getRequiredWidth(item.sp);
+      const centerSP = currentRightX + rightGap + w / 2;
+      item.xBase_SP = centerSP;
+      currentRightX = centerSP + w / 2;
+    });
+
     const drawSubPanel = (
-      item: { sp: any; idx: number; coord?: any },
+      item: { sp: any; idx: number; coord?: any; xBase_SP?: number },
       spIndex: number,
       totalInSide: number,
       isLeftPanel: boolean,
     ) => {
       const sp = item.sp;
       const coord = item.coord;
-
-      // Left region: xOffset+60 to xBase_MDP-100
-      // Right region: xBase_MDP+100 to xOffset+layoutAreaW-60
-
-      let xBase_SP = 0;
-
-      if (isLeftPanel) {
-        const span = xBase_MDP - 100 - (xOffset + 60);
-        // If there's only 1 panel, center it in the span.
-        if (totalInSide === 1) {
-          xBase_SP = xOffset + 60 + span / 2;
-        } else {
-          const dx = span / (totalInSide - 1);
-          xBase_SP = xOffset + 60 + spIndex * dx;
-        }
-      } else {
-        const rightLimit = xOffset + layoutAreaW - 60;
-        const span = rightLimit - (xBase_MDP + 100);
-        if (totalInSide === 1) {
-          xBase_SP = xBase_MDP + 100 + span / 2;
-        } else {
-          const dx = span / (totalInSide - 1);
-          xBase_SP = xBase_MDP + 100 + spIndex * dx;
-        }
-      }
+      const xBase_SP = item.xBase_SP || (isLeftPanel ? xOffset + 180 : xOffset + 530);
 
       const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits);
-      drawCadPanelSLD(
+      const spCircuitCoords = drawCadPanelSLD(
         b,
         sp.panel,
         sp.circuits,
@@ -759,6 +780,7 @@ const drawSystemSLD = (
         xBase_SP,
         yBase_SP,
         true,
+        `FED FROM ${mdpPanel.designation || "MDP"}`
       );
 
       if (coord) {
@@ -768,7 +790,7 @@ const drawSystemSLD = (
 
         // Route gutter strictly at ±80 to bypass MDP completely but not hit inner subpanels
         const xGutter = xBase_MDP + (isLeft ? -80 : 80);
-        const yChannel = 270 + spIndex * 6; // stagger to prevent overlapping lines
+        const yChannel = (hasSubSubPanels ? 370 : 270) + spIndex * 6; // stagger to prevent overlapping lines
 
         b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
         b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
@@ -792,6 +814,178 @@ const drawSystemSLD = (
           "center",
         );
       }
+
+      // Draw children Sub-Sub Panels
+      const myChildren = subSubPanelsData.filter((ssp) =>
+        sp.circuits.some(
+          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id,
+        ),
+      );
+
+      // Separate into left and right sub-sub-panels based on feeding circuit breaker
+      const leftSSPs: { ssp: any; coord: any; feedingCircuit: any }[] = [];
+      const rightSSPs: { ssp: any; coord: any; feedingCircuit: any }[] = [];
+
+      myChildren.forEach((ssp) => {
+        const feedingCircuit = sp.circuits.find(
+          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id,
+        );
+        const sspCoord = feedingCircuit
+          ? spCircuitCoords.get(feedingCircuit.circuitNo)
+          : null;
+        
+        const isLeft = sspCoord ? sspCoord.isLeft : true;
+        if (isLeft) {
+          leftSSPs.push({ ssp, coord: sspCoord, feedingCircuit });
+        } else {
+          rightSSPs.push({ ssp, coord: sspCoord, feedingCircuit });
+        }
+      });
+
+      // Sort both left and right lists by circuitNo ascending for cleaner parallel layouts
+      leftSSPs.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
+      rightSSPs.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
+
+      const numLeft = leftSSPs.length;
+      const numRight = rightSSPs.length;
+      const totalSSPs = numLeft + numRight;
+
+      const numRows_SP = Math.max(...sp.circuits.map((c) => c.circuitNo), 0);
+      const rowsCount_SP = Math.ceil(numRows_SP / 2);
+      const boxBottom_SP = (yBase_SP - 55) - 18 - (rowsCount_SP - 1) * 16 - 8;
+
+      // Spacing between panels
+      const sspSpacing = 110;
+
+      // Render Left SSPs
+      leftSSPs.forEach((item, lIdx) => {
+        const ssp = item.ssp;
+        drawnSspIds.add(ssp.id);
+
+        let xBase_SSP = xBase_SP;
+        if (totalSSPs === 1) {
+          xBase_SSP = xBase_SP;
+        } else {
+          xBase_SSP = xBase_SP - 65 - (numLeft - 1 - lIdx) * sspSpacing;
+        }
+
+        const sspCalcData = computePanelScheduleValues(ssp.panel, ssp.circuits);
+        drawCadPanelSLD(
+          b,
+          ssp.panel,
+          ssp.circuits,
+          sspCalcData.mainFeeder,
+          xBase_SSP,
+          yBase_SSP,
+          true,
+          `FED FROM ${sp.panel.designation || "SUB-PANEL"}`
+        );
+
+        // Path routing
+        const gIndex = lIdx; // global index for staggered horizontal channels
+        const yChannel = boxBottom_SP - 26 - gIndex * 8;
+
+        if (item.coord) {
+          const xStart = item.coord.arrowX;
+          const yStart = item.coord.arrowY;
+
+          // Staggered xGutter to prevent vertical line overlaps
+          const xGutter = xBase_SP - 50 - lIdx * 6;
+
+          b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
+          b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
+          b.addLine(xGutter, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
+          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
+        } else {
+          const xStart = xBase_SP;
+          const yStart = boxBottom_SP;
+          b.addLine(xStart, yStart, xStart, yChannel, "SLD_FEEDER");
+          b.addLine(xStart, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
+          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
+        }
+
+        b.addRect(
+          xBase_SSP - 26,
+          yBase_SSP + 10,
+          xBase_SSP + 26,
+          yBase_SSP + 18,
+          "BORDER",
+        );
+        b.addText(
+          `FEED TO ${ssp.panel.designation || "SUB-SUB PANEL"}`,
+          xBase_SSP,
+          yBase_SSP + 12.5,
+          1.3,
+          0,
+          "TEXT_HEADER",
+          "center",
+        );
+      });
+
+      // Render Right SSPs
+      rightSSPs.forEach((item, rIdx) => {
+        const ssp = item.ssp;
+        drawnSspIds.add(ssp.id);
+
+        let xBase_SSP = xBase_SP;
+        if (totalSSPs === 1) {
+          xBase_SSP = xBase_SP;
+        } else {
+          xBase_SSP = xBase_SP + 65 + rIdx * sspSpacing;
+        }
+
+        const sspCalcData = computePanelScheduleValues(ssp.panel, ssp.circuits);
+        drawCadPanelSLD(
+          b,
+          ssp.panel,
+          ssp.circuits,
+          sspCalcData.mainFeeder,
+          xBase_SSP,
+          yBase_SSP,
+          true,
+          `FED FROM ${sp.panel.designation || "SUB-PANEL"}`
+        );
+
+        // Path routing
+        const gIndex = numLeft + rIdx; // global index for staggered horizontal channels
+        const yChannel = boxBottom_SP - 26 - gIndex * 8;
+
+        if (item.coord) {
+          const xStart = item.coord.arrowX;
+          const yStart = item.coord.arrowY;
+
+          // Staggered xGutter to prevent vertical line overlaps
+          const xGutter = xBase_SP + 50 + rIdx * 6;
+
+          b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
+          b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
+          b.addLine(xGutter, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
+          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
+        } else {
+          const xStart = xBase_SP;
+          const yStart = boxBottom_SP;
+          b.addLine(xStart, yStart, xStart, yChannel, "SLD_FEEDER");
+          b.addLine(xStart, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
+          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
+        }
+
+        b.addRect(
+          xBase_SSP - 26,
+          yBase_SSP + 10,
+          xBase_SSP + 26,
+          yBase_SSP + 18,
+          "BORDER",
+        );
+        b.addText(
+          `FEED TO ${ssp.panel.designation || "SUB-SUB PANEL"}`,
+          xBase_SSP,
+          yBase_SSP + 12.5,
+          1.3,
+          0,
+          "TEXT_HEADER",
+          "center",
+        );
+      });
     };
 
     leftSPs.forEach((item, index) =>
@@ -800,6 +994,40 @@ const drawSystemSLD = (
     rightSPs.forEach((item, index) =>
       drawSubPanel(item, index, rightSPs.length, false),
     );
+
+    // Orphans fallback
+    const orphans = subSubPanelsData.filter((ssp) => !drawnSspIds.has(ssp.id));
+    orphans.forEach((ssp, oIdx) => {
+      const xBase_SSP = xOffset + 355 + (oIdx * 110);
+      const sspCalcData = computePanelScheduleValues(ssp.panel, ssp.circuits);
+      drawCadPanelSLD(
+        b,
+        ssp.panel,
+        ssp.circuits,
+        sspCalcData.mainFeeder,
+        xBase_SSP,
+        yBase_SSP,
+        true,
+        "FED FROM SUB-PANEL"
+      );
+
+      b.addRect(
+        xBase_SSP - 26,
+        yBase_SSP + 10,
+        xBase_SSP + 26,
+        yBase_SSP + 18,
+        "BORDER",
+      );
+      b.addText(
+        `FEED TO ${ssp.panel.designation || "SUB-SUB PANEL"}`,
+        xBase_SSP,
+        yBase_SSP + 12.5,
+        1.3,
+        0,
+        "TEXT_HEADER",
+        "center",
+      );
+    });
   }
 };
 
@@ -1044,6 +1272,22 @@ export const exportToCAD = (
         c.linkedSubPanelId === sp.id ||
         (sp.panel.designation && c.description === sp.panel.designation),
     );
+    if (mdpFeederIndex < 0) {
+      const parentSp = subPanels.find((psp) =>
+        psp.circuits.some(
+          (c) =>
+            c.linkedSubPanelId === sp.id ||
+            (sp.panel.designation && c.description === sp.panel.designation),
+        )
+      );
+      if (parentSp) {
+        mdpFeederIndex = circuits.findIndex(
+          (c) =>
+            c.linkedSubPanelId === parentSp.id ||
+            (parentSp.panel.designation && c.description === parentSp.panel.designation),
+        );
+      }
+    }
     if (mdpFeederIndex < 0) {
       const mdpSubCircuits = circuits.filter(
         (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL,
@@ -2240,6 +2484,7 @@ export const exportToCAD = (
       subPanels,
       sConfig.w,
       sConfig.xOffset,
+      subSubPanels,
     );
   }
 
@@ -2320,6 +2565,18 @@ export const exportToCAD = (
       // Draw standard vertical format using the identical component used in System SLD
       // Position it dynamically starting from top of this lower box.
       const sldStartY = by + spBottomSectionHeight - 25; // 25 units below the box header
+      let fedFromLabel = "FED FROM MDP";
+      const parentSp = subPanels.find((psp) =>
+        psp.circuits.some(
+          (c) =>
+            c.linkedSubPanelId === sp.id ||
+            (sp.panel.designation && c.description === sp.panel.designation),
+        )
+      );
+      if (parentSp) {
+        fedFromLabel = `FED FROM ${parentSp.panel.designation || "SUB-PANEL"}`;
+      }
+
       drawCadPanelSLD(
         b,
         sp.panel,
@@ -2328,6 +2585,7 @@ export const exportToCAD = (
         subMidX,
         sldStartY,
         true,
+        fedFromLabel,
       );
     });
   }
@@ -3479,12 +3737,12 @@ export const exportToCAD = (
         if (calc.source === "main" || calc.source === "MDP" || (panel && panel.designation === calc.source)) {
           foundPanel = { id: "main", panel: panel };
         } else {
-          foundPanel = subPanels.find((sp) => sp.id === calc.source || sp.panel.designation === calc.source);
+          foundPanel = allSubPanels.find((sp) => sp.id === calc.source || sp.panel.designation === calc.source);
           if (!foundPanel) {
             if (circuits.some((c) => c.id === calc.source)) {
               foundPanel = { id: "main", panel: panel };
             } else {
-              const matchedSp = subPanels.find((sp) => sp.circuits.some((c) => c.id === calc.source));
+              const matchedSp = allSubPanels.find((sp) => sp.circuits.some((c) => c.id === calc.source));
               if (matchedSp) foundPanel = matchedSp;
             }
           }
