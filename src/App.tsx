@@ -565,7 +565,7 @@ export default function App() {
               const is3PhaseMain = c.phases && c.phases.length === 3;
               const cirV = c.voltage || subVoltage || 230;
               const loadI = subMainCurrent.baseAmp;
-              const demandVA = is3PhaseMain ? loadI * cirV * 1.732 : loadI * cirV;
+              const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
 
               if (
                 c.loadVA !== demandVA ||
@@ -580,7 +580,7 @@ export default function App() {
                 c.conduitSize !== subConduitSize ||
                 c.voltage !== subVoltage ||
                 c.description !== designation ||
-                Math.abs((c.loadA || 0) - loadI) > 0.01
+                Math.abs((c.loadA || 0) - Number(loadI.toFixed(2))) > 0.01
               ) {
                 changed = true;
                 return {
@@ -656,7 +656,7 @@ export default function App() {
             const is3PhaseMain = c.phases && c.phases.length === 3;
             const cirV = c.voltage || subVoltage || 230;
             const loadI = subMainCurrent.baseAmp;
-            const demandVA = is3PhaseMain ? loadI * cirV * 1.732 : loadI * cirV;
+            const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
 
             if (
               c.loadVA !== demandVA ||
@@ -671,7 +671,7 @@ export default function App() {
               c.conduitSize !== subConduitSize ||
               c.voltage !== subVoltage ||
               c.description !== designation ||
-              Math.abs((c.loadA || 0) - loadI) > 0.01
+              Math.abs((c.loadA || 0) - Number(loadI.toFixed(2))) > 0.01
             ) {
               changed = true;
               return {

@@ -643,89 +643,13 @@ export default function LoadSchedule({
     if (readOnly) return;
     setCircuits((prevCircuits) => {
       let changed = false;
-      let newCircuits = [...prevCircuits];
-
-      if (availableSubPanels) {
-        for (let i = 0; i < newCircuits.length; i++) {
-          const c = newCircuits[i];
-          if ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) && c.linkedSubPanelId) {
-            const sp = availableSubPanels.find((s) => s.id === c.linkedSubPanelId);
-            if (sp) {
-              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits);
-
-              const subTotalWattage = sp.circuits.reduce(
-                (sum, cc) =>
-                  sum +
-                  (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
-                    ? 0
-                    : (cc.wattage || 0) * (cc.quantity || 1)),
-                0,
-              );
-
-              const subPoles = subMainFeeder.poles;
-              const subCB = subMainFeeder.cb;
-              const subAF = subMainFeeder.af;
-              const subKAIC = subMainFeeder.kaic;
-              const subType = subMainFeeder.type as MCBType;
-              const subWireSize = formatWireSizeLocal(subMainFeeder.wire.size);
-              const subGroundSize = subMainFeeder.groundSize;
-              const subConduitSize = subMainFeeder.conduitSize;
-
-              const subVoltage = sp.panel.voltage;
-              const designation = sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel");
-
-              const is3PhaseMain = c.phases && c.phases.length === 3;
-              const cirV = c.voltage || subVoltage || 230;
-              const loadI = subMainCurrent.baseAmp;
-              const demandVA = is3PhaseMain ? loadI * cirV * 1.732 : loadI * cirV;
-
-              if (
-                c.loadVA !== demandVA ||
-                c.wattage !== subTotalWattage ||
-                c.mcbP !== subPoles ||
-                c.mcbAT !== subCB ||
-                c.mcbAF !== subAF ||
-                c.mcbKAIC !== subKAIC ||
-                c.mcbType !== subType ||
-                c.wireSize !== subWireSize ||
-                c.groundSize !== subGroundSize ||
-                c.conduitSize !== subConduitSize ||
-                c.voltage !== subVoltage ||
-                c.description !== designation ||
-                Math.abs((c.loadA || 0) - loadI) > 0.01
-              ) {
-                newCircuits[i] = {
-                  ...c,
-                  quantity: 1,
-                  wattage: subTotalWattage,
-                  loadVA: demandVA,
-                  loadA: Number(loadI.toFixed(2)),
-                  mcbP: subPoles,
-                  mcbAT: subCB,
-                  mcbAF: subAF,
-                  mcbKAIC: subKAIC,
-                  mcbType: subType,
-                  wireSize: subWireSize,
-                  groundSize: subGroundSize,
-                  conduitSize: subConduitSize,
-                  voltage: subVoltage,
-                  description: designation,
-                };
-                newCircuits[i] = {
-                  ...newCircuits[i],
-                  ...calculateCircuit(newCircuits[i]),
-                } as Circuit;
-                changed = true;
-              }
-            }
-          }
-        }
-      }
-
-      const recalculated = newCircuits.map((c) => {
+      const recalculated = prevCircuits.map((c) => {
         const rec = { ...c, ...calculateCircuit(c) } as Circuit;
-        if (JSON.stringify(rec) !== JSON.stringify(c)) changed = true;
-        return rec;
+        if (JSON.stringify(rec) !== JSON.stringify(c)) {
+          changed = true;
+          return rec;
+        }
+        return c;
       });
 
       if (changed) {
@@ -737,9 +661,7 @@ export default function LoadSchedule({
     panel.system,
     panel.connectionType,
     panel.voltage,
-    availableSubPanels,
     dbThreePhaseFLC,
-    setCircuits,
   ]);
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {

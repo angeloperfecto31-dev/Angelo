@@ -163,7 +163,7 @@ export const getPanelSystemVoltageFallback = (
 };
 
 export const calculateCircuitValues = (
-  c: Partial<Circuit>,
+  cParam: Partial<Circuit>,
   panel: PanelConfig,
   availableSubPanels?: Array<{
     id: string;
@@ -171,6 +171,7 @@ export const calculateCircuitValues = (
     circuits: Circuit[];
   }>,
 ): Partial<Circuit> => {
+  const c = { ...cParam };
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
   if (
     (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) &&
