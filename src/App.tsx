@@ -704,6 +704,122 @@ export default function App() {
     });
   }, [subPanels, setCircuits]);
 
+  // Automatically recalculate Main Panel circuits when Main Panel configuration changes
+  useEffect(() => {
+    setCircuits((prevCircuits) => {
+      if (!prevCircuits || prevCircuits.length === 0) return prevCircuits;
+      let changed = false;
+      const nextCircuits = prevCircuits.map((c) => {
+        const updated = calculateCircuitValues(c, panel, subPanels);
+        if (
+          updated.wireSize !== c.wireSize ||
+          updated.groundSize !== c.groundSize ||
+          updated.conduitSize !== c.conduitSize ||
+          updated.loadVA !== c.loadVA ||
+          updated.loadA !== c.loadA ||
+          updated.mcbAT !== c.mcbAT ||
+          updated.mcbAF !== c.mcbAF ||
+          updated.mcbKAIC !== c.mcbKAIC ||
+          updated.voltage !== c.voltage ||
+          updated.mcbP !== c.mcbP
+        ) {
+          changed = true;
+          return { ...c, ...updated };
+        }
+        return c;
+      });
+      return changed ? nextCircuits : prevCircuits;
+    });
+  }, [
+    panel.system,
+    panel.connectionType,
+    panel.conductorMaterial,
+    panel.insulationType,
+    panel.temperatureRating,
+    subPanels
+  ]);
+
+  // Automatically recalculate subPanels circuits when subPanel configuration changes
+  useEffect(() => {
+    setSubPanels((prevSubPanels) => {
+      if (!prevSubPanels || prevSubPanels.length === 0) return prevSubPanels;
+      let anyChanged = false;
+      const nextSubPanels = prevSubPanels.map((sp) => {
+        let spChanged = false;
+        const nextCircuits = sp.circuits.map((c) => {
+          const updated = calculateCircuitValues(c, sp.panel, subSubPanels);
+          if (
+            updated.wireSize !== c.wireSize ||
+            updated.groundSize !== c.groundSize ||
+            updated.conduitSize !== c.conduitSize ||
+            updated.loadVA !== c.loadVA ||
+            updated.loadA !== c.loadA ||
+            updated.mcbAT !== c.mcbAT ||
+            updated.mcbAF !== c.mcbAF ||
+            updated.mcbKAIC !== c.mcbKAIC ||
+            updated.voltage !== c.voltage ||
+            updated.mcbP !== c.mcbP
+          ) {
+            spChanged = true;
+            return { ...c, ...updated };
+          }
+          return c;
+        });
+
+        if (spChanged) {
+          anyChanged = true;
+          return { ...sp, circuits: nextCircuits };
+        }
+        return sp;
+      });
+
+      return anyChanged ? nextSubPanels : prevSubPanels;
+    });
+  }, [
+    subPanels.map(sp => `${sp.panel.system}-${sp.panel.connectionType}-${sp.panel.conductorMaterial}-${sp.panel.insulationType}-${sp.panel.temperatureRating}`).join("|"),
+    subSubPanels
+  ]);
+
+  // Automatically recalculate subSubPanels circuits when subSubPanel configuration changes
+  useEffect(() => {
+    setSubSubPanels((prevSubSubPanels) => {
+      if (!prevSubSubPanels || prevSubSubPanels.length === 0) return prevSubSubPanels;
+      let anyChanged = false;
+      const nextSubSubPanels = prevSubSubPanels.map((ssp) => {
+        let sspChanged = false;
+        const nextCircuits = ssp.circuits.map((c) => {
+          const updated = calculateCircuitValues(c, ssp.panel, []);
+          if (
+            updated.wireSize !== c.wireSize ||
+            updated.groundSize !== c.groundSize ||
+            updated.conduitSize !== c.conduitSize ||
+            updated.loadVA !== c.loadVA ||
+            updated.loadA !== c.loadA ||
+            updated.mcbAT !== c.mcbAT ||
+            updated.mcbAF !== c.mcbAF ||
+            updated.mcbKAIC !== c.mcbKAIC ||
+            updated.voltage !== c.voltage ||
+            updated.mcbP !== c.mcbP
+          ) {
+            sspChanged = true;
+            return { ...c, ...updated };
+          }
+          return c;
+        });
+
+        if (sspChanged) {
+          anyChanged = true;
+          return { ...ssp, circuits: nextCircuits };
+        }
+        return ssp;
+      });
+
+      return anyChanged ? nextSubSubPanels : prevSubSubPanels;
+    });
+  }, [
+    subSubPanels.map(ssp => `${ssp.panel.system}-${ssp.panel.connectionType}-${ssp.panel.conductorMaterial}-${ssp.panel.insulationType}-${ssp.panel.temperatureRating}`).join("|")
+  ]);
+
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
     {},
   );

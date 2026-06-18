@@ -500,12 +500,21 @@ export default function LoadSchedule({
     const fetchFLC = async () => {
       setLoadingFLC(true);
       try {
-        const data = await getThreePhaseFLCDatabaseList();
+        // Prevent Firestore from blocking the app for 10 seconds if offline
+        const data = await Promise.race([
+          getThreePhaseFLCDatabaseList(),
+          new Promise<ThreePhaseFLCEntry[]>((_, reject) => 
+            setTimeout(() => reject(new Error("Firestore timeout")), 3000)
+          )
+        ]);
         if (active) {
           setDbThreePhaseFLC(data);
         }
       } catch (err) {
-        console.error("Error loading FLC:", err);
+        console.error("Error loading FLC, falling back to static data:", err);
+        if (active) {
+          setDbThreePhaseFLC(INITIAL_THREE_PHASE_FLC_DATA);
+        }
       } finally {
         if (active) setLoadingFLC(false);
       }
@@ -1030,7 +1039,7 @@ export default function LoadSchedule({
     }
 
     return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
-  }, [circuits, panel.system, panel.connectionType]);
+  }, [circuits, panel]);
 
   const mainFeeder = useMemo(() => {
     // The design ampacity correctly incorporates Continuous (125%) + Non-Continuous (100%) + Largest Motor (25%)
@@ -1132,7 +1141,7 @@ export default function LoadSchedule({
         designAmp: designAmp
       }
     };
-  }, [mainCurrent, panel.system, circuits, panel.mainOverrides]);
+  }, [mainCurrent, circuits, panel]);
 
   const panelRows = useMemo(() => {
     const maxCircuitNo = Math.max(...circuits.map((c) => c.circuitNo), 0);
@@ -2879,7 +2888,7 @@ export default function LoadSchedule({
                       {mainFeeder.wire.runs > 1
                         ? `${mainFeeder.wire.runs} sets of `
                         : ""}
-                      {formatWireSize(mainFeeder.wire.size)}mm² THHN,{" "}
+                      {formatWireSize(mainFeeder.wire.size)}mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"}),{" "}
                       {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize}{" "}
                       PVC
                       {panel.mainOverrides?.isOverrideEnabled && panel.mainOverrides.wireSize ? " (Manual)" : ""}
@@ -3221,7 +3230,7 @@ export default function LoadSchedule({
             </div>
             <div className="space-y-1.5 leading-relaxed">
               <p>
-                • <strong>Wiring:</strong> Copper THHN/THWN as per PEC
+                • <strong>Wiring:</strong> {panel.conductorMaterial || "Copper"} {panel.insulationType || "THHN"} as per PEC
               </p>
               <p>
                 • <strong>Min Wire Size:</strong> 2.0mm² (Lighting), 3.5mm²
@@ -3344,7 +3353,7 @@ export default function LoadSchedule({
                 {mainFeeder.wire.runs > 1
                   ? `${mainFeeder.wire.runs} sets of `
                   : ""}
-                {formatWireSize(mainFeeder.wire.size)} mm² THHN (Ampacity:{" "}
+                {formatWireSize(mainFeeder.wire.size)} mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"}) (Ampacity:{" "}
                 {mainFeeder.wire.ampacity} A)
               </span>
               <span>Selected Main Conduit: {mainFeeder.conduitSize} PVC</span>

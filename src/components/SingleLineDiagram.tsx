@@ -52,8 +52,8 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
       
       {/* Feed Text */}
       <text x="410" y="70" className="sld-text">
-         <tspan x="410" dy="0">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² THHN +</tspan>
-         <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² THHN(G) IN</tspan>
+         <tspan x="410" dy="0">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² {panel.insulationType || 'THHN'} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'} +</tspan>
+         <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² {panel.insulationType || 'THHN'}(G) IN</tspan>
          <tspan x="410" dy="20">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}-` : ''}{mainFeeder.conduitSize.toUpperCase()}Ø PVC CONDUIT</tspan>
       </text>
 
