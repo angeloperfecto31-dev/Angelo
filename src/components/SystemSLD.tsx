@@ -16,6 +16,7 @@ interface SystemSLDProps {
   panel: PanelConfig;
   circuits: Circuit[];
   subPanels: SubPanelData[];
+  subSubPanels?: SubPanelData[];
   iscParams?: any;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
@@ -43,6 +44,7 @@ export default function SystemSLD({
   panel,
   circuits,
   subPanels,
+  subSubPanels,
   iscParams,
   isPremium = true,
   onRequestUpgrade,
@@ -64,7 +66,8 @@ export default function SystemSLD({
   const mdpHeight = 320 + mdpRows.length * 60 + 100;
 
   const spLayouts = useMemo(() => {
-    return subPanels.map((sp, idx) => {
+    const allSubPanels = [...subPanels, ...(subSubPanels || [])];
+    return allSubPanels.map((sp, idx) => {
       const spData = computePanelScheduleValues(sp.panel, sp.circuits);
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
       const spHeight = 320 + spRows.length * 60 + 100;
@@ -84,7 +87,7 @@ export default function SystemSLD({
       // Positional fallback: map idx-th subpanel to idx-th circuit of type SUB_PANEL
       if (mdpFeederIndex < 0) {
         const mdpSubCircuits = circuits.filter(
-          (c) => c.loadType === LoadType.SUB_PANEL,
+          (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL,
         );
         if (mdpSubCircuits.length > idx) {
           const matchingCircuit = mdpSubCircuits[idx];
@@ -107,8 +110,8 @@ export default function SystemSLD({
             ? mdpRows[rowIndex]?.left?.id === feedingCircuit!.id
             : true;
       } else {
-        // Check if fed from another subpanel
-        for (const otherSp of subPanels) {
+        // Check if fed from another subpanel (or sub-sub panel)
+        for (const otherSp of allSubPanels) {
           const spFeederIndex = otherSp.circuits.findIndex(
             (c) =>
               c.linkedSubPanelId === sp.id ||
@@ -141,7 +144,7 @@ export default function SystemSLD({
         idx,
       };
     });
-  }, [subPanels, circuits, mdpRows]);
+  }, [subPanels, subSubPanels, circuits, mdpRows]);
 
   const resolvedLayouts = useMemo(() => {
     const layoutMap = new Map(spLayouts.map((l) => [l.sp.id, l]));
@@ -364,8 +367,8 @@ export default function SystemSLD({
         </div>
       )}
 
-      <div className="w-full flex justify-center items-center bg-white border-2 border-slate-800 p-4 sm:p-8 overflow-x-auto print-scaling">
-        <div style={{ minWidth: `${svgWidth}px` }}>
+      <div className="w-full bg-white border-2 border-slate-800 p-4 sm:p-8 overflow-x-auto print-scaling">
+        <div style={{ minWidth: `${svgWidth}px` }} className="mx-auto flex justify-center">
         <svg
           id={`sld-system-wide`}
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}

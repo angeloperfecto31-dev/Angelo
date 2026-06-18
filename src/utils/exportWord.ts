@@ -286,7 +286,8 @@ export const exportToWord = async (
   vdCalculations: import('../types').VoltageDropCalculation[],
   illumParams: import('../types').IlluminationParams,
   images?: any,
-  iscParams?: any
+  iscParams?: any,
+  subSubPanels: { id: string, panel: PanelConfig, circuits: Circuit[] }[] = []
 ) => {
   const docChildren: any[] = [];
 
@@ -673,7 +674,11 @@ export const exportToWord = async (
 
   addTOCEntry("1.0", "General Notes & Standard Specifications", "Load aggregation rules, conductor ampacities, overcurrent protection sizing, interrupting ratings, and voltage drop limits.", "Page 3", false);
   
-  const panelNames = [panel?.designation || 'Main Panel', ...subPanels.map(sp => sp.panel?.designation || 'Sub Panel')].join(', ');
+  const panelNames = [
+    panel?.designation || 'Main Panel', 
+    ...subPanels.map(sp => sp.panel?.designation || 'Sub Panel'),
+    ...subSubPanels.map(ssp => ssp.panel?.designation || 'Sub-Sub Panel')
+  ].join(', ');
   addTOCEntry("2.0", `Electrical Load Schedules & Feeder Sizing Calculations`, `Individual schedules, main feeder calculations, system balancing indices, and PEC standard safety map for panels: ${panelNames}.`, "Page 4", true);
   
   addTOCEntry("3.0", "Short Circuit Analysis & Subtransient Fault Sizing", "Per-unit impedance calculation, symmetrical and asymmetrical short circuit current evaluations, utility grids, transformer impedance, and breaker kAIC ratings conformance.", "Page 5", false);
@@ -722,7 +727,11 @@ export const exportToWord = async (
     await addImageToDoc(images.systemSLD);
   }
 
-  const allPanelsToExport = [{ panel, circuits }, ...subPanels.map(sp => ({ panel: sp.panel, circuits: sp.circuits }))];
+  const allPanelsToExport = [
+    { panel, circuits }, 
+    ...subPanels.map(sp => ({ panel: sp.panel, circuits: sp.circuits })),
+    ...subSubPanels.map(ssp => ({ panel: ssp.panel, circuits: ssp.circuits }))
+  ];
 
   for (const { panel: p, circuits: c } of allPanelsToExport) {
     const is3PH = p?.system?.includes('3PH');
@@ -752,7 +761,7 @@ export const exportToWord = async (
         if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
         const is3Phase = cir.phases && cir.phases.length === 3;
         let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-        if (cir.loadType === LoadType.SUB_PANEL) {
+        if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
         const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;

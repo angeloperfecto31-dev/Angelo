@@ -129,6 +129,7 @@ export const DESCRIPTION_CODES = {
   SP: 'Spare',
   SPACE: 'Space',
   SUB: 'Sub-Panel',
+  SUBSUB: 'Sub-Sub Panel',
 };
 
 export const CONDUIT_SIZES = ['15mm', '20mm', '25mm', '32mm', '40mm', '50mm'];

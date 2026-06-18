@@ -192,6 +192,9 @@ export default function App() {
   const [subPanels, setSubPanels] = useState<
     { id: string; panel: PanelConfig; circuits: Circuit[] }[]
   >([]);
+  const [subSubPanels, setSubSubPanels] = useState<
+    { id: string; panel: PanelConfig; circuits: Circuit[] }[]
+  >([]);
 
   // State for calculators to prevent reset on tab change
   const [iscParams, setIscParams] = useState<ShortCircuitParams>(
@@ -308,6 +311,8 @@ export default function App() {
   const handleSetMdpCircuits = (
     newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[])
   ) => {
+    let subPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
+
     setCircuits((prevCircuits) => {
       const nextCircuits =
         typeof newCircuitsOrFn === "function"
@@ -337,61 +342,45 @@ export default function App() {
             });
 
             if (Object.keys(changedFields).length > 0) {
-              setSubPanels((prevSubPanels) =>
-                prevSubPanels.map((sp) => {
-                  if (sp.id === nextC.linkedSubPanelId) {
-                    const nextPanel = { ...sp.panel };
+              const panelUpdates: Partial<PanelConfig> = {};
+              if ("description" in changedFields) {
+                panelUpdates.designation = nextC.description || "";
+              }
+              if ("voltage" in changedFields) {
+                panelUpdates.voltage = nextC.voltage || 230;
+              }
+              
+              let overrideChanged = false;
+              const nextOverrides: any = { isOverrideEnabled: true };
+              if ("mcbAT" in changedFields) {
+                nextOverrides.breakerAT = nextC.mcbAT;
+                overrideChanged = true;
+              }
+              if ("mcbAF" in changedFields) {
+                nextOverrides.breakerAF = nextC.mcbAF;
+                overrideChanged = true;
+              }
+              if ("mcbType" in changedFields) {
+                nextOverrides.breakerType = nextC.mcbType;
+                overrideChanged = true;
+              }
+              if ("mcbKAIC" in changedFields) {
+                nextOverrides.kaic = nextC.mcbKAIC;
+                overrideChanged = true;
+              }
+              if ("mcbP" in changedFields) {
+                nextOverrides.poles = nextC.mcbP;
+                overrideChanged = true;
+              }
 
-                    if ("description" in changedFields) {
-                      nextPanel.designation = nextC.description || "";
-                    }
-
-                    if ("voltage" in changedFields) {
-                      nextPanel.voltage = nextC.voltage || 230;
-                    }
-
-                    const prevOverrides = nextPanel.mainOverrides || { isOverrideEnabled: false };
-                    const nextOverrides = { ...prevOverrides };
-                    let overrideChanged = false;
-
-                    if ("mcbAT" in changedFields) {
-                      nextOverrides.breakerAT = nextC.mcbAT;
-                      nextOverrides.isOverrideEnabled = true;
-                      overrideChanged = true;
-                    }
-                    if ("mcbAF" in changedFields) {
-                      nextOverrides.breakerAF = nextC.mcbAF;
-                      nextOverrides.isOverrideEnabled = true;
-                      overrideChanged = true;
-                    }
-                    if ("mcbType" in changedFields) {
-                      nextOverrides.breakerType = nextC.mcbType;
-                      nextOverrides.isOverrideEnabled = true;
-                      overrideChanged = true;
-                    }
-                    if ("mcbKAIC" in changedFields) {
-                      nextOverrides.kaic = nextC.mcbKAIC;
-                      nextOverrides.isOverrideEnabled = true;
-                      overrideChanged = true;
-                    }
-                    if ("mcbP" in changedFields) {
-                      nextOverrides.poles = nextC.mcbP;
-                      nextOverrides.isOverrideEnabled = true;
-                      overrideChanged = true;
-                    }
-
-                    if (overrideChanged) {
-                      nextPanel.mainOverrides = nextOverrides;
-                      if ("mcbAT" in changedFields) nextPanel.mainBreakerAT = nextC.mcbAT;
-                      if ("mcbAF" in changedFields) nextPanel.mainBreakerAF = nextC.mcbAF;
-                      if ("mcbKAIC" in changedFields) nextPanel.icRating = `${nextC.mcbKAIC}kAIC`;
-                    }
-
-                    return { ...sp, panel: nextPanel };
-                  }
-                  return sp;
-                })
-              );
+              if (overrideChanged) {
+                panelUpdates.mainOverrides = nextOverrides as any;
+                if ("mcbAT" in changedFields) panelUpdates.mainBreakerAT = nextC.mcbAT;
+                if ("mcbAF" in changedFields) panelUpdates.mainBreakerAF = nextC.mcbAF;
+                if ("mcbKAIC" in changedFields) panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
+              }
+              
+              subPanelsToUpdate.push({ id: nextC.linkedSubPanelId, panel: panelUpdates });
             }
           }
         }
@@ -399,7 +388,235 @@ export default function App() {
 
       return nextCircuits;
     });
+
+    if (subPanelsToUpdate.length > 0) {
+      setSubPanels((prev) => 
+        prev.map((sp) => {
+          const update = subPanelsToUpdate.find(u => u.id === sp.id);
+          if (update) {
+            const newOverrides = update.panel.mainOverrides 
+              ? { ...(sp.panel.mainOverrides || {}), ...update.panel.mainOverrides }
+              : sp.panel.mainOverrides;
+              
+            return {
+              ...sp,
+              panel: {
+                ...sp.panel,
+                ...update.panel,
+                mainOverrides: newOverrides
+              }
+            };
+          }
+          return sp;
+        })
+      );
+    }
   };
+
+  const handleSetSubPanelCircuits = (
+    spIdx: number,
+    spId: string,
+    newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[])
+  ) => {
+    let subSubPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
+
+    setSubPanels((prevSubPanels) => {
+      const currentSp = prevSubPanels[spIdx];
+      if (!currentSp) return prevSubPanels;
+
+      const prevCircuits = currentSp.circuits;
+      const nextCircuits =
+        typeof newCircuitsOrFn === "function"
+          ? newCircuitsOrFn(prevCircuits)
+          : newCircuitsOrFn;
+
+      if (prevCircuits === nextCircuits) return prevSubPanels;
+
+      // Check if any SUB_SUB_PANEL circuits changed from prev to next
+      nextCircuits.forEach((nextC) => {
+        if (nextC.loadType === LoadType.SUB_SUB_PANEL && nextC.linkedSubPanelId) {
+          const prevC = prevCircuits.find((pc) => pc.id === nextC.id);
+          if (prevC) {
+            // Collect any edited fields
+            const changedFields: Partial<Circuit> = {};
+            const fieldsToCheck: (keyof Circuit)[] = [
+              "description",
+              "mcbAT",
+              "mcbAF",
+              "mcbP",
+              "mcbKAIC",
+              "mcbType",
+              "voltage",
+            ];
+            fieldsToCheck.forEach((field) => {
+              if (nextC[field] !== prevC[field]) {
+                (changedFields as any)[field] = nextC[field];
+              }
+            });
+
+            if (Object.keys(changedFields).length > 0) {
+              const panelUpdates: Partial<PanelConfig> = {};
+              if ("description" in changedFields) {
+                panelUpdates.designation = nextC.description || "";
+              }
+              if ("voltage" in changedFields) {
+                panelUpdates.voltage = nextC.voltage || 230;
+              }
+              
+              let overrideChanged = false;
+              const nextOverrides: any = { isOverrideEnabled: true };
+              if ("mcbAT" in changedFields) {
+                nextOverrides.breakerAT = nextC.mcbAT;
+                overrideChanged = true;
+              }
+              if ("mcbAF" in changedFields) {
+                nextOverrides.breakerAF = nextC.mcbAF;
+                overrideChanged = true;
+              }
+              if ("mcbType" in changedFields) {
+                nextOverrides.breakerType = nextC.mcbType;
+                overrideChanged = true;
+              }
+              if ("mcbKAIC" in changedFields) {
+                nextOverrides.kaic = nextC.mcbKAIC;
+                overrideChanged = true;
+              }
+              if ("mcbP" in changedFields) {
+                nextOverrides.poles = nextC.mcbP;
+                overrideChanged = true;
+              }
+
+              if (overrideChanged) {
+                panelUpdates.mainOverrides = nextOverrides as any;
+                if ("mcbAT" in changedFields) panelUpdates.mainBreakerAT = nextC.mcbAT;
+                if ("mcbAF" in changedFields) panelUpdates.mainBreakerAF = nextC.mcbAF;
+                if ("mcbKAIC" in changedFields) panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
+              }
+              
+              subSubPanelsToUpdate.push({ id: nextC.linkedSubPanelId, panel: panelUpdates });
+            }
+          }
+        }
+      });
+
+      return prevSubPanels.map((p, i) =>
+        i === spIdx ? { ...p, circuits: nextCircuits } : p
+      );
+    });
+
+    if (subSubPanelsToUpdate.length > 0) {
+      setSubSubPanels((prev) => 
+        prev.map((ssp) => {
+          const update = subSubPanelsToUpdate.find(u => u.id === ssp.id);
+          if (update) {
+            const newOverrides = update.panel.mainOverrides 
+              ? { ...(ssp.panel.mainOverrides || {}), ...update.panel.mainOverrides }
+              : ssp.panel.mainOverrides;
+              
+            return {
+              ...ssp,
+              panel: {
+                ...ssp.panel,
+                ...update.panel,
+                mainOverrides: newOverrides
+              }
+            };
+          }
+          return ssp;
+        })
+      );
+    }
+  };
+
+  // Synchronize Sub-Sub-Panels recalculations back to Sub-Panels circuits
+  useEffect(() => {
+    setSubPanels((prevSubPanels) => {
+      if (!prevSubPanels || prevSubPanels.length === 0) return prevSubPanels;
+      let anyPanelChanged = false;
+      const nextSubPanels = prevSubPanels.map((sp) => {
+        let changed = false;
+        const nextCircuits = sp.circuits.map((c) => {
+          if (c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId) {
+            const ssp = subSubPanels.find((s) => s.id === c.linkedSubPanelId);
+            if (ssp) {
+              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(ssp.panel, ssp.circuits);
+
+              const subTotalWattage = ssp.circuits.reduce(
+                (sum, cc) =>
+                  sum +
+                  (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
+                    ? 0
+                    : (cc.wattage || 0) * (cc.quantity || 1)),
+                0,
+              );
+
+              const subPoles = subMainFeeder.poles;
+              const subCB = subMainFeeder.cb;
+              const subAF = subMainFeeder.af;
+              const subKAIC = subMainFeeder.kaic;
+              const subType = subMainFeeder.type as MCBType;
+              const subWireSize = formatWireSizeLocal(subMainFeeder.wire.size);
+              const subGroundSize = subMainFeeder.groundSize;
+              const subConduitSize = subMainFeeder.conduitSize;
+
+              const subVoltage = ssp.panel.voltage;
+              const designation = ssp.panel.designation || "Sub-Sub Panel";
+
+              const is3PhaseMain = c.phases && c.phases.length === 3;
+              const cirV = c.voltage || subVoltage || 230;
+              const loadI = subMainCurrent.baseAmp;
+              const demandVA = is3PhaseMain ? loadI * cirV * 1.732 : loadI * cirV;
+
+              if (
+                c.loadVA !== demandVA ||
+                c.wattage !== subTotalWattage ||
+                c.mcbP !== subPoles ||
+                c.mcbAT !== subCB ||
+                c.mcbAF !== subAF ||
+                c.mcbKAIC !== subKAIC ||
+                c.mcbType !== subType ||
+                c.wireSize !== subWireSize ||
+                c.groundSize !== subGroundSize ||
+                c.conduitSize !== subConduitSize ||
+                c.voltage !== subVoltage ||
+                c.description !== designation ||
+                Math.abs((c.loadA || 0) - loadI) > 0.01
+              ) {
+                changed = true;
+                return {
+                  ...c,
+                  wattage: subTotalWattage,
+                  loadVA: demandVA,
+                  loadA: Number(loadI.toFixed(2)),
+                  quantity: 1,
+                  mcbP: subPoles,
+                  mcbAT: subCB,
+                  mcbAF: subAF,
+                  mcbKAIC: subKAIC,
+                  mcbType: subType,
+                  wireSize: subWireSize,
+                  groundSize: subGroundSize,
+                  conduitSize: subConduitSize,
+                  voltage: subVoltage,
+                  description: designation,
+                };
+              }
+            }
+          }
+          return c;
+        });
+
+        if (changed) {
+          anyPanelChanged = true;
+          return { ...sp, circuits: nextCircuits };
+        }
+        return sp;
+      });
+
+      if (anyPanelChanged) return nextSubPanels;
+      return prevSubPanels;
+    });
+  }, [subSubPanels, computePanelScheduleValues]);
 
   // Synchronize Sub-Panels recalculations back to Main Panel circuits and update the Main Panel in real-time
   useEffect(() => {
@@ -411,7 +628,7 @@ export default function App() {
           const sp = subPanels.find((s) => s.id === c.linkedSubPanelId);
           if (sp) {
             // Compute sub-panel actual values
-            const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+            const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits);
 
             const subTotalWattage = sp.circuits.reduce(
               (sum, cc) =>
@@ -438,10 +655,11 @@ export default function App() {
             // Since it's connected to the main panel, using the main panel's system/poles for current calculation:
             const is3PhaseMain = c.phases && c.phases.length === 3;
             const cirV = c.voltage || subVoltage || 230;
-            const loadI = is3PhaseMain ? subTotalVA / (cirV * 1.732) : subTotalVA / cirV;
+            const loadI = subMainCurrent.baseAmp;
+            const demandVA = is3PhaseMain ? loadI * cirV * 1.732 : loadI * cirV;
 
             if (
-              c.loadVA !== subTotalVA ||
+              c.loadVA !== demandVA ||
               c.wattage !== subTotalWattage ||
               c.mcbP !== subPoles ||
               c.mcbAT !== subCB ||
@@ -459,7 +677,7 @@ export default function App() {
               return {
                 ...c,
                 wattage: subTotalWattage,
-                loadVA: subTotalVA,
+                loadVA: demandVA,
                 loadA: Number(loadI.toFixed(2)),
                 quantity: 1,
                 mcbP: subPoles,
@@ -510,8 +728,14 @@ export default function App() {
   const handleConfirmDuplicate = () => {
     if (!panelToDuplicate) return;
     const targetId = panelToDuplicate.id;
-    const original = subPanels.find((sp) => sp.id === targetId);
-    if (!original) return;
+    const originalSp = subPanels.find((sp) => sp.id === targetId);
+    const originalSsp = subSubPanels.find((ssp) => ssp.id === targetId);
+    const original = originalSp || originalSsp;
+    
+    if (!original) {
+      setPanelToDuplicate(null);
+      return;
+    }
 
     const newId = crypto.randomUUID();
     
@@ -529,20 +753,33 @@ export default function App() {
       mainOverrides: original.panel.mainOverrides ? { ...original.panel.mainOverrides } : undefined,
     };
 
-    setSubPanels((prev) => {
-      const idx = prev.findIndex((sp) => sp.id === targetId);
-      const cloned = {
-        id: newId,
-        panel: duplicatedPanel,
-        circuits: duplicatedCircuits,
-      };
-      if (idx !== -1) {
-        const next = [...prev];
-        next.splice(idx + 1, 0, cloned);
-        return next;
-      }
-      return [...prev, cloned];
-    });
+    const cloned = {
+      id: newId,
+      panel: duplicatedPanel,
+      circuits: duplicatedCircuits,
+    };
+
+    if (originalSp) {
+      setSubPanels((prev) => {
+        const idx = prev.findIndex((sp) => sp.id === targetId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next.splice(idx + 1, 0, cloned);
+          return next;
+        }
+        return [...prev, cloned];
+      });
+    } else if (originalSsp) {
+      setSubSubPanels((prev) => {
+        const idx = prev.findIndex((sp) => sp.id === targetId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next.splice(idx + 1, 0, cloned);
+          return next;
+        }
+        return [...prev, cloned];
+      });
+    }
 
     setActiveScheduleTab(newId);
     setPanelToDuplicate(null);
@@ -572,7 +809,7 @@ export default function App() {
     // Ensure accurate sizing by passing older circuits through the current compute engine.
     const seenCircuitIds = new Set<string>();
 
-    const migratedSubPanels = (data.subPanels || []).map((sp) => {
+    const migratedSubSubPanels = (data.subSubPanels || []).map((sp) => {
       const updatedCircuits = sp.circuits.map((c) => {
         let uniqueId = c.id;
         if (seenCircuitIds.has(uniqueId)) {
@@ -584,6 +821,34 @@ export default function App() {
           ...c,
           id: uniqueId,
           ...calculateCircuitValues(c, sp.panel, []),
+        };
+      }) as Circuit[];
+      
+      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits);
+      return { 
+        ...sp, 
+        panel: {
+          ...sp.panel,
+          mainBreakerAT: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAT ? sp.panel.mainOverrides.breakerAT : mainFeeder.cb,
+          mainBreakerAF: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAF ? sp.panel.mainOverrides.breakerAF : mainFeeder.af,
+          icRating: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.kaic ? `${sp.panel.mainOverrides.kaic}kAIC` : `${mainFeeder.kaic}kAIC`,
+        },
+        circuits: updatedCircuits 
+      };
+    });
+
+    const migratedSubPanels = (data.subPanels || []).map((sp) => {
+      const updatedCircuits = sp.circuits.map((c) => {
+        let uniqueId = c.id;
+        if (seenCircuitIds.has(uniqueId)) {
+          uniqueId = crypto.randomUUID();
+        }
+        seenCircuitIds.add(uniqueId);
+
+        return {
+          ...c,
+          id: uniqueId,
+          ...calculateCircuitValues(c, sp.panel, migratedSubSubPanels),
         };
       }) as Circuit[];
       
@@ -633,6 +898,7 @@ export default function App() {
 
     setCircuits(migratedCircuits);
     setSubPanels(migratedSubPanels);
+    setSubSubPanels(migratedSubSubPanels);
 
     // MIGRATION: Update Voltage Drop tracking values
     const newVdCalculations = (data.vdCalculations || []).map((vd) => {
@@ -676,6 +942,7 @@ export default function App() {
     panel,
     circuits,
     subPanels,
+    subSubPanels,
     iscParams,
     iscSource,
     vdCalculations,
@@ -687,6 +954,7 @@ export default function App() {
     setPanel(INITIAL_PANEL);
     setCircuits(getFreshInitialCircuits());
     setSubPanels([]);
+    setSubSubPanels([]);
     setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
     setIscSource("auto");
     setVdCalculations(INITIAL_VOLTAGE_DROP_CALCULATIONS);
@@ -1688,6 +1956,7 @@ export default function App() {
         illumParams,
         images,
         iscParams,
+        subSubPanels
       );
     } catch (e) {
       console.error("Error generating Word doc:", e);
@@ -1838,6 +2107,7 @@ export default function App() {
                   "ALL",
                   vdCalculations,
                   illumParams,
+                  subSubPanels
                 );
               } else {
                 setShowUpgrade(true);
@@ -2523,28 +2793,67 @@ export default function App() {
                           </button>
                         ))}
 
+                        {/* Sub-Sub Panels Tags */}
+                        {subSubPanels.map((ssp) => (
+                          <button
+                            key={ssp.id}
+                            onClick={() => setActiveScheduleTab(ssp.id)}
+                            className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer border border-dashed border-cyan-200 dark:border-cyan-800 ${
+                              activeScheduleTab === ssp.id
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px] border-none"
+                                : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
+                            }`}
+                          >
+                            <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>{ssp.panel.designation || "Sub-Sub Panel"}</span>
+                          </button>
+                        ))}
+
                         {/* Plus Quick Tab Action */}
-                        <button
-                          onClick={() => {
-                            const newId = crypto.randomUUID();
-                            setSubPanels((prev) => [
-                              ...prev,
-                              {
-                                id: newId,
-                                panel: {
-                                  ...INITIAL_PANEL,
-                                  designation: `Sub-Panel ${prev.length + 1}`,
+                        <div className="flex items-center gap-2 ml-auto">
+                          <button
+                            onClick={() => {
+                              const newId = crypto.randomUUID();
+                              setSubPanels((prev) => [
+                                ...prev,
+                                {
+                                  id: newId,
+                                  panel: {
+                                    ...INITIAL_PANEL,
+                                    designation: `Sub-Panel ${prev.length + 1}`,
+                                  },
+                                  circuits: getFreshInitialCircuits(),
                                 },
-                                circuits: getFreshInitialCircuits(),
-                              },
-                            ]);
-                            setActiveScheduleTab(newId);
-                          }}
-                          className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 border border-dashed border-indigo-300 dark:border-indigo-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ml-auto"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add Sub-Panel
-                        </button>
+                              ]);
+                              setActiveScheduleTab(newId);
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 border border-dashed border-indigo-300 dark:border-indigo-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Sub-Panel
+                          </button>
+                          <button
+                            onClick={() => {
+                              const newId = crypto.randomUUID();
+                              setSubSubPanels((prev) => [
+                                ...prev,
+                                {
+                                  id: newId,
+                                  panel: {
+                                    ...INITIAL_PANEL,
+                                    designation: `Sub-Sub Panel ${prev.length + 1}`,
+                                  },
+                                  circuits: getFreshInitialCircuits(),
+                                },
+                              ]);
+                              setActiveScheduleTab(newId);
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 bg-cyan-50 dark:bg-cyan-950/20 hover:bg-cyan-100 dark:hover:bg-cyan-950/40 border border-dashed border-cyan-300 dark:border-cyan-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add Sub-Sub Panel
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -2594,24 +2903,9 @@ export default function App() {
                               });
                             }}
                             circuits={sp.circuits}
-                            setCircuits={(newCircuits) => {
-                              setSubPanels((prev) => {
-                                const currentCircuits = prev[index]?.circuits;
-                                if (!currentCircuits) return prev;
-                                const updatedCircuits =
-                                  typeof newCircuits === "function"
-                                    ? newCircuits(currentCircuits)
-                                    : newCircuits;
-                                if (currentCircuits === updatedCircuits)
-                                  return prev;
-                                return prev.map((p, i) =>
-                                  i === index
-                                    ? { ...p, circuits: updatedCircuits }
-                                    : p,
-                                );
-                              });
-                            }}
+                            setCircuits={(newCircuits) => handleSetSubPanelCircuits(index, sp.id, newCircuits)}
                             isSubPanel={true}
+                            availableSubPanels={subSubPanels}
                             onRemoveSubPanel={() => {
                               setSubPanels((prev) =>
                                 prev.filter((p) => p.id !== sp.id),
@@ -2643,6 +2937,125 @@ export default function App() {
                               circuitNo: parentMdpConn.circuitNo,
                               description: parentMdpConn.description,
                               mdpDesignation: panel.designation || "MDP"
+                            } : undefined}
+                          />
+
+                          {!isExporting && activeScheduleTab === sp.id && (
+                            <button
+                              onClick={() => {
+                                const newId = crypto.randomUUID();
+                                setSubSubPanels((prev) => [
+                                  ...prev,
+                                  {
+                                    id: newId,
+                                    panel: {
+                                      ...INITIAL_PANEL,
+                                      designation: `Sub-Sub Panel ${prev.length + 1}`,
+                                    },
+                                    circuits: getFreshInitialCircuits(),
+                                  },
+                                ]);
+                                setActiveScheduleTab(newId);
+                              }}
+                              className="w-full mt-6 py-6 border-2 border-dashed border-cyan-300 dark:border-cyan-800 rounded-2xl flex items-center justify-center gap-2 text-cyan-600 dark:text-cyan-500 font-bold hover:text-cyan-700 dark:hover:text-cyan-400 hover:border-cyan-400 hover:bg-cyan-50/50 dark:hover:bg-cyan-950/20 transition-all no-print cursor-pointer shadow-sm"
+                            >
+                              <Layers className="w-5 h-5 animate-pulse" />
+                              Create New Sub-Sub Panel Board
+                            </button>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* 3. Sub-Sub-Panels Schedules */}
+                    {subSubPanels.map((ssp, index) => {
+                      const isVisible =
+                        isExporting || activeScheduleTab === ssp.id;
+                      if (!isVisible) return null;
+
+                      let parentSpConn: any;
+                      let parentSpName = "";
+                      for (const sp of subPanels) {
+                        const conn = sp.circuits.find(
+                          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id
+                        );
+                        if (conn) {
+                          parentSpConn = conn;
+                          parentSpName = sp.panel.designation || "Sub-Panel";
+                          break;
+                        }
+                      }
+
+                      return (
+                        <React.Fragment key={ssp.id}>
+                          <LoadSchedule
+                            panel={ssp.panel}
+                            setPanel={(newPanel) => {
+                              setSubSubPanels((prev) => {
+                                const currentPanel = prev[index]?.panel;
+                                if (!currentPanel) return prev;
+                                const updatedPanel =
+                                  typeof newPanel === "function"
+                                    ? newPanel(currentPanel)
+                                    : newPanel;
+                                if (currentPanel === updatedPanel) return prev;
+                                return prev.map((p, i) =>
+                                  i === index
+                                    ? { ...p, panel: updatedPanel }
+                                    : p,
+                                );
+                              });
+                            }}
+                            circuits={ssp.circuits}
+                            setCircuits={(newCircuits) => {
+                              setSubSubPanels((prev) => {
+                                const currentCircuits = prev[index]?.circuits;
+                                if (!currentCircuits) return prev;
+                                const updatedCircuits =
+                                  typeof newCircuits === "function"
+                                    ? newCircuits(currentCircuits)
+                                    : newCircuits;
+                                if (currentCircuits === updatedCircuits)
+                                  return prev;
+                                return prev.map((p, i) =>
+                                  i === index
+                                    ? { ...p, circuits: updatedCircuits }
+                                    : p,
+                                );
+                              });
+                            }}
+                            isSubPanel={true}
+                            isSubSubPanel={true}
+                            onRemoveSubPanel={() => {
+                              setSubSubPanels((prev) =>
+                                prev.filter((p) => p.id !== ssp.id),
+                              );
+                              // Disconnect sub-sub panel reference from sub panels circuits
+                              setSubPanels((prevSubPanels) =>
+                                prevSubPanels.map((sp) => ({
+                                  ...sp,
+                                  circuits: sp.circuits.map((c) =>
+                                    c.linkedSubPanelId === ssp.id
+                                      ? {
+                                          ...c,
+                                          linkedSubPanelId: undefined,
+                                          loadType: LoadType.SPARE,
+                                          description: `${c.description || "Sub-Sub Panel"} (Disconnected)`,
+                                        }
+                                      : c
+                                  ),
+                                }))
+                              );
+                              setActiveScheduleTab(subPanels[0]?.id || "mdp");
+                            }}
+                            iscParams={iscParams}
+                            isPremium={userPlan === "premium" || isAdmin}
+                            onRequestUpgrade={() => setShowUpgrade(true)}
+                            isAdmin={isAdmin}
+                            parentMdpConnection={parentSpConn ? {
+                              circuitNo: parentSpConn.circuitNo,
+                              description: parentSpConn.description,
+                              mdpDesignation: parentSpName
                             } : undefined}
                           />
                         </React.Fragment>
@@ -2699,6 +3112,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
+                    subSubPanels={subSubPanels}
                     params={iscParams}
                     setParams={setIscParams}
                     source={iscSource}
@@ -2731,6 +3145,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
+                    subSubPanels={subSubPanels}
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
                     isPremium={userPlan === "premium" || isAdmin}
@@ -2793,6 +3208,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
+                    subSubPanels={subSubPanels}
                     iscParams={iscParams}
                     isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}

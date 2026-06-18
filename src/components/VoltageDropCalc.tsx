@@ -28,6 +28,7 @@ export interface VoltageDropCalcProps {
   panel?: PanelConfig;
   circuits?: Circuit[];
   subPanels?: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
+  subSubPanels?: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
   calculations: VoltageDropCalculation[];
   setCalculations: React.Dispatch<
     React.SetStateAction<VoltageDropCalculation[]>
@@ -40,6 +41,7 @@ export default function VoltageDropCalc({
   panel,
   circuits,
   subPanels,
+  subSubPanels,
   calculations,
   setCalculations,
   isPremium = true,
@@ -47,6 +49,10 @@ export default function VoltageDropCalc({
 }: VoltageDropCalcProps) {
   const [source, setSource] = useState<string>("custom");
   const [newLength, setNewLength] = useState<number>(30);
+
+  const allSubPanels = useMemo(() => {
+    return [...(subPanels || []), ...(subSubPanels || [])];
+  }, [subPanels, subSubPanels]);
 
   useEffect(() => {
     if (!circuits || !panel) return;
@@ -150,8 +156,8 @@ export default function VoltageDropCalc({
       });
 
       // 3. Maintain Sub-Panel Feeders & their branch circuits
-      if (subPanels) {
-        subPanels.forEach((sp) => {
+      if (allSubPanels.length > 0) {
+        allSubPanels.forEach((sp) => {
           const spIs3PH = sp.panel.system.includes("3PH");
           const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
 
@@ -285,7 +291,7 @@ export default function VoltageDropCalc({
 
       return changed ? updatedCalcs : prev;
     });
-  }, [circuits, panel, subPanels, setCalculations]);
+  }, [circuits, panel, allSubPanels, setCalculations]);
 
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data =
@@ -337,8 +343,8 @@ export default function VoltageDropCalc({
         systemType: is3PH ? "3PH" : "1PH",
       };
       setCalculations([...calculations, newCalc]);
-    } else if (subPanels && subPanels.some(sp => sp.id === source)) {
-      const sp = subPanels.find(sp => sp.id === source)!;
+    } else if (allSubPanels.some(sp => sp.id === source)) {
+      const sp = allSubPanels.find(sp => sp.id === source)!;
       const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
       const is3PH = sp.panel.system.includes("3PH");
 
@@ -357,8 +363,8 @@ export default function VoltageDropCalc({
       let foundCircuit = circuits?.find((c) => c.id === source);
       let parentPanel: PanelConfig | undefined = panel;
       
-      if (!foundCircuit && subPanels) {
-        for (const sp of subPanels) {
+      if (!foundCircuit && allSubPanels.length > 0) {
+        for (const sp of allSubPanels) {
           const fc = sp.circuits.find(c => c.id === source);
           if (fc) {
             foundCircuit = fc;
@@ -455,7 +461,7 @@ export default function VoltageDropCalc({
                     </option>
                   ))}
                 </optgroup>
-                {subPanels && subPanels.map((sp) => (
+                {allSubPanels.map((sp) => (
                   <React.Fragment key={sp.id}>
                     <option
                       value={sp.id}

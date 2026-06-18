@@ -117,6 +117,7 @@ export interface LoadScheduleProps {
   circuits: Circuit[];
   setCircuits: React.Dispatch<React.SetStateAction<Circuit[]>>;
   isSubPanel?: boolean;
+  isSubSubPanel?: boolean;
   onAddSubPanel?: () => void;
   onRemoveSubPanel?: () => void;
   onDuplicateSubPanel?: () => void;
@@ -417,6 +418,7 @@ export default function LoadSchedule({
   circuits,
   setCircuits,
   isSubPanel = false,
+  isSubSubPanel = false,
   onRemoveSubPanel,
   onDuplicateSubPanel,
   availableSubPanels,
@@ -646,12 +648,10 @@ export default function LoadSchedule({
       if (availableSubPanels) {
         for (let i = 0; i < newCircuits.length; i++) {
           const c = newCircuits[i];
-          if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId) {
-            const sp = availableSubPanels.find(
-              (s) => s.id === c.linkedSubPanelId,
-            );
+          if ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) && c.linkedSubPanelId) {
+            const sp = availableSubPanels.find((s) => s.id === c.linkedSubPanelId);
             if (sp) {
-              const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits);
 
               const subTotalWattage = sp.circuits.reduce(
                 (sum, cc) =>
@@ -672,10 +672,15 @@ export default function LoadSchedule({
               const subConduitSize = subMainFeeder.conduitSize;
 
               const subVoltage = sp.panel.voltage;
-              const designation = sp.panel.designation || "Sub-Panel";
+              const designation = sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel");
+
+              const is3PhaseMain = c.phases && c.phases.length === 3;
+              const cirV = c.voltage || subVoltage || 230;
+              const loadI = subMainCurrent.baseAmp;
+              const demandVA = is3PhaseMain ? loadI * cirV * 1.732 : loadI * cirV;
 
               if (
-                c.loadVA !== subTotalVA ||
+                c.loadVA !== demandVA ||
                 c.wattage !== subTotalWattage ||
                 c.mcbP !== subPoles ||
                 c.mcbAT !== subCB ||
@@ -686,13 +691,15 @@ export default function LoadSchedule({
                 c.groundSize !== subGroundSize ||
                 c.conduitSize !== subConduitSize ||
                 c.voltage !== subVoltage ||
-                c.description !== designation
+                c.description !== designation ||
+                Math.abs((c.loadA || 0) - loadI) > 0.01
               ) {
                 newCircuits[i] = {
                   ...c,
                   quantity: 1,
                   wattage: subTotalWattage,
-                  loadVA: subTotalVA,
+                  loadVA: demandVA,
+                  loadA: Number(loadI.toFixed(2)),
                   mcbP: subPoles,
                   mcbAT: subCB,
                   mcbAF: subAF,
@@ -928,7 +935,7 @@ export default function LoadSchedule({
             is3Phase,
             panel.connectionType,
           );
-        if (cir.loadType === LoadType.SUB_PANEL) {
+        if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
         const loadI = is3Phase
@@ -1044,7 +1051,7 @@ export default function LoadSchedule({
             is3Phase,
             panel.connectionType,
           );
-        if (cir.loadType === LoadType.SUB_PANEL) {
+        if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
         const loadI = is3Phase
@@ -1555,9 +1562,11 @@ export default function LoadSchedule({
           <div className="flex items-center gap-2">
             <Settings2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-              {isSubPanel
-                ? "Sub-Panel Configuration"
-                : "Panel Board Configuration"}
+              {isSubSubPanel
+                ? "Sub-Sub Panel Configuration"
+                : isSubPanel
+                  ? "Sub-Panel Configuration"
+                  : "Panel Board Configuration"}
             </h2>
           </div>
           <div className="flex items-center gap-2">
@@ -1584,7 +1593,7 @@ export default function LoadSchedule({
                 className="px-3 py-1.5 text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
-                Remove Sub-Panel
+                {isSubSubPanel ? "Remove Sub-Sub Panel" : "Remove Sub-Panel"}
               </button>
             )}
             <button
@@ -1995,7 +2004,7 @@ export default function LoadSchedule({
                 {isSubPanel && !parentMdpConnection && (
                   <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-250 dark:border-amber-900/40 rounded-xl no-print">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                    <span>Independent Sub-Panel (Not Connected to MDP)</span>
+                    <span>{isSubSubPanel ? "Independent Sub-Sub Panel (Not Connected)" : "Independent Sub-Panel (Not Connected to MDP)"}</span>
                   </div>
                 )}
               </div>
@@ -2191,13 +2200,13 @@ export default function LoadSchedule({
                             const nextType = e.target.value as LoadType;
                             let fallbackSubId = c.linkedSubPanelId;
                             if (
-                              nextType === LoadType.SUB_PANEL &&
+                              (nextType === LoadType.SUB_PANEL || nextType === LoadType.SUB_SUB_PANEL) &&
                               !fallbackSubId &&
                               availableSubPanels?.length
                             ) {
                               const existingSubCount = circuits.filter(
                                 (circ) =>
-                                  circ.loadType === LoadType.SUB_PANEL &&
+                                  circ.loadType === nextType &&
                                   circ.id !== c.id,
                               ).length;
                               const targetIndex = Math.min(
@@ -2219,7 +2228,20 @@ export default function LoadSchedule({
                           className="p-0.5 bg-slate-100 dark:bg-slate-800 border-0 rounded uppercase font-black no-print shrink-0 text-slate-800 dark:text-slate-100"
                           style={{ fontSize: tableFontSize - 3 }}
                         >
-                          {Object.keys(DESCRIPTION_CODES).map((code) => (
+                          {Object.keys(DESCRIPTION_CODES)
+                            .filter((code) => {
+                              // Sub-Sub Panels cannot connect anything further down (no SUBSUB)
+                              if (isSubSubPanel) {
+                                return code !== "SUB" && code !== "SUBSUB";
+                              }
+                              // Sub-Panels can only connect to Sub-Sub Panels
+                              if (isSubPanel) {
+                                return code !== "SUB";
+                              }
+                              // MDP can only connect to Sub-Panels
+                              return code !== "SUBSUB";
+                            })
+                            .map((code) => (
                             <option
                               key={code}
                               value={code}
@@ -2229,7 +2251,7 @@ export default function LoadSchedule({
                             </option>
                           ))}
                         </select>
-                        {c.loadType === "SUB" ? (
+                        {c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? (
                           <div className="flex-1 flex flex-col gap-1 min-w-0">
                             <select
                               value={c.linkedSubPanelId || ""}
@@ -2245,7 +2267,7 @@ export default function LoadSchedule({
                                 disabled
                                 className="dark:bg-slate-900 dark:text-slate-100"
                               >
-                                Select Sub-Panel
+                                Select {c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel"}
                               </option>
                               {availableSubPanels?.map((sp) => (
                                 <option
@@ -2253,7 +2275,7 @@ export default function LoadSchedule({
                                   value={sp.id}
                                   className="dark:bg-slate-900 dark:text-slate-100"
                                 >
-                                  {sp.panel.designation || "Unnamed Sub-Panel"}
+                                  {sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Unnamed Sub-Sub Panel" : "Unnamed Sub-Panel")}
                                 </option>
                               ))}
                             </select>
@@ -2264,7 +2286,7 @@ export default function LoadSchedule({
                                if (sp) {
                                  const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
                                  const isVoltageMismatch = c.voltage !== sp.panel.voltage;
-                                 const isDesignationMismatch = c.description !== sp.panel.designation;
+                                 const isDesignationMismatch = c.description !== (sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel"));
                                  const isBreakerMismatch = c.mcbAT !== subMainFeeder.cb;
                                  const isWireSizeMismatch = c.wireSize !== formatWireSizeLocal(subMainFeeder.wire.size);
 
@@ -2591,34 +2613,34 @@ export default function LoadSchedule({
                           {isSpace
                             ? "-"
                             : c.phases.includes("R") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-yellow-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.includes("Y") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-blue-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.includes("B") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-indigo-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.length === 3
-                              ? <AmpsInput c={c} panel={panel} is3P={true} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, true)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={true} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, true)} />
                               : "-"}
                         </td>
                       </>
                     ) : (
                       <td className="px-1 py-3 text-center font-mono font-bold truncate">
-                        {isSpace ? "-" : <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === "SUB"} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />}
+                        {isSpace ? "-" : <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />}
                       </td>
                     )}
                     <td className="px-1 py-3 text-center">
@@ -2627,13 +2649,13 @@ export default function LoadSchedule({
                       ) : (
                         <select
                           value={c.mcbAT || ""}
-                          disabled={c.loadType === "SUB"}
+                          disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbAT: parseInt(e.target.value),
                             })
                           }
-                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === "SUB" ? "text-slate-400 dark:text-slate-500" : ""}`}
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
                         >
                           {STANDARD_CB_RATINGS.map((r) => (
                             <option
@@ -2656,13 +2678,13 @@ export default function LoadSchedule({
                       ) : (
                         <select
                           value={c.mcbP || ""}
-                          disabled={c.loadType === "SUB"}
+                          disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbP: parseInt(e.target.value),
                             })
                           }
-                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === "SUB" ? "text-slate-400 dark:text-slate-500" : ""}`}
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
                         >
                           {[1, 2, 3, 4].map((p) => (
                             <option
@@ -2685,12 +2707,13 @@ export default function LoadSchedule({
                       ) : (
                         <select
                           value={c.mcbType || ""}
+                          disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL}
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbType: e.target.value as MCBType,
                             })
                           }
-                          className="bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900"
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? 'text-slate-400 dark:text-slate-500' : ''}`}
                           style={{ fontSize: tableFontSize - 2 }}
                         >
                           {Object.values(MCBType).map((t) => (
@@ -2915,15 +2938,17 @@ export default function LoadSchedule({
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
                     LaTex Solution Details
                   </h4>
-                  <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center justify-center">
-                    <LatexRenderer
-                      tex={`\\begin{aligned}
-I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
-&= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
-&= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
-&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
-\\end{aligned}`}
-                    />
+                  <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center">
+                    <div className="mx-auto">
+                      <LatexRenderer
+                        tex={`\\begin{aligned}
+  I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
+  &= \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+  &= ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+  &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
+  \\end{aligned}`}
+                      />
+                    </div>
                   </div>
                   <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">
@@ -3010,15 +3035,17 @@ I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
                     LaTex Solution Details
                   </h4>
-                  <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center justify-center">
-                    <LatexRenderer
-                      tex={`\\begin{aligned}
-I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
-&= (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
-&= ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
-&= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
-\\end{aligned}`}
-                    />
+                  <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center">
+                    <div className="mx-auto">
+                      <LatexRenderer
+                        tex={`\\begin{aligned}
+  I_{\\text{demand}} &= (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\\\
+  &= (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+  &= ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\\\
+  &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
+  \\end{aligned}`}
+                      />
+                    </div>
                   </div>
                   <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">

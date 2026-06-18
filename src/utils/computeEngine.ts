@@ -173,13 +173,13 @@ export const calculateCircuitValues = (
 ): Partial<Circuit> => {
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
   if (
-    c.loadType === LoadType.SUB_PANEL &&
+    (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) &&
     c.linkedSubPanelId &&
     availableSubPanels
   ) {
     const sp = availableSubPanels.find((s) => s.id === c.linkedSubPanelId);
     if (sp) {
-      const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+      const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits);
 
       const subTotalWattage = sp.circuits.reduce(
         (sum, cc) =>
@@ -190,11 +190,21 @@ export const calculateCircuitValues = (
         0,
       );
 
+      const is3PhaseMain = c.phases && c.phases.length === 3;
+      const subVoltage = sp.panel.voltage || 230;
+      const computedDemandAmp = subMainCurrent.baseAmp || 0;
+
+      // Calculate the demand-based VA for the subpanel reference row in parent
+      const demandVA = is3PhaseMain 
+        ? Math.round(computedDemandAmp * subVoltage * 1.732)
+        : Math.round(computedDemandAmp * subVoltage);
+
       c.wattage = subTotalWattage;
-      c.loadVA = subTotalVA;
+      c.loadVA = demandVA;
+      c.loadA = Number(computedDemandAmp.toFixed(2));
       c.quantity = 1;
       c.mcbP = subMainFeeder.poles;
-      c.voltage = sp.panel.voltage;
+      c.voltage = subVoltage;
       c.mcbAT = subMainFeeder.cb;
       c.mcbAF = subMainFeeder.af;
       c.mcbKAIC = subMainFeeder.kaic;
@@ -202,7 +212,7 @@ export const calculateCircuitValues = (
       c.wireSize = formatWireSizeLocal(subMainFeeder.wire.size);
       c.groundSize = subMainFeeder.groundSize;
       c.conduitSize = subMainFeeder.conduitSize;
-      c.description = sp.panel.designation || "Sub-Panel";
+      c.description = sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel");
     }
   }
 
@@ -215,6 +225,7 @@ export const calculateCircuitValues = (
     }
   } else if (
     c.loadType !== LoadType.SUB_PANEL &&
+    c.loadType !== LoadType.SUB_SUB_PANEL &&
     !panel.system.includes("3PH")
   ) {
     // Auto-update poles based on global connection type for 1-phase systems
@@ -244,7 +255,7 @@ export const calculateCircuitValues = (
   let qty = c.quantity || 1;
   let w = isSpace ? 0 : c.wattage || 0;
   let va =
-    c.loadType === LoadType.SUB_PANEL
+    (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL)
       ? (c.loadVA ?? qty * w)
       : Math.round(qty * w);
 
@@ -280,7 +291,9 @@ export const calculateCircuitValues = (
     c.wattage = w;
     c.loadVA = va;
   } else {
-    if (panel.system.includes("3PH") && is3PhaseLoad) {
+    if (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) {
+      loadA = c.loadA || 0;
+    } else if (panel.system.includes("3PH") && is3PhaseLoad) {
       loadA = va / (v * 1.732);
     } else {
       loadA = va / v;
@@ -326,21 +339,21 @@ export const calculateCircuitValues = (
       requiredMcbAT =
         under225.length > 0 ? Math.max(15, under225[under225.length - 1]) : 15;
     }
-  } else if (c.loadType === LoadType.SUB_PANEL) {
+  } else if (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) {
     requiredMcbAT = c.mcbAT || 30;
   } else {
     requiredMcbAT = STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 15;
   }
 
   const isSubPanelLink =
-    c.loadType === LoadType.SUB_PANEL &&
+    (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) &&
     c.linkedSubPanelId &&
     availableSubPanels &&
     availableSubPanels.some((s) => s.id === c.linkedSubPanelId);
 
   const mcbAT = isSubPanelLink
     ? (c.mcbAT || 30)
-    : (c.loadType === LoadType.SUB_PANEL ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0));
+    : ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0));
 
   const mcbAF = isSubPanelLink && c.mcbAF
     ? c.mcbAF
@@ -481,7 +494,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       cir.voltage ||
       getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
 
-    if (cir.loadType === LoadType.SUB_PANEL) {
+    if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
       cirV = cir.voltage || cirV;
     }
 
@@ -593,7 +606,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       let cirV =
         cir.voltage ||
         getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-      if (cir.loadType === LoadType.SUB_PANEL) {
+      if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
         cirV = cir.voltage || cirV;
       }
       const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;

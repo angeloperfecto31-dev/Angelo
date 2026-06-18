@@ -4,6 +4,7 @@ export interface ProjectData {
   panel: PanelConfig;
   circuits: Circuit[];
   subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
+  subSubPanels?: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
   iscParams: ShortCircuitParams;
   iscSource: string;
   vdCalculations: VoltageDropCalculation[];

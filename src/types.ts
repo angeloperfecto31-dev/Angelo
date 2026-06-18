@@ -8,7 +8,8 @@ export enum LoadType {
   POWER = 'P',
   SPARE = 'SP',
   SPACE = 'SPACE',
-  SUB_PANEL = 'SUB'
+  SUB_PANEL = 'SUB',
+  SUB_SUB_PANEL = 'SUBSUB'
 }
 
 export enum MCBType {

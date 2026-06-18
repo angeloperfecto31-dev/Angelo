@@ -9,6 +9,7 @@ export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
   circuits?: Circuit[];
   subPanels?: { id: string, panel: PanelConfig, circuits: Circuit[] }[];
+  subSubPanels?: { id: string, panel: PanelConfig, circuits: Circuit[] }[];
   params: ShortCircuitParams;
   setParams: React.Dispatch<React.SetStateAction<ShortCircuitParams>>;
   source: string;
@@ -110,7 +111,7 @@ const DraggableBox = ({
   );
 };
 
-export default function ShortCircuitCalc({ panel, circuits, subPanels, params, setParams, source, setSource, isPremium = true, onRequestUpgrade }: ShortCircuitCalcProps) {
+export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPanels, params, setParams, source, setSource, isPremium = true, onRequestUpgrade }: ShortCircuitCalcProps) {
 
   const [isBWMode, setIsBWMode] = useState(false);
 
@@ -146,8 +147,24 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
       });
     }
 
+    // Add all sub-sub-panels circuits
+    if (subSubPanels && subSubPanels.length > 0) {
+      subSubPanels.forEach(ssp => {
+        if (ssp.circuits && ssp.circuits.length > 0) {
+          ssp.circuits.forEach(c => {
+            const isMotorOrAC = c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON;
+            if (isMotorOrAC) {
+              mVA += c.loadVA || 0;
+            } else {
+              nmVA += c.loadVA || 0;
+            }
+          });
+        }
+      });
+    }
+
     return { motorLoadVA: mVA, nonMotorLoadVA: nmVA };
-  }, [circuits, subPanels]);
+  }, [circuits, subPanels, subSubPanels]);
 
   // Calculate nearest standard transformer size based on Load Schedule
   useEffect(() => {
@@ -544,8 +561,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, params, s
             </div>
           </div>
 
-          <div className="relative w-full overflow-x-auto flex flex-col items-center justify-center py-6 block overflow-x-auto font-sans">
-            <div id="short-circuit-diagram" className="relative w-[1050px] h-[950px] bg-white transition-[filter]" style={{ filter: isBWMode ? 'grayscale(100%)' : 'none', minWidth: '1050px' }}>
+          <div className="relative w-full overflow-x-auto py-6 font-sans">
+            <div id="short-circuit-diagram" className="relative w-[1050px] mx-auto h-[950px] bg-white transition-[filter]" style={{ filter: isBWMode ? 'grayscale(100%)' : 'none', minWidth: '1050px' }}>
               {/* Wrapping relative container to allow DraggableBoxes to overlay perfectly */}
               <div 
                 className="relative w-[850px] h-[880px] shrink-0 overflow-visible select-none pointer-events-auto ml-[150px] mt-[30px]"

@@ -688,7 +688,7 @@ const drawSystemSLD = (
 
       if (mdpFeederIndex < 0) {
         const mdpSubCircuits = mdpCircuits.filter(
-          (c) => c.loadType === LoadType.SUB_PANEL,
+          (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL,
         );
         if (mdpSubCircuits.length > spIdx) {
           const matchingCircuit = mdpSubCircuits[spIdx];
@@ -834,6 +834,7 @@ export const exportToCAD = (
     | "VOLTAGE_DROP" = "ALL",
   vdCalculations: VoltageDropCalculation[] = [],
   illumParams?: any,
+  subSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[] = [],
 ) => {
   const b = new DxfBuilder();
 
@@ -1017,16 +1018,17 @@ export const exportToCAD = (
   const includeSLDSheet =
     exportMode === "ALL" || exportMode === "LOAD_SCHEDULE";
   const hasIllumination = !!(illumParams?.savedRooms && illumParams.savedRooms.length > 0);
+  const allSubPanels = [...subPanels, ...subSubPanels];
   let totalSheets = 4;
   if (exportMode === "ALL") {
-    let baseSheets = 4 + Math.ceil(subPanels.length / 2);
+    let baseSheets = 4 + Math.ceil(allSubPanels.length / 2);
     let extra = 2; // Voltage Drop and Short Circuit tables
     if (hasIllumination) {
       extra += 1; // plus Illumination table
     }
     totalSheets = baseSheets + extra;
   } else if (exportMode === "LOAD_SCHEDULE") {
-    totalSheets = 2 + Math.ceil(subPanels.length / 2);
+    totalSheets = 2 + Math.ceil(allSubPanels.length / 2);
   } else if (exportMode === "SHORT_CIRCUIT") {
     totalSheets = 3; // Calculations Summary, SLD, and Dedicated SC Table
   } else if (exportMode === "VOLTAGE_DROP") {
@@ -1036,7 +1038,7 @@ export const exportToCAD = (
   // Pre-calculate variable sheet widths and their xOffsets
   let leftSpCount = 0;
   let rightSpCount = 0;
-  subPanels.forEach((sp, spIdx) => {
+  allSubPanels.forEach((sp, spIdx) => {
     let mdpFeederIndex = circuits.findIndex(
       (c) =>
         c.linkedSubPanelId === sp.id ||
@@ -1044,7 +1046,7 @@ export const exportToCAD = (
     );
     if (mdpFeederIndex < 0) {
       const mdpSubCircuits = circuits.filter(
-        (c) => c.loadType === LoadType.SUB_PANEL,
+        (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL,
       );
       if (mdpSubCircuits.length > spIdx) {
         mdpFeederIndex = circuits.findIndex(
@@ -2244,7 +2246,7 @@ export const exportToCAD = (
   if (exportMode === "ALL" || exportMode === "LOAD_SCHEDULE") {
     let activeSheetIndex = -1;
 
-    subPanels.forEach((sp, i) => {
+    allSubPanels.forEach((sp, i) => {
       // Logic for bundling 2 sub-panels side-by-side if they both fit in 1 template
       const isEven = i % 2 === 0;
       if (isEven) {
