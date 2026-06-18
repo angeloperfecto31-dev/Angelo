@@ -24,12 +24,17 @@ import {
 } from "../types";
 import { exportToCAD } from "../utils/exportDxf";
 import {
-  WIRE_AMPACITY_TABLE,
   STANDARD_CB_RATINGS,
   SYSTEM_VOLTAGES,
   DESCRIPTION_CODES,
   LOAD_PRESETS,
 } from "../constants";
+import {
+  PEC_AMPACITY_TABLE,
+  getConductorAmpacity,
+  getTemperatureForInsulation,
+  sizeConductor,
+} from "../utils/pecAmpacityDatabase";
 import { SingleLineDiagram } from "./SingleLineDiagram";
 import LatexRenderer from "./LatexRenderer";
 import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal } from "../utils/computeEngine";
@@ -553,42 +558,13 @@ export default function LoadSchedule({
 
   // Enforce PEC Small Conductor Rule and standard matching (including support for parallel conductor runs)
   const getWireForBreaker = (cbRating: number, designAmpacity: number) => {
-    const requiredAmpacity = Math.max(designAmpacity, cbRating);
-
-    // For small branch circuits (<= 30A), enforce PEC Section 2.40.4(D) small conductor limit strictly
-    if (cbRating <= 30) {
-      let minSize = 2.0;
-      if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-      else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
-
-      const wire =
-        WIRE_AMPACITY_TABLE.find(
-          (w) => w.ampacity >= requiredAmpacity && w.size >= minSize,
-        ) || WIRE_AMPACITY_TABLE[0];
-      return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
-    }
-
-    // For larger feeders, support parallel runs per PEC Article 3.10.1.10 (sizes 50mm² and larger)
-    // We choose to parallel for ratings above 250A to match practical building designs
-    if (cbRating > 250) {
-      let runs = 2;
-      if (cbRating > 500) runs = 3;
-      if (cbRating > 800) runs = 4;
-
-      const targetAmpacityPerRun = requiredAmpacity / runs;
-      const wire =
-        WIRE_AMPACITY_TABLE.find(
-          (w) => w.size >= 50 && w.ampacity >= targetAmpacityPerRun,
-        ) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-
-      return { size: wire.size, ampacity: wire.ampacity * runs, runs };
-    }
-
-    // Standard single run
-    const wire =
-      WIRE_AMPACITY_TABLE.find((w) => w.ampacity >= requiredAmpacity) ||
-      WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-    return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
+    return sizeConductor(
+      cbRating,
+      designAmpacity,
+      panel.conductorMaterial || "Copper",
+      panel.insulationType || "THHN",
+      panel.temperatureRating as any
+    );
   };
 
   const getGroundWireForWireSize = (
@@ -1129,8 +1105,10 @@ export default function LoadSchedule({
 
       if (panel.mainOverrides.wireSize) {
         finalWireSize = Number(panel.mainOverrides.wireSize);
-        const matchingWire = WIRE_AMPACITY_TABLE.find(w => w.size === finalWireSize);
-        if (matchingWire) finalWireAmpacity = matchingWire.ampacity;
+        const mat = panel.conductorMaterial || "Copper";
+        const ins = panel.insulationType || "THHN";
+        const temp = (panel.temperatureRating as any) || getTemperatureForInsulation(ins);
+        finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
       }
       if (panel.mainOverrides.wireRuns) finalWireRuns = panel.mainOverrides.wireRuns;
       if (panel.mainOverrides.groundSize) finalGroundSize = panel.mainOverrides.groundSize;
@@ -1150,7 +1128,8 @@ export default function LoadSchedule({
         wireSize: wire.size,
         cb: cb,
         type: type,
-        kaic: kaic
+        kaic: kaic,
+        designAmp: designAmp
       }
     };
   }, [mainCurrent, panel.system, circuits, panel.mainOverrides]);
@@ -1760,6 +1739,94 @@ export default function LoadSchedule({
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Conductor Material
+            </label>
+            <select
+              value={panel.conductorMaterial || "Copper"}
+              onChange={(e) =>
+                setPanel({ ...panel, conductorMaterial: e.target.value as any })
+              }
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <option value="Copper" className="dark:bg-slate-900 dark:text-slate-100">Copper (Cu)</option>
+              <option value="Aluminum" className="dark:bg-slate-900 dark:text-slate-100">Aluminum (Al)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Insulation Type
+            </label>
+            <select
+              value={panel.insulationType || "THHN"}
+              onChange={(e) => {
+                const insulation = e.target.value;
+                const autoTemp = getTemperatureForInsulation(insulation);
+                setPanel({
+                  ...panel,
+                  insulationType: insulation,
+                  temperatureRating: autoTemp
+                });
+              }}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <optgroup label="60°C Insulation Rated" className="dark:bg-slate-900 font-semibold text-slate-500">
+                <option value="TW">TW</option>
+                <option value="UF">UF</option>
+              </optgroup>
+              <optgroup label="75°C Insulation Rated" className="dark:bg-slate-900 font-semibold text-slate-500">
+                <option value="RHW">RHW</option>
+                <option value="THHW">THHW</option>
+                <option value="THW">THW</option>
+                <option value="THWN">THWN</option>
+                <option value="XHHW">XHHW</option>
+                <option value="USE">USE</option>
+                <option value="ZW">ZW</option>
+              </optgroup>
+              <optgroup label="90°C Insulation Rated" className="dark:bg-slate-900 font-semibold text-slate-500">
+                <option value="THHN">THHN</option>
+                <option value="THWN-2">THWN-2</option>
+                <option value="THW-2">THW-2</option>
+                <option value="THHW-2">THHW-2</option>
+                <option value="XHHW-2">XHHW-2</option>
+                <option value="RHW-2">RHW-2</option>
+                <option value="USE-2">USE-2</option>
+                <option value="TBS">TBS</option>
+                <option value="SA">SA</option>
+                <option value="SIS">SIS</option>
+                <option value="FEP">FEP</option>
+                <option value="FEPB">FEPB</option>
+                <option value="MI">MI</option>
+                <option value="RHH">RHH</option>
+                <option value="XHH">XHH</option>
+                <option value="ZW-2">ZW-2</option>
+              </optgroup>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Temperature Column
+            </label>
+            <select
+              value={panel.temperatureRating || ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPanel({
+                  ...panel,
+                  temperatureRating: val ? (Number(val) as any) : undefined
+                });
+              }}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <option value="" className="dark:bg-slate-900 dark:text-slate-100">
+                Auto ({getTemperatureForInsulation(panel.insulationType || "THHN")}°C)
+              </option>
+              <option value="60" className="dark:bg-slate-900 dark:text-slate-100">60°C</option>
+              <option value="75" className="dark:bg-slate-900 dark:text-slate-100">75°C</option>
+              <option value="90" className="dark:bg-slate-900 dark:text-slate-100">90°C</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Table Font Size ({tableFontSize}px)
             </label>
             <div className="flex items-center h-10 px-2 mt-1">
@@ -1850,7 +1917,7 @@ export default function LoadSchedule({
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                 >
                   <option value="">Auto ({formatWireSize(mainFeeder.raw.wireSize)})</option>
-                  {WIRE_AMPACITY_TABLE.map(w => (
+                  {PEC_AMPACITY_TABLE.map(w => (
                     <option key={w.size} value={w.size}>{formatWireSize(w.size)} mm²</option>
                   ))}
                 </select>
@@ -1903,6 +1970,90 @@ export default function LoadSchedule({
               </div>
             </div>
           )}
+
+          {/* Centralized PEC 2017 Compliance checklist / warnings block */}
+          <div className="mt-4 p-4 rounded-xl border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800 space-y-3">
+            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>PEC 2017 Cable & Conductor Diagnostics</span>
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1 bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium">Selected Assembly</span>
+                <p className="font-bold text-slate-800 dark:text-slate-200">
+                  {mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}x parallel runs of ` : ""}
+                  {formatWireSize(mainFeeder.wire.size)} mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"})
+                </p>
+                <div className="flex justify-between mt-1 pt-1 border-t border-slate-100 dark:border-slate-800/50 text-slate-500">
+                  <span>PEC Allowable Ampacity:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">{mainFeeder.wire.ampacity} A</span>
+                </div>
+                <div className="flex justify-between text-slate-500">
+                  <span>Temperature Column:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">{panel.temperatureRating || getTemperatureForInsulation(panel.insulationType || "THHN")}°C</span>
+                </div>
+              </div>
+
+              <div className="space-y-2 bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-slate-400 font-medium">Required Benchmarks</span>
+                <div className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                  <div className="flex items-center justify-between">
+                    <span>Design Load ({mainFeeder.raw.designAmp?.toFixed(1)} A):</span>
+                    {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">PASSED</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">UNDERSIZED</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Breaker AT Limit ({mainFeeder.cb} A):</span>
+                    {mainFeeder.wire.ampacity >= mainFeeder.cb ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">PASSED</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">FAIL (AT PROTECTION)</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Warn user with detailed explanations and suggestions */}
+            {mainFeeder.wire.ampacity < mainFeeder.raw.designAmp && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
+                <span className="font-extrabold text-base leading-none">⚠️</span>
+                <div>
+                  <p className="font-bold">CONFORMANCE WARNING: Conductor Ampacity is Insufficient</p>
+                  <p className="mt-0.5 opacity-90">
+                    The chosen conductor assembly has a combined allowable ampacity of <strong>{mainFeeder.wire.ampacity} A</strong> under PEC 2017 Table 3.10.2.6(B)(16), which is less than the calculated peak design loads of <strong>{mainFeeder.raw.designAmp?.toFixed(1)} A</strong>.
+                    Please select a larger conductor size or increase parallel runs.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp && mainFeeder.wire.ampacity < mainFeeder.cb && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-105 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
+                <span className="font-extrabold text-base leading-none">⚠️</span>
+                <div>
+                  <p className="font-bold">PEC 2017 CODE COMPLIANCE EXCEPTION: Overcurrent Setting Mismatch</p>
+                  <p className="mt-0.5 opacity-90">
+                    Although the conductor matches raw continuous load requirements, the overcurrent protective device rating (<strong>{mainFeeder.cb} AT</strong>) exceeds the conductor ampacity of <strong>{mainFeeder.wire.ampacity} A</strong>. Under PEC 2.40 rule series, wire ampacity must safely match or exceed the overcurrent setting.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp && mainFeeder.wire.ampacity >= mainFeeder.cb && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/20 rounded-lg flex items-start gap-2.5 text-emerald-800 dark:text-emerald-400 text-xs text-left">
+                <span className="font-extrabold text-base leading-none">✓</span>
+                <div>
+                  <p className="font-bold">PEC 2017 COMPLIANT</p>
+                  <p className="mt-0.5 opacity-90">
+                    Sized accurately per PEC Table 3.10.2.6(B)(16) at ambient temperature 30°C in raceway. Safety boundaries validated green.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 

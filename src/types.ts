@@ -76,6 +76,9 @@ export interface PanelConfig {
   icRating: string;
   voltage: number;
   frequency: number;
+  conductorMaterial?: 'Copper' | 'Aluminum';
+  insulationType?: string;
+  temperatureRating?: 60 | 75 | 90;
   mainOverrides?: {
     isOverrideEnabled: boolean;
     wireSize?: number;

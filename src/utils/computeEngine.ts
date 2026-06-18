@@ -1,6 +1,7 @@
 import { PanelConfig, Circuit, LoadType } from "../types";
-import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS } from "../constants";
+import { STANDARD_CB_RATINGS } from "../constants";
 import { getMotorFLC } from "./motorFLCHelper";
+import { sizeConductor, getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
 
 // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
 const THHN_WIRE_AREAS: Record<number, number> = {
@@ -42,39 +43,11 @@ const CONDUIT_FILL_TABLE = [
 export const getWireForBreakerLocal = (
   cbRating: number,
   designAmpacity: number,
+  material: 'Copper' | 'Aluminum' = 'Copper',
+  insulation: string = 'THHN',
+  tempRating?: 60 | 75 | 90
 ) => {
-  const requiredAmpacity = Math.max(designAmpacity, cbRating);
-
-  if (cbRating <= 30) {
-    let minSize = 2.0;
-    if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-    else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
-
-    const wire =
-      WIRE_AMPACITY_TABLE.find(
-        (w) => w.ampacity >= requiredAmpacity && w.size >= minSize,
-      ) || WIRE_AMPACITY_TABLE[0];
-    return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
-  }
-
-  if (cbRating > 250) {
-    let runs = 2;
-    if (cbRating > 500) runs = 3;
-    if (cbRating > 800) runs = 4;
-
-    const targetAmpacityPerRun = requiredAmpacity / runs;
-    const wire =
-      WIRE_AMPACITY_TABLE.find(
-        (w) => w.size >= 50 && w.ampacity >= targetAmpacityPerRun,
-      ) || WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-
-    return { size: wire.size, ampacity: wire.ampacity * runs, runs };
-  }
-
-  const wire =
-    WIRE_AMPACITY_TABLE.find((w) => w.ampacity >= requiredAmpacity) ||
-    WIRE_AMPACITY_TABLE[WIRE_AMPACITY_TABLE.length - 1];
-  return { size: wire.size, ampacity: wire.ampacity, runs: 1 };
+  return sizeConductor(cbRating, designAmpacity, material, insulation, tempRating);
 };
 
 export const formatWireSizeLocal = (size: number): string =>
@@ -364,7 +337,13 @@ export const calculateCircuitValues = (
     ? c.mcbKAIC
     : (mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25);
 
-  const wire = getWireForBreakerLocal(mcbAT, designLoadA);
+  const wire = getWireForBreakerLocal(
+    mcbAT,
+    designLoadA,
+    panel.conductorMaterial || 'Copper',
+    panel.insulationType || 'THHN',
+    panel.temperatureRating as any
+  );
 
   const finalWireSize = isSubPanelLink && c.wireSize
     ? c.wireSize
@@ -688,7 +667,13 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   );
 
   const poles = p.system.includes("3PH") ? 3 : 2;
-  const wire = getWireForBreakerLocal(cb, designAmp);
+  const wire = getWireForBreakerLocal(
+    cb,
+    designAmp,
+    p.conductorMaterial || "Copper",
+    p.insulationType || "THHN",
+    p.temperatureRating as any
+  );
   const groundSize = getGroundWireForWireSizeLocal(wire.size, cb);
   const conduitSize = getConduitSizeForWiresLocal(
     wire.size,
@@ -740,8 +725,10 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
 
     if (p.mainOverrides.wireSize) {
       finalWireSize = Number(p.mainOverrides.wireSize);
-      const matchingWire = WIRE_AMPACITY_TABLE.find(w => w.size === finalWireSize);
-      if (matchingWire) finalWireAmpacity = matchingWire.ampacity;
+      const mat = p.conductorMaterial || "Copper";
+      const ins = p.insulationType || "THHN";
+      const temp = (p.temperatureRating as any) || getTemperatureForInsulation(ins);
+      finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
     }
     if (p.mainOverrides.wireRuns) finalWireRuns = p.mainOverrides.wireRuns;
     if (p.mainOverrides.groundSize) finalGroundSize = p.mainOverrides.groundSize;
