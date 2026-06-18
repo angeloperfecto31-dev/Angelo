@@ -4,6 +4,16 @@ import { getMotorFLC } from "./motorFLCHelper";
 import { sizeConductor, getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
 import { findEgcSize } from "./exportEgcExports";
 
+export const isIdleSpareOrSpace = (cir: { loadType: LoadType; wattage?: number; loadVA?: number; loadA?: number }) => {
+  if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) {
+    const w = cir.wattage || 0;
+    const va = cir.loadVA || 0;
+    const a = cir.loadA || 0;
+    return w === 0 && va === 0 && a === 0;
+  }
+  return false;
+};
+
 // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
 const THHN_WIRE_AREAS: Record<number, number> = {
   2.0: 8.5,
@@ -146,7 +156,7 @@ export const calculateCircuitValues = (
       const subTotalWattage = sp.circuits.reduce(
         (sum, cc) =>
           sum +
-          (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
+          (isIdleSpareOrSpace(cc)
             ? 0
             : (cc.wattage || 0) * (cc.quantity || 1)),
         0,
@@ -397,7 +407,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   };
 
   c.forEach((cir) => {
-    if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE)
+    if (isIdleSpareOrSpace(cir))
       return;
 
     const isMotor =
@@ -450,7 +460,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   const phaseDesignCurrents = { R: 0, Y: 0, B: 0 };
 
   c.forEach((cir) => {
-    if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE)
+    if (isIdleSpareOrSpace(cir))
       return;
 
     const activeLines = getCircuitActiveLines(
@@ -567,7 +577,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   if (p.system.includes("3PH")) {
     const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
     c.forEach((cir) => {
-      if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE)
+      if (isIdleSpareOrSpace(cir))
         return;
 
       const is3Phase = cir.phases && cir.phases.length === 3;
@@ -617,7 +627,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   } else {
     const totalConnectedVA = c.reduce(
       (sum, curr) =>
-        curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE
+        isIdleSpareOrSpace(curr)
           ? sum
           : sum + curr.loadVA,
       0,

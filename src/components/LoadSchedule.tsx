@@ -38,7 +38,7 @@ import {
 } from "../utils/pecAmpacityDatabase";
 import { SingleLineDiagram } from "./SingleLineDiagram";
 import LatexRenderer from "./LatexRenderer";
-import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal } from "../utils/computeEngine";
+import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal, isIdleSpareOrSpace } from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
   saveThreePhaseFLCEntry,
@@ -818,7 +818,7 @@ export default function LoadSchedule({
     if (is3PH) {
       const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
       circuits.forEach((cir) => {
-        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE)
+        if (isIdleSpareOrSpace(cir))
           return;
 
         const is3Phase = cir.phases && cir.phases.length === 3;
@@ -877,7 +877,7 @@ export default function LoadSchedule({
 
       const totalConnectedVA = circuits.reduce(
         (sum, curr) =>
-          curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE
+          isIdleSpareOrSpace(curr)
             ? sum
             : sum + curr.loadVA,
         0,
@@ -899,7 +899,7 @@ export default function LoadSchedule({
     } else {
       const totalConnectedVA = circuits.reduce(
         (sum, curr) =>
-          curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE
+          isIdleSpareOrSpace(curr)
             ? sum
             : sum + curr.loadVA,
         0,
@@ -934,7 +934,7 @@ export default function LoadSchedule({
     if (panel.system.includes("3PH")) {
       const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
       circuits.forEach((cir) => {
-        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE)
+        if (isIdleSpareOrSpace(cir))
           return;
 
         const is3Phase = cir.phases && cir.phases.length === 3;
@@ -992,7 +992,7 @@ export default function LoadSchedule({
         (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
       const totalConnectedVA = circuits.reduce(
         (sum, curr) =>
-          curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE
+          isIdleSpareOrSpace(curr)
             ? sum
             : sum + curr.loadVA,
         0,
@@ -1003,7 +1003,7 @@ export default function LoadSchedule({
     } else {
       const totalConnectedVA = circuits.reduce(
         (sum, curr) =>
-          curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE
+          isIdleSpareOrSpace(curr)
             ? sum
             : sum + curr.loadVA,
         0,

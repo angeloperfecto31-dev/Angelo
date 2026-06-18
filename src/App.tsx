@@ -74,6 +74,7 @@ import {
   computePanelScheduleValues,
   calculateCircuitValues,
   formatWireSizeLocal,
+  isIdleSpareOrSpace,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 
@@ -550,7 +551,7 @@ export default function App() {
               const subTotalWattage = ssp.circuits.reduce(
                 (sum, cc) =>
                   sum +
-                  (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
+                  (isIdleSpareOrSpace(cc)
                     ? 0
                     : (cc.wattage || 0) * (cc.quantity || 1)),
                 0,
@@ -639,7 +640,7 @@ export default function App() {
             const subTotalWattage = sp.circuits.reduce(
               (sum, cc) =>
                 sum +
-                (cc.loadType === LoadType.SPACE || cc.loadType === LoadType.SPARE
+                (isIdleSpareOrSpace(cc)
                   ? 0
                   : (cc.wattage || 0) * (cc.quantity || 1)),
               0,
