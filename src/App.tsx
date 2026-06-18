@@ -1058,15 +1058,15 @@ export default function App() {
       color: "text-fuchsia-600",
       bg: "bg-fuchsia-50",
     },
-    {
-      id: "billing",
-      label: "My Billing",
-      icon: Receipt,
-      color: "text-amber-500",
-      bg: "bg-amber-50",
-    },
     ...(isAdmin
       ? [
+          {
+            id: "billing",
+            label: "My Billing",
+            icon: Receipt,
+            color: "text-amber-500",
+            bg: "bg-amber-50",
+          },
           {
             id: "verify",
             label: "Verify Users",
@@ -3291,25 +3291,27 @@ export default function App() {
               </div>
 
               {/* Billing Info Tab */}
-              <div className={activeTab === "billing" ? "w-full" : "hidden"}>
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={activeTab === "billing" ? { opacity: 1, y: 0 } : {}}
-                  transition={{ duration: 0.2 }}
-                  className="w-full flex justify-center font-sans"
-                >
-                  <div className="w-full max-w-4xl">
-                    <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl p-6 text-white shadow-md mb-6">
-                      <h3 className="text-lg font-black uppercase tracking-wider mb-1">
-                        Subscription Invoice & Billing Ledger
-                      </h3>
-                      <p className="text-xs text-amber-100 leading-relaxed font-semibold">
-                        View active platform subscriptions, download official PDF invoices, or export your receipts list to Excel sheets instantly.
-                      </p>
+              <div className={activeTab === "billing" && isAdmin ? "w-full" : "hidden"}>
+                {isAdmin && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={activeTab === "billing" ? { opacity: 1, y: 0 } : {}}
+                    transition={{ duration: 0.2 }}
+                    className="w-full flex justify-center font-sans"
+                  >
+                    <div className="w-full max-w-4xl">
+                      <div className="bg-gradient-to-r from-amber-500 to-orange-500 rounded-3xl p-6 text-white shadow-md mb-6">
+                        <h3 className="text-lg font-black uppercase tracking-wider mb-1">
+                          Subscription Invoice & Billing Ledger
+                        </h3>
+                        <p className="text-xs text-amber-100 leading-relaxed font-semibold">
+                          View active platform subscriptions, download official PDF invoices, or export your receipts list to Excel sheets instantly.
+                        </p>
+                      </div>
+                      <InvoiceManager user={user} isAdminPanel={false} />
                     </div>
-                    <InvoiceManager user={user} isAdminPanel={false} />
-                  </div>
-                </motion.div>
+                  </motion.div>
+                )}
               </div>
             </div>
 
