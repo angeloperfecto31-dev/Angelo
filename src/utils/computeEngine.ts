@@ -2,6 +2,7 @@ import { PanelConfig, Circuit, LoadType } from "../types";
 import { STANDARD_CB_RATINGS } from "../constants";
 import { getMotorFLC } from "./motorFLCHelper";
 import { sizeConductor, getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
+import { findEgcSize } from "./exportEgcExports";
 
 // Conductor cross-sectional area (including THHN/THWN insulation overlay) for PEC Chapter 9 conduit fill sizing
 const THHN_WIRE_AREAS: Record<number, number> = {
@@ -56,23 +57,10 @@ export const formatWireSizeLocal = (size: number): string =>
 export const getGroundWireForWireSizeLocal = (
   wireSize: number,
   cbRating: number,
+  material: "Copper" | "Aluminum" | "Copper-Clad Aluminum" = "Copper"
 ): string => {
-  let egcSize = 2.0;
-  if (cbRating <= 15) egcSize = 2.0;
-  else if (cbRating <= 20) egcSize = 3.5;
-  else if (cbRating <= 30) egcSize = 5.5;
-  else if (cbRating <= 60) egcSize = 8.0;
-  else if (cbRating <= 100) egcSize = 14;
-  else if (cbRating <= 200) egcSize = 22;
-  else if (cbRating <= 300) egcSize = 30;
-  else if (cbRating <= 400) egcSize = 38;
-  else if (cbRating <= 600) egcSize = 50;
-  else if (cbRating <= 800) egcSize = 60;
-  else if (cbRating <= 1000) egcSize = 80;
-  else if (cbRating <= 1200) egcSize = 100;
-  else egcSize = 125;
-
-  const actualSize = Math.min(egcSize, wireSize);
+  const result = findEgcSize(cbRating, material);
+  const actualSize = Math.min(result.sizeMm2, wireSize);
   return formatWireSizeLocal(actualSize);
 };
 
@@ -351,13 +339,13 @@ export const calculateCircuitValues = (
 
   const finalGroundSize = isSubPanelLink && c.groundSize
     ? c.groundSize
-    : getGroundWireForWireSizeLocal(wire.size, mcbAT);
+    : getGroundWireForWireSizeLocal(wire.size, mcbAT, panel.conductorMaterial || "Copper");
 
   const finalConduitSize = isSubPanelLink && c.conduitSize
     ? c.conduitSize
     : getConduitSizeForWiresLocal(
         wire.size,
-        getGroundWireForWireSizeLocal(wire.size, mcbAT),
+        getGroundWireForWireSizeLocal(wire.size, mcbAT, panel.conductorMaterial || "Copper"),
         mcbP,
         panel.system,
       );
@@ -674,7 +662,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
     p.insulationType || "THHN",
     p.temperatureRating as any
   );
-  const groundSize = getGroundWireForWireSizeLocal(wire.size, cb);
+  const groundSize = getGroundWireForWireSizeLocal(wire.size, cb, p.conductorMaterial || "Copper");
   const conduitSize = getConduitSizeForWiresLocal(
     wire.size,
     groundSize,

@@ -23,6 +23,7 @@ import {
   ShortCircuitParams,
 } from "../types";
 import { exportToCAD } from "../utils/exportDxf";
+import { findEgcSize } from "../utils/exportEgcExports";
 import {
   STANDARD_CB_RATINGS,
   SYSTEM_VOLTAGES,
@@ -580,24 +581,10 @@ export default function LoadSchedule({
     wireSize: number,
     cbRating: number,
   ): string => {
-    // PEC Table 2.50.6.13 Equipment Grounding Conductor (EGC) size is determined by the breaker rating (AT)
-    let egcSize = 2.0;
-    if (cbRating <= 15) egcSize = 2.0;
-    else if (cbRating <= 20) egcSize = 3.5;
-    else if (cbRating <= 30) egcSize = 5.5;
-    else if (cbRating <= 60) egcSize = 8.0;
-    else if (cbRating <= 100) egcSize = 14;
-    else if (cbRating <= 200) egcSize = 22;
-    else if (cbRating <= 300) egcSize = 30;
-    else if (cbRating <= 400) egcSize = 38;
-    else if (cbRating <= 600) egcSize = 50;
-    else if (cbRating <= 800) egcSize = 60;
-    else if (cbRating <= 1000) egcSize = 80;
-    else if (cbRating <= 1200) egcSize = 100;
-    else egcSize = 125;
-
+    const mat = panel.conductorMaterial || "Copper";
+    const result = findEgcSize(cbRating, mat);
     // EGC is never required to be larger than the phase conductors
-    const actualSize = Math.min(egcSize, wireSize);
+    const actualSize = Math.min(result.sizeMm2, wireSize);
     return formatWireSize(actualSize);
   };
 

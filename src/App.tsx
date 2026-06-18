@@ -19,6 +19,7 @@ import {
   FolderOpen,
   Calculator,
   Receipt,
+  Hammer,
 } from "lucide-react";
 import {
   Zap,
@@ -79,6 +80,7 @@ import { exportToCAD } from "./utils/exportDxf";
 import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
+import EgcSizingCalculator from "./components/EgcSizingCalculator";
 
 export const getFreshInitialCircuits = (): Circuit[] => {
   return INITIAL_CIRCUITS.map((c) => ({
@@ -172,6 +174,7 @@ export default function App() {
     | "floor-plan"
     | "verify"
     | "current-calc"
+    | "egc"
     | "system-sld"
     | "billing"
   >("dashboard");
@@ -1173,6 +1176,13 @@ export default function App() {
       icon: Calculator,
       color: "text-fuchsia-600",
       bg: "bg-fuchsia-50",
+    },
+    {
+      id: "egc",
+      label: "EGC Sizer",
+      icon: Hammer,
+      color: "text-indigo-600",
+      bg: "bg-indigo-50",
     },
     ...(isAdmin
       ? [
@@ -3385,6 +3395,22 @@ export default function App() {
                     </div>
                     <PECCurrentCalculator panel={panel} setPanel={setPanel} />
                   </div>
+                </motion.div>
+              </div>
+
+              {/* EGC Sizer Tab */}
+              <div
+                className={activeTab === "egc" ? "w-full" : "hidden"}
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "egc" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full"
+                >
+                  <EgcSizingCalculator />
                 </motion.div>
               </div>
 
