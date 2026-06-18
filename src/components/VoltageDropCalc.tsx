@@ -51,7 +51,14 @@ export default function VoltageDropCalc({
   const [newLength, setNewLength] = useState<number>(30);
 
   const allSubPanels = useMemo(() => {
-    return [...(subPanels || []), ...(subSubPanels || [])];
+    const rawAllSubPanels = [...(subPanels || []), ...(subSubPanels || [])];
+    const seen = new Set();
+    return rawAllSubPanels.filter((sp) => {
+      if (!sp || !sp.id) return false;
+      if (seen.has(sp.id)) return false;
+      seen.add(sp.id);
+      return true;
+    });
   }, [subPanels, subSubPanels]);
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -202,6 +202,26 @@ export default function App() {
   const [subSubPanels, setSubSubPanels] = useState<
     { id: string; panel: PanelConfig; circuits: Circuit[] }[]
   >([]);
+
+  const uniqueSubPanels = useMemo(() => {
+    const seen = new Set<string>();
+    return subPanels.filter((sp) => {
+      if (!sp || !sp.id) return false;
+      if (seen.has(sp.id)) return false;
+      seen.add(sp.id);
+      return true;
+    });
+  }, [subPanels]);
+
+  const uniqueSubSubPanels = useMemo(() => {
+    const seen = new Set<string>();
+    return subSubPanels.filter((ssp) => {
+      if (!ssp || !ssp.id) return false;
+      if (seen.has(ssp.id)) return false;
+      seen.add(ssp.id);
+      return true;
+    });
+  }, [subSubPanels]);
 
   // State for calculators to prevent reset on tab change
   const [iscParams, setIscParams] = useState<ShortCircuitParams>(
@@ -428,7 +448,7 @@ export default function App() {
     let subSubPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
 
     setSubPanels((prevSubPanels) => {
-      const currentSp = prevSubPanels[spIdx];
+      const currentSp = prevSubPanels.find(p => p.id === spId);
       if (!currentSp) return prevSubPanels;
 
       const prevCircuits = currentSp.circuits;
@@ -506,8 +526,8 @@ export default function App() {
         }
       });
 
-      return prevSubPanels.map((p, i) =>
-        i === spIdx ? { ...p, circuits: nextCircuits } : p
+      return prevSubPanels.map((p) =>
+        p.id === spId ? { ...p, circuits: nextCircuits } : p
       );
     });
 
@@ -2915,7 +2935,7 @@ export default function App() {
                         </button>
 
                         {/* Sub Panels Tags */}
-                        {subPanels.map((sp) => (
+                        {uniqueSubPanels.map((sp) => (
                           <button
                             key={sp.id}
                             onClick={() => setActiveScheduleTab(sp.id)}
@@ -2931,7 +2951,7 @@ export default function App() {
                         ))}
 
                         {/* Sub-Sub Panels Tags */}
-                        {subSubPanels.map((ssp) => (
+                        {uniqueSubSubPanels.map((ssp) => (
                           <button
                             key={ssp.id}
                             onClick={() => setActiveScheduleTab(ssp.id)}
@@ -3001,7 +3021,7 @@ export default function App() {
                         setPanel={setPanel}
                         circuits={circuits}
                         setCircuits={handleSetMdpCircuits}
-                        availableSubPanels={subPanels}
+                        availableSubPanels={uniqueSubPanels}
                         iscParams={iscParams}
                         isPremium={userPlan === "premium" || isAdmin}
                         onRequestUpgrade={() => setShowUpgrade(true)}
@@ -3010,7 +3030,7 @@ export default function App() {
                     )}
 
                     {/* 2. Sub-Panels Schedules */}
-                    {subPanels.map((sp, index) => {
+                    {uniqueSubPanels.map((sp, index) => {
                       const isVisible =
                         isExporting || activeScheduleTab === sp.id;
                       if (!isVisible) return null;
@@ -3042,7 +3062,7 @@ export default function App() {
                             circuits={sp.circuits}
                             setCircuits={(newCircuits) => handleSetSubPanelCircuits(index, sp.id, newCircuits)}
                             isSubPanel={true}
-                            availableSubPanels={subSubPanels}
+                            availableSubPanels={uniqueSubSubPanels}
                             onRemoveSubPanel={() => {
                               setSubPanels((prev) =>
                                 prev.filter((p) => p.id !== sp.id),
@@ -3105,14 +3125,14 @@ export default function App() {
                     })}
 
                     {/* 3. Sub-Sub-Panels Schedules */}
-                    {subSubPanels.map((ssp, index) => {
+                    {uniqueSubSubPanels.map((ssp, index) => {
                       const isVisible =
                         isExporting || activeScheduleTab === ssp.id;
                       if (!isVisible) return null;
 
                       let parentSpConn: any;
                       let parentSpName = "";
-                      for (const sp of subPanels) {
+                      for (const sp of uniqueSubPanels) {
                         const conn = sp.circuits.find(
                           (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id
                         );
