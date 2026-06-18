@@ -106,6 +106,27 @@ service cloud.firestore {
         && (!("v2300" in data) || data.v2300 == null || data.v2300 is int || data.v2300 is float);
     }
 
+    function isValidInvoice(data) {
+      return data.keys().hasAll(["invoiceNo", "userId", "userEmail", "totalAmount", "paymentStatus", "transactionDate"])
+        && data.invoiceNo is string && data.invoiceNo.size() <= 128
+        && data.userId is string && data.userId.size() <= 128
+        && data.userEmail is string && data.userEmail.size() <= 128
+        && (data.totalAmount is int || data.totalAmount is float)
+        && data.paymentStatus is string && data.paymentStatus.size() <= 64
+        && data.transactionDate is string
+        && (!("userName" in data) || data.userName is string)
+        && (!("plan" in data) || data.plan is string)
+        && (!("billingPeriod" in data) || data.billingPeriod is string)
+        && (!("paymentMethod" in data) || data.paymentMethod is string)
+        && (!("amountPaid" in data) || data.amountPaid is int || data.amountPaid is float)
+        && (!("regPrice" in data) || data.regPrice is int || data.regPrice is float)
+        && (!("taxes" in data) || data.taxes is int || data.taxes is float)
+        && (!("discounts" in data) || data.discounts is int || data.discounts is float)
+        && (!("fees" in data) || data.fees is int || data.fees is float)
+        && (!("createdAt" in data) || data.createdAt is string)
+        && (!("paymentReference" in data) || data.paymentReference is string);
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -189,6 +210,14 @@ service cloud.firestore {
     match /admin_activity_logs/{logId} {
       allow read, create: if isAdmin();
       allow update, delete: if false; // Logs are append-only forever
+    }
+
+    // 7. System Invoices (ABAC Multi-tenant isolation)
+    match /invoices/{invoiceId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin() || (isSignedIn() && request.resource.data.userId == request.auth.uid && isValidInvoice(request.resource.data));
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }

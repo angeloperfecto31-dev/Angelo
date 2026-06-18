@@ -35,6 +35,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import axios from "axios";
+import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
 
 const getUserName = (u: any) => {
   if (u.name) return u.name;
@@ -102,6 +103,7 @@ export default function PaymentScreen({
   const [confirmResetGcash, setConfirmResetGcash] = useState(false);
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
+  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices">("verifications");
 
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\n-Word File Export feature";
@@ -833,7 +835,23 @@ export default function PaymentScreen({
         },
         { merge: true },
       );
-      setAdminStatusMsg(`Successfully activated account for ${userEmail} on ${planToSet} plan`);
+
+      // Automatically generate a deterministic unique invoice for this approved manual payment
+      const userRefObj = {
+        email: userEmail,
+        isActive: true,
+        paymentStatus: "paid",
+        plan: planToSet,
+        amount: amountVal,
+        paymentSource: paymentSourceVal,
+        paymentReference: paymentReferenceVal,
+        senderName: senderNameVal,
+        isUpgrade: isUpgradeVal,
+        approvedAt: new Date().toISOString()
+      };
+      await createOrGetInvoiceData(userRefObj, targetUid);
+
+      setAdminStatusMsg(`Successfully activated account for ${userEmail} on ${planToSet} plan and generated invoice.`);
     } catch (err: any) {
       setAdminStatusMsg("Error activating account: " + err.message);
       try {
@@ -875,15 +893,34 @@ export default function PaymentScreen({
   ) => {
     setAdminStatusMsg("");
     try {
+      const nextActive = !currentActiveStatus;
       await setDoc(
         doc(db, "users", targetUid),
         {
-          isActive: !currentActiveStatus,
-          paymentStatus: !currentActiveStatus ? "paid" : "unpaid",
+          isActive: nextActive,
+          paymentStatus: nextActive ? "paid" : "unpaid",
+          ...(nextActive ? { activatedAt: new Date().toISOString() } : {})
         },
         { merge: true },
       );
-      setAdminStatusMsg(`Updated status for ${userEmail}`);
+
+      if (nextActive) {
+        // Automatically generate deterministic invoice for offline toggles
+        const userRefObj = {
+          email: userEmail,
+          isActive: true,
+          paymentStatus: "paid",
+          plan: "premium",
+          amount: 1499,
+          paymentSource: "Admin Terminal",
+          paymentReference: `MANUAL-ACT-${targetUid.substring(0, 6).toUpperCase()}`,
+          senderName: userEmail.split('@')[0],
+          activatedAt: new Date().toISOString()
+        };
+        await createOrGetInvoiceData(userRefObj, targetUid);
+      }
+
+      setAdminStatusMsg(`Updated status for ${userEmail} and triggered auto-generation.`);
     } catch (err: any) {
       setAdminStatusMsg("Error updating status: " + err.message);
       try {
@@ -2209,6 +2246,30 @@ export default function PaymentScreen({
             </div>
           </div>
 
+          {/* Tab Selection Switcher */}
+          <div className="flex border-b border-slate-200 mb-8 pointer-events-auto">
+            <button
+              onClick={() => setAdminSubTab("verifications")}
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                adminSubTab === "verifications"
+                  ? "border-indigo-600 text-indigo-600 font-extrabold"
+                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
+              }`}
+            >
+              🔐 Verifications & Pricing Configurations
+            </button>
+            <button
+              onClick={() => setAdminSubTab("invoices")}
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+                adminSubTab === "invoices"
+                  ? "border-indigo-600 text-indigo-600 font-extrabold"
+                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
+              }`}
+            >
+              📄 Invoice & Billing Ledger
+            </button>
+          </div>
+
           {adminStatusMsg && (
             <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 p-4 rounded-md">
               <p className="text-sm text-blue-700 font-bold">
@@ -2217,7 +2278,11 @@ export default function PaymentScreen({
             </div>
           )}
 
-          {/* QR Code Upload Settings Section for Admin */}
+          {adminSubTab === "invoices" ? (
+            <InvoiceManager user={user} isAdminPanel={true} />
+          ) : (
+            <>
+              {/* QR Code Upload Settings Section for Admin */}
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-md mb-8">
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2">
               <QrCode className="w-5 h-5 text-indigo-600" />
@@ -3185,6 +3250,8 @@ export default function PaymentScreen({
               })
             )}
           </div>
+          </>
+          )}
         </div>
       </div>
     );

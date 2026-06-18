@@ -252,6 +252,38 @@
           "type": "number"
         }
       }
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Invoice generated for successful subscription, purchase or payment template",
+      "type": "object",
+      "properties": {
+        "invoiceNo": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "plan": { "type": "string" },
+        "billingPeriod": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "amountPaid": { "type": "number" },
+        "regPrice": { "type": "number" },
+        "taxes": { "type": "number" },
+        "discounts": { "type": "number" },
+        "fees": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "paymentStatus": { "type": "string" },
+        "transactionDate": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "paymentReference": { "type": "string" }
+      },
+      "required": [
+        "invoiceNo",
+        "userId",
+        "userEmail",
+        "totalAmount",
+        "paymentStatus",
+        "transactionDate"
+      ]
     }
   },
   "firestore": {
@@ -274,6 +306,10 @@
     "motor_flc_library/{entryId}": {
       "schema": "MotorFLC",
       "description": "Customized or standard Three-Phase motor full load current data library"
+    },
+    "invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "System-wide invoices for trackable sales and active financial flows"
     }
   }
 }
