@@ -1242,12 +1242,19 @@ export default function App() {
       };
 
       const allPanelsToExport = [
-        { id: "main", panel, circuits },
+        { id: "main", panel, circuits, type: "MDP" },
         ...subPanels.map((sp) => ({
           id: sp.id,
           panel: sp.panel,
           circuits: sp.circuits,
+          type: "Sub Panel"
         })),
+        ...(subSubPanels || []).map((ssp) => ({
+          id: ssp.id,
+          panel: ssp.panel,
+          circuits: ssp.circuits,
+          type: "Sub-Sub Panel"
+        }))
       ];
 
       allPanelsToExport.forEach((item, index) => {
@@ -1616,7 +1623,7 @@ export default function App() {
               );
             }
             if (matchingPanel) {
-              sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || (matchingPanel.id === "main" ? "MDP" : "Sub Panel")}`;
+              sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || matchingPanel.type}`;
             }
           }
 
@@ -1700,8 +1707,22 @@ export default function App() {
 
       const scBaseKVA = scParams.transformerKVA;
       const scBaseKV = scParams.transformerVoltage / 1000;
+      
+      let connectionMultiplier = 1.0;
+      if (scParams.transformerConnection?.includes('Open') || false) {
+        connectionMultiplier = 0.866; 
+      } 
+      
+      let groundFaultFactor = 1.0;
+      if (scParams.transformerConnection === 'Wye (Star) Connection' || 
+          scParams.transformerConnection === 'Delta-Wye (Δ-Y)' || 
+          scParams.transformerConnection === 'Wye-Wye (Y-Y)' ||
+          scParams.transformerConnection === 'Open Wye-Open Delta') {
+        groundFaultFactor = 1.25; 
+      }
+
       const scZUtilitypu = scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
-      const scZTranspu = scParams.transformerZ / 100;
+      const scZTranspu = (scParams.transformerZ / 100) / connectionMultiplier;
 
       const scFeederR =
         (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
@@ -1729,8 +1750,10 @@ export default function App() {
           : 0;
 
       const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
-      const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * 1.25;
+      const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * groundFaultFactor; // Use PEC ground fault factor
       const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
+
+      const fault1Isc = (scParams.utilityShortCircuitMVA * 1000000) / (1.732 * scParams.primaryVoltage);
 
       const scData: any[][] = [];
       scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
@@ -1768,6 +1791,16 @@ export default function App() {
         "Active Conductor Metal Type",
         scParams.conductorType,
         "Copper/Aluminum",
+      ]);
+      scData.push([
+        "Transformer Connection",
+        scParams.transformerConnection,
+        "Configuration",
+      ]);
+      scData.push([
+        "Ground Fault Factor applied",
+        groundFaultFactor.toFixed(2),
+        "Multiplier",
       ]);
       scData.push([]);
       scData.push([
@@ -1820,12 +1853,17 @@ export default function App() {
       scData.push([]);
       scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
       scData.push([
-        "Symmetrical Fault Current at Transformer (Isc Main)",
+        "Fault 1: Symmetrical Fault Current at Utility HV (Isc)",
+        fault1Isc.toFixed(2),
+        "Amps",
+      ]);
+      scData.push([
+        "Fault 2: Symmetrical Fault Current at Transformer (Isc Main)",
         scIscMainBreaker.toFixed(2),
         "Amps",
       ]);
       scData.push([
-        "Symmetrical Fault Current at Panel (Isc Panel)",
+        "Fault 3: Symmetrical Fault Current at Panel (Isc Panel)",
         scIscFaultPoint.toFixed(2),
         "Amps",
       ]);
@@ -1869,7 +1907,7 @@ export default function App() {
           const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
           
           const cellExists = !!wsSc[cellAddress];
-          const isHeader = (R === 0 || R === 2 || R === 14 || R === 24);
+          const isHeader = (R === 0 || R === 2 || R === 15 || R === 25);
 
           if (!cellExists && !isHeader) {
             continue;
@@ -1885,7 +1923,7 @@ export default function App() {
             style.font.bold = true;
             style.font.sz = 14;
             style.alignment = { horizontal: "left", vertical: "center" };
-          } else if (R === 2 || R === 14 || R === 24) {
+          } else if (R === 2 || R === 15 || R === 25) {
             style.font.bold = true;
             style.fill.fgColor.rgb = "F3F4F6";
           }
