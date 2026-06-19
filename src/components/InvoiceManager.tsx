@@ -268,20 +268,20 @@ export const downloadSingleInvoicePDF = (item: Invoice) => {
   doc.setFont("Helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("PAYMENT STATUS:", 20, 95);
+  doc.text("PAYMENT STATUS:", 18, 95);
   doc.setTextColor(16, 185, 129); // Emerald 500
-  doc.text("FULLY PAID", 55, 95);
+  doc.text("FULLY PAID", 48, 95);
 
   doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("METHOD:", 95, 95);
+  doc.text("METHOD:", 75, 95);
   doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.text(item.paymentMethod.toUpperCase(), 115, 95);
+  doc.text(item.paymentMethod.toUpperCase(), 92, 95);
 
   doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("BILLING RANGE:", 145, 95);
+  doc.text("BILLING RANGE:", 125, 95);
   doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
   doc.setFontSize(7.5);
-  doc.text(item.billingPeriod, 172, 95, { align: 'right' });
+  doc.text(item.billingPeriod, 192, 95, { align: 'right' });
 
   // Columns Header
   doc.setFont("Helvetica", "bold");
@@ -331,16 +331,17 @@ export const downloadSingleInvoicePDF = (item: Invoice) => {
   doc.setFont("Helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("In compliance with Philippine Taxation Laws, this serves as official electronic invoice documentation.", 15, 235);
-  doc.text("Calculated in structural accordance with standards in PEC 2017.", 15, 239);
-  doc.text("No further hardware purchases or on-site inspections are represented in this standard digital support plan.", 15, 243);
+  doc.text("In compliance with Philippine Taxation Laws, this serves as official", 15, 235);
+  doc.text("electronic invoice documentation. Calculated in structural accordance", 15, 239);
+  doc.text("with standards in PEC 2017. No further hardware purchases or on-site", 15, 243);
+  doc.text("inspections are represented in this standard digital support plan.", 15, 247);
 
   // Sign-off signature footer
   doc.setLineWidth(0.2);
-  doc.line(135, 230, 185, 230);
-  doc.text("Authorized Platform Representative", 160, 235, { align: 'center' });
+  doc.line(135, 260, 185, 260);
+  doc.text("Authorized Platform Representative", 160, 265, { align: 'center' });
   doc.setFont("Helvetica", "bold");
-  doc.text("Angelo Perfecto", 160, 227, { align: 'center' });
+  doc.text("Angelo Perfecto", 160, 257, { align: 'center' });
 
   // Save PDF
   doc.save(`${item.invoiceNo}.pdf`);
