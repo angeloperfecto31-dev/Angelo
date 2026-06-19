@@ -13,7 +13,28 @@ import {
   List,
   X,
   Layers,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
+  MoveVertical
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import {
   Circuit,
   PanelConfig,
@@ -418,6 +439,37 @@ const VerticalBusBarComponent: React.FC<{
   );
 };
 
+function SortableCircuitItem({ circuit, index }: { circuit: Circuit; index: number }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: circuit.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm mb-2"
+    >
+      <button {...attributes} {...listeners} className="text-slate-400 hover:text-slate-600 focus:outline-none cursor-grab active:cursor-grabbing">
+        <GripVertical className="w-5 h-5" />
+      </button>
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-2">
+          <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300 font-black text-xs px-2 py-0.5 rounded-full shrink-0">
+            #{circuit.circuitNo}
+          </span>
+          <span className="truncate">{circuit.description || "Unnamed Circuit"}</span>
+        </div>
+        <div className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
+          {circuit.loadA}A Load • CB: {circuit.mcbAT}AT • {circuit.wireSize}mm²
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LoadSchedule({
   panel,
   setPanel,
@@ -437,8 +489,52 @@ export default function LoadSchedule({
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
+  const [showRearrangeModal, setShowRearrangeModal] = useState<boolean>(false);
   const [selectedPresets, setSelectedPresets] = useState<any[]>([]);
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
+
+  // Drag and Drop Sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setCircuits((items) => {
+        const oldIndex = items.findIndex((i) => i.id === active.id);
+        const newIndex = items.findIndex((i) => i.id === over.id);
+        const newArray = arrayMove(items, oldIndex, newIndex);
+        // Renumber circuits and safely increment
+        return newArray.map((c, i) => ({ ...c, circuitNo: i + 1 }));
+      });
+    }
+  };
+
+  const moveCircuitUp = (index: number) => {
+    if (index === 0) return;
+    setCircuits((items) => {
+      const newArray = [...items];
+      const temp = newArray[index - 1];
+      newArray[index - 1] = newArray[index];
+      newArray[index] = temp;
+      return newArray.map((c, i) => ({ ...c, circuitNo: i + 1 }));
+    });
+  };
+
+  const moveCircuitDown = (index: number) => {
+    if (index === circuits.length - 1) return;
+    setCircuits((items) => {
+      const newArray = [...items];
+      const temp = newArray[index + 1];
+      newArray[index + 1] = newArray[index];
+      newArray[index] = temp;
+      return newArray.map((c, i) => ({ ...c, circuitNo: i + 1 }));
+    });
+  };
 
   // FLC Library States
   const [dbThreePhaseFLC, setDbThreePhaseFLC] = useState<ThreePhaseFLCEntry[]>([]);
@@ -2809,16 +2905,34 @@ export default function LoadSchedule({
                       )}
                     </td>
                     <td className="px-1 py-3 text-center no-print overflow-hidden">
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 justify-center">
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 justify-center flex-wrap">
+                        <button
+                          onClick={() => moveCircuitUp(idx)}
+                          disabled={idx === 0}
+                          className="p-1 hover:text-indigo-600 disabled:opacity-30 shrink-0"
+                          title="Move Up"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => moveCircuitDown(idx)}
+                          disabled={idx === circuits.length - 1}
+                          className="p-1 hover:text-indigo-600 disabled:opacity-30 shrink-0"
+                          title="Move Down"
+                        >
+                          <ArrowDown className="w-3 h-3" />
+                        </button>
                         <button
                           onClick={() => duplicateCircuit(c)}
                           className="p-1 hover:text-indigo-600 shrink-0"
+                          title="Duplicate Circuit"
                         >
                           <Copy className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => removeCircuit(c.id)}
                           className="p-1 hover:text-red-600 shrink-0"
+                          title="Remove Circuit"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -2900,12 +3014,18 @@ export default function LoadSchedule({
           </table>
         </div>
 
-        <div className="no-print p-6 bg-slate-50 border-t border-slate-100 flex justify-center gap-4">
+        <div className="no-print p-6 bg-slate-50 border-t border-slate-100 flex justify-center flex-wrap gap-4">
           <button
             onClick={addCircuit}
             className="flex items-center gap-2 px-6 py-2 bg-white border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-indigo-600 hover:text-indigo-600 transition-all font-bold"
           >
             <Plus className="w-4 h-4" /> Add Circuit
+          </button>
+          <button
+            onClick={() => setShowRearrangeModal(true)}
+            className="flex items-center gap-2 px-6 py-2 bg-white border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-indigo-600 hover:text-indigo-600 transition-all font-bold"
+          >
+            <MoveVertical className="w-4 h-4" /> Rearrange
           </button>
           <button
             onClick={() => setShowPresetsModal(true)}
@@ -3387,6 +3507,62 @@ export default function LoadSchedule({
           </div>
         </div>
       </section>
+      
+      {/* Rearrange Circuits Modal */}
+      {showRearrangeModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 no-print">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => setShowRearrangeModal(false)}
+          ></div>
+          <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div>
+                <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <MoveVertical className="w-6 h-6 text-indigo-600" />
+                  Rearrange Circuits
+                </h2>
+                <p className="text-sm font-medium text-slate-500 mt-1">
+                  Drag and drop to easily reorder your circuits. Sequence numbers are updated automatically.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRearrangeModal(false)}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950">
+              <DndContext 
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext 
+                  items={circuits.map(c => c.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {circuits.map((c, index) => (
+                    <SortableCircuitItem key={c.id} circuit={c} index={index} />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            </div>
+            
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 shrink-0 flex justify-end">
+              <button
+                onClick={() => setShowRearrangeModal(false)}
+                className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg shadow-sm hover:bg-indigo-700 transition"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Presets Modal */}
       {showPresetsModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 no-print">
