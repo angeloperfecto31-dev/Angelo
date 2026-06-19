@@ -276,13 +276,15 @@ export const calculateCircuitValues = (
     c.loadType === LoadType.LIGHTING ||
     c.loadType === LoadType.AIR_CON ||
     c.loadType === LoadType.MOTOR;
+  // Use loadA as the base MDC for 80% validation
+  const mdcForBranch = loadA;
   const designLoadA = isContinuous ? loadA * 1.25 : loadA;
 
   let requiredMcbAT = 15;
   if (c.loadType === LoadType.CONVENIENCE_OUTLET) {
     requiredMcbAT = Math.max(
       20,
-      STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 20,
+      STANDARD_CB_RATINGS.find((r) => r * 0.8 >= mdcForBranch) || 20,
     );
   } else if (c.loadType === LoadType.MOTOR) {
     const motorBranchProtection = loadA * 2.5;
@@ -314,7 +316,7 @@ export const calculateCircuitValues = (
   } else if (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) {
     requiredMcbAT = c.mcbAT || 30;
   } else {
-    requiredMcbAT = STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 15;
+    requiredMcbAT = STANDARD_CB_RATINGS.find((r) => r * 0.8 >= mdcForBranch) || 15;
   }
 
   const isSubPanelLink =
@@ -323,9 +325,16 @@ export const calculateCircuitValues = (
     availableSubPanels &&
     availableSubPanels.some((s) => s.id === c.linkedSubPanelId);
 
-  const mcbAT = isSubPanelLink
+  let mcbAT = isSubPanelLink
     ? (c.mcbAT || 30)
     : ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0));
+
+  // Enforce the 80% loading rule on all breakers uniformly
+  while (mcbAT * 0.8 < mdcForBranch) {
+    const nextSize = STANDARD_CB_RATINGS.find(r => r > mcbAT);
+    if (!nextSize) break;
+    mcbAT = nextSize;
+  }
 
   const mcbAF = isSubPanelLink && c.mcbAF
     ? c.mcbAF
@@ -654,15 +663,33 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   // Calculate Main Feeder
   const designAmp = mainCurrent.designAmp;
   const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT));
-  const calculatedCb =
+  let calculatedCb =
     STANDARD_CB_RATINGS.find(
-      (r) => r >= Math.max(designAmp, mainCurrent.baseAmp),
+      (r) => r * 0.8 >= mainCurrent.baseAmp && r >= Math.max(designAmp, mainCurrent.baseAmp),
     ) || 100;
-  const cb = Math.max(
+
+  if (calculatedCb < maxBranchAT) {
+    calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
+  }
+  
+  // Guarantee 80% rule loop just in case
+  while (calculatedCb * 0.8 < mainCurrent.baseAmp) {
+    const nextSize = STANDARD_CB_RATINGS.find((r) => r > calculatedCb);
+    if (!nextSize) break;
+    calculatedCb = nextSize;
+  }
+  let cb = Math.max(
     calculatedCb,
     STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
     30,
   );
+
+  // Guarantee 80% rule loop on final cb
+  while (cb * 0.8 < mainCurrent.baseAmp) {
+    const nextSize = STANDARD_CB_RATINGS.find((r) => r > cb);
+    if (!nextSize) break;
+    cb = nextSize;
+  }
 
   const poles = p.system.includes("3PH") ? 3 : 2;
   const wire = getWireForBreakerLocal(

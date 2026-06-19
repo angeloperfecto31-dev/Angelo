@@ -1130,15 +1130,32 @@ export default function LoadSchedule({
 
     // Minimum main breaker sizes are standard, and it must not be less than the maximum branch breaker
     const maxBranchAT = Math.max(0, ...circuits.map((c) => c.mcbAT));
-    const calculatedCb =
+    let calculatedCb =
       STANDARD_CB_RATINGS.find(
-        (r) => r >= Math.max(designAmp, mainCurrent.baseAmp),
+        (r) => r * 0.8 >= mainCurrent.baseAmp && r >= Math.max(designAmp, mainCurrent.baseAmp),
       ) || 100;
-    const cb = Math.max(
+
+    if (calculatedCb < maxBranchAT) {
+      calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
+    }
+
+    while (calculatedCb * 0.8 < mainCurrent.baseAmp) {
+      const nextSize = STANDARD_CB_RATINGS.find((r) => r > calculatedCb);
+      if (!nextSize) break;
+      calculatedCb = nextSize;
+    }
+
+    let cb = Math.max(
       calculatedCb,
       STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
       30,
     );
+
+    while (cb * 0.8 < mainCurrent.baseAmp) {
+      const nextSize = STANDARD_CB_RATINGS.find((r) => r > cb);
+      if (!nextSize) break;
+      cb = nextSize;
+    }
 
     const poles = panel.system.includes("3PH") ? 3 : 2;
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
