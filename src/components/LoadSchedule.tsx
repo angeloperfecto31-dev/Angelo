@@ -42,6 +42,7 @@ import {
   Phase,
   MCBType,
   ShortCircuitParams,
+  VoltageDropCalculation,
 } from "../types";
 import { exportToCAD } from "../utils/exportDxf";
 import { findEgcSize } from "../utils/exportEgcExports";
@@ -59,7 +60,7 @@ import {
 } from "../utils/pecAmpacityDatabase";
 import { SingleLineDiagram } from "./SingleLineDiagram";
 import LatexRenderer from "./LatexRenderer";
-import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal, isIdleSpareOrSpace } from "../utils/computeEngine";
+import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal, isIdleSpareOrSpace, calculatePanelFault } from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
   saveThreePhaseFLCEntry,
@@ -157,7 +158,8 @@ export interface LoadScheduleProps {
   iscParams?: ShortCircuitParams;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
-  parentMdpConnection?: { circuitNo: number; description: string; mdpDesignation: string };
+  parentMdpConnection?: { circuitNo: number; description: string; mdpDesignation: string; circuitId?: string; feederSize?: string; feederRuns?: number };
+  vdCalculations?: VoltageDropCalculation[];
 }
 
 const AmpsInput = ({ c, panel, is3P, onAmpsUpdate, disabled }: { c: Circuit; panel: PanelConfig; is3P: boolean; onAmpsUpdate: (newAmps: number) => void; disabled: boolean }) => {
@@ -482,6 +484,7 @@ export default function LoadSchedule({
   availableSubPanels,
   readOnly = false,
   iscParams,
+  vdCalculations,
   isPremium = true,
   onRequestUpgrade,
   isAdmin = false,
@@ -1189,7 +1192,34 @@ export default function LoadSchedule({
     ) {
       type = MCBType.MCCB;
     }
-    const kaic = cb > 100 ? 18 : 10;
+    let faultCurrentA = 10000;
+    if (iscParams) {
+      if (!isSubPanel && !isSubSubPanel) {
+        // MDP
+        faultCurrentA = calculatePanelFault(panel, iscParams, undefined, undefined, undefined, 0);
+      } else if (parentMdpConnection && parentMdpConnection.circuitId) {
+        // Sub-panels
+        const vd = vdCalculations?.find(v => v.source === parentMdpConnection.circuitId);
+        const feederLen = vd?.length || iscParams.feederLength || 10;
+        const motorVA = circuits.reduce((acc, curr) => (curr.loadType === LoadType.MOTOR || curr.loadType === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0);
+        faultCurrentA = calculatePanelFault(
+          panel, 
+          iscParams, 
+          feederLen, 
+          parentMdpConnection.feederSize, 
+          parentMdpConnection.feederRuns, 
+          motorVA
+        );
+      }
+    }
+    
+    const defaultKaic = cb > 100 ? 18 : 10;
+    let kaic = defaultKaic;
+    if (faultCurrentA) {
+      const faultKA = faultCurrentA / 1000;
+      const KAIC_RATINGS = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
+      kaic = KAIC_RATINGS.find(k => k >= faultKA) || 100;
+    }
     const af =
       cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
 
@@ -1238,10 +1268,35 @@ export default function LoadSchedule({
         cb: cb,
         type: type,
         kaic: kaic,
-        designAmp: designAmp
+        designAmp: designAmp,
+        faultCurrentA: faultCurrentA
       }
     };
-  }, [mainCurrent, circuits, panel]);
+  }, [mainCurrent, circuits, panel, iscParams, isSubPanel, isSubSubPanel, parentMdpConnection, vdCalculations]);
+
+  useEffect(() => {
+    if (!circuits || circuits.length === 0) return;
+    
+    // Evaluate if any branch circuit needs an automatic kAIC upgrade
+    const targetKaic = mainFeeder.kaic;
+    
+    let changed = false;
+    const nextCircuits = circuits.map((c) => {
+      // Spaces/spares skip check
+      if (isIdleSpareOrSpace(c)) return c;
+      
+      const currentKaic = c.mcbKAIC || 10;
+      if (currentKaic < targetKaic) {
+        changed = true;
+        return { ...c, mcbKAIC: targetKaic };
+      }
+      return c;
+    });
+    
+    if (changed) {
+      setCircuits(nextCircuits);
+    }
+  }, [mainFeeder.kaic, circuits]);
 
   const panelRows = useMemo(() => {
     const maxCircuitNo = Math.max(...circuits.map((c) => c.circuitNo), 0);
@@ -2121,11 +2176,32 @@ export default function LoadSchedule({
                       <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">FAIL (AT PROTECTION)</span>
                     )}
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span>kAIC Interruption ({mainFeeder.kaic} kA):</span>
+                    {mainFeeder.kaic >= (mainFeeder.raw.faultCurrentA || 0) / 1000 ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">PASSED</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">INSUFFICIENT kAIC</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Warn user with detailed explanations and suggestions */}
+            {mainFeeder.kaic < (mainFeeder.raw.faultCurrentA || 0) / 1000 && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-lg flex items-start gap-2.5 text-red-800 dark:text-red-400 text-xs text-left">
+                <span className="font-extrabold text-base leading-none">🚨</span>
+                <div>
+                  <p className="font-bold">CRITICAL SHORT CIRCUIT RISK: Insufficient kAIC Rating</p>
+                  <p className="mt-0.5 opacity-90">
+                    The chosen or overridden short circuit capability (<strong>{mainFeeder.kaic} kAIC</strong>) is LESS than the calculated available fault current of <strong>{((mainFeeder.raw.faultCurrentA || 0) / 1000).toFixed(2)} kA</strong> at this node. This poses a severe failure risk under short circuit conditions.
+                    Ensure the main breaker's interrupting rating is correctly verified.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {mainFeeder.wire.ampacity < mainFeeder.raw.designAmp && (
               <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
                 <span className="font-extrabold text-base leading-none">⚠️</span>

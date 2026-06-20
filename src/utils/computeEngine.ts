@@ -1,10 +1,19 @@
-import { PanelConfig, Circuit, LoadType } from "../types";
-import { STANDARD_CB_RATINGS } from "../constants";
+import { PanelConfig, Circuit, LoadType, ShortCircuitParams, VoltageDropCalculation } from "../types";
+import { STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from "../constants";
 import { getMotorFLC } from "./motorFLCHelper";
-import { sizeConductor, getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
+import {
+  sizeConductor,
+  getConductorAmpacity,
+  getTemperatureForInsulation,
+} from "./pecAmpacityDatabase";
 import { findEgcSize } from "./exportEgcExports";
 
-export const isIdleSpareOrSpace = (cir: { loadType: LoadType; wattage?: number; loadVA?: number; loadA?: number }) => {
+export const isIdleSpareOrSpace = (cir: {
+  loadType: LoadType;
+  wattage?: number;
+  loadVA?: number;
+  loadA?: number;
+}) => {
   if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) {
     const w = cir.wattage || 0;
     const va = cir.loadVA || 0;
@@ -54,11 +63,17 @@ const CONDUIT_FILL_TABLE = [
 export const getWireForBreakerLocal = (
   cbRating: number,
   designAmpacity: number,
-  material: 'Copper' | 'Aluminum' = 'Copper',
-  insulation: string = 'THHN',
-  tempRating?: 60 | 75 | 90
+  material: "Copper" | "Aluminum" = "Copper",
+  insulation: string = "THHN",
+  tempRating?: 60 | 75 | 90,
 ) => {
-  return sizeConductor(cbRating, designAmpacity, material, insulation, tempRating);
+  return sizeConductor(
+    cbRating,
+    designAmpacity,
+    material,
+    insulation,
+    tempRating,
+  );
 };
 
 export const formatWireSizeLocal = (size: number): string =>
@@ -67,7 +82,7 @@ export const formatWireSizeLocal = (size: number): string =>
 export const getGroundWireForWireSizeLocal = (
   wireSize: number,
   cbRating: number,
-  material: "Copper" | "Aluminum" | "Copper-Clad Aluminum" = "Copper"
+  material: "Copper" | "Aluminum" | "Copper-Clad Aluminum" = "Copper",
 ): string => {
   const result = findEgcSize(cbRating, material);
   const actualSize = Math.min(result.sizeMm2, wireSize);
@@ -104,7 +119,9 @@ const getSystemVoltage = (system: string): number => {
 
 export function extractHorsepowerFromDescription(desc: string): string | null {
   if (!desc) return null;
-  const match = desc.match(/(\d+(?:\.\d+)?|\d+\s+1\/2|\d+\s+3\/4|\d+\/\d+)\s*HP/i);
+  const match = desc.match(
+    /(\d+(?:\.\d+)?|\d+\s+1\/2|\d+\s+3\/4|\d+\/\d+)\s*HP/i,
+  );
   if (match) {
     const hpVal = match[1].trim();
     if (hpVal === "0.5") return "1/2";
@@ -145,20 +162,23 @@ export const calculateCircuitValues = (
   const c = { ...cParam };
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
   if (
-    (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) &&
+    (c.loadType === LoadType.SUB_PANEL ||
+      c.loadType === LoadType.SUB_SUB_PANEL) &&
     c.linkedSubPanelId &&
     availableSubPanels
   ) {
     const sp = availableSubPanels.find((s) => s.id === c.linkedSubPanelId);
     if (sp) {
-      const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits);
+      const {
+        totalVA: subTotalVA,
+        mainFeeder: subMainFeeder,
+        mainCurrent: subMainCurrent,
+      } = computePanelScheduleValues(sp.panel, sp.circuits);
 
       const subTotalWattage = sp.circuits.reduce(
         (sum, cc) =>
           sum +
-          (isIdleSpareOrSpace(cc)
-            ? 0
-            : (cc.wattage || 0) * (cc.quantity || 1)),
+          (isIdleSpareOrSpace(cc) ? 0 : (cc.wattage || 0) * (cc.quantity || 1)),
         0,
       );
 
@@ -167,7 +187,7 @@ export const calculateCircuitValues = (
       const computedDemandAmp = subMainCurrent.baseAmp || 0;
 
       // Calculate the demand-based VA for the subpanel reference row in parent
-      const demandVA = is3PhaseMain 
+      const demandVA = is3PhaseMain
         ? Math.round(computedDemandAmp * subVoltage * 1.732)
         : Math.round(computedDemandAmp * subVoltage);
 
@@ -184,7 +204,9 @@ export const calculateCircuitValues = (
       c.wireSize = formatWireSizeLocal(subMainFeeder.wire.size);
       c.groundSize = subMainFeeder.groundSize;
       c.conduitSize = subMainFeeder.conduitSize;
-      c.description = sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel");
+      c.description =
+        sp.panel.designation ||
+        (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel");
     }
   }
 
@@ -227,7 +249,7 @@ export const calculateCircuitValues = (
   let qty = c.quantity || 1;
   let w = isSpace ? 0 : c.wattage || 0;
   let va =
-    (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL)
+    c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL
       ? (c.loadVA ?? qty * w)
       : Math.round(qty * w);
 
@@ -243,7 +265,11 @@ export const calculateCircuitValues = (
 
   const pf = 1.0;
   const is3PhaseLoad = c.phases && c.phases.length === 3;
-  const defaultV = getPanelSystemVoltageFallback(panel.system, is3PhaseLoad, panel.connectionType);
+  const defaultV = getPanelSystemVoltageFallback(
+    panel.system,
+    is3PhaseLoad,
+    panel.connectionType,
+  );
 
   const v = defaultV;
   c.voltage = v;
@@ -252,7 +278,10 @@ export const calculateCircuitValues = (
   const hpFromDesc = extractHorsepowerFromDescription(c.description || "");
   const effectiveHP = c.motorHP || hpFromDesc;
 
-  if ((c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) && effectiveHP) {
+  if (
+    (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) &&
+    effectiveHP
+  ) {
     const is3P = panel.system.includes("3PH") && is3PhaseLoad;
     const fVal = getMotorFLC(effectiveHP, v, is3P);
     c.motorHP = effectiveHP || undefined;
@@ -263,7 +292,10 @@ export const calculateCircuitValues = (
     c.wattage = w;
     c.loadVA = va;
   } else {
-    if (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) {
+    if (
+      c.loadType === LoadType.SUB_PANEL ||
+      c.loadType === LoadType.SUB_SUB_PANEL
+    ) {
       loadA = c.loadA || 0;
     } else if (panel.system.includes("3PH") && is3PhaseLoad) {
       loadA = va / (v * 1.732);
@@ -313,61 +345,89 @@ export const calculateCircuitValues = (
       requiredMcbAT =
         under225.length > 0 ? Math.max(15, under225[under225.length - 1]) : 15;
     }
-  } else if (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) {
+  } else if (
+    c.loadType === LoadType.SUB_PANEL ||
+    c.loadType === LoadType.SUB_SUB_PANEL
+  ) {
     requiredMcbAT = c.mcbAT || 30;
   } else {
-    requiredMcbAT = STANDARD_CB_RATINGS.find((r) => r * 0.8 >= mdcForBranch) || 15;
+    requiredMcbAT =
+      STANDARD_CB_RATINGS.find((r) => r * 0.8 >= mdcForBranch) || 15;
   }
 
   const isSubPanelLink =
-    (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) &&
+    (c.loadType === LoadType.SUB_PANEL ||
+      c.loadType === LoadType.SUB_SUB_PANEL) &&
     c.linkedSubPanelId &&
     availableSubPanels &&
     availableSubPanels.some((s) => s.id === c.linkedSubPanelId);
 
   let mcbAT = isSubPanelLink
-    ? (c.mcbAT || 30)
-    : ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) ? (c.mcbAT || 30) : Math.max(requiredMcbAT, c.mcbAT || 0));
+    ? c.mcbAT || 30
+    : c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL
+      ? c.mcbAT || 30
+      : Math.max(requiredMcbAT, c.mcbAT || 0);
 
   // Enforce the 80% loading rule on all breakers uniformly
   while (mcbAT * 0.8 < mdcForBranch) {
-    const nextSize = STANDARD_CB_RATINGS.find(r => r > mcbAT);
+    const nextSize = STANDARD_CB_RATINGS.find((r) => r > mcbAT);
     if (!nextSize) break;
     mcbAT = nextSize;
   }
 
-  const mcbAF = isSubPanelLink && c.mcbAF
-    ? c.mcbAF
-    : (mcbAT <= 50 ? 50 : mcbAT <= 100 ? 100 : mcbAT <= 225 ? 225 : 400);
+  const mcbAF =
+    isSubPanelLink && c.mcbAF
+      ? c.mcbAF
+      : mcbAT <= 50
+        ? 50
+        : mcbAT <= 100
+          ? 100
+          : mcbAT <= 225
+            ? 225
+            : 400;
 
-  const mcbKAIC = isSubPanelLink && c.mcbKAIC
-    ? c.mcbKAIC
-    : (mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25);
+  const mcbKAIC =
+    isSubPanelLink && c.mcbKAIC
+      ? c.mcbKAIC
+      : mcbAT <= 50
+        ? 10
+        : mcbAT <= 100
+          ? 18
+          : 25;
 
   const wire = getWireForBreakerLocal(
     mcbAT,
     designLoadA,
-    panel.conductorMaterial || 'Copper',
-    panel.insulationType || 'THHN',
-    panel.temperatureRating as any
+    panel.conductorMaterial || "Copper",
+    panel.insulationType || "THHN",
+    panel.temperatureRating as any,
   );
 
-  const finalWireSize = isSubPanelLink && c.wireSize
-    ? c.wireSize
-    : formatWireSizeLocal(wire.size);
+  const finalWireSize =
+    isSubPanelLink && c.wireSize ? c.wireSize : formatWireSizeLocal(wire.size);
 
-  const finalGroundSize = isSubPanelLink && c.groundSize
-    ? c.groundSize
-    : getGroundWireForWireSizeLocal(wire.size, mcbAT, panel.conductorMaterial || "Copper");
+  const finalGroundSize =
+    isSubPanelLink && c.groundSize
+      ? c.groundSize
+      : getGroundWireForWireSizeLocal(
+          wire.size,
+          mcbAT,
+          panel.conductorMaterial || "Copper",
+        );
 
-  const finalConduitSize = isSubPanelLink && c.conduitSize
-    ? c.conduitSize
-    : getConduitSizeForWiresLocal(
-        wire.size,
-        getGroundWireForWireSizeLocal(wire.size, mcbAT, panel.conductorMaterial || "Copper"),
-        mcbP,
-        panel.system,
-      );
+  const finalConduitSize =
+    isSubPanelLink && c.conduitSize
+      ? c.conduitSize
+      : getConduitSizeForWiresLocal(
+          wire.size,
+          getGroundWireForWireSizeLocal(
+            wire.size,
+            mcbAT,
+            panel.conductorMaterial || "Copper",
+          ),
+          mcbP,
+          panel.system,
+        );
 
   return {
     ...c,
@@ -385,7 +445,53 @@ export const calculateCircuitValues = (
   };
 };
 
-export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
+export const calculatePanelFault = (
+  panel: PanelConfig,
+  iscParams?: ShortCircuitParams,
+  feederLength?: number,
+  feederSize?: string,
+  feederRuns?: number,
+  motorLoadVA: number = 0
+): number => {
+  if (!iscParams) return 10000; // 10 kA default if no short circuit params
+  
+  let connectionMultiplier = 1.0;
+  if (iscParams.transformerConnection?.includes("Open")) {
+    connectionMultiplier = 0.866;
+  }
+  
+  const baseKVA = iscParams.transformerKVA || 500;
+  let baseKV = (iscParams.transformerVoltage || 230) / 1000;
+  if (baseKV === 0) {
+    baseKV = panel.voltage ? panel.voltage / 1000 : 0.23;
+  }
+  
+  const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 500) * 1000);
+  const zTranspu = ((iscParams.transformerZ || 5) / 100) / connectionMultiplier;
+  
+  let zFeederpu = 0;
+  if (feederLength !== undefined && feederSize !== undefined) {
+    const tableVals = WIRE_IMPEDANCE_TABLE[feederSize];
+    const rPer1000m = tableVals?.r || 0.7; // default fallback if size not found
+    const xPer1000m = tableVals?.x || 0.08;
+    const runs = feederRuns || 1;
+    
+    // total R and X for feeder in Ohms
+    const feederR = (rPer1000m * (feederLength / 1000)) / runs;
+    const feederX = (xPer1000m * (feederLength / 1000)) / runs;
+    const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
+    zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
+  }
+  
+  const totalZpu = zUtilitypu + zTranspu + zFeederpu;
+  const iFullLoad = baseKVA / (1.732 * baseKV);
+  const iscFaultPoint = iFullLoad / totalZpu;
+  
+  const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (1.732 * (baseKV * 1000))) * 4 : 0;
+  return iscFaultPoint + motorContribution;
+};
+
+export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[], options?: { faultCurrentA?: number }) => {
   const systemVoltage = getSystemVoltage(p.system);
   const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
 
@@ -416,8 +522,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   };
 
   c.forEach((cir) => {
-    if (isIdleSpareOrSpace(cir))
-      return;
+    if (isIdleSpareOrSpace(cir)) return;
 
     const isMotor =
       cir.loadType === LoadType.AIR_CON || cir.loadType === LoadType.MOTOR;
@@ -469,8 +574,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   const phaseDesignCurrents = { R: 0, Y: 0, B: 0 };
 
   c.forEach((cir) => {
-    if (isIdleSpareOrSpace(cir))
-      return;
+    if (isIdleSpareOrSpace(cir)) return;
 
     const activeLines = getCircuitActiveLines(
       cir.phases || [],
@@ -481,7 +585,10 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       cir.voltage ||
       getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
 
-    if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
+    if (
+      cir.loadType === LoadType.SUB_PANEL ||
+      cir.loadType === LoadType.SUB_SUB_PANEL
+    ) {
       cirV = cir.voltage || cirV;
     }
 
@@ -586,14 +693,16 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   if (p.system.includes("3PH")) {
     const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
     c.forEach((cir) => {
-      if (isIdleSpareOrSpace(cir))
-        return;
+      if (isIdleSpareOrSpace(cir)) return;
 
       const is3Phase = cir.phases && cir.phases.length === 3;
       let cirV =
         cir.voltage ||
         getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-      if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
+      if (
+        cir.loadType === LoadType.SUB_PANEL ||
+        cir.loadType === LoadType.SUB_SUB_PANEL
+      ) {
         cirV = cir.voltage || cirV;
       }
       const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
@@ -629,16 +738,14 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       localPhaseAmps.B,
     );
     const maxDemandCurrent =
-      (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
+      (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) *
+      1.25;
 
     maxBaseAmp = maxDemandCurrent;
     maxDesignAmp = maxDemandCurrent;
   } else {
     const totalConnectedVA = c.reduce(
-      (sum, curr) =>
-        isIdleSpareOrSpace(curr)
-          ? sum
-          : sum + curr.loadVA,
+      (sum, curr) => (isIdleSpareOrSpace(curr) ? sum : sum + curr.loadVA),
       0,
     );
     const motorCircuits = c.filter(
@@ -652,7 +759,8 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
         HML = loadI;
       }
     });
-    const maxDemandCurrent = ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
+    const maxDemandCurrent =
+      ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
     maxBaseAmp = maxDemandCurrent;
     maxDesignAmp = maxDemandCurrent;
@@ -665,13 +773,16 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT));
   let calculatedCb =
     STANDARD_CB_RATINGS.find(
-      (r) => r * 0.8 >= mainCurrent.baseAmp && r >= Math.max(designAmp, mainCurrent.baseAmp),
+      (r) =>
+        r * 0.8 >= mainCurrent.baseAmp &&
+        r >= Math.max(designAmp, mainCurrent.baseAmp),
     ) || 100;
 
   if (calculatedCb < maxBranchAT) {
-    calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
+    calculatedCb =
+      STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
   }
-  
+
   // Guarantee 80% rule loop just in case
   while (calculatedCb * 0.8 < mainCurrent.baseAmp) {
     const nextSize = STANDARD_CB_RATINGS.find((r) => r > calculatedCb);
@@ -697,9 +808,13 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
     designAmp,
     p.conductorMaterial || "Copper",
     p.insulationType || "THHN",
-    p.temperatureRating as any
+    p.temperatureRating as any,
   );
-  const groundSize = getGroundWireForWireSizeLocal(wire.size, cb, p.conductorMaterial || "Copper");
+  const groundSize = getGroundWireForWireSizeLocal(
+    wire.size,
+    cb,
+    p.conductorMaterial || "Copper",
+  );
   const conduitSize = getConduitSizeForWiresLocal(
     wire.size,
     groundSize,
@@ -725,7 +840,13 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   ) {
     type = "MCCB";
   }
-  const kaic = cb > 100 ? 18 : 10;
+  const defaultKaic = cb > 100 ? 18 : 10;
+  let kaic = defaultKaic;
+  if (options?.faultCurrentA) {
+    const faultKA = options.faultCurrentA / 1000;
+    const KAIC_RATINGS = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
+    kaic = KAIC_RATINGS.find(k => k >= faultKA) || 100;
+  }
   const cbAF =
     cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
 
@@ -734,7 +855,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
   let finalType = type;
   let finalKaic = kaic;
   let finalPoles = poles;
-  
+
   let finalWireSize = wire.size;
   let finalWireRuns = wire.runs;
   let finalWireAmpacity = wire.ampacity;
@@ -752,12 +873,16 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       finalWireSize = Number(p.mainOverrides.wireSize);
       const mat = p.conductorMaterial || "Copper";
       const ins = p.insulationType || "THHN";
-      const temp = (p.temperatureRating as any) || getTemperatureForInsulation(ins);
-      finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
+      const temp =
+        (p.temperatureRating as any) || getTemperatureForInsulation(ins);
+      finalWireAmpacity =
+        getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
     }
     if (p.mainOverrides.wireRuns) finalWireRuns = p.mainOverrides.wireRuns;
-    if (p.mainOverrides.groundSize) finalGroundSize = p.mainOverrides.groundSize;
-    if (p.mainOverrides.conduitSize) finalConduitSize = p.mainOverrides.conduitSize;
+    if (p.mainOverrides.groundSize)
+      finalGroundSize = p.mainOverrides.groundSize;
+    if (p.mainOverrides.conduitSize)
+      finalConduitSize = p.mainOverrides.conduitSize;
   }
 
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
@@ -796,7 +921,11 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
       ? Math.max(phaseVAs.R, phaseVAs.Y, phaseVAs.B) * 3
       : lightingReceptacleVA + motorVAs.reduce((a, b) => a + b, 0),
     mainFeeder: {
-      wire: { size: finalWireSize, ampacity: finalWireAmpacity, runs: finalWireRuns },
+      wire: {
+        size: finalWireSize,
+        ampacity: finalWireAmpacity,
+        runs: finalWireRuns,
+      },
       groundSize: finalGroundSize,
       cb: finalCb,
       conduitSize: finalConduitSize,
@@ -808,8 +937,8 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[]) => {
         wireSize: wire.size,
         cb: cb,
         type: type,
-        kaic: kaic
-      }
+        kaic: kaic,
+      },
     },
   };
 };

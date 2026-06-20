@@ -985,8 +985,15 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
   const zTranspu = (params.transformerZ / 100) / connectionMultiplier;
 
   // Feeder attenuation resistances matching typical standards
-  const feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
-  const feederX = 0.08 * (params.feederLength / 1000) / (params.feederRuns || 1);
+  let feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
+  let feederX = 0.08 * (params.feederLength / 1000) / (params.feederRuns || 1);
+  if (params.feederSize) {
+    const tableVals = WIRE_IMPEDANCE_TABLE[params.feederSize.toString()];
+    if (tableVals) {
+      feederR = (tableVals.r * (params.feederLength / 1000)) / (params.feederRuns || 1);
+      feederX = (tableVals.x * (params.feederLength / 1000)) / (params.feederRuns || 1);
+    }
+  }
   const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
   const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
 

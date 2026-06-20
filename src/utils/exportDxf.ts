@@ -1206,10 +1206,19 @@ export const exportToCAD = (
   const zUtilitypu = baseKVA / (scParams.utilityShortCircuitMVA * 1000);
   const zTranspu = scParams.transformerZ / 100 / connectionMultiplier;
 
-  const feederR =
+  let feederR =
     (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-  const feederX =
+  let feederX =
     (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+    
+  if (scParams.feederSize) {
+    const tableVals = WIRE_IMPEDANCE_TABLE[scParams.feederSize.toString()];
+    if (tableVals) {
+      feederR = (tableVals.r * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+      feederX = (tableVals.x * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+    }
+  }
+
   const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
   const zFeederpu = (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
 
@@ -3866,10 +3875,19 @@ export const exportToCAD = (
     const excelZUtilitypu = excelBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
     const excelZTranspu = scParams.transformerZ / 100;
 
-    const excelFeederR =
+    let excelFeederR =
       (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-    const excelFeederX =
+    let excelFeederX =
       (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+      
+    if (scParams.feederSize) {
+      const tableVals = WIRE_IMPEDANCE_TABLE[scParams.feederSize.toString()];
+      if (tableVals) {
+        excelFeederR = (tableVals.r * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+        excelFeederX = (tableVals.x * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+      }
+    }
+
     const excelFeederZ = Math.sqrt(excelFeederR * excelFeederR + excelFeederX * excelFeederX);
     const excelZFeederpu =
       (excelFeederZ * (excelBaseKVA / 1000)) / (excelBaseKV * excelBaseKV);

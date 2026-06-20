@@ -3061,6 +3061,7 @@ export default function App() {
                         setCircuits={handleSetMdpCircuits}
                         availableSubPanels={uniqueSubPanels}
                         iscParams={iscParams}
+                        vdCalculations={vdCalculations}
                         isPremium={userPlan === "premium" || isAdmin}
                         onRequestUpgrade={() => setShowUpgrade(true)}
                         isAdmin={isAdmin}
@@ -3131,8 +3132,12 @@ export default function App() {
                             parentMdpConnection={parentMdpConn ? {
                               circuitNo: parentMdpConn.circuitNo,
                               description: parentMdpConn.description,
-                              mdpDesignation: panel.designation || "MDP"
+                              mdpDesignation: panel.designation || "MDP",
+                              circuitId: parentMdpConn.id,
+                              feederSize: parentMdpConn.wireSize,
+                              feederRuns: parentMdpConn.quantity || 1
                             } : undefined}
+                            vdCalculations={vdCalculations}
                           />
 
                           {!isExporting && activeScheduleTab === sp.id && (
@@ -3250,8 +3255,12 @@ export default function App() {
                             parentMdpConnection={parentSpConn ? {
                               circuitNo: parentSpConn.circuitNo,
                               description: parentSpConn.description,
-                              mdpDesignation: parentSpName
+                              mdpDesignation: parentSpName,
+                              circuitId: parentSpConn.id,
+                              feederSize: parentSpConn.wireSize,
+                              feederRuns: parentSpConn.quantity || 1
                             } : undefined}
+                            vdCalculations={vdCalculations}
                           />
                         </React.Fragment>
                       );

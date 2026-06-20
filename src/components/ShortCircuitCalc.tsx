@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } from 'lucide-react';
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
-import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS } from '../constants';
+import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { exportToCAD } from '../utils/exportDxf';
 import { computePanelScheduleValues } from '../utils/computeEngine';
 
@@ -250,8 +250,17 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     const zTranspu = (params.transformerZ / 100) / connectionMultiplier;
 
     // 3. Feeder Impedance Estimate (Simplified pu)
-    const feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
-    const feederX = 0.08 * (params.feederLength / 1000) / (params.feederRuns || 1);
+    let feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
+    let feederX = 0.08 * (params.feederLength / 1000) / (params.feederRuns || 1);
+    
+    if (params.feederSize) {
+      const tableVals = WIRE_IMPEDANCE_TABLE[params.feederSize.toString()];
+      if (tableVals) {
+        feederR = (tableVals.r * (params.feederLength / 1000)) / (params.feederRuns || 1);
+        feederX = (tableVals.x * (params.feederLength / 1000)) / (params.feederRuns || 1);
+      }
+    }
+
     const feederZ = Math.sqrt(feederR*feederR + feederX*feederX);
     const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
 
