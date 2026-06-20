@@ -129,6 +129,15 @@ export interface LightFixture {
   description?: string;
   modelNumber?: string;
   manufacturer?: string;
+  efficacy?: number; // lm/W
+  cct?: number | string; // Kelvin or CCT string
+  cri?: number; // CRI e.g. 80, 90
+  mountingType?: string; // Recessed, Surface-mounted, Suspended, Pendant, Track, etc.
+  beamAngle?: number; // degrees
+  utilizationFactor?: number; // CU e.g. 0.60
+  manufacturerReference?: string;
+  isCustom?: boolean; // dynamic user fixtures
+  isFavorite?: boolean; // favorited status
 }
 
 export interface SavedLightingDetail {

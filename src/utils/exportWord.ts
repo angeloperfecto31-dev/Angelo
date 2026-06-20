@@ -287,7 +287,8 @@ export const exportToWord = async (
   illumParams: import('../types').IlluminationParams,
   images?: any,
   iscParams?: any,
-  subSubPanels: { id: string, panel: PanelConfig, circuits: Circuit[] }[] = []
+  subSubPanels: { id: string, panel: PanelConfig, circuits: Circuit[] }[] = [],
+  transformerConfig?: any
 ) => {
   const docChildren: any[] = [];
 
@@ -951,7 +952,70 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     return 1;
   };
 
-  // === 2. SHORT CIRCUIT FAULT FINDING ANALYSIS ===
+  // === 2.0 POWER TRANSFORMER CAPACITY CALCULATIONS ===
+  const calcMDP = computePanelScheduleValues(panel, circuits);
+  const connectedLoadKVA = calcMDP.totalVA / 1000;
+  
+  const tfPF = transformerConfig?.powerFactor ?? 0.85;
+  const tfDF = transformerConfig?.demandFactor ?? 0.80;
+  const tfLF = transformerConfig?.loadingFactor ?? 0.80;
+  const tfPrimaryV = transformerConfig?.primaryVoltage ?? 13800;
+
+  const demandLoadKVA = connectedLoadKVA * tfDF;
+  const requiredTransformerKVA = demandLoadKVA / tfPF / tfLF;
+
+  const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+  const recommendedTransformerKVA = STANDARD_SIZES.find((s) => s >= requiredTransformerKVA) || 1000;
+
+  const is3PH = panel.system.includes("3PH");
+  const secVoltage = panel.voltage || 230;
+
+  const primaryCurrent = is3PH 
+    ? recommendedTransformerKVA / (1.732 * (tfPrimaryV / 1000))
+    : recommendedTransformerKVA / (tfPrimaryV / 1000);
+
+  const secondaryCurrent = is3PH
+    ? recommendedTransformerKVA / (1.732 * (secVoltage / 1000))
+    : recommendedTransformerKVA / (secVoltage / 1000);
+
+  const loadingPercentage = (demandLoadKVA / recommendedTransformerKVA) * 100;
+  const isCompliant = loadingPercentage <= (tfLF * 100);
+
+  docChildren.push(createHeader(`2.0 Power Transformer Capacity Sizing Calculations`, true));
+  docChildren.push(
+    createSubHeader(`A. Sizing Requirements and Architectural Data Integration`),
+    createParagraph(`The recommended distribution transformer capacity is dynamically synchronized with the loaded connected and demand loads computed in Section 1.0 of the Main Distribution Panel (${panel.designation || 'MDP'}).`),
+    createParagraph(`• Total Connected Load: $S_{\\text{connected}} = ${connectedLoadKVA.toFixed(2)}\\text{ kVA}$`),
+    createParagraph(`• Power Factor (PF): $\\cos\\theta = ${tfPF.toFixed(2)}$`),
+    createParagraph(`• Demand Factor (DF): $f_{\\text{demand}} = ${tfDF.toFixed(2)}$`),
+    createParagraph(`• Sized Demand Load: $S_{\\text{demand}} = S_{\\text{connected}} \\times f_{\\text{demand}} = ${demandLoadKVA.toFixed(2)}\\text{ kVA}$`),
+    createParagraph(`• Allowable Safety Sizing Density (Loading Factor): $f_{\\text{loading}} = ${tfLF.toFixed(2)}$`),
+    new Paragraph({ spacing: { after: 150 } }),
+
+    createSubHeader(`B. Capacity Sizing Mathematical Method`),
+    createParagraph(`To prevent thermal degradation and provide structural head-room capacity for future facility expansions, the minimum candidate continuous rating is computed using:`),
+    createFormulaCallout(`S_{\\text{transformer, required}} = \\frac{S_{\\text{demand}}}{\\cos\\theta \\times f_{\\text{loading}}} = \\frac{${demandLoadKVA.toFixed(2)}}{${tfPF.toFixed(2)} \\times ${tfLF.toFixed(2)}} = ${requiredTransformerKVA.toFixed(2)}\\text{ kVA}`),
+    
+    createParagraph(`Matching standard ratings of PEC standard industrial wye-delta multi-winding machines, the recommended rating selected is:`),
+    createFormulaCallout(`S_{\\text{transformer, recommended}} = ${recommendedTransformerKVA}\\text{ kVA}`),
+    new Paragraph({ spacing: { after: 150 } }),
+
+    createSubHeader(`C. Full Load Rated Current Computations`),
+    createParagraph(`Primary side rated current ($I_{\\text{primary}}$) at primary grid voltage $V_{\\text{primary}} = ${tfPrimaryV}\\text{ V}$ ($${(tfPrimaryV/1000).toFixed(1)}\\text{ kV}$):`),
+    createFormulaCallout(`I_{\\text{primary}} = ${is3PH ? `\\frac{S_{\\text{transformer}}}{\\sqrt{3} \\times V_{\\text{primary}}}` : `\\frac{S_{\\text{transformer}}}{V_{\\text{primary}}}`} = ${primaryCurrent.toFixed(2)}\\text{ A}`),
+
+    createParagraph(`Secondary side rated current ($I_{\\text{secondary}}$) at secondary bus voltage $V_{\\text{secondary}} = ${secVoltage}\\text{ V}$ ($${(secVoltage/1000).toFixed(2)}\\text{ kV}$):`),
+    createFormulaCallout(`I_{\\text{secondary}} = ${is3PH ? `\\frac{S_{\\text{transformer}}}{\\sqrt{3} \\times V_{\\text{secondary}}}` : `\\frac{S_{\\text{secondary}}}{V_{\\text{secondary}}}`} = ${secondaryCurrent.toFixed(2)}\\text{ A}`),
+    new Paragraph({ spacing: { after: 150 } }),
+
+    createSubHeader(`D. Safety Sizing Verification Audit`),
+    createParagraph(`The actual load utilization index relative to the transformer recommended rating is logged as:`),
+    createFormulaCallout(`f_{\\text{utilization}} = \\frac{S_{\\text{demand}}}{S_{\\text{transformer, recommended}}} \\times 100\\% = \\frac{${demandLoadKVA.toFixed(2)}}{${recommendedTransformerKVA}} \\times 100\\% = ${loadingPercentage.toFixed(2)}\\%`),
+    createParagraph(`The allowable limit is $\\max f_{\\text{utilization}} = ${(tfLF * 100).toFixed(0)}\\%$. Audit Status: ${isCompliant ? "COMPLIANT (PASSED) - Sizing supports designated load without thermal core risk." : "NON-COMPLIANT (FAILED) - Under-sized rating triggers winding degradation danger."}`),
+    new Paragraph({ spacing: { after: 200 } })
+  );
+
+  // === 3. SHORT CIRCUIT FAULT FINDING ANALYSIS ===
   const params = iscParams || {
     transformerKVA: 100,
     transformerZ: 5,

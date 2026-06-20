@@ -20,6 +20,7 @@ import {
   Calculator,
   Receipt,
   Hammer,
+  Cpu,
 } from "lucide-react";
 import {
   Zap,
@@ -82,6 +83,7 @@ import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 import EgcSizingCalculator from "./components/EgcSizingCalculator";
+import TransformerCalc from "./components/TransformerCalc";
 
 export const getFreshInitialCircuits = (): Circuit[] => {
   return INITIAL_CIRCUITS.map((c) => ({
@@ -177,6 +179,7 @@ export default function App() {
     | "current-calc"
     | "egc"
     | "system-sld"
+    | "transformer"
     | "billing"
   >("dashboard");
   const [activeScheduleTab, setActiveScheduleTab] = useState<string>("mdp");
@@ -236,6 +239,11 @@ export default function App() {
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
   );
+
+  const [transformerPrimaryVoltage, setTransformerPrimaryVoltage] = useState<number>(13800);
+  const [transformerPowerFactor, setTransformerPowerFactor] = useState<number>(0.85);
+  const [transformerDemandFactor, setTransformerDemandFactor] = useState<number>(0.80);
+  const [transformerLoadingFactor, setTransformerLoadingFactor] = useState<number>(0.80);
 
   // One-way sync: Illumination Saved Rooms -> Circuits
   useEffect(() => {
@@ -951,6 +959,18 @@ export default function App() {
     setIscSource(data.iscSource || 'auto');
     setIllumParams(data.illumParams || INITIAL_ILLUMINATION_PARAMS);
 
+    if (data.transformerConfig) {
+      setTransformerPrimaryVoltage(data.transformerConfig.primaryVoltage ?? 13800);
+      setTransformerPowerFactor(data.transformerConfig.powerFactor ?? 0.85);
+      setTransformerDemandFactor(data.transformerConfig.demandFactor ?? 0.80);
+      setTransformerLoadingFactor(data.transformerConfig.loadingFactor ?? 0.80);
+    } else {
+      setTransformerPrimaryVoltage(13800);
+      setTransformerPowerFactor(0.85);
+      setTransformerDemandFactor(0.80);
+      setTransformerLoadingFactor(0.80);
+    }
+
     // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
     // Ensure accurate sizing by passing older circuits through the current compute engine.
     const seenCircuitIds = new Set<string>();
@@ -1093,6 +1113,12 @@ export default function App() {
     iscSource,
     vdCalculations,
     illumParams,
+    transformerConfig: {
+      primaryVoltage: transformerPrimaryVoltage,
+      powerFactor: transformerPowerFactor,
+      demandFactor: transformerDemandFactor,
+      loadingFactor: transformerLoadingFactor,
+    },
   };
 
   const handleNewProject = () => {
@@ -1105,6 +1131,10 @@ export default function App() {
     setIscSource("auto");
     setVdCalculations(INITIAL_VOLTAGE_DROP_CALCULATIONS);
     setIllumParams(INITIAL_ILLUMINATION_PARAMS);
+    setTransformerPrimaryVoltage(13800);
+    setTransformerPowerFactor(0.85);
+    setTransformerDemandFactor(0.80);
+    setTransformerLoadingFactor(0.80);
   };
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
@@ -1207,6 +1237,13 @@ export default function App() {
       icon: Hammer,
       color: "text-indigo-600",
       bg: "bg-indigo-50",
+    },
+    {
+      id: "transformer",
+      label: "Transformer Capacity",
+      icon: Cpu,
+      color: "text-rose-600",
+      bg: "bg-rose-50",
     },
     ...(isAdmin
       ? [
@@ -2156,7 +2193,13 @@ export default function App() {
         illumParams,
         images,
         iscParams,
-        subSubPanels
+        subSubPanels,
+        {
+          primaryVoltage: transformerPrimaryVoltage,
+          powerFactor: transformerPowerFactor,
+          demandFactor: transformerDemandFactor,
+          loadingFactor: transformerLoadingFactor,
+        }
       );
     } catch (e) {
       console.error("Error generating Word doc:", e);
@@ -3485,6 +3528,33 @@ export default function App() {
                   className="w-full"
                 >
                   <EgcSizingCalculator />
+                </motion.div>
+              </div>
+
+              {/* Transformer Sizer Tab */}
+              <div
+                className={activeTab === "transformer" ? "w-full" : "hidden"}
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "transformer" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full"
+                >
+                  <TransformerCalc
+                    panel={panel}
+                    circuits={circuits}
+                    primaryVoltage={transformerPrimaryVoltage}
+                    setPrimaryVoltage={setTransformerPrimaryVoltage}
+                    powerFactor={transformerPowerFactor}
+                    setPowerFactor={setTransformerPowerFactor}
+                    demandFactor={transformerDemandFactor}
+                    setDemandFactor={setTransformerDemandFactor}
+                    loadingFactor={transformerLoadingFactor}
+                    setLoadingFactor={setTransformerLoadingFactor}
+                  />
                 </motion.div>
               </div>
 

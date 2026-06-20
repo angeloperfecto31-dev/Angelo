@@ -24,6 +24,23 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   
   const wireNumber = is3Phase ? (panel.system.includes('4W') ? 4 : 3) : 2; 
 
+  // Dynamically calculate recommended transformer size for Main panel
+  const recommendedTransformerKVA = React.useMemo(() => {
+    if (isSubPanel) return null;
+    let totalVA = 0;
+    panelRows.forEach(row => {
+      if (row.left) totalVA += row.left.loadVA || 0;
+      if (row.right) totalVA += row.right.loadVA || 0;
+    });
+    const connectedLoadKVA = totalVA / 1000;
+    // default 80% demand factor and 80% loading factor as baseline
+    const demandLoadKVA = connectedLoadKVA * 0.80;
+    const requiredKVA = demandLoadKVA / 0.80;
+    const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+    const size = STANDARD_SIZES.find((s) => s >= requiredKVA);
+    return size || 1000;
+  }, [panelRows, isSubPanel]);
+
   return (
     <g transform={`translate(${xOffset}, ${yOffset})`}>
       {/* Source Symbol */}
@@ -37,8 +54,9 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
       ) : (
         <>
           <path d="M 230,80 L 270,100 L 230,120 Z" className="sld-line" fill="none" />
-          <text x="215" y="95" className="sld-text" textAnchor="end">{voltage}V {phaseText}</text>
-          <text x="215" y="115" className="sld-text" textAnchor="end">60Hz</text>
+          <text x="215" y="75" className="sld-text font-bold" textAnchor="end">POWER TRANSFORMER</text>
+          <text x="215" y="95" className="sld-text font-semibold" textAnchor="end">{recommendedTransformerKVA} kVA, {voltage}V, {phaseText}</text>
+          <text x="215" y="115" className="sld-text text-slate-500" textAnchor="end">60Hz Utility Power</text>
         </>
       )}
 

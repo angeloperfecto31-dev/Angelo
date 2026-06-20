@@ -342,8 +342,16 @@ const drawCadPanelSLD = (
     b.addLine(xBase + 5, yBase + 4, xBase, yBase + 10, "SLD_GEOMETRY");
     b.addLine(xBase, yBase + 4, xBase, yBase - 15, "SLD_GEOMETRY");
 
+    // Calculate recommended transformer kVA based on total connected load
+    let totalVA = panelCircuits.reduce((sum, curr) => sum + (curr.loadVA || 0), 0);
+    const connectedLoadKVA = totalVA / 1000;
+    const demandLoadKVA = connectedLoadKVA * 0.80;
+    const requiredKVA = demandLoadKVA / 0.80;
+    const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+    const recommendedKVA = STANDARD_SIZES.find((s) => s >= requiredKVA) || 1000;
+
     b.addText(
-      "UTILITY SOURCE",
+      "POWER TRANSFORMER",
       xBase - 12,
       yBase + 8,
       1.8,
@@ -352,7 +360,7 @@ const drawCadPanelSLD = (
       "right",
     );
     b.addText(
-      `${voltage}V, ${phaseText}`,
+      `RATING: ${recommendedKVA} kVA`,
       xBase - 12,
       yBase + 3,
       1.5,
@@ -360,7 +368,15 @@ const drawCadPanelSLD = (
       "TEXT_DATA",
       "right",
     );
-    b.addText("60 Hz", xBase - 12, yBase - 2, 1.5, 0, "TEXT_DATA", "right");
+    b.addText(
+      `${voltage}V, ${phaseText}, 60Hz`,
+      xBase - 12,
+      yBase - 2,
+      1.4,
+      0,
+      "TEXT_DATA",
+      "right",
+    );
   }
 
   // 2. Feeder Cable specifications block

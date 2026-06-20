@@ -9,6 +9,12 @@ export interface ProjectData {
   iscSource: string;
   vdCalculations: VoltageDropCalculation[];
   illumParams: IlluminationParams;
+  transformerConfig?: {
+    primaryVoltage: number;
+    powerFactor: number;
+    demandFactor: number;
+    loadingFactor: number;
+  };
 }
 
 export interface SavedProject {
