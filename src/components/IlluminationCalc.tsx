@@ -143,6 +143,80 @@ function calcSinglePointLux(
   return ptLux;
 }
 
+function getSymmetricPartition(q: number, targetRows: number): { rows: number; partition: number[] } {
+  let rows = targetRows;
+  // If q is odd and rows is even, we must adjust rows to be odd to allow a symmetric partition
+  if (q % 2 !== 0 && rows % 2 === 0) {
+    if (rows <= 2) {
+      rows = 3;
+    } else {
+      rows = rows - 1;
+    }
+  }
+
+  // Ensure rows does not exceed q
+  if (rows > q) {
+    rows = q;
+  }
+
+  const partition = new Array(rows).fill(0);
+  let remaining = q;
+  
+  if (rows % 2 === 1) {
+    // Odd number of rows
+    const mid = Math.floor(rows / 2);
+    const base = Math.floor(q / rows);
+    for (let i = 0; i < mid; i++) {
+      partition[i] = base;
+      partition[rows - 1 - i] = base;
+      remaining -= 2 * base;
+    }
+    partition[mid] = remaining; // Center takes the rest
+    
+    // Smoothen the distribution to make row counts as equal as possible
+    let loops = 0;
+    while (loops < 10) {
+      let adjusted = false;
+      if (mid > 0) {
+        const diff = partition[mid] - partition[mid - 1];
+        if (diff > 1) {
+          partition[mid] -= 2;
+          partition[mid - 1] += 1;
+          partition[rows - 1 - (mid - 1)] += 1;
+          adjusted = true;
+        } else if (diff < -1 && partition[mid - 1] > 1) {
+          partition[mid] += 2;
+          partition[mid - 1] -= 1;
+          partition[rows - 1 - (mid - 1)] -= 1;
+          adjusted = true;
+        }
+      }
+      if (!adjusted) break;
+      loops++;
+    }
+  } else {
+    // Even number of rows
+    const half = rows / 2;
+    const base = Math.floor(q / rows);
+    for (let i = 0; i < half; i++) {
+      partition[i] = base;
+      partition[rows - 1 - i] = base;
+      remaining -= 2 * base;
+    }
+    // Distribute remaining symmetrically starting from the middle rows outwards
+    let idx = half - 1;
+    while (remaining > 0) {
+      partition[idx] += 1;
+      partition[rows - 1 - idx] += 1;
+      remaining -= 2;
+      idx--;
+      if (idx < 0) idx = half - 1;
+    }
+  }
+  
+  return { rows, partition };
+}
+
 function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
   if (isCustom || !fixtureId) {
     const idLower = (fixtureId || '').toLowerCase();
@@ -1213,12 +1287,13 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
             let rows = Math.ceil(q / cols);
             cols = Math.max(1, Math.round(Math.sqrt(q * ratio)));
             rows = Math.ceil(q / cols);
+
+            // Get symmetric partition of q fixtures across rows
+            const { rows: actualRows, partition } = getSymmetricPartition(q, rows);
             
-            const stepZ = l / rows;
-            for (let r = 0; r < rows; r++) {
-              const startIdx = r * cols;
-              const endIdx = Math.min(q, (r + 1) * cols);
-              const countRow = endIdx - startIdx;
+            const stepZ = l / actualRows;
+            for (let r = 0; r < actualRows; r++) {
+              const countRow = partition[r];
               if (countRow <= 0) continue;
               
               const rowStepX = w / countRow;
@@ -4039,8 +4114,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                       </div>
                     ) : (
                       filteredLocalFixtures.map((fixture) => (
-                        <button
-                          type="button"
+                        <div
                           key={fixture.id}
                           onClick={() => {
                             if (editingFixtureIndex !== null && params.activeFixtures) {
@@ -4066,9 +4140,10 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                                 };
                               }
 
+                               const listToAssign = list; // to keep original compile layout
                                let updatedCustomPositions = params.customPositions;
                                if (oldFixtureId && params.customPositions && params.customPositions.length > 0) {
-                                 const targetActiveF = list[editingFixtureIndex];
+                                 const targetActiveF = listToAssign[editingFixtureIndex];
                                  updatedCustomPositions = params.customPositions.map(cp => {
                                    const isMatch = cp.activeFixtureId 
                                      ? cp.activeFixtureId === targetActiveF?.id
@@ -4087,10 +4162,10 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                                  });
                                }
 
-                              if (list.length === 1) {
+                              if (listToAssign.length === 1) {
                                 setParams({ 
                                   ...params, 
-                                  activeFixtures: list,
+                                  activeFixtures: listToAssign,
                                   customPositions: updatedCustomPositions,
                                   selectedFixtureId: fixture.id,
                                   lumensPerFixture: fixture.lumens,
@@ -4106,7 +4181,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                               } else {
                                 setParams({ 
                                   ...params, 
-                                  activeFixtures: list,
+                                  activeFixtures: listToAssign,
                                   customPositions: updatedCustomPositions
                                 });
                               }
@@ -4116,6 +4191,15 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                             setShowFixtureModal(false);
                             setEditingFixtureIndex(null);
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+                              e.currentTarget.dispatchEvent(clickEvent);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
                           className={`relative flex flex-col focus:outline-none text-left border rounded-xl overflow-hidden transition-all group cursor-pointer ${
                             (!isCurrentlyCustom && currentSelectedFixtureId === fixture.id) ? 'border-yellow-400 ring-2 ring-yellow-400/50 scale-[1.02] shadow-md z-10 bg-yellow-50/10' : 'border-slate-200 hover:border-slate-300 hover:shadow-md bg-white'
                           }`}
@@ -4210,7 +4294,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                               </div>
                             </div>
                           </div>
-                        </button>
+                        </div>
                       ))
                     )}
                   </>
