@@ -566,7 +566,7 @@ export default function App() {
           if (c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId) {
             const ssp = subSubPanels.find((s) => s.id === c.linkedSubPanelId);
             if (ssp) {
-              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(ssp.panel, ssp.circuits);
+              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(ssp.panel, ssp.circuits, { vdCalculations, panelId: ssp.id });
 
               const subTotalWattage = ssp.circuits.reduce(
                 (sum, cc) =>
@@ -643,7 +643,7 @@ export default function App() {
       if (anyPanelChanged) return nextSubPanels;
       return prevSubPanels;
     });
-  }, [subSubPanels, computePanelScheduleValues]);
+  }, [subSubPanels, computePanelScheduleValues, vdCalculations]);
 
   // Synchronize Sub-Panels recalculations back to Main Panel circuits and update the Main Panel in real-time
   useEffect(() => {
@@ -655,7 +655,7 @@ export default function App() {
           const sp = subPanels.find((s) => s.id === c.linkedSubPanelId);
           if (sp) {
             // Compute sub-panel actual values
-            const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits);
+            const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
 
             const subTotalWattage = sp.circuits.reduce(
               (sum, cc) =>
@@ -726,7 +726,7 @@ export default function App() {
 
       return changed ? nextCircuits : prevCircuits;
     });
-  }, [subPanels, setCircuits]);
+  }, [subPanels, setCircuits, vdCalculations]);
 
   // Automatically recalculate Main Panel circuits when Main Panel configuration changes
   useEffect(() => {
@@ -734,7 +734,7 @@ export default function App() {
       if (!prevCircuits || prevCircuits.length === 0) return prevCircuits;
       let changed = false;
       const nextCircuits = prevCircuits.map((c) => {
-        const updated = calculateCircuitValues(c, panel, subPanels);
+        const updated = calculateCircuitValues(c, panel, subPanels, vdCalculations);
         if (
           updated.wireSize !== c.wireSize ||
           updated.groundSize !== c.groundSize ||
@@ -760,7 +760,8 @@ export default function App() {
     panel.conductorMaterial,
     panel.insulationType,
     panel.temperatureRating,
-    subPanels
+    subPanels,
+    vdCalculations,
   ]);
 
   // Automatically recalculate subPanels circuits when subPanel configuration changes
@@ -771,7 +772,7 @@ export default function App() {
       const nextSubPanels = prevSubPanels.map((sp) => {
         let spChanged = false;
         const nextCircuits = sp.circuits.map((c) => {
-          const updated = calculateCircuitValues(c, sp.panel, subSubPanels);
+          const updated = calculateCircuitValues(c, sp.panel, subSubPanels, vdCalculations);
           if (
             updated.wireSize !== c.wireSize ||
             updated.groundSize !== c.groundSize ||
@@ -801,7 +802,8 @@ export default function App() {
     });
   }, [
     subPanels.map(sp => `${sp.panel.system}-${sp.panel.connectionType}-${sp.panel.conductorMaterial}-${sp.panel.insulationType}-${sp.panel.temperatureRating}`).join("|"),
-    subSubPanels
+    subSubPanels,
+    vdCalculations,
   ]);
 
   // Automatically recalculate subSubPanels circuits when subSubPanel configuration changes
@@ -812,7 +814,7 @@ export default function App() {
       const nextSubSubPanels = prevSubSubPanels.map((ssp) => {
         let sspChanged = false;
         const nextCircuits = ssp.circuits.map((c) => {
-          const updated = calculateCircuitValues(c, ssp.panel, []);
+          const updated = calculateCircuitValues(c, ssp.panel, [], vdCalculations);
           if (
             updated.wireSize !== c.wireSize ||
             updated.groundSize !== c.groundSize ||
@@ -841,7 +843,8 @@ export default function App() {
       return anyChanged ? nextSubSubPanels : prevSubSubPanels;
     });
   }, [
-    subSubPanels.map(ssp => `${ssp.panel.system}-${ssp.panel.connectionType}-${ssp.panel.conductorMaterial}-${ssp.panel.insulationType}-${ssp.panel.temperatureRating}`).join("|")
+    subSubPanels.map(ssp => `${ssp.panel.system}-${ssp.panel.connectionType}-${ssp.panel.conductorMaterial}-${ssp.panel.insulationType}-${ssp.panel.temperatureRating}`).join("|"),
+    vdCalculations,
   ]);
 
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
@@ -963,11 +966,11 @@ export default function App() {
         return {
           ...c,
           id: uniqueId,
-          ...calculateCircuitValues(c, sp.panel, []),
+          ...calculateCircuitValues(c, sp.panel, [], data.vdCalculations),
         };
       }) as Circuit[];
       
-      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits);
+      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits, { vdCalculations: data.vdCalculations, panelId: sp.id });
       return { 
         ...sp, 
         panel: {
@@ -991,11 +994,11 @@ export default function App() {
         return {
           ...c,
           id: uniqueId,
-          ...calculateCircuitValues(c, sp.panel, migratedSubSubPanels),
+          ...calculateCircuitValues(c, sp.panel, migratedSubSubPanels, data.vdCalculations),
         };
       }) as Circuit[];
       
-      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits);
+      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits, { vdCalculations: data.vdCalculations, panelId: sp.id });
       return { 
         ...sp, 
         panel: {
@@ -1018,11 +1021,11 @@ export default function App() {
       return {
         ...c,
         id: uniqueId,
-        ...calculateCircuitValues(c, data.panel, migratedSubPanels),
+        ...calculateCircuitValues(c, data.panel, migratedSubPanels, data.vdCalculations),
       };
     }) as Circuit[];
 
-    const { mainFeeder: mainFeederData } = computePanelScheduleValues(data.panel, migratedCircuits);
+    const { mainFeeder: mainFeederData } = computePanelScheduleValues(data.panel, migratedCircuits, { vdCalculations: data.vdCalculations, panelId: "main" });
 
     let tc = data.panel.transformerConnection;
     if (tc === "Delta-Wye") tc = "Delta-Wye (Δ-Y)";
@@ -1276,7 +1279,7 @@ export default function App() {
             kaic,
             af,
           },
-        } = computePanelScheduleValues(p, c);
+        } = computePanelScheduleValues(p, c, { vdCalculations, panelId: item.id });
 
         const formatWireSize = (size: number): string =>
           size <= 8 ? size.toFixed(1) : size.toString();
@@ -3418,6 +3421,7 @@ export default function App() {
                     iscParams={iscParams}
                     isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
+                    vdCalculations={vdCalculations}
                   />
                 </motion.div>
               </div>

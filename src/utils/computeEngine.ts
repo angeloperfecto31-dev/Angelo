@@ -60,6 +60,45 @@ const CONDUIT_FILL_TABLE = [
   { size: "100mm", limit: 3240 },
 ];
 
+export const getAdjustedWireForVoltageDrop = (
+  baseSize: number,
+  loadA: number,
+  length: number,
+  voltage: number,
+  systemType: "1PH" | "3PH",
+  limit: number,
+): number => {
+  if (!length || length <= 0 || !loadA || loadA <= 0) return baseSize;
+
+  const SIZES = [2.0, 3.5, 5.5, 8.0, 14, 22, 30, 38, 50, 60, 80, 100, 125, 150, 175, 200, 250, 325, 375, 400, 500];
+  
+  let startIndex = SIZES.findIndex(s => Math.abs(s - baseSize) < 0.01);
+  if (startIndex === -1) {
+    startIndex = SIZES.findIndex(s => s >= baseSize);
+    if (startIndex === -1) {
+      startIndex = 0;
+    }
+  }
+
+  const factor = systemType === "3PH" ? 1.732 : 2;
+
+  for (let i = startIndex; i < SIZES.length; i++) {
+    const size = SIZES[i];
+    const sizeStr = size.toString();
+    const data = WIRE_IMPEDANCE_TABLE[sizeStr] || { r: 5.76, x: 0.157 };
+    const R = data.r;
+    
+    const vd = (factor * length * loadA * R) / 1000;
+    const vdPercentage = (vd / voltage) * 100;
+    
+    if (vdPercentage <= limit) {
+      return size;
+    }
+  }
+
+  return SIZES[SIZES.length - 1];
+};
+
 export const getWireForBreakerLocal = (
   cbRating: number,
   designAmpacity: number,
@@ -158,6 +197,7 @@ export const calculateCircuitValues = (
     panel: PanelConfig;
     circuits: Circuit[];
   }>,
+  vdCalculations?: VoltageDropCalculation[],
 ): Partial<Circuit> => {
   const c = { ...cParam };
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
@@ -403,14 +443,35 @@ export const calculateCircuitValues = (
     panel.temperatureRating as any,
   );
 
+  let baseWireSize = wire.size;
+
+  if (vdCalculations && (c.id || c.linkedSubPanelId)) {
+    const calc = vdCalculations.find(
+      (v) => v.source === c.id || (c.linkedSubPanelId && v.source === c.linkedSubPanelId)
+    );
+    if (calc) {
+      const isFeeder = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+      const limit = isFeeder ? 5.0 : 3.0;
+      const currentA = calc.loadA || Number(loadA.toFixed(2));
+      baseWireSize = getAdjustedWireForVoltageDrop(
+        baseWireSize,
+        currentA,
+        calc.length || 30,
+        c.voltage || panel.voltage || 230,
+        (c.phases && c.phases.length === 3) ? "3PH" : "1PH",
+        limit
+      );
+    }
+  }
+
   const finalWireSize =
-    isSubPanelLink && c.wireSize ? c.wireSize : formatWireSizeLocal(wire.size);
+    isSubPanelLink && c.wireSize ? c.wireSize : formatWireSizeLocal(baseWireSize);
 
   const finalGroundSize =
     isSubPanelLink && c.groundSize
       ? c.groundSize
       : getGroundWireForWireSizeLocal(
-          wire.size,
+          baseWireSize,
           mcbAT,
           panel.conductorMaterial || "Copper",
         );
@@ -419,9 +480,9 @@ export const calculateCircuitValues = (
     isSubPanelLink && c.conduitSize
       ? c.conduitSize
       : getConduitSizeForWiresLocal(
-          wire.size,
+          baseWireSize,
           getGroundWireForWireSizeLocal(
-            wire.size,
+            baseWireSize,
             mcbAT,
             panel.conductorMaterial || "Copper",
           ),
@@ -491,7 +552,15 @@ export const calculatePanelFault = (
   return iscFaultPoint + motorContribution;
 };
 
-export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[], options?: { faultCurrentA?: number }) => {
+export const computePanelScheduleValues = (
+  p: PanelConfig,
+  c: Circuit[],
+  options?: {
+    faultCurrentA?: number;
+    vdCalculations?: VoltageDropCalculation[];
+    panelId?: string;
+  }
+) => {
   const systemVoltage = getSystemVoltage(p.system);
   const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
 
@@ -810,13 +879,32 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[], options
     p.insulationType || "THHN",
     p.temperatureRating as any,
   );
+
+  let baseWireSize = wire.size;
+
+  if (options?.vdCalculations) {
+    const pId = options.panelId || "main";
+    const calc = options.vdCalculations.find((v) => v.source === pId);
+    if (calc) {
+      const currentA = calc.loadA || designAmp || mainCurrent.baseAmp;
+      baseWireSize = getAdjustedWireForVoltageDrop(
+        baseWireSize,
+        currentA,
+        calc.length || 30,
+        p.voltage || 230,
+        p.system.includes("3PH") ? "3PH" : "1PH",
+        5.0 // Feeder/Main limit is 5%
+      );
+    }
+  }
+
   const groundSize = getGroundWireForWireSizeLocal(
-    wire.size,
+    baseWireSize,
     cb,
     p.conductorMaterial || "Copper",
   );
   const conduitSize = getConduitSizeForWiresLocal(
-    wire.size,
+    baseWireSize,
     groundSize,
     poles,
     p.system,
@@ -856,9 +944,14 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[], options
   let finalKaic = kaic;
   let finalPoles = poles;
 
-  let finalWireSize = wire.size;
+  let finalWireSize = baseWireSize;
   let finalWireRuns = wire.runs;
-  let finalWireAmpacity = wire.ampacity;
+  let finalWireAmpacity =
+    getConductorAmpacity(
+      baseWireSize,
+      p.conductorMaterial || "Copper",
+      (p.temperatureRating as any) || getTemperatureForInsulation(p.insulationType || "THHN")
+    ) * finalWireRuns;
   let finalGroundSize = groundSize;
   let finalConduitSize = conduitSize;
 
@@ -934,7 +1027,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[], options
       kaic: finalKaic,
       af: finalAf,
       raw: {
-        wireSize: wire.size,
+        wireSize: baseWireSize,
         cb: cb,
         type: type,
         kaic: kaic,

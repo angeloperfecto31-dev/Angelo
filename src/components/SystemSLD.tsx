@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { PanelConfig, Circuit, LoadType } from "../types";
+import { PanelConfig, Circuit, LoadType, VoltageDropCalculation } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
 import { SingleLineDiagramContent } from "./SingleLineDiagram";
 import { toPng } from "html-to-image";
@@ -20,6 +20,7 @@ interface SystemSLDProps {
   iscParams?: any;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
+  vdCalculations?: VoltageDropCalculation[];
 }
 
 const getPanelRows = (panelCircuits: Circuit[], panelSystem: string) => {
@@ -48,6 +49,7 @@ export default function SystemSLD({
   iscParams,
   isPremium = true,
   onRequestUpgrade,
+  vdCalculations,
 }: SystemSLDProps) {
   const formatWireSize = (size: number | string) => size;
 
@@ -55,8 +57,8 @@ export default function SystemSLD({
   const [showPrintWarning, setShowPrintWarning] = useState(false);
 
   const mdpData = useMemo(
-    () => computePanelScheduleValues(panel, circuits),
-    [panel, circuits],
+    () => computePanelScheduleValues(panel, circuits, { vdCalculations, panelId: "main" }),
+    [panel, circuits, vdCalculations],
   );
   const mdpRows = useMemo(
     () => getPanelRows(circuits, panel.system),
@@ -75,7 +77,7 @@ export default function SystemSLD({
       return true;
     });
     return allSubPanels.map((sp, idx) => {
-      const spData = computePanelScheduleValues(sp.panel, sp.circuits);
+      const spData = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
       const spHeight = 320 + spRows.length * 60 + 100;
 
@@ -151,7 +153,7 @@ export default function SystemSLD({
         idx,
       };
     });
-  }, [subPanels, subSubPanels, circuits, mdpRows]);
+  }, [subPanels, subSubPanels, circuits, mdpRows, vdCalculations]);
 
   const resolvedLayouts = useMemo(() => {
     const layoutMap = new Map(spLayouts.map((l) => [l.sp.id, l]));

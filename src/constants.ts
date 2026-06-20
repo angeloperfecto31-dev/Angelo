@@ -156,6 +156,13 @@ export const WIRE_IMPEDANCE_TABLE: Record<string, { r: number, x: number }> = {
   '100': { r: 0.177, x: 0.125 },
   '125': { r: 0.141, x: 0.121 },
   '150': { r: 0.118, x: 0.121 },
+  '175': { r: 0.108, x: 0.118 },
+  '200': { r: 0.089, x: 0.115 },
+  '250': { r: 0.072, x: 0.112 },
+  '325': { r: 0.055, x: 0.108 },
+  '375': { r: 0.048, x: 0.105 },
+  '400': { r: 0.045, x: 0.102 },
+  '500': { r: 0.036, x: 0.098 },
 };
 
 export const RECOMMENDED_LUX_LEVELS_CATEGORIZED: Record<string, { name: string; lux: number }[]> = {

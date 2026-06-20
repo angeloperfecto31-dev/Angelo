@@ -308,10 +308,16 @@ export default function VoltageDropCalc({
     const vd = (factor * calc.length * calc.loadA * R) / 1000;
     const vdPercentage = (vd / calc.voltage) * 100;
 
+    const isMainFeeder = calc.source === "main";
+    const isSubPanelFeeder = allSubPanels.some(sp => sp.id === calc.source);
+    const isFeeder = isMainFeeder || isSubPanelFeeder || calc.name.toLowerCase().includes("feeder");
+    const limit = isFeeder ? 5.0 : 3.0;
+
     return {
       vd: vd.toFixed(2),
       vdPercentage: vdPercentage.toFixed(2),
-      isCompliant: vdPercentage <= 3.0,
+      isCompliant: vdPercentage <= limit,
+      limit: limit,
     };
   };
 
@@ -625,7 +631,8 @@ export default function VoltageDropCalc({
                 <th className="p-3 w-20">System</th>
                 <th className="p-3 w-20">VD (V)</th>
                 <th className="p-3 w-20">VD (%)</th>
-                <th className="p-3 w-20 text-center">Status</th>
+                <th className="p-3 w-20 text-center">Limit (%)</th>
+                <th className="p-3 w-24 text-center">Status</th>
                 <th className="p-3 w-10 no-print"></th>
               </tr>
             </thead>
@@ -734,12 +741,21 @@ export default function VoltageDropCalc({
                   >
                     {c.result.vdPercentage}%
                   </td>
-                  <td className="p-3 flex justify-center">
-                    {c.result.isCompliant ? (
-                      <Zap className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-500" />
-                    )}
+                  <td className="p-3 text-center font-bold text-slate-500 dark:text-slate-400">
+                    {c.result.limit}%
+                  </td>
+                  <td className="p-3 text-center">
+                    <span className="inline-flex justify-center">
+                      {c.result.isCompliant ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 bg-green-50 dark:bg-green-950/30 px-2.5 py-1 rounded-full border border-green-200 dark:border-green-900/50">
+                          <Zap className="w-3.5 h-3.5 text-green-500" /> Compliant
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-900/50">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> Exceeded
+                        </span>
+                      )}
+                    </span>
                   </td>
                   <td className="p-3 no-print">
                     <button
@@ -754,7 +770,7 @@ export default function VoltageDropCalc({
               {activeCalculations.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="p-8 text-center text-slate-400 font-medium italic"
                   >
                     No circuits added to the calculation list. Select a source
