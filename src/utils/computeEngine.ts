@@ -887,7 +887,7 @@ export const computePanelScheduleValues = (p: PanelConfig, c: Circuit[], options
 
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
   const phaseImbalance =
-    maxPhaseLoad > 0
+    p.system.includes("3PH") && maxPhaseLoad > 0
       ? (1 -
           Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B) / maxPhaseLoad) *
         100

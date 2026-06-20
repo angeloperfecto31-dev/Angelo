@@ -1435,7 +1435,9 @@ export default function App() {
           "Main Breaker:",
           `${cb} AT / ${af} AF, ${poles}P, ${kaic} kAIC, ${type}`,
         ]);
-        wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
+        if (p.system.includes("3PH")) {
+          wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
+        }
         wsData.push([
           "Max Demand Current:",
           `${mainCurrent.baseAmp.toFixed(2)} A`,

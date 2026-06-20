@@ -890,7 +890,7 @@ export default function LoadSchedule({
 
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
   const phaseImbalance =
-    maxPhaseLoad > 0
+    panel.system.includes("3PH") && maxPhaseLoad > 0
       ? (1 -
           Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B) / maxPhaseLoad) *
         100
@@ -1804,15 +1804,33 @@ export default function LoadSchedule({
               }}
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              {Object.keys(SYSTEM_VOLTAGES).map((s) => (
-                <option
-                  key={s}
-                  value={s}
-                  className="dark:bg-slate-900 dark:text-slate-100"
-                >
-                  {s}
-                </option>
-              ))}
+              <optgroup label="Single-Phase (1PH) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+                {Object.keys(SYSTEM_VOLTAGES)
+                  .filter((s) => s.includes("1PH"))
+                  .map((s) => (
+                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                      {s}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Three-Phase, 4-Wire (3PH, 4W) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+                {Object.keys(SYSTEM_VOLTAGES)
+                  .filter((s) => s.includes("3PH") && s.includes("4W"))
+                  .map((s) => (
+                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                      {s}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Three-Phase, 3-Wire (3PH, 3W) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+                {Object.keys(SYSTEM_VOLTAGES)
+                  .filter((s) => s.includes("3PH") && s.includes("3W"))
+                  .map((s) => (
+                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                      {s}
+                    </option>
+                  ))}
+              </optgroup>
             </select>
           </div>
           <div className="space-y-1.5">
@@ -3093,13 +3111,15 @@ export default function LoadSchedule({
                       {mainFeeder.type}
                       {panel.mainOverrides?.isOverrideEnabled && (panel.mainOverrides.breakerAT || panel.mainOverrides.kaic || panel.mainOverrides.breakerType) ? " (Manual)" : ""}
                     </span>
-                    <span
-                      className={
-                        phaseImbalance > 15 ? "text-red-400" : "text-green-400"
-                      }
-                    >
-                      Phase Imbalance: {phaseImbalance.toFixed(1)}%
-                    </span>
+                    {panel.system.includes("3PH") && (
+                      <span
+                        className={
+                          phaseImbalance > 15 ? "text-red-400" : "text-green-400"
+                        }
+                      >
+                        Phase Imbalance: {phaseImbalance.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -3562,42 +3582,44 @@ export default function LoadSchedule({
             </div>
           </div>
 
-          <div>
-            <h3 className="font-bold text-slate-900 mb-2">
-              4. Phase Balancing Check
-            </h3>
-            <p className="mb-2">
-              For a well-designed electrical panel, the loads across the phases
-              (R, Y, B) should be evenly distributed to prevent neutral current
-              overload.
-            </p>
-            <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>Max Phase Load = Max(Load_R, Load_Y, Load_B)</span>
-              <span>Min Phase Load = Min(Load_R, Load_Y, Load_B)</span>
-              <span>
-                Imbalance % = (1 - (Min Phase Load / Max Phase Load)) × 100
-              </span>
+          {panel.system.includes("3PH") && (
+            <div>
+              <h3 className="font-bold text-slate-900 mb-2">
+                4. Phase Balancing Check
+              </h3>
+              <p className="mb-2">
+                For a well-designed electrical panel, the loads across the phases
+                (R, Y, B) should be evenly distributed to prevent neutral current
+                overload.
+              </p>
+              <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
+                <span>Max Phase Load = Max(Load_R, Load_Y, Load_B)</span>
+                <span>Min Phase Load = Min(Load_R, Load_Y, Load_B)</span>
+                <span>
+                  Imbalance % = (1 - (Min Phase Load / Max Phase Load)) × 100
+                </span>
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-sm font-bold">
+                <span className="text-slate-600">
+                  Phase R: {phaseLoads.R.toFixed(2)} VA
+                </span>
+                <span className="text-slate-600">
+                  Phase Y: {phaseLoads.Y.toFixed(2)} VA
+                </span>
+                <span className="text-slate-600">
+                  Phase B: {phaseLoads.B.toFixed(2)} VA
+                </span>
+                <span
+                  className={
+                    phaseImbalance > 15 ? "text-red-500" : "text-green-600"
+                  }
+                >
+                  Phase Imbalance: {phaseImbalance.toFixed(2)}%{" "}
+                  {phaseImbalance > 15 ? "(Warning: >15%)" : "(Acceptable)"}
+                </span>
+              </div>
             </div>
-            <div className="mt-2 flex flex-col gap-1 text-sm font-bold">
-              <span className="text-slate-600">
-                Phase R: {phaseLoads.R.toFixed(2)} VA
-              </span>
-              <span className="text-slate-600">
-                Phase Y: {phaseLoads.Y.toFixed(2)} VA
-              </span>
-              <span className="text-slate-600">
-                Phase B: {phaseLoads.B.toFixed(2)} VA
-              </span>
-              <span
-                className={
-                  phaseImbalance > 15 ? "text-red-500" : "text-green-600"
-                }
-              >
-                Phase Imbalance: {phaseImbalance.toFixed(2)}%{" "}
-                {phaseImbalance > 15 ? "(Warning: >15%)" : "(Acceptable)"}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       </section>
       

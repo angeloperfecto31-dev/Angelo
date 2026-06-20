@@ -2167,7 +2167,7 @@ export const exportToCAD = (
     }
 
     // Merged block for Cols 8-13 (Summary specifications)
-    const summarySpecStr = `FEEDER: ${currentCalcData.mainFeeder.wire.runs}x${currentCalcData.mainFeeder.wire.size}mm² THHN + ${currentCalcData.mainFeeder.groundSize}mm² GND | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%`;
+    const summarySpecStr = `FEEDER: ${currentCalcData.mainFeeder.wire.runs}x${currentCalcData.mainFeeder.wire.size}mm² THHN + ${currentCalcData.mainFeeder.groundSize}mm² GND | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
     b.addText(
       summarySpecStr,
       colPositions[ampsEndIdx] + 3,
@@ -2201,7 +2201,7 @@ export const exportToCAD = (
       "left",
     );
     b.addText(
-      `PHASE DISBALANCE RATIO: ${currentCalcData.phaseImbalance.toFixed(2)}% | RATED MAX DEMAND CURRENT: ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+      `${isPanel3Phase ? `PHASE DISBALANCE RATIO: ${currentCalcData.phaseImbalance.toFixed(2)}% | ` : ""}RATED MAX DEMAND CURRENT: ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
       tableRight - 5,
       ty - 10,
       1.8,
@@ -2414,51 +2414,53 @@ export const exportToCAD = (
 
     let cy2 = cyRightStart;
 
-    writeCalcLineCol2("4. PHASE BALANCING & ANALYSIS", cy2, "TEXT_HEADER");
-    cy2 -= 6;
-    writeCalcLineCol2(
-      "Evaluation of load symmetry across phases R, Y, B.",
-      cy2,
-    );
-    cy2 -= 6;
-    writeCalcLineCol2(
-      `Phase R: ${currentCalcData.phaseLoads.R.toFixed(2)} VA`,
-      cy2,
-    );
-    cy2 -= 6;
-    writeCalcLineCol2(
-      `Phase Y: ${currentCalcData.phaseLoads.Y.toFixed(2)} VA`,
-      cy2,
-    );
-    cy2 -= 6;
-    writeCalcLineCol2(
-      `Phase B: ${currentCalcData.phaseLoads.B.toFixed(2)} VA`,
-      cy2,
-    );
-    cy2 -= 6;
+    if (isPanel3Phase) {
+      writeCalcLineCol2("4. PHASE BALANCING & ANALYSIS", cy2, "TEXT_HEADER");
+      cy2 -= 6;
+      writeCalcLineCol2(
+        "Evaluation of load symmetry across phases R, Y, B.",
+        cy2,
+      );
+      cy2 -= 6;
+      writeCalcLineCol2(
+        `Phase R: ${currentCalcData.phaseLoads.R.toFixed(2)} VA`,
+        cy2,
+      );
+      cy2 -= 6;
+      writeCalcLineCol2(
+        `Phase Y: ${currentCalcData.phaseLoads.Y.toFixed(2)} VA`,
+        cy2,
+      );
+      cy2 -= 6;
+      writeCalcLineCol2(
+        `Phase B: ${currentCalcData.phaseLoads.B.toFixed(2)} VA`,
+        cy2,
+      );
+      cy2 -= 6;
 
-    const maxP = Math.max(
-      currentCalcData.phaseLoads.R,
-      currentCalcData.phaseLoads.Y,
-      currentCalcData.phaseLoads.B,
-    );
-    const minP = Math.min(
-      currentCalcData.phaseLoads.R,
-      currentCalcData.phaseLoads.Y,
-      currentCalcData.phaseLoads.B,
-    );
-    const imbalance = maxP > 0 ? (1 - minP / maxP) * 100 : 0;
+      const maxP = Math.max(
+        currentCalcData.phaseLoads.R,
+        currentCalcData.phaseLoads.Y,
+        currentCalcData.phaseLoads.B,
+      );
+      const minP = Math.min(
+        currentCalcData.phaseLoads.R,
+        currentCalcData.phaseLoads.Y,
+        currentCalcData.phaseLoads.B,
+      );
+      const imbalance = maxP > 0 ? (1 - minP / maxP) * 100 : 0;
 
-    writeCalcLineCol2(
-      `Imbalance Ratio: ${imbalance.toFixed(2)}%`,
-      cy2,
-      "TEXT_TITLE",
-    );
-    cy2 -= 6;
-    const pStatus =
-      imbalance > 15 ? "(WARNING: EXCEEDS 15% LIMIT)" : "(ACCEPTABLE SYMMETRY)";
-    writeCalcLineCol2(`Status: ${pStatus}`, cy2, "TEXT_TITLE");
-    cy2 -= 12;
+      writeCalcLineCol2(
+        `Imbalance Ratio: ${imbalance.toFixed(2)}%`,
+        cy2,
+        "TEXT_TITLE",
+      );
+      cy2 -= 6;
+      const pStatus =
+        imbalance > 15 ? "(WARNING: EXCEEDS 15% LIMIT)" : "(ACCEPTABLE SYMMETRY)";
+      writeCalcLineCol2(`Status: ${pStatus}`, cy2, "TEXT_TITLE");
+      cy2 -= 12;
+    }
   };
 
   // Render main sheet template & load schedule only if not short circuit isolated mode
