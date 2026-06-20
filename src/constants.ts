@@ -592,6 +592,146 @@ export const LIGHT_FIXTURES_LIBRARY: LightFixture[] = [
     utilizationFactor: 0.70,
     manufacturerReference: 'FF-TP-40W-IP65',
     description: 'Vapor-tight waterproof, dustproof and corrosion-proof linear light for tunnels and parking bays.'
+  },
+  
+  // 24. Deep Anti-Glare Comfort Downlights
+  {
+    id: 'deep-comfort-dl-12w',
+    category: 'Recessed Downlights',
+    lightType: 'Deep-Baffle Anti-Glare Comfort Downlight (12W)',
+    wattageRange: '8W–15W',
+    lumensRange: '700–1400 lm',
+    brands: 'Cree, Philips, Custom Spec',
+    wattage: 12,
+    lumens: 1020,
+    efficacy: 85,
+    cct: '3000K (Warm White)',
+    cri: 93,
+    mountingType: 'Recessed',
+    beamAngle: 60,
+    utilizationFactor: 0.62,
+    manufacturerReference: 'CR-DB-12W-930',
+    description: 'Premium architectural downlight with UGR<19 deep-recessed micro-baffle for maximum visual comfort.'
+  },
+
+  // 25. Adjustable Gimbal Accents
+  {
+    id: 'gimbal-accent-8w',
+    category: 'Track & Spotlights',
+    lightType: 'Adjustable Recessed Gimbal Downlight (8W)',
+    wattageRange: '5W–12W',
+    lumensRange: '450–1100 lm',
+    brands: 'Omni, Akari, Philips',
+    wattage: 8,
+    lumens: 680,
+    efficacy: 85,
+    cct: '2700K (Warm White)',
+    cri: 90,
+    mountingType: 'Recessed',
+    beamAngle: 30,
+    utilizationFactor: 0.55,
+    manufacturerReference: 'OM-GMB-8W-30D',
+    description: '30-degree rotatable recessed gimbal tilt fixture for highlighting artwork or features.'
+  },
+
+  // 26. Slim Square Ceiling Surfaces
+  {
+    id: 'slim-square-surface-24w',
+    category: 'Surface Mounted',
+    lightType: 'Slim Square Surface-Mounted Panel (24W)',
+    wattageRange: '18W–36W',
+    lumensRange: '1600–3200 lm',
+    brands: 'Firefly, Omni',
+    wattage: 24,
+    lumens: 2160,
+    efficacy: 90,
+    cct: '4000K (Neutral White)',
+    cri: 80,
+    mountingType: 'Surface-mounted',
+    beamAngle: 120,
+    utilizationFactor: 0.62,
+    manufacturerReference: 'FF-SQ-SM-24W',
+    description: 'Compact ultra-thin square surface luminaire for utility areas, closets, and kitchens.'
+  },
+
+  // 27. Modern Minimalist Multi-Ring Pendant
+  {
+    id: 'halo-multi-ring-50w',
+    category: 'Aesthetic & Decorative',
+    lightType: 'Nordic Circular Halo LED Pendant (50W)',
+    wattageRange: '30W–80W',
+    lumensRange: '2500–7000 lm',
+    brands: 'Custom Spec, Philips',
+    wattage: 50,
+    lumens: 4250,
+    efficacy: 85,
+    cct: '3000K (Warm White)',
+    cri: 90,
+    mountingType: 'Suspended (Pendant)',
+    beamAngle: 180,
+    utilizationFactor: 0.50,
+    manufacturerReference: 'ND-HL-50W-3K',
+    description: 'Stunning tiered triple circular halo designer light offering 360-degree ambient distribution.'
+  },
+
+  // 28. High Temperature Protected Linear Low-Bay
+  {
+    id: 'linear-low-bay-60w',
+    category: 'Industrial & High-Bay',
+    lightType: 'Linear High-Efficacy Low-Bay Fixture (60W)',
+    wattageRange: '40W–80W',
+    lumensRange: '5000–11000 lm',
+    brands: 'GE, Omni, Philips',
+    wattage: 60,
+    lumens: 7800,
+    efficacy: 130,
+    cct: '5000K (Cool White)',
+    cri: 82,
+    mountingType: 'Surface / Suspended',
+    beamAngle: 110,
+    utilizationFactor: 0.78,
+    manufacturerReference: 'GE-LLB-60W-V2',
+    description: 'Rugged dust-sealed impact-resistant low-bay linear luminaire ideal for assembly lines and workshops.'
+  },
+
+  // 29. Sol-Integrated Smart Streetlight
+  {
+    id: 'solar-all-in-one-60w',
+    category: 'Outdoor & Street',
+    lightType: 'Solar Fully Integrated All-in-One Streetlight (60W)',
+    wattageRange: '30W–100W',
+    lumensRange: '4500–15000 lm',
+    brands: 'Custom-Green, Akari',
+    wattage: 60,
+    lumens: 9000,
+    efficacy: 150,
+    cct: '5700K (Daylight)',
+    cri: 70,
+    mountingType: 'Pole mounted',
+    beamAngle: 150,
+    utilizationFactor: 0.52,
+    manufacturerReference: 'AK-SOL-60W',
+    description: 'Zero-grid intelligent solar streetlight with high-capacity LiFePO4 battery and built-in motion sensor.'
+  },
+
+  // 30. Architectural Landscape Wall Grazer
+  {
+    id: 'wall-grazer-rgbw-36w',
+    category: 'Landscape & Specialty',
+    lightType: 'Linear Architectural Wall Grazer (36W)',
+    wattageRange: '24W–48W',
+    lumensRange: '2000–4500 lm',
+    brands: 'Philips, Custom Spec',
+    wattage: 36,
+    lumens: 2880,
+    efficacy: 80,
+    cct: '3000K Warm + Interactive Config',
+    cri: 85,
+    mountingType: 'Surface (Yoke)',
+    beamAngle: 15,
+    utilizationFactor: 0.45,
+    manufacturerReference: 'PH-WG-36W-IP67',
+    description: 'Narrow-beam outdoor IP67 linear wall projector for sweeping illumination of building textures and facades.'
   }
 ];
 
