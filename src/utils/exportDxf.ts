@@ -386,6 +386,7 @@ const drawCadPanelSLD = (
   const wireSize = mainFeeder.wire?.size || "38";
   const groundSize = mainFeeder.groundSize || "8.0";
   const conduitSize = mainFeeder.conduitSize?.toUpperCase() || "40MM";
+  const conduitType = (mainFeeder.conduitType || "PVC").toUpperCase();
 
   b.addText(
     `${runsStr}${wireNumber}x${wireSize} mm² THHN +`,
@@ -406,7 +407,7 @@ const drawCadPanelSLD = (
     "left",
   );
   b.addText(
-    `${runsSfxComp}Ø ${conduitSize} PVC CONDUIT`,
+    `${runsSfxComp}Ø ${conduitSize} ${conduitType} CONDUIT`,
     xBase + 10,
     yBase - 12,
     1.6,
@@ -2049,7 +2050,7 @@ export const exportToCAD = (
         ? "SPACE"
         : isSpare
           ? "SPARE"
-          : `${cir.wireSize} mm² THHN / ${cir.groundSize} mm² GND in ${cir.conduitSize} PVC`;
+          : `${cir.wireSize} mm² THHN / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
       b.addText(
         sizeStr,
         colPositions[baseIdx + 5] + 3,
@@ -2199,7 +2200,7 @@ export const exportToCAD = (
     // Main feeder layout details (Box with specifications under the table)
     b.addRect(xOffset + 20, ty - 16, tableRight, ty, "BORDER");
     b.addText(
-      `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² THHN + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} conduit.`,
+      `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² THHN + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} ${currentCalcData.mainFeeder.conduitType || "PVC"}.`,
       xOffset + 23,
       ty - 8,
       1.8,

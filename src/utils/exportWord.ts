@@ -745,12 +745,13 @@ export const exportToWord = async (
       totalVA,
       phaseLoads,
       mainCurrent: { baseAmp: maxBaseAmp, designAmp },
-      mainFeeder: { wire, groundSize, cb, conduitSize },
+      mainFeeder: { wire, groundSize, cb, conduitSize, conduitType },
       phaseAmps,
       phaseImbalance
     } = calcValues;
     const groundSizeString = groundSize.toString();
     const conduitSizeString = conduitSize;
+    const conduitTypeString = conduitType || "PVC";
     const runsText = wire.runs > 1 ? `${wire.runs} sets of ` : '';
 
     let stepDescription = "";
@@ -829,7 +830,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
       createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
 
-      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ PVC conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
+      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
       
       new Paragraph({ spacing: { after: 150 } }),
       createSubHeader(`B. PEC 2017 & Visual Safety Sizing Reference Map:`),
@@ -896,7 +897,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           createCell(cir.loadA?.toFixed(2) || "0.00"),
           createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${cir.mcbP || 2}P`),
           createCell(`${cir.wireSize || '3.5'} mm² THHN`),
-          createCell(`${cir.conduitSize || '20'}mm uPVC`),
+          createCell(`${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
         ]
       }));
     });

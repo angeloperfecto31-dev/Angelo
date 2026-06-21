@@ -79,12 +79,14 @@ export interface PanelConfig {
   conductorMaterial?: 'Copper' | 'Aluminum';
   insulationType?: string;
   temperatureRating?: 60 | 75 | 90;
+  mainConduitType?: string;
   mainOverrides?: {
     isOverrideEnabled: boolean;
     wireSize?: number;
     wireRuns?: number;
     groundSize?: string;
     conduitSize?: string;
+    conduitType?: string;
     breakerAT?: number;
     breakerAF?: number;
     breakerType?: string;

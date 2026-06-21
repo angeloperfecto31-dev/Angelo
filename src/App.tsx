@@ -1536,6 +1536,7 @@ export default function App() {
             groundSize,
             cb,
             conduitSize,
+            conduitType,
             poles,
             type,
             kaic,
@@ -1694,7 +1695,7 @@ export default function App() {
         wsData.push(["SUMMARY & MAIN FEEDER"]);
         wsData.push([
           "Main Feeder:",
-          `${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} PVC`,
+          `${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
         ]);
         wsData.push([
           "Main Breaker:",

@@ -761,7 +761,58 @@ export const DESCRIPTION_CODES = {
   SUBSUB: 'Sub-Sub Panel',
 };
 
-export const CONDUIT_SIZES = ['15mm', '20mm', '25mm', '32mm', '40mm', '50mm'];
+export const CONDUIT_SIZES = ['15mm', '20mm', '25mm', '32mm', '40mm', '50mm', '65mm', '80mm', '90mm', '100mm'];
+
+export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> = {
+  PVC: [
+    { size: "15mm", limit: 78 },
+    { size: "20mm", limit: 137 },
+    { size: "25mm", limit: 220 },
+    { size: "32mm", limit: 380 },
+    { size: "40mm", limit: 518 },
+    { size: "50mm", limit: 855 },
+    { size: "65mm", limit: 1220 },
+    { size: "80mm", limit: 1880 },
+    { size: "90mm", limit: 2500 },
+    { size: "100mm", limit: 3240 },
+  ],
+  EMT: [
+    { size: "15mm", limit: 98 },
+    { size: "20mm", limit: 163 },
+    { size: "25mm", limit: 262 },
+    { size: "32mm", limit: 450 },
+    { size: "40mm", limit: 610 },
+    { size: "50mm", limit: 1000 },
+    { size: "65mm", limit: 1620 },
+    { size: "80mm", limit: 2210 },
+    { size: "90mm", limit: 2920 },
+    { size: "100mm", limit: 3800 },
+  ],
+  RSC: [
+    { size: "15mm", limit: 82 },
+    { size: "20mm", limit: 141 },
+    { size: "25mm", limit: 228 },
+    { size: "32mm", limit: 396 },
+    { size: "40mm", limit: 540 },
+    { size: "50mm", limit: 890 },
+    { size: "65mm", limit: 1270 },
+    { size: "80mm", limit: 1960 },
+    { size: "90mm", limit: 2610 },
+    { size: "100mm", limit: 3400 },
+  ],
+  IMC: [
+    { size: "15mm", limit: 91 },
+    { size: "20mm", limit: 154 },
+    { size: "25mm", limit: 249 },
+    { size: "32mm", limit: 428 },
+    { size: "40mm", limit: 581 },
+    { size: "50mm", limit: 955 },
+    { size: "65mm", limit: 1440 },
+    { size: "80mm", limit: 2230 },
+    { size: "90mm", limit: 2980 },
+    { size: "100mm", limit: 3870 },
+  ],
+};
 
 // PEC Table 9 (Resistance and Reactance for 600V Cables)
 // Values in Ohms per 1000m (or Ohm/km)

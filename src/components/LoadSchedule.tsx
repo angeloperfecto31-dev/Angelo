@@ -51,6 +51,8 @@ import {
   SYSTEM_VOLTAGES,
   DESCRIPTION_CODES,
   LOAD_PRESETS,
+  CONDUIT_LIBRARY,
+  CONDUIT_SIZES,
 } from "../constants";
 import {
   PEC_AMPACITY_TABLE,
@@ -649,18 +651,7 @@ export default function LoadSchedule({
     500: 1700.0,
   };
 
-  const CONDUIT_FILL_TABLE = [
-    { size: "15mm", limit: 78 },
-    { size: "20mm", limit: 137 },
-    { size: "25mm", limit: 220 },
-    { size: "32mm", limit: 380 },
-    { size: "40mm", limit: 518 },
-    { size: "50mm", limit: 855 },
-    { size: "65mm", limit: 1220 },
-    { size: "80mm", limit: 1880 },
-    { size: "90mm", limit: 2500 },
-    { size: "100mm", limit: 3240 },
-  ];
+  const CONDUIT_FILL_TABLE = CONDUIT_LIBRARY.PVC;
 
   const formatWireSize = (size: number): string =>
     size <= 8 ? size.toFixed(1) : size.toString();
@@ -692,6 +683,7 @@ export default function LoadSchedule({
     groundSizeString: string,
     poles: number,
     systemName: string,
+    conduitType: string = "PVC"
   ): string => {
     // poles is 1, 2, or 3
     let activePhaseCount = poles === 1 ? 2 : poles; // 1P branch has Phase + Neutral (2 wires)
@@ -704,9 +696,11 @@ export default function LoadSchedule({
     const groundArea = THHN_WIRE_AREAS[groundSize] || groundSize * 2.5;
 
     const totalArea = phaseArea * activePhaseCount + groundArea;
+    const selectedType = conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
+    const table = CONDUIT_LIBRARY[selectedType];
     const conduit =
-      CONDUIT_FILL_TABLE.find((c) => c.limit >= totalArea) ||
-      CONDUIT_FILL_TABLE[CONDUIT_FILL_TABLE.length - 1];
+      table.find((c) => c.limit >= totalArea) ||
+      table[table.length - 1];
     return conduit.size;
   };
 
@@ -1164,11 +1158,13 @@ export default function LoadSchedule({
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
     const wire = getWireForBreaker(cb, designAmp);
     const groundSize = getGroundWireForWireSize(wire.size, cb);
+    const selectedMainConduitType = panel.mainConduitType || panel.mainOverrides?.conduitType || "PVC";
     const conduitSize = getConduitSizeForWires(
       wire.size,
       groundSize,
       poles,
       panel.system,
+      selectedMainConduitType
     );
 
     const branchTypeCounts = circuits.reduce(
@@ -1234,6 +1230,7 @@ export default function LoadSchedule({
     let finalWireAmpacity = wire.ampacity;
     let finalGroundSize = groundSize;
     let finalConduitSize = conduitSize;
+    let finalConduitType = selectedMainConduitType;
 
     if (panel.mainOverrides?.isOverrideEnabled) {
       if (panel.mainOverrides.breakerAT) finalCb = panel.mainOverrides.breakerAT;
@@ -1252,6 +1249,7 @@ export default function LoadSchedule({
       if (panel.mainOverrides.wireRuns) finalWireRuns = panel.mainOverrides.wireRuns;
       if (panel.mainOverrides.groundSize) finalGroundSize = panel.mainOverrides.groundSize;
       if (panel.mainOverrides.conduitSize) finalConduitSize = panel.mainOverrides.conduitSize;
+      if (panel.mainOverrides.conduitType) finalConduitType = panel.mainOverrides.conduitType;
     }
 
     return { 
@@ -1259,6 +1257,7 @@ export default function LoadSchedule({
       groundSize: finalGroundSize, 
       cb: finalCb, 
       conduitSize: finalConduitSize, 
+      conduitType: finalConduitType,
       poles: finalPoles, 
       type: finalType, 
       kaic: finalKaic, 
@@ -2009,6 +2008,26 @@ export default function LoadSchedule({
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Main Conduit Type
+            </label>
+            <select
+              value={panel.mainConduitType || "PVC"}
+              onChange={(e) => {
+                setPanel({
+                  ...panel,
+                  mainConduitType: e.target.value,
+                });
+              }}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <option value="PVC">PVC (Thick-wall S40)</option>
+              <option value="EMT">EMT (Electrical Metallic Tubing)</option>
+              <option value="IMC">IMC (Intermediate Metal Conduit)</option>
+              <option value="RSC">RSC (Rigid Steel Conduit)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Table Font Size ({tableFontSize}px)
             </label>
             <div className="flex items-center h-10 px-2 mt-1">
@@ -2147,6 +2166,53 @@ export default function LoadSchedule({
                   <option value="">Auto ({mainFeeder.raw.kaic} kAIC)</option>
                   {[5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100].map(k => (
                     <option key={k} value={k}>{k} kAIC</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Main Conduit Type
+                </label>
+                <select
+                  value={panel.mainOverrides.conduitType || ""}
+                  onChange={(e) => setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...prev.mainOverrides,
+                      conduitType: e.target.value || undefined,
+                      isOverrideEnabled: true
+                    }
+                  }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">Auto ({panel.mainConduitType || "PVC"})</option>
+                  <option value="PVC">PVC</option>
+                  <option value="EMT">EMT</option>
+                  <option value="IMC">IMC</option>
+                  <option value="RSC">RSC</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Main Conduit Size
+                </label>
+                <select
+                  value={panel.mainOverrides.conduitSize || ""}
+                  onChange={(e) => setPanel(prev => ({
+                    ...prev,
+                    mainOverrides: {
+                      ...prev.mainOverrides,
+                      conduitSize: e.target.value || undefined,
+                      isOverrideEnabled: true
+                    }
+                  }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">Auto ({mainFeeder.conduitSize})</option>
+                  {CONDUIT_SIZES.map(s => (
+                    <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
@@ -3009,9 +3075,28 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <>
-                          {c.wireSize}mm² {c.wireType}{" "}
-                          <br className="hidden print:block" /> {c.groundSize}
-                          mm² GND in {c.conduitSize} {c.conduitType}
+                          <div className="flex flex-col items-center gap-1">
+                            <span>
+                              {c.wireSize}mm² {c.wireType}
+                            </span>
+                            <span className="text-slate-500 dark:text-slate-400 text-xxs flex items-center gap-1 justify-center whitespace-nowrap">
+                              {c.groundSize}mm² GND in {c.conduitSize}
+                              <select
+                                value={c.conduitType || "PVC"}
+                                onChange={(e) =>
+                                  updateCircuit(c.id, {
+                                    conduitType: e.target.value,
+                                  })
+                                }
+                                className="bg-slate-100 dark:bg-slate-800 text-slate-705 dark:text-slate-300 font-semibold border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-xxs cursor-pointer hover:bg-slate-200 print:appearance-none print:bg-transparent print:border-none print:p-0 font-sans"
+                              >
+                                <option value="PVC">PVC</option>
+                                <option value="EMT">EMT</option>
+                                <option value="IMC">IMC</option>
+                                <option value="RSC">RSC</option>
+                              </select>
+                            </span>
+                          </div>
                         </>
                       )}
                     </td>
@@ -3102,7 +3187,7 @@ export default function LoadSchedule({
                         : ""}
                       {formatWireSize(mainFeeder.wire.size)}mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"}),{" "}
                       {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize}{" "}
-                      PVC
+                      {mainFeeder.conduitType || "PVC"}
                       {panel.mainOverrides?.isOverrideEnabled && panel.mainOverrides.wireSize ? " (Manual)" : ""}
                     </span>
                     <span>
@@ -3614,7 +3699,7 @@ export default function LoadSchedule({
                 {formatWireSize(mainFeeder.wire.size)} mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"}) (Ampacity:{" "}
                 {mainFeeder.wire.ampacity} A)
               </span>
-              <span>Selected Main Conduit: {mainFeeder.conduitSize} PVC</span>
+              <span>Selected Main Conduit: {mainFeeder.conduitSize} {mainFeeder.conduitType || "PVC"}</span>
             </div>
           </div>
 

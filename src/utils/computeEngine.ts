@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, LoadType, ShortCircuitParams, VoltageDropCalculation } from "../types";
-import { STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from "../constants";
+import { STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE, CONDUIT_LIBRARY } from "../constants";
 import { getMotorFLC } from "./motorFLCHelper";
 import {
   sizeConductor,
@@ -47,18 +47,7 @@ const THHN_WIRE_AREAS: Record<number, number> = {
   500: 1700.0,
 };
 
-const CONDUIT_FILL_TABLE = [
-  { size: "15mm", limit: 78 },
-  { size: "20mm", limit: 137 },
-  { size: "25mm", limit: 220 },
-  { size: "32mm", limit: 380 },
-  { size: "40mm", limit: 518 },
-  { size: "50mm", limit: 855 },
-  { size: "65mm", limit: 1220 },
-  { size: "80mm", limit: 1880 },
-  { size: "90mm", limit: 2500 },
-  { size: "100mm", limit: 3240 },
-];
+const CONDUIT_FILL_TABLE = CONDUIT_LIBRARY.PVC;
 
 export const getAdjustedWireForVoltageDrop = (
   baseSize: number,
@@ -67,6 +56,7 @@ export const getAdjustedWireForVoltageDrop = (
   voltage: number,
   systemType: "1PH" | "3PH",
   limit: number,
+  conduitType: string = "PVC",
 ): number => {
   if (!length || length <= 0 || !loadA || loadA <= 0) return baseSize;
 
@@ -86,7 +76,11 @@ export const getAdjustedWireForVoltageDrop = (
     const size = SIZES[i];
     const sizeStr = size.toString();
     const data = WIRE_IMPEDANCE_TABLE[sizeStr] || { r: 5.76, x: 0.157 };
-    const R = data.r;
+    let R = data.r;
+    
+    if (conduitType === "RSC" || conduitType === "IMC" || conduitType === "EMT") {
+      R = R * 1.02; // Symmetrical magnetic conduits increase resistance slightly
+    }
     
     const vd = (factor * length * loadA * R) / 1000;
     const vdPercentage = (vd / voltage) * 100;
@@ -133,6 +127,7 @@ export const getConduitSizeForWiresLocal = (
   groundSizeString: string,
   poles: number,
   systemName: string,
+  conduitType: string = "PVC",
 ): string => {
   let activePhaseCount = poles === 1 ? 2 : poles;
   if (poles === 3 && systemName.includes("4W")) {
@@ -144,9 +139,11 @@ export const getConduitSizeForWiresLocal = (
   const groundArea = THHN_WIRE_AREAS[groundSize] || groundSize * 2.5;
 
   const totalArea = phaseArea * activePhaseCount + groundArea;
+  const selectedType = conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
+  const table = CONDUIT_LIBRARY[selectedType];
   const conduit =
-    CONDUIT_FILL_TABLE.find((c) => c.limit >= totalArea) ||
-    CONDUIT_FILL_TABLE[CONDUIT_FILL_TABLE.length - 1];
+    table.find((c) => c.limit >= totalArea) ||
+    table[table.length - 1];
   return conduit.size;
 };
 
@@ -244,6 +241,7 @@ export const calculateCircuitValues = (
       c.wireSize = formatWireSizeLocal(subMainFeeder.wire.size);
       c.groundSize = subMainFeeder.groundSize;
       c.conduitSize = subMainFeeder.conduitSize;
+      c.conduitType = subMainFeeder.conduitType || "PVC";
       c.description =
         sp.panel.designation ||
         (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel");
@@ -459,7 +457,8 @@ export const calculateCircuitValues = (
         calc.length || 30,
         c.voltage || panel.voltage || 230,
         (c.phases && c.phases.length === 3) ? "3PH" : "1PH",
-        limit
+        limit,
+        c.conduitType || "PVC"
       );
     }
   }
@@ -476,6 +475,7 @@ export const calculateCircuitValues = (
           panel.conductorMaterial || "Copper",
         );
 
+  const finalConduitType = c.conduitType || "PVC";
   const finalConduitSize =
     isSubPanelLink && c.conduitSize
       ? c.conduitSize
@@ -488,6 +488,7 @@ export const calculateCircuitValues = (
           ),
           mcbP,
           panel.system,
+          finalConduitType,
         );
 
   return {
@@ -503,6 +504,7 @@ export const calculateCircuitValues = (
     wireSize: finalWireSize,
     groundSize: finalGroundSize,
     conduitSize: finalConduitSize,
+    conduitType: finalConduitType,
   };
 };
 
@@ -882,6 +884,8 @@ export const computePanelScheduleValues = (
 
   let baseWireSize = wire.size;
 
+  const selectedMainConduitType = p.mainConduitType || p.mainOverrides?.conduitType || "PVC";
+
   if (options?.vdCalculations) {
     const pId = options.panelId || "main";
     const calc = options.vdCalculations.find((v) => v.source === pId);
@@ -893,7 +897,8 @@ export const computePanelScheduleValues = (
         calc.length || 30,
         p.voltage || 230,
         p.system.includes("3PH") ? "3PH" : "1PH",
-        5.0 // Feeder/Main limit is 5%
+        5.0, // Feeder/Main limit is 5%
+        selectedMainConduitType
       );
     }
   }
@@ -908,6 +913,7 @@ export const computePanelScheduleValues = (
     groundSize,
     poles,
     p.system,
+    selectedMainConduitType,
   );
 
   const branchTypeCounts = c.reduce(
@@ -954,6 +960,7 @@ export const computePanelScheduleValues = (
     ) * finalWireRuns;
   let finalGroundSize = groundSize;
   let finalConduitSize = conduitSize;
+  let finalConduitType = selectedMainConduitType;
 
   if (p.mainOverrides?.isOverrideEnabled) {
     if (p.mainOverrides.breakerAT) finalCb = p.mainOverrides.breakerAT;
@@ -976,6 +983,8 @@ export const computePanelScheduleValues = (
       finalGroundSize = p.mainOverrides.groundSize;
     if (p.mainOverrides.conduitSize)
       finalConduitSize = p.mainOverrides.conduitSize;
+    if (p.mainOverrides.conduitType)
+      finalConduitType = p.mainOverrides.conduitType;
   }
 
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
@@ -1022,6 +1031,7 @@ export const computePanelScheduleValues = (
       groundSize: finalGroundSize,
       cb: finalCb,
       conduitSize: finalConduitSize,
+      conduitType: finalConduitType,
       poles: finalPoles,
       type: finalType,
       kaic: finalKaic,
