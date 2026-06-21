@@ -78,6 +78,7 @@ import {
   isIdleSpareOrSpace,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from "recharts";
 
 import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
@@ -238,6 +239,227 @@ export default function App() {
   const [vdCalculations, setVdCalculations] = useState<
     VoltageDropCalculation[]
   >(INITIAL_VOLTAGE_DROP_CALCULATIONS);
+
+  // Real-time synchronization of Short Circuit and Voltage Drop calculation parameters
+  useEffect(() => {
+    if (!circuits || !panel) return;
+    
+    if (iscSource === "auto") {
+      const { mainFeeder, totalVA } = computePanelScheduleValues(panel, circuits);
+      const totalKVA = totalVA / 1000;
+      
+      const standardKVA = [10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500, 2000, 2500];
+      const recommendedKVA = standardKVA.find(k => k >= totalKVA) || standardKVA[standardKVA.length - 1];
+
+      let recommendedFeederSize = mainFeeder.wire.size.toString();
+      let recommendedRuns = panel.system.includes("3PH") ? 3 : 2;
+
+      if (mainFeeder.cb > 250) {
+        recommendedRuns = mainFeeder.wire.runs; 
+        recommendedFeederSize = mainFeeder.wire.size.toString();
+      }
+
+      setIscParams(p => {
+        if (
+          p.transformerKVA === recommendedKVA && 
+          p.transformerVoltage === panel.voltage && 
+          p.feederSize === recommendedFeederSize && 
+          p.feederRuns === recommendedRuns &&
+          (!panel.transformerConnection || p.transformerConnection === panel.transformerConnection)
+        ) {
+          return p;
+        }
+        return {
+          ...p,
+          transformerKVA: recommendedKVA,
+          transformerVoltage: panel.voltage,
+          feederSize: recommendedFeederSize,
+          feederRuns: recommendedRuns,
+          transformerConnection: panel.transformerConnection || p.transformerConnection
+        };
+      });
+    }
+  }, [iscSource, circuits, panel]);
+
+  // Real-time alignment of feederRuns with system phase count
+  useEffect(() => {
+    if (!panel?.system) return;
+    const expectedRuns = panel.system.includes("3PH") ? 3 : 2;
+    if (iscParams.feederRuns !== expectedRuns) {
+      setIscParams(current => ({
+        ...current,
+        feederRuns: expectedRuns
+      }));
+    }
+  }, [panel, iscParams.feederRuns]);
+
+  // Real-time synchronization of Voltage Drop calculations
+  useEffect(() => {
+    if (!circuits || !panel) return;
+
+    setVdCalculations((prev) => {
+      const prevMap = new globalThis.Map((prev || []).map((calc) => [calc.source, calc]));
+      const updatedCalcs: VoltageDropCalculation[] = [];
+      let changed = false;
+
+      // 1. Maintain Main Feeder
+      const is3PH = panel.system.includes("3PH");
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits);
+
+      const mainLoadA = Number(mainCurrent.baseAmp.toFixed(2));
+      const mainWireSize = mainFeeder.wire.size.toString();
+      const mainVoltage = panel.voltage;
+      const mainSystemType: "1PH" | "3PH" = is3PH ? "3PH" : "1PH";
+
+      const existingMain = prevMap.get("main");
+      if (existingMain) {
+        const hasMainChanged =
+          existingMain.loadA !== mainLoadA ||
+          existingMain.wireSize !== mainWireSize ||
+          existingMain.voltage !== mainVoltage ||
+          existingMain.systemType !== mainSystemType;
+        if (hasMainChanged) {
+          changed = true;
+        }
+        updatedCalcs.push({
+          ...existingMain,
+          loadA: mainLoadA,
+          wireSize: mainWireSize,
+          voltage: mainVoltage,
+          systemType: mainSystemType,
+        });
+      } else {
+        changed = true;
+        updatedCalcs.push({
+          id: crypto.randomUUID(),
+          source: "main",
+          name: "Main Feeder",
+          loadA: mainLoadA,
+          length: 30,
+          wireSize: mainWireSize,
+          voltage: mainVoltage,
+          systemType: mainSystemType,
+        });
+      }
+
+      // 2. Maintain Branch Circuits from Main Load Schedule
+      circuits.forEach((c) => {
+        const ltStr = c.loadType as string;
+        if (
+          ltStr === "SP" ||
+          ltStr === "SPACE" ||
+          ltStr === LoadType.SPARE ||
+          ltStr === LoadType.SPACE
+        ) {
+          return;
+        }
+
+        const existingBranch = prevMap.get(c.id);
+        const branchName = `Circuit ${c.circuitNo}: ${c.description}`;
+        const branchSystemType: "1PH" | "3PH" =
+          c.phases.length > 2 ? "3PH" : "1PH";
+
+        if (existingBranch) {
+          const isLoadADiff = existingBranch.loadA !== c.loadA && !(Number.isNaN(existingBranch.loadA) && Number.isNaN(c.loadA));
+          const isVoltageDiff = existingBranch.voltage !== c.voltage && !(existingBranch.voltage == null && c.voltage == null) && !(Number.isNaN(existingBranch.voltage) && Number.isNaN(c.voltage));
+          const hasBranchChanged =
+            existingBranch.name !== branchName ||
+            isLoadADiff ||
+            existingBranch.wireSize !== c.wireSize ||
+            isVoltageDiff ||
+            existingBranch.systemType !== branchSystemType;
+          if (hasBranchChanged) {
+            changed = true;
+          }
+          updatedCalcs.push({
+            ...existingBranch,
+            name: branchName,
+            loadA: c.loadA,
+            wireSize: c.wireSize,
+            voltage: c.voltage,
+            systemType: branchSystemType,
+          });
+        } else {
+          changed = true;
+          updatedCalcs.push({
+            id: crypto.randomUUID(),
+            source: c.id,
+            name: branchName,
+            loadA: c.loadA,
+            length: 30, // Default to 30 meters
+            wireSize: c.wireSize,
+            voltage: c.voltage,
+            systemType: branchSystemType,
+          });
+        }
+      });
+
+      // 3. Maintain Sub-Panel Feeders & their branch circuits
+      const allSubPanels = [...subPanels, ...subSubPanels];
+      const seen = new Set();
+      const uniqueAllSubPanels = allSubPanels.filter((sp) => {
+        if (!sp || !sp.id) return false;
+        if (seen.has(sp.id)) return false;
+        seen.add(sp.id);
+        return true;
+      });
+
+      if (uniqueAllSubPanels.length > 0) {
+        uniqueAllSubPanels.forEach((sp) => {
+          const spIs3PH = sp.panel.system.includes("3PH");
+          const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+
+          const spLoadA = Number(spMainCurrent.baseAmp.toFixed(2));
+          const spWireSize = spMainFeeder.wire.size.toString();
+          const spVoltage = sp.panel.voltage;
+          const spSystemType: "1PH" | "3PH" = spIs3PH ? "3PH" : "1PH";
+          const spName = `${sp.panel.designation || "Sub-Panel"} Feeder`;
+
+          const existingSp = prevMap.get(sp.id);
+          if (existingSp) {
+            const hasSpChanged =
+              existingSp.name !== spName ||
+              existingSp.loadA !== spLoadA ||
+              existingSp.wireSize !== spWireSize ||
+              existingSp.voltage !== spVoltage ||
+              existingSp.systemType !== spSystemType;
+            if (hasSpChanged) {
+              changed = true;
+            }
+            updatedCalcs.push({
+              ...existingSp,
+              name: spName,
+              loadA: spLoadA,
+              wireSize: spWireSize,
+              voltage: spVoltage,
+              systemType: spSystemType,
+            });
+          } else {
+            changed = true;
+            updatedCalcs.push({
+              id: crypto.randomUUID(),
+              source: sp.id,
+              name: spName,
+              loadA: spLoadA,
+              length: 30,
+              wireSize: spWireSize,
+              voltage: spVoltage,
+              systemType: spSystemType,
+            });
+          }
+        });
+      }
+
+      // Add any custom entries that may have been created
+      prevMap.forEach((calc) => {
+        if (calc.source === "custom") {
+          updatedCalcs.push(calc);
+        }
+      });
+
+      return changed ? updatedCalcs : prev;
+    });
+  }, [circuits, panel, subPanels, subSubPanels]);
 
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
@@ -2501,7 +2723,7 @@ export default function App() {
                   </div>
 
                   {/* Bento Grid: Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                     {/* Connected Load Schedule Telemetry */}
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
                       <div className="flex items-start justify-between">
@@ -2540,19 +2762,40 @@ export default function App() {
                     {/* Short Circuit Fault Adequacy */}
                     {(() => {
                       const baseKVA = iscParams.transformerKVA || 500;
-                      const baseKV =
-                        (iscParams.transformerVoltage || 230) / 1000;
-                      const zUtilitypu =
-                        baseKVA /
-                        ((iscParams.utilityShortCircuitMVA || 250) * 1000);
-                      const zTranspu = (iscParams.transformerZ || 5) / 100;
+                      const baseKV = (iscParams.transformerVoltage || 230) / 1000;
+                      
+                      const connectionMultiplier = 
+                        iscParams.transformerConnection === 'Open Delta (V-V)' ? 0.577 :
+                        iscParams.transformerConnection === 'Open Wye-Open Delta' ? 0.866 : 1.0;
+
+                      // 1. Utility Impedance (pu)
+                      const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 250) * 1000);
+
+                      // 2. Transformer Impedance (pu)
+                      const zTranspu = ((iscParams.transformerZ || 5) / 100) / connectionMultiplier;
+
+                      // 3. Feeder Impedance Estimate (Symmetrical pu)
+                      let feederR = 0.7 * ((iscParams.feederLength || 30) / 1000) / (iscParams.feederRuns || 1);
+                      let feederX = 0.08 * ((iscParams.feederLength || 30) / 1000) / (iscParams.feederRuns || 1);
+                      if (iscParams.feederSize) {
+                        const tableVals = WIRE_IMPEDANCE_TABLE[iscParams.feederSize.toString()];
+                        if (tableVals) {
+                          feederR = (tableVals.r * ((iscParams.feederLength || 30) / 1000)) / (iscParams.feederRuns || 1);
+                          feederX = (tableVals.x * ((iscParams.feederLength || 30) / 1000)) / (iscParams.feederRuns || 1);
+                        }
+                      }
+                      const feederZ = Math.sqrt(feederR*feederR + feederX*feederX);
+                      const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
+
+                      const totalZpu = zUtilitypu + zTranspu + zFeederpu;
                       const iFullLoad = baseKVA / (1.732 * baseKV);
-                      const iscMainBreakerVal =
-                        iFullLoad / (zUtilitypu + zTranspu) || 12500;
-                      const iscKAIC = iscMainBreakerVal / 1000;
+                      
+                      // Symmetrical Short Circuit Current at Fault Point
+                      const iscFaultPointVal = iFullLoad / totalZpu;
+                      const iscKAIC = iscFaultPointVal / 1000;
+                      
                       const panelLimitKAIC = parseFloat(panel.icRating) || 10;
-                      const scStatus =
-                        iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
+                      const scStatus = iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
 
                       return (
                         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
@@ -2603,24 +2846,33 @@ export default function App() {
                     {/* Voltage Drop Audit */}
                     {(() => {
                       let maxVDPercent = 0;
+                      let vdCompliant = true;
+
                       vdCalculations.forEach((vd) => {
                         const data =
                           WIRE_IMPEDANCE_TABLE[vd.wireSize] ||
                           WIRE_IMPEDANCE_TABLE["3.5"];
-                        const r = data
-                          ? data.r
-                          : 0.0172 / (parseFloat(vd.wireSize) || 3.5);
+                        const r = data ? data.r : 5.76;
                         const factor = vd.systemType === "3PH" ? 1.732 : 2;
-                        const divisor = data ? 1000 : 1;
-                        const dropV =
-                          (factor * vd.loadA * vd.length * r) / divisor;
+                        const dropV = (factor * vd.loadA * vd.length * r) / 1000;
                         const pct = (dropV / vd.voltage) * 100;
-                        if (pct > maxVDPercent) maxVDPercent = pct;
+                        
+                        if (!Number.isNaN(pct) && pct > maxVDPercent) {
+                          maxVDPercent = pct;
+                        }
+
+                        const isMainFeeder = vd.source === "main";
+                        const isSubPanelFeeder = uniqueSubPanels.some(sp => sp.id === vd.source) || uniqueSubSubPanels.some(ssp => ssp.id === vd.source);
+                        const isFeeder = isMainFeeder || isSubPanelFeeder || vd.name.toLowerCase().includes("feeder");
+                        const limit = isFeeder ? 5.0 : 3.0;
+                        if (!Number.isNaN(pct) && pct > limit) {
+                          vdCompliant = false;
+                        }
                       });
                       if (vdCalculations.length === 0) {
                         maxVDPercent = 1.15;
+                        vdCompliant = true;
                       }
-                      const isVDPass = maxVDPercent <= 3.0;
 
                       return (
                         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
@@ -2635,7 +2887,7 @@ export default function App() {
                             </div>
                             <div
                               className={`p-3 rounded-xl shadow-sm transition-all ${
-                                isVDPass
+                                vdCompliant
                                   ? "bg-green-50 dark:bg-emerald-950/35 text-green-600 dark:text-emerald-400 group-hover:bg-green-600 group-hover:text-white"
                                   : "bg-amber-50 dark:bg-amber-950/35 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white"
                               }`}
@@ -2647,16 +2899,16 @@ export default function App() {
                           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                             <span
                               className={`font-extrabold flex items-center gap-1.5 ${
-                                isVDPass
+                                vdCompliant
                                   ? "text-green-600 dark:text-emerald-400"
                                   : "text-amber-600 dark:text-amber-400 hover:text-amber-700"
                               }`}
                             >
                               <span
-                                className={`w-2 h-2 rounded-full ${isVDPass ? "bg-green-500" : "bg-amber-500 animate-ping"}`}
+                                className={`w-2 h-2 rounded-full ${vdCompliant ? "bg-green-500" : "bg-amber-500 animate-pulse"}`}
                               />
-                              {isVDPass
-                                ? "PEC Compliant (<3%)"
+                              {vdCompliant
+                                ? "PEC Compliant"
                                 : "Exceeds PEC Limit"}
                             </span>
                             <button
@@ -2664,6 +2916,49 @@ export default function App() {
                               className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
                             >
                               Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Recommended Transformer Capacity Card */}
+                    {(() => {
+                      const totalVA = circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0);
+                      const totalKVA = totalVA / 1000;
+                      const demandKVA = totalKVA * transformerDemandFactor;
+                      const requiredKVA = transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
+                      
+                      const standardKVA = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+                      const recommendedRating = standardKVA.find((s) => s >= requiredKVA) || standardKVA[standardKVA.length - 1];
+                      const actualLoadingPct = recommendedRating > 0 ? (demandKVA / recommendedRating) * 100 : 0;
+                      const isLoadedCompliant = actualLoadingPct <= transformerLoadingFactor * 100;
+
+                      return (
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                RECOMMENDED TRANSFORMER
+                              </span>
+                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                {recommendedRating.toFixed(1)} kVA
+                              </h3>
+                            </div>
+                            <div className="p-3 bg-teal-50 dark:bg-teal-950/35 text-teal-600 dark:text-teal-400 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
+                              <Zap className="w-5 h-5" />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                            <span className="font-bold text-slate-700 dark:text-slate-300">
+                              {actualLoadingPct.toFixed(1)}% Loading Factor
+                            </span>
+                            <button
+                              onClick={() => setActiveTab("transformer")}
+                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
+                            >
+                              Sizing <ArrowUpRight className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -2720,7 +3015,7 @@ export default function App() {
                               />
                               {isLCompliance
                                 ? "Target Met"
-                                : "Low Illum vs Target"}
+                                : "Low Illum"}
                             </span>
                             <button
                               onClick={() => setActiveTab("lighting")}
@@ -2737,25 +3032,25 @@ export default function App() {
                   {/* Sub-panels and System parameters side-by-side */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     {/* Panel board specifications summary */}
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm lg:col-span-2 space-y-6">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                          <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-sm">
-                            Specification Standards Overview (PEC Part 1)
+                          <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs">
+                            Panel board standard specs (PEC Part 1)
                           </h4>
                         </div>
-                        <span className="text-xs font-bold text-slate-400 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
+                        <span className="text-[10px] font-bold text-slate-400 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700 px-2 py-0.5 rounded-md">
                           Feeder: {panel.type || "Main Panelboard"}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      <div className="grid grid-cols-2 gap-4">
                         <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
                           <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                             SYSTEM VOLTAGE
                           </span>
-                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                          <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
                             {panel.system}
                           </p>
                         </div>
@@ -2763,7 +3058,7 @@ export default function App() {
                           <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                             ENCLOSURE STYLE
                           </span>
-                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                          <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
                             {panel.enclosure || "NEMA 1 Indoors"}
                           </p>
                         </div>
@@ -2771,23 +3066,23 @@ export default function App() {
                           <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                             MOUNTING METHOD
                           </span>
-                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                          <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
                             {panel.mounting || "Wall Surface"}
                           </p>
                         </div>
                         <div className="bg-slate-50 dark:bg-slate-800 border border-slate-100/80 dark:border-slate-800 rounded-2xl p-4 space-y-1">
                           <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                            INTERRUPTING COMPLIANCE
+                            INTERRUPTING LIMIT
                           </span>
-                          <p className="text-sm font-extrabold text-slate-800 dark:text-slate-200">
+                          <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
                             {panel.icRating || "10kA KAIC"}
                           </p>
                         </div>
                       </div>
 
                       {/* Quick System loads bar-analysis */}
-                      <div className="space-y-3">
-                        <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      <div className="space-y-3 pt-2">
+                        <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           LOAD DISTRIBUTION BY COMPONENT TYPE
                         </h5>
                         {(() => {
@@ -2816,8 +3111,8 @@ export default function App() {
                           const otherPct = (othersVA / totalVA) * 100;
 
                           return (
-                            <div className="space-y-4">
-                              <div className="h-4 w-full bg-slate-100 rounded-full flex overflow-hidden">
+                            <div className="space-y-3">
+                              <div className="h-3 w-full bg-slate-100 rounded-full flex overflow-hidden">
                                 <div
                                   style={{ width: `${lightPct}%` }}
                                   className="bg-indigo-500 h-full transition-all"
@@ -2840,26 +3135,22 @@ export default function App() {
                                 />
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-3 h-3 rounded-full bg-indigo-500" />{" "}
-                                  Lighting (
-                                  <strong>{lightPct.toFixed(1)}%</strong>)
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />{" "}
+                                  Lighting (<strong>{lightPct.toFixed(1)}%</strong>)
                                 </span>
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-3 h-3 rounded-full bg-emerald-500" />{" "}
-                                  Outlets (
-                                  <strong>{outletPct.toFixed(1)}%</strong>)
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />{" "}
+                                  Outlets (<strong>{outletPct.toFixed(1)}%</strong>)
                                 </span>
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-3 h-3 rounded-full bg-amber-500" />{" "}
-                                  Motors/AC (
-                                  <strong>{motorPct.toFixed(1)}%</strong>)
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />{" "}
+                                  Motors/AC (<strong>{motorPct.toFixed(1)}%</strong>)
                                 </span>
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-3 h-3 rounded-full bg-slate-400" />{" "}
-                                  Others (
-                                  <strong>{otherPct.toFixed(1)}%</strong>)
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />{" "}
+                                  Others (<strong>{otherPct.toFixed(1)}%</strong>)
                                 </span>
                               </div>
                             </div>
@@ -2867,6 +3158,77 @@ export default function App() {
                         })()}
                       </div>
                     </div>
+
+                    {/* Interactive Real-Time Phase Balance Chart */}
+                    {(() => {
+                      const { phaseLoads, phaseImbalance } = computePanelScheduleValues(panel, circuits);
+                      const rKVA = (phaseLoads.R || 0) / 1000;
+                      const yKVA = (phaseLoads.Y || 0) / 1000;
+                      const bKVA = (phaseLoads.B || 0) / 1000;
+
+                      const chartData = [
+                        { name: "Phase R", Load: parseFloat(rKVA.toFixed(2)), color: "#ef4444" },
+                        { name: "Phase Y", Load: parseFloat(yKVA.toFixed(2)), color: "#f59e0b" },
+                        { name: "Phase B", Load: parseFloat(bKVA.toFixed(2)), color: "#3b82f6" },
+                      ];
+
+                      return (
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-between space-y-4">
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                                <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs">
+                                  Phase Loading Balance
+                                </h4>
+                              </div>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                phaseImbalance <= 15
+                                  ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400"
+                              }`}>
+                                {phaseImbalance.toFixed(2)}% Imbalance
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-normal">
+                              Symmetrical current alignment per phase. Minimize imbalance to optimize feeder wire sizes and limit transformer temperature expansion under full load.
+                            </p>
+                          </div>
+
+                          <div className="h-32 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                                <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} unit="k" />
+                                <Tooltip 
+                                  cursor={{ fill: 'transparent' }}
+                                  contentStyle={{ 
+                                    background: '#1e293b', 
+                                    border: 'none', 
+                                    borderRadius: '8px', 
+                                    color: '#fff', 
+                                    fontSize: '10px', 
+                                    fontFamily: 'monospace' 
+                                  }} 
+                                />
+                                <Bar dataKey="Load" radius={[6, 6, 0, 0]}>
+                                  {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 dark:border-slate-800 pt-3 text-slate-500">
+                            <span>R: <strong className="text-red-600 font-bold">{rKVA.toFixed(2)}k</strong></span>
+                            <span>Y: <strong className="text-amber-500 font-bold">{yKVA.toFixed(2)}k</strong></span>
+                            <span>B: <strong className="text-blue-500 font-bold">{bKVA.toFixed(2)}k</strong></span>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* PEC Quick Reference Guide */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">

@@ -65,7 +65,7 @@ export default function VoltageDropCalc({
     if (!circuits || !panel) return;
 
     setCalculations((prev) => {
-      const prevMap = new Map((prev || []).map((calc) => [calc.source, calc]));
+      const prevMap = new globalThis.Map((prev || []).map((calc) => [calc.source, calc]));
       const updatedCalcs: VoltageDropCalculation[] = [];
       let changed = false;
 

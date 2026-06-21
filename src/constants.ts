@@ -867,7 +867,18 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Emergency Light", wattage: 10, loadType: "L", label: "Emergency Light (5W – 20W)" },
       { description: "Flood Light", wattage: 250, loadType: "L", label: "Flood Light (50W – 500W)" },
       { description: "Street Light", wattage: 150, loadType: "L", label: "Street Light (50W – 250W)" },
-      { description: "Exit Sign Light", wattage: 5, loadType: "L", label: "Exit Sign Light (3W – 10W)" }
+      { description: "Exit Sign Light", wattage: 5, loadType: "L", label: "Exit Sign Light (3W – 10W)" },
+      { description: "Industrial High-Bay LED", wattage: 150, loadType: "L", label: "High-Bay LED (100W – 300W)" },
+      { description: "Industrial Low-Bay LED", wattage: 80, loadType: "L", label: "Low-Bay LED (60W – 120W)" },
+      { description: "Commercial Track Light System", wattage: 120, loadType: "L", label: "Track Light Array (50W – 300W)" },
+      { description: "Office LED Panel Light 600x600", wattage: 40, loadType: "L", label: "LED Flat Panel (24W – 60W)" },
+      { description: "Recessed LED Downlight", wattage: 12, loadType: "L", label: "Recessed Ceiling Downlight (6W – 24W)" },
+      { description: "Metal Halide HID Fixture", wattage: 400, loadType: "L", label: "High-Intensity Discharge (150W – 1000W)" },
+      { description: "High-Pressure Sodium Lamp", wattage: 250, loadType: "L", label: "HPS Street/Industrial Lamp (70W – 400W)" },
+      { description: "Architectural LED Wall Washer", wattage: 60, loadType: "L", label: "LED Flood/Façade Light (30W – 150W)" },
+      { description: "Specialized Surgical Light", wattage: 300, loadType: "L", label: "Operating Room Surgical Luminaire" },
+      { description: "Landscape LED Spotlight", wattage: 15, loadType: "L", label: "Outdoor Accent Spotlight (5W – 30W)" },
+      { description: "High-Power Sports Floodlight Array", wattage: 1000, loadType: "L", label: "Stadium Sports LED (600W – 2000W)" }
     ]
   },
   {
@@ -875,7 +886,14 @@ export const LOAD_PRESETS: LoadPreset[] = [
     items: [
       { description: "Convenience Outlet", wattage: 180, loadType: "S", label: "Convenience Outlet (General Purpose) (180W p/outlet)" },
       { description: "Dedicated Outlet", wattage: 1000, loadType: "S", label: "Dedicated Outlet (500W – 2000W)" },
-      { description: "USB Outlet", wattage: 40, loadType: "S", label: "USB Outlet (15W – 65W)" }
+      { description: "USB Outlet", wattage: 40, loadType: "S", label: "USB Outlet (15W – 65W)" },
+      { description: "GFCI Wet Area Outlet", wattage: 180, loadType: "S", label: "Wet Area GFCI Protection (180W, 1Ø)" },
+      { description: "Industrial Single-Phase 20A Outlet", wattage: 1500, loadType: "S", label: "Heavy Duty Twist-Lock Outlet (1Ø)" },
+      { description: "Industrial Three-Phase 30A Outlet", wattage: 3600, loadType: "S", label: "Heavy Duty Power Outlet (3Ø)" },
+      { description: "Floor Convenience Outlet Box", wattage: 360, loadType: "S", label: "Duplex Floor Mounted Receptacle (1Ø)" },
+      { description: "Multiplex Office Desk Outlet Assembly", wattage: 720, loadType: "S", label: "Quad Desk-Integrated Power Strip (1Ø)" },
+      { description: "Isolated Ground Receptacle", wattage: 180, loadType: "S", label: "Clean Ground PC / Direct IT Equipment (1Ø)" },
+      { description: "Utility Shop Receptacle", wattage: 1800, loadType: "S", label: "Workshop Heavy Outlet (1000W – 2500W, 1Ø)" }
     ]
   },
   {
@@ -891,7 +909,15 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Blender", wattage: 500, loadType: "S", label: "Blender (300W – 1000W)" },
       { description: "Coffee Maker", wattage: 1000, loadType: "S", label: "Coffee Maker (600W – 1500W)" },
       { description: "Water Dispenser", wattage: 500, loadType: "S", label: "Water Dispenser (300W – 800W)" },
-      { description: "Range Hood", wattage: 200, loadType: "M", label: "Range Hood (100W – 300W)" }
+      { description: "Range Hood", wattage: 200, loadType: "M", label: "Range Hood (100W – 300W)" },
+      { description: "Commercial Deep Fryer", wattage: 5000, loadType: "P", label: "Heavy Duty Kitchen Fryer (4kW – 9kW, 1Ø/3Ø)" },
+      { description: "Espresso Machine (Commercial)", wattage: 3500, loadType: "P", label: "Multi-Headed Espresso Station (2kW – 6kW)" },
+      { description: "Automatic Dishwasher", wattage: 1500, loadType: "P", label: "Kitchen Sanitary Dishwasher (1200W – 2500W)" },
+      { description: "Garbage Disposal Unit - 0.5 HP", wattage: 600, loadType: "M", label: "Food Waste Disposer (300W – 900W)" },
+      { description: "Commercial Electric Griddle", wattage: 1500, loadType: "P", label: "Countertop Griddle Surface (1kW – 3kW)" },
+      { description: "Walk-in Refrigerator/Freezer System", wattage: 3000, loadType: "P", label: "Commercial Storage Cold Room Unit (1.5kW – 5kW)" },
+      { description: "Commercial Conveyor Toaster", wattage: 2400, loadType: "P", label: "High Volume Conveyor Toaster (1.5kW – 3.6kW)" },
+      { description: "Commercial Ice Maker", wattage: 1200, loadType: "P", label: "Automatic Bulk Ice Dispenser (800W – 2000W)" }
     ]
   },
   {
@@ -906,6 +932,13 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Package ACU - 3.0 HP", wattage: 3910, loadType: "AC", label: "17.0A FLC @ 230V" },
       { description: "Floor Mounted ACU - 4.0 HP", wattage: 5060, loadType: "AC", label: "22.0A FLC @ 230V" },
       { description: "Centralized ACU - 5.0 HP", wattage: 6440, loadType: "AC", label: "28.0A FLC @ 230V" },
+      { description: "Central Chiller Unit - 7.5 HP", wattage: 9200, loadType: "AC", label: "Medium Chiller System (25.3A FLC @ 230V 3Ø)" },
+      { description: "Central Chiller Unit - 10 HP", wattage: 11500, loadType: "AC", label: "Large Chiller System (32.2A FLC @ 230V 3Ø)" },
+      { description: "VRF Outdoor Heat Pump - 15 HP", wattage: 16100, loadType: "AC", label: "VRF Multizone System (46.0A FLC @ 230V 3Ø)" },
+      { description: "VRF Outdoor Heat Pump - 20 HP", wattage: 21600, loadType: "AC", label: "High-Capacity VRF System (62.0A FLC @ 230V 3Ø)" },
+      { description: "Precision CRAC Unit - 3.0 HP", wattage: 3910, loadType: "AC", label: "Data Center ACU (17.0A FLC @ 230V 1Ø/3Ø)" },
+      { description: "Precision CRAC Unit - 5.0 HP", wattage: 6440, loadType: "AC", label: "Data Center ACU (28.0A FLC @ 230V 3Ø)" },
+      { description: "Multi-Split Inverter OD Unit - 4.5 HP", wattage: 5800, loadType: "AC", label: "Multi-Zone Residential Inverter (3Ø)" }
     ]
   },
   {
@@ -914,7 +947,13 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Water Pump", wattage: 746, loadType: "M", label: "Water Pump (0.5HP – 5HP)" },
       { description: "Deep Well Pump", wattage: 1492, loadType: "M", label: "Deep Well Pump (1HP – 10HP)" },
       { description: "Sewage Pump", wattage: 1492, loadType: "M", label: "Sewage Pump (1HP – 15HP)" },
-      { description: "Pressure Pump", wattage: 746, loadType: "M", label: "Pressure Pump (0.5HP – 3HP)" }
+      { description: "Pressure Pump", wattage: 746, loadType: "M", label: "Pressure Pump (0.5HP – 3HP)" },
+      { description: "Fire Jockey Pump - 2 HP", wattage: 2760, loadType: "M", label: "System Jockey Pressure Pump (1Ø/3Ø)" },
+      { description: "Fire Main Pump - 15 HP", wattage: 17250, loadType: "M", label: "Main Fire Suppression Pump (3Ø)" },
+      { description: "Agricultural Irrigation Pump - 5 HP", wattage: 6440, loadType: "M", label: "Large High-Lift Water Pump (3Ø)" },
+      { description: "Swimming Pool Circulation Pump - 1.5 HP", wattage: 2300, loadType: "M", label: "Circulation & Filtration Motor (1Ø)" },
+      { description: "Submersible Drainage Sump Pump - 0.75 HP", wattage: 1587, loadType: "M", label: "Automatic Submersible Chamber Sump Pump (1Ø)" },
+      { description: "HVAC Chilled Water Pump - 3 HP", wattage: 3910, loadType: "M", label: "HVAC Closed-Loop In-line Circulator (3Ø)" }
     ]
   },
   {
@@ -923,7 +962,12 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Washing Machine", wattage: 800, loadType: "M", label: "Washing Machine (400W – 1500W)" },
       { description: "Dryer", wattage: 3000, loadType: "P", label: "Dryer (1500W – 5000W)" },
       { description: "Vacuum Cleaner", wattage: 1000, loadType: "S", label: "Vacuum Cleaner (500W – 2000W)" },
-      { description: "Electric Iron", wattage: 1000, loadType: "S", label: "Electric Iron (700W – 2000W)" }
+      { description: "Electric Iron", wattage: 1000, loadType: "S", label: "Electric Iron (700W – 2000W)" },
+      { description: "Commercial Washing Extractor", wattage: 4500, loadType: "P", label: "Industrial Grade Laundry Extractor (3kW – 6kW)" },
+      { description: "Multi-Headed Steam Press", wattage: 4000, loadType: "P", label: "Laundry Facility Steam Press Station (2.5kW – 5kW)" },
+      { description: "Central Vacuum Cleaning System", wattage: 2200, loadType: "M", label: "Whole-House Vacuum Suction Unit" },
+      { description: "Commercial Heat Pump Clothes Dryer", wattage: 6000, loadType: "P", label: "Industrial Tumble Dryer Unit (4.5kW – 9kW)" },
+      { description: "Ultrasonic Cleaning Basin", wattage: 800, loadType: "S", label: "Precision Surgical/Industrial Ultrasonic Cleaner" }
     ]
   },
   {
@@ -935,7 +979,14 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Printer", wattage: 200, loadType: "S", label: "Printer (100W – 1000W)" },
       { description: "Wi-Fi Router", wattage: 15, loadType: "S", label: "Wi-Fi Router (10W – 30W)" },
       { description: "CCTV System", wattage: 100, loadType: "S", label: "CCTV System (50W – 300W)" },
-      { description: "Sound System", wattage: 500, loadType: "S", label: "Sound System (100W – 2000W)" }
+      { description: "Sound System", wattage: 500, loadType: "S", label: "Sound System (100W – 2000W)" },
+      { description: "Network PoE Switch 48-Port", wattage: 500, loadType: "S", label: "Managed Power-over-Ethernet Unit" },
+      { description: "Enterprise Rack Server", wattage: 800, loadType: "S", label: "1U-4U Standard Rack Server Box" },
+      { description: "Enterprise Multi-Function Copier", wattage: 1500, loadType: "S", label: "Commercial Network Plotter & Copier" },
+      { description: "Conference Hall Laser Projector", wattage: 400, loadType: "L", label: "Projector Luminaire (200W – 600W)" },
+      { description: "Lobby LED Video Wall", wattage: 2500, loadType: "L", label: "Modular Composite Video Panel (1kW – 5kW)" },
+      { description: "Smart UPS Float Charger", wattage: 1500, loadType: "S", label: "Uninterruptible Power Supply Main Charger Panel" },
+      { description: "Point of Sale (POS) Workstation", wattage: 150, loadType: "S", label: "Retail Register, Terminal, Printer Assembly" }
     ]
   },
   {
@@ -943,7 +994,12 @@ export const LOAD_PRESETS: LoadPreset[] = [
     items: [
       { description: "Water Heater", wattage: 3000, loadType: "P", label: "Water Heater (1500W – 6000W)" },
       { description: "Hair Dryer", wattage: 1500, loadType: "S", label: "Hair Dryer (800W – 2000W)" },
-      { description: "Electric Shower Heater", wattage: 4500, loadType: "P", label: "Electric Shower Heater (3500W – 6500W)" }
+      { description: "Electric Shower Heater", wattage: 4500, loadType: "P", label: "Electric Shower Heater (3500W – 6500W)" },
+      { description: "High-Speed Hand Dryer", wattage: 1800, loadType: "S", label: "Jet Airblade Restroom Hand Dryer" },
+      { description: "Restroom Inline Exhaust Fan", wattage: 50, loadType: "M", label: "Ceiling Mechanical Exhaust (20W – 100W)" },
+      { description: "Whirlpool Jacuzzi Jet Pump - 1 HP", wattage: 1840, loadType: "M", label: "Bathtub Hydro-massage Water Jet Pump (1Ø)" },
+      { description: "Heated Towel Rail", wattage: 150, loadType: "S", label: "Restroom Towel Dehumidifier / Warmer Rack" },
+      { description: "Smart LED Vanity Mirror", wattage: 60, loadType: "L", label: "Vanity Mirror Defogger & Integrated Lighting" }
     ]
   },
   {
@@ -961,6 +1017,14 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Large Motor - 5 HP", wattage: 6440, loadType: "M", label: "28.0A FLC @ 230V" },
       { description: "Heavy Duty Motor - 7.5 HP", wattage: 9200, loadType: "M", label: "40.0A FLC @ 230V" },
       { description: "Industrial Motor - 10 HP", wattage: 11500, loadType: "M", label: "50.0A FLC @ 230V" },
+      { description: "Industrial Motor - 15 HP", wattage: 17250, loadType: "M", label: "Three-Phase induction FLC (42A FLC @ 230V 3Ø)" },
+      { description: "Industrial Motor - 20 HP", wattage: 21850, loadType: "M", label: "Three-Phase induction FLC (54A FLC @ 230V 3Ø)" },
+      { description: "Heavy Duty Industrial Motor - 25 HP", wattage: 27600, loadType: "M", label: "Three-Phase Induction (68A FLC @ 230V 3Ø)" },
+      { description: "Heavy Duty Industrial Motor - 30 HP", wattage: 32200, loadType: "M", label: "Three-Phase Induction (80A FLC @ 230V 3Ø)" },
+      { description: "High Capacity Industrial Motor - 40 HP", wattage: 41400, loadType: "M", label: "Three-Phase Induction (104A FLC @ 230V 3Ø)" },
+      { description: "High Capacity Industrial Motor - 50 HP", wattage: 50600, loadType: "M", label: "Three-Phase Induction (130A FLC @ 230V 3Ø)" },
+      { description: "Tank Air Compressor - 5 HP", wattage: 6440, loadType: "M", label: "Workshop Heavy Duty Compressor System" },
+      { description: "Industrial Ventilation Exhaust Fan - 2 HP", wattage: 2760, loadType: "M", label: "Warehouse High Flow Blower Fan" }
     ]
   },
   {
@@ -974,7 +1038,15 @@ export const LOAD_PRESETS: LoadPreset[] = [
       { description: "Billboard Signage", wattage: 1000, loadType: "L", label: "Billboard Signage (100W – 3000W)" },
       { description: "Electric Gate Motor", wattage: 373, loadType: "M", label: "Electric Gate Motor (0.25HP – 1HP)" },
       { description: "Solar Inverter", wattage: 5000, loadType: "P", label: "Solar Inverter (500W – 10000W)" },
-      { description: "EV Charger", wattage: 7000, loadType: "P", label: "EV Charger (3kW – 22kW)" }
+      { description: "EV Charger", wattage: 7000, loadType: "P", label: "EV Charger (3kW – 22kW)" },
+      { description: "In-Duct Steam Humidifier", wattage: 1200, loadType: "S", label: "HVAC Humidifier System (1Ø)" },
+      { description: "Warehouse Industrial Dehumidifier", wattage: 3000, loadType: "P", label: "High Capacity Floor-space Dehumidifier (3Ø)" },
+      { description: "Automatic Lift Basin Sump Pump", wattage: 1500, loadType: "M", label: "Sub-grade chamber drainage pit" },
+      { description: "Access Control Boom Gate", wattage: 300, loadType: "M", label: "Parking Toll/Entrance Barrier Lever (1Ø)" },
+      { description: "Surge Protection Monitor Panel", wattage: 50, loadType: "S", label: "Active SPD Tracking Control Rack" },
+      { description: "Hydraulic Dock Leveler Cylinder", wattage: 1500, loadType: "M", label: "Industrial Leveling Dock Ramp Cylinder Motor (3Ø)" },
+      { description: "Emergency Diesel Generator Block Heater", wattage: 500, loadType: "S", label: "GenSet Heater & Battery Float Support (1Ø)" },
+      { description: "Pneumatic Capsule Tube Turbine", wattage: 2200, loadType: "M", label: "HVAC Vacuum Capsule Post Transit Fan (3Ø)" }
     ]
   },
   {
