@@ -182,6 +182,7 @@ export default function PaymentScreen({
   // Admin View state
   const [isAdminMode, setIsAdminMode] = useState(forceAdmin);
   const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [discrepancies, setDiscrepancies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [adminFilter, setAdminFilter] = useState<
     "all" | "pending" | "paid" | "unpaid"
@@ -651,7 +652,7 @@ export default function PaymentScreen({
   useEffect(() => {
     if (!isAdminUser) return;
 
-    const unsubscribe = onSnapshot(
+    const unsubscribeUsers = onSnapshot(
       collection(db, "users"),
       (snapshot) => {
         const usersList: any[] = [];
@@ -668,7 +669,24 @@ export default function PaymentScreen({
       },
     );
 
-    return () => unsubscribe();
+    const unsubscribeDiscrepancies = onSnapshot(
+      collection(db, "payment_discrepancies"),
+      (snapshot) => {
+        const list: any[] = [];
+        snapshot.forEach((snapDoc) => {
+          list.push({ id: snapDoc.id, ...snapDoc.data() });
+        });
+        setDiscrepancies(list);
+      },
+      (error) => {
+        console.error("payment_discrepancies collection onSnapshot error:", error);
+      },
+    );
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeDiscrepancies();
+    };
   }, [isAdminUser, user]);
 
   const verifySession = async (sessionId: string) => {
@@ -816,6 +834,57 @@ export default function PaymentScreen({
       } catch (e) {}
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Admin action: Resolve payment discrepancy manually
+  const handleResolveDiscrepancy = async (discrepancyId: string, targetUid: string, userEmail: string, actualPaid: number, plan: string, isUpgrade: boolean) => {
+    setAdminStatusMsg("");
+    try {
+      // Clear discrepancy audit log
+      try {
+        await deleteDoc(doc(db, "payment_discrepancies", discrepancyId));
+      } catch (err) {
+        console.warn("Failed to delete from payment_discrepancies collection:", err);
+      }
+
+      // Activate user account and register cleared amount
+      await setDoc(
+        doc(db, "users", targetUid),
+        {
+          isActive: true,
+          paymentStatus: "paid",
+          plan: plan,
+          amount: actualPaid,
+          paymentSource: "PAYMONGO CHECKOUT (RESOLVED)",
+          paymentReference: `RECON-${discrepancyId.substring(0, 8).toUpperCase()}`,
+          isUpgrade: isUpgrade,
+          pendingVerification: null,
+          paymentDiscrepancy: null,
+          approvedBy: user?.email || "Admin (Reconciliation)",
+          approvedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+
+      // Create proper audited invoice for records
+      const userRefObj = {
+        email: userEmail,
+        isActive: true,
+        paymentStatus: "paid",
+        plan: plan,
+        amount: actualPaid,
+        paymentSource: "PAYMONGO CHECKOUT (RESOLVED)",
+        paymentReference: `RECON-${discrepancyId.substring(0, 8).toUpperCase()}`,
+        isUpgrade: isUpgrade,
+        approvedAt: new Date().toISOString()
+      };
+      await createOrGetInvoiceData(userRefObj, targetUid);
+
+      setAdminStatusMsg("Highly secure reconciliation applied: discrepancy resolved, account upgraded, and clean invoice logged.");
+    } catch (err: any) {
+      console.error("Failed to reconcile discrepancy:", err);
+      setAdminStatusMsg(`Failed to reconcile discrepancy: ${err.message}`);
     }
   };
 
@@ -2296,8 +2365,142 @@ export default function PaymentScreen({
             <InvoiceManager user={user} isAdminPanel={true} />
           ) : (
             <>
+              {/* Flagged Payment Gateway Discrepancies & Audit Panel */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md mb-8">
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-rose-600" />
+                  Gateway Payment Audits & Flagged Discrepancies
+                </h2>
+                <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                  Below is a real-time ledger of transactions flagged by the backend because the online payment rate processed at checkout diverged from the baseline database plans setup configurations. If a mismatch persists, reviews must be handled to reconcile user status.
+                </p>
+
+                {discrepancies.length === 0 ? (
+                  <div className="p-5 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <p className="text-xs font-black text-emerald-800 uppercase tracking-tight">All Online Gateway Payments Synchronized</p>
+                      <p className="text-[11px] text-emerald-600 font-medium">Automatic system scans detected no discrepancies or payment manipulation attempts. Your records are pristine.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="overflow-hidden border border-rose-100 rounded-xl">
+                      <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-rose-50/50 border-b border-rose-100">
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Subscriber / Email</th>
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Requested Plan</th>
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Baseline Expected</th>
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Gateway Amount Paid</th>
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Discrepancy Deviation</th>
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-rose-100 bg-rose-50/10">
+                            {discrepancies.map((disp: any) => {
+                              const deviation = (disp.actualAmountPaid || 0) - (disp.expectedAmount || 0);
+                              return (
+                                <tr key={disp.id} className="text-xxs">
+                                  <td className="px-4 py-3">
+                                    <div className="font-extrabold text-slate-900">{disp.email}</div>
+                                    <div className="text-[9px] text-slate-400 font-mono">ID: {disp.userId?.slice(0, 8)}...</div>
+                                    <div className="text-[8px] text-slate-400 font-mono mt-0.5">Session: {disp.sessionId?.slice(0, 15)}...</div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="px-2 py-0.5 font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100 rounded text-[9px]">
+                                      {(disp.plan || "premium").toUpperCase()} {disp.isUpgrade ? "(UPGRADE)" : ""}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 font-mono font-bold text-slate-800">₱{(disp.expectedAmount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 font-mono font-bold text-rose-700">₱{(disp.actualAmountPaid || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 font-mono font-black text-rose-800">
+                                    {deviation > 0 ? "+" : ""}{deviation.toFixed(2)}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <div className="flex justify-end gap-2">
+                                      <button
+                                        onClick={() => handleResolveDiscrepancy(disp.id, disp.userId, disp.email, disp.actualAmountPaid, disp.plan || "premium", disp.isUpgrade === true)}
+                                        className="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-all text-[9.5px] uppercase tracking-wide cursor-pointer shadow-sm"
+                                      >
+                                        Reconcile & Force Activate
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          if (window.confirm("Dismiss this discrepancy alert log? (This resets the audit warning log, but user's account access will remain locked until manually active.)")) {
+                                            await deleteDoc(doc(db, "payment_discrepancies", disp.id));
+                                            setAdminStatusMsg("Discrepancy alert log cleared.");
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition-all text-[9.5px] uppercase tracking-wide cursor-pointer"
+                                      >
+                                        Dismiss Log
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Mobile View of Discrepancies */}
+                      <div className="block md:hidden divide-y divide-rose-100 bg-rose-50/10">
+                        {discrepancies.map((disp: any) => {
+                          const deviation = (disp.actualAmountPaid || 0) - (disp.expectedAmount || 0);
+                          return (
+                            <div key={disp.id} className="p-4 space-y-2 text-xxs">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className="font-extrabold text-slate-900 block">{disp.email}</span>
+                                  <span className="text-slate-400 font-mono text-[9px]">ID: {disp.userId}</span>
+                                </div>
+                                <span className="px-1.5 py-0.5 bg-rose-100 text-rose-750 font-black rounded uppercase text-[8px]">
+                                  Discrepancy
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 bg-rose-50 p-2 rounded-xl text-[10px]">
+                                <div>
+                                  <span className="text-slate-405 font-semibold text-[8px] uppercase block">Baseline Expected</span>
+                                  <span className="font-bold text-slate-800">₱{(disp.expectedAmount || 0).toFixed(2)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-405 font-semibold text-[8px] uppercase block">Gateway Paid</span>
+                                  <span className="font-black text-rose-700">₱{(disp.actualAmountPaid || 0).toFixed(2)}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-rose-100/30">
+                                <button
+                                  onClick={() => handleResolveDiscrepancy(disp.id, disp.userId, disp.email, disp.actualAmountPaid, disp.plan || "premium", disp.isUpgrade === true)}
+                                  className="px-2 py-1 text-[8px] font-black uppercase tracking-wider bg-indigo-650 hover:bg-indigo-750 text-white rounded cursor-pointer"
+                                >
+                                  Reconcile
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (window.confirm("Dismiss this discrepancy alert?")) {
+                                      await deleteDoc(doc(db, "payment_discrepancies", disp.id));
+                                      setAdminStatusMsg("Discrepancy alert cleared.");
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-[8px] font-black uppercase tracking-wider bg-slate-100 hover:bg-slate-205 text-slate-600 rounded cursor-pointer"
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* QR Code Upload Settings Section for Admin */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-md mb-8">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-md mb-8">
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2">
               <QrCode className="w-5 h-5 text-indigo-600" />
               GCash QR Code Image Configuration
@@ -2989,7 +3192,7 @@ export default function PaymentScreen({
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-3.5 top-[14px] text-slate-405 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100 cursor-pointer"
+                    className="absolute right-3.5 top-[14px] text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100 cursor-pointer"
                     title="Clear Search"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -3050,7 +3253,7 @@ export default function PaymentScreen({
                         onClick={() => setPlanFilter(mode)}
                         className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer ${
                           planFilter === mode
-                            ? "bg-white shadow-sm text-indigo-650 font-black border border-slate-250/20"
+                            ? "bg-white shadow-sm text-indigo-600 font-black border border-slate-200"
                             : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
@@ -3072,7 +3275,7 @@ export default function PaymentScreen({
                         onClick={() => setAdminFilter(mode)}
                         className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer ${
                           adminFilter === mode
-                            ? "bg-white shadow-sm text-indigo-650 font-black border border-slate-250/20"
+                            ? "bg-white shadow-sm text-indigo-600 font-black border border-slate-200"
                             : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
@@ -3238,6 +3441,11 @@ export default function PaymentScreen({
                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                                   Pending Review
                                 </span>
+                              ) : u.paymentStatus === "flagged_discrepancy" ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-250 shadow-sm animate-pulse font-extrabold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-bounce" />
+                                  🚩 Audit Discrepancy
+                                </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200/60 shadow-sm">
                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
@@ -3248,31 +3456,69 @@ export default function PaymentScreen({
 
                             {/* APPROVAL & TRANSACTION INFO COLUMN */}
                             <td className="px-5 py-3">
-                              {isPending && u.pendingVerification ? (
-                                <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-xl text-[10px] space-y-1 max-w-xs shadow-sm">
-                                  <div className="flex justify-between font-bold">
-                                    <span className="text-slate-400 uppercase text-[9px] tracking-wide">Method/Name:</span>
-                                    <span className="text-slate-800 uppercase font-black">
-                                      {u.pendingVerification.method || "GCash"} ({u.pendingVerification.senderName || "Unknown"})
-                                    </span>
+                              {isPending && u.pendingVerification ? (() => {
+                                const isUpgrade = u.pendingVerification?.isUpgrade === true;
+                                const plan = u.pendingVerification?.plan || "premium";
+                                const expectedVal = isUpgrade ? upgradeFinalPrice : (plan === "basic" ? basicFinalPrice : premiumFinalPrice);
+                                const actualVal = typeof u.pendingVerification?.amount === 'number' ? u.pendingVerification.amount : (parseFloat(u.pendingVerification?.amount) || 0);
+                                const isManualMismatch = actualVal > 0 && Math.abs(actualVal - expectedVal) > 0.01;
+
+                                return (
+                                  <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-xl text-[10px] space-y-1 max-w-xs shadow-sm">
+                                    <div className="flex justify-between font-bold">
+                                      <span className="text-slate-400 uppercase text-[9px] tracking-wide">Method/Name:</span>
+                                      <span className="text-slate-800 uppercase font-black text-right truncate max-w-[120px]">
+                                        {u.pendingVerification.method || "GCash"} ({u.pendingVerification.senderName || "Unknown"})
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Ref ID:</span>
+                                      <span className="text-indigo-600 font-mono font-extrabold tracking-wider bg-indigo-50/50 px-1 rounded">
+                                        {u.pendingVerification.referenceNo || "—"}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between text-[9px] text-slate-500">
+                                      <span>Date:</span>
+                                      <span className="font-semibold">
+                                        {new Date(u.pendingVerification.submittedAt).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                    {isManualMismatch && (
+                                      <div className="mt-1.5 p-1 px-2 rounded bg-rose-50 border border-rose-100 flex flex-col gap-0.5">
+                                        <div className="flex justify-between items-center text-[9px] font-black text-rose-700">
+                                          <span>VALUE MISMATCH</span>
+                                          <span>Claimed ₱{actualVal}</span>
+                                        </div>
+                                        <div className="text-[8px] text-rose-500 font-medium">
+                                          Baseline price for {plan.toUpperCase()} is ₱{expectedVal}.
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                  <div className="flex justify-between">
-                                    <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Ref ID:</span>
-                                    <span className="text-indigo-600 font-mono font-extrabold tracking-wider bg-indigo-50/50 px-1 rounded">
-                                      {u.pendingVerification.referenceNo || "—"}
-                                    </span>
+                                );
+                              })() : u.paymentStatus === "flagged_discrepancy" && u.paymentDiscrepancy ? (
+                                <div className="bg-rose-50 border border-rose-100 p-2.5 rounded-xl text-[10px] space-y-1 max-w-xs shadow-sm">
+                                  <div className="flex justify-between font-bold text-rose-700">
+                                    <span>SUSPECT PAYMONGO MISMATCH:</span>
+                                    <span>Flagged</span>
                                   </div>
-                                  <div className="flex justify-between text-[9px] text-slate-500">
-                                    <span>Date:</span>
-                                    <span className="font-semibold">
-                                      {new Date(u.pendingVerification.submittedAt).toLocaleDateString()}
-                                    </span>
+                                  <div className="flex justify-between text-slate-500">
+                                    <span>Baseline Expected:</span>
+                                    <span className="font-mono font-bold text-slate-800">₱{u.paymentDiscrepancy.expectedAmount}</span>
+                                  </div>
+                                  <div className="flex justify-between text-slate-500">
+                                    <span>Gateway Paid:</span>
+                                    <span className="font-mono font-bold text-rose-600">₱{u.paymentDiscrepancy.actualAmountPaid}</span>
+                                  </div>
+                                  <div className="flex justify-between text-[9px] text-slate-400">
+                                    <span>Checked At:</span>
+                                    <span>{new Date(u.paymentDiscrepancy.checkedAt).toLocaleDateString()}</span>
                                   </div>
                                 </div>
                               ) : u.approvedAt ? (
                                 <div className="text-[10px] shrink-0">
                                   <div className="font-extrabold text-slate-800 flex items-center gap-1">
-                                    <Check className="w-3.5 h-3.5 text-emerald-505" />
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
                                     APPROVED SYSTEM
                                   </div>
                                   <div className="text-slate-400 mt-0.5 font-semibold text-[9px] uppercase tracking-wider">
@@ -3348,9 +3594,9 @@ export default function PaymentScreen({
                                             currentActiveStatus: isUserActive,
                                           });
                                         }}
-                                        className="w-full px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-indigo-650 transition-colors flex items-center gap-2 cursor-pointer"
+                                        className="w-full px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors flex items-center gap-2 cursor-pointer"
                                       >
-                                        <Zap className="w-3.5 h-3.5 text-indigo-505" />
+                                        <Zap className="w-3.5 h-3.5 text-indigo-500" />
                                         {isUserActive ? "Revoke Pro Access" : "Direct Activate (Trial)"}
                                       </button>
                                     )}
@@ -3421,6 +3667,10 @@ export default function PaymentScreen({
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-100 animate-pulse">
                                 PENDING
                               </span>
+                            ) : u.paymentStatus === "flagged_discrepancy" ? (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-100 animate-pulse font-extrabold">
+                                🚩 FLAG
+                              </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-205">
                                 UNPAID
@@ -3430,23 +3680,58 @@ export default function PaymentScreen({
                         </div>
 
                         {/* Transaction sub-details box for mobile */}
-                        {isPending && u.pendingVerification && (
-                          <div className="mt-3 bg-slate-50 border border-slate-200/60 p-3 rounded-xl text-[10px] space-y-1.5 shadow-inner">
-                            <p className="font-extrabold text-slate-500 uppercase text-[8px] tracking-widest border-b border-slate-200 pb-1">
-                              Submission Details
+                        {isPending && u.pendingVerification ? (() => {
+                          const isUpgrade = u.pendingVerification?.isUpgrade === true;
+                          const plan = u.pendingVerification?.plan || "premium";
+                          const expectedVal = isUpgrade ? upgradeFinalPrice : (plan === "basic" ? basicFinalPrice : premiumFinalPrice);
+                          const actualVal = typeof u.pendingVerification?.amount === 'number' ? u.pendingVerification.amount : (parseFloat(u.pendingVerification?.amount) || 0);
+                          const isManualMismatch = actualVal > 0 && Math.abs(actualVal - expectedVal) > 0.01;
+
+                          return (
+                            <div className="mt-3 bg-slate-50 border border-slate-200/60 p-3 rounded-xl text-[10px] space-y-1.5 shadow-inner">
+                              <p className="font-extrabold text-slate-500 uppercase text-[8px] tracking-widest border-b border-slate-200 pb-1">
+                                Submission Details
+                              </p>
+                              <div className="grid grid-cols-2 gap-2 mt-1">
+                                <div>
+                                  <span className="text-slate-400 font-bold block text-[8px] uppercase">Sender / Channel:</span>
+                                  <span className="font-black text-slate-800 uppercase line-clamp-1">{u.pendingVerification.senderName || "Unknown"} ({u.pendingVerification.method})</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 font-bold block text-[8px] uppercase">Ref ID Number:</span>
+                                  <span className="font-mono font-extrabold text-indigo-600 tracking-wide bg-indigo-50 px-1 rounded truncate block">{u.pendingVerification.referenceNo}</span>
+                                </div>
+                              </div>
+                              {isManualMismatch && (
+                                <div className="mt-2 p-1.5 rounded bg-rose-50 border border-rose-100 flex flex-col gap-0.5">
+                                  <div className="flex justify-between items-center text-[9px] font-black text-rose-700">
+                                    <span>VALUE MISMATCH DETECTED</span>
+                                    <span>Paid: ₱{actualVal}</span>
+                                  </div>
+                                  <p className="text-[8px] text-rose-500 font-medium">
+                                    Plan price: ₱{expectedVal}. There is a discrepancy between baseline and paid credit.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })() : u.paymentStatus === "flagged_discrepancy" && u.paymentDiscrepancy ? (
+                          <div className="mt-3 bg-rose-50/50 border border-rose-100 p-3 rounded-xl text-[10px] space-y-1.5 shadow-inner">
+                            <p className="font-extrabold text-rose-700 uppercase text-[8px] tracking-widest border-b border-rose-150 pb-1">
+                              ⚠️ GATEWAY MISMATCH FLAG
                             </p>
                             <div className="grid grid-cols-2 gap-2 mt-1">
                               <div>
-                                <span className="text-slate-400 font-bold block text-[8px] uppercase">Sender / Channel:</span>
-                                <span className="font-black text-slate-800 uppercase">{u.pendingVerification.senderName || "Unknown"} ({u.pendingVerification.method})</span>
+                                <span className="text-slate-400 font-medium block text-[8px] uppercase">System Expected:</span>
+                                <span className="font-mono font-black text-slate-800">₱{u.paymentDiscrepancy.expectedAmount}</span>
                               </div>
                               <div>
-                                <span className="text-slate-400 font-bold block text-[8px] uppercase">Ref ID Number:</span>
-                                <span className="font-mono font-extrabold text-indigo-650 tracking-wide bg-indigo-50 px-1 rounded">{u.pendingVerification.referenceNo}</span>
+                                <span className="text-slate-400 font-medium block text-[8px] uppercase">Gateway Received:</span>
+                                <span className="font-mono font-black text-rose-600">₱{u.paymentDiscrepancy.actualAmountPaid}</span>
                               </div>
                             </div>
                           </div>
-                        )}
+                        ) : null}
 
                         {/* User action options for mobile */}
                         <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100/60">
@@ -3460,7 +3745,7 @@ export default function PaymentScreen({
                                     email: u.email,
                                   })
                                 }
-                                className="px-2.5 py-1.5 border border-red-200 text-red-650 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer bg-red-white hover:bg-red-50"
+                                className="px-2.5 py-1.5 border border-red-200 text-red-600 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer bg-red-white hover:bg-red-50"
                               >
                                 Reject
                               </button>

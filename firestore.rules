@@ -219,5 +219,16 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+
+    // 8. Payment Gateway Tracking
+    match /payment_discrepancies/{discpId} {
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+    
+    match /transactions/{transactionId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow write: if isAdmin();
+    }
   }
 }

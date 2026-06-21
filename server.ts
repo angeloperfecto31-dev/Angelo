@@ -159,6 +159,51 @@ app.post("/api/download-cad", async (req, res) => {
   }
 });
 
+// Helper to calculate expected price from Firestore pricing settings
+async function calculateExpectedPrice(plan: string, isUpgrade: boolean): Promise<number> {
+  let expectedAmount = 1499; // Default premiumPrice
+  if (db) {
+    try {
+      const pricingSnap = await db.collection("settings").doc("pricing").get();
+      if (pricingSnap.exists) {
+        const pricingData = pricingSnap.data();
+        const basicPrice = typeof pricingData?.basicPrice === 'number' ? pricingData.basicPrice : 999;
+        const premiumPrice = typeof pricingData?.premiumPrice === 'number' ? pricingData.premiumPrice : 1499;
+        const upgradePrice = typeof pricingData?.upgradePrice === 'number' ? pricingData.upgradePrice : 500;
+        const promoDiscountBasic = typeof pricingData?.promoDiscountBasic === 'number' ? pricingData.promoDiscountBasic : 0;
+        const promoDiscountPremium = typeof pricingData?.promoDiscountPremium === 'number' ? pricingData.promoDiscountPremium : 0;
+        const offerExpiry = pricingData?.offerExpiry || "";
+        const offerTitle = pricingData?.offerTitle || "";
+
+        const hasValidPromo = promoDiscountBasic > 0 || promoDiscountPremium > 0 || !!offerTitle;
+        const isOfferActive = !!(hasValidPromo && (!offerExpiry || offerExpiry.trim() === "" || new Date(offerExpiry) > new Date()));
+
+        if (isUpgrade) {
+          expectedAmount = upgradePrice;
+        } else if (plan === "basic") {
+          expectedAmount = (isOfferActive && promoDiscountBasic > 0) ? promoDiscountBasic : basicPrice;
+        } else {
+          expectedAmount = (isOfferActive && promoDiscountPremium > 0) ? promoDiscountPremium : premiumPrice;
+        }
+      } else {
+        if (isUpgrade) expectedAmount = 500;
+        else if (plan === "basic") expectedAmount = 999;
+        else expectedAmount = 1499;
+      }
+    } catch (e) {
+      console.error("Error reading pricing from DB, using fallback:", e);
+      if (isUpgrade) expectedAmount = 500;
+      else if (plan === "basic") expectedAmount = 999;
+      else expectedAmount = 1499;
+    }
+  } else {
+    if (isUpgrade) expectedAmount = 500;
+    else if (plan === "basic") expectedAmount = 999;
+    else expectedAmount = 1499;
+  }
+  return expectedAmount;
+}
+
 // Create a checkout session
 app.post("/api/create-checkout", async (req, res) => {
   try {
@@ -170,7 +215,9 @@ app.post("/api/create-checkout", async (req, res) => {
         .json({ error: "PayMongo secret key is not configured." });
     }
 
-    const price = amount ? Math.round(parseFloat(amount) * 100) : 149900;
+    // Server-side validation of expected price/amount to prevent client-side price tampering
+    const expectedAmount = await calculateExpectedPrice(plan, isUpgrade);
+    const price = Math.round(expectedAmount * 100); // convert to centavos
     const name = isUpgrade 
       ? "Applet Premium Upgrade" 
       : `Applet ${plan === 'basic' ? 'Basic' : 'Premium'} Plan Activation`;
@@ -239,39 +286,137 @@ app.post("/api/verify-checkout", async (req, res) => {
 
     const response = await axios.request(options);
     const attributes = response.data.data.attributes;
-    const isPaid =
-      attributes.payments &&
-      attributes.payments.length > 0 &&
-      attributes.payments.some((p: any) => p.attributes.status === "paid");
-
-    if (isPaid) {
-      // Opportunistically update the user's status using Firebase Admin if available
-      const userId = attributes.metadata?.userId;
-      const plan = attributes.metadata?.plan || "premium";
-      const amountPaid = attributes.metadata?.amount ? parseFloat(attributes.metadata.amount) : null;
-      const isUpgrade = attributes.metadata?.isUpgrade === "true";
+    const payments = attributes.payments || [];
+    
+    // Parse individual transaction statuses from PayMongo gateway
+    let transactionStatus = "pending";
+    let paymentDetailObj: any = null;
+    
+    if (payments.length > 0) {
+      const paidPay = payments.find((p: any) => p.attributes.status === "paid");
+      const refundedPay = payments.find((p: any) => p.attributes.status === "refunded");
+      const failedPay = payments.find((p: any) => p.attributes.status === "failed");
       
-      if (userId && db) {
-        try {
-          await db.collection("users").doc(userId).set(
-            {
-              paymentStatus: "paid",
-              isActive: true,
-              plan: plan,
-              amount: amountPaid,
-              isUpgrade: isUpgrade,
-              paymentSource: "GCASH",
-              approvedAt: new Date().toISOString(),
-              approvedBy: "PAYMONGO CHECKOUT",
-              pendingVerification: null,
-            },
-            { merge: true },
-          );
-        } catch (dbErr) {
-          console.error("Failed to update DB from server verification:", dbErr);
+      if (paidPay) {
+        transactionStatus = "paid";
+        paymentDetailObj = paidPay;
+      } else if (refundedPay) {
+        transactionStatus = "refunded";
+        paymentDetailObj = refundedPay;
+      } else if (failedPay) {
+        transactionStatus = "failed";
+        paymentDetailObj = failedPay;
+      }
+    }
+
+    const userId = attributes.metadata?.userId;
+    const plan = attributes.metadata?.plan || "premium";
+    const isUpgrade = attributes.metadata?.isUpgrade === "true";
+
+    // 1. Double transaction/duplication prevention guard
+    if (transactionStatus === "paid" && db) {
+      const transRef = db.collection("transactions").doc(`paymongo_${sessionId}`);
+      const transSnap = await transRef.get();
+      if (transSnap.exists && transSnap.data()?.status === "paid") {
+         console.log(`Transaction paymongo_${sessionId} was already processed and credited.`);
+         return res.json({ status: "paid", userId, plan, alreadyProcessed: true });
+      }
+    }
+
+    if (transactionStatus === "paid") {
+      // 2. Validate Gateway payments information
+      const actualCentsPaid = paymentDetailObj ? paymentDetailObj.attributes.amount : 0;
+      const actualAmountPaid = actualCentsPaid / 100;
+      
+      // Calculate expected price at the system level to audit paid vs configured rate
+      const expectedAmount = await calculateExpectedPrice(plan, isUpgrade);
+      const hasDiscrepancy = Math.abs(actualAmountPaid - expectedAmount) > 0.01;
+      
+      if (db) {
+        if (hasDiscrepancy) {
+          console.error(`PAYMENT AUDIT WARNING - DISCREPANCY DETECTED: expected ${expectedAmount}, actual paid ${actualAmountPaid}. sessionId: ${sessionId}`);
+          
+          // Log discrepancy context permanently to database
+          await db.collection("payment_discrepancies").add({
+            sessionId,
+            userId: userId || "Unknown",
+            email: attributes.customer_info?.email || attributes.customer_info?.email || "Unknown",
+            expectedAmount,
+            actualAmountPaid,
+            discrepancy: actualAmountPaid - expectedAmount,
+            plan,
+            isUpgrade,
+            checkedAt: new Date().toISOString(),
+            status: "pending_review",
+            paymentSource: "PAYMONGO CHECKOUT",
+            origin: "verify-checkout"
+          });
+          
+          if (userId) {
+            await db.collection("users").doc(userId).set({
+              paymentStatus: "flagged_discrepancy",
+              isActive: false, // Flagged: do not activate subscription
+              paymentDiscrepancy: {
+                expectedAmount,
+                actualAmountPaid,
+                checkedAt: new Date().toISOString(),
+                sessionId,
+                resolved: false,
+                plan,
+                isUpgrade
+              }
+            }, { merge: true });
+          }
+          return res.json({ status: "flagged_discrepancy", userId, plan, isDiscrepancy: true });
+        } else {
+          // No discrepancies, perfect payment match!
+          if (userId) {
+            try {
+              // Mark transaction ID as processed to block duplicate credits
+              await db.collection("transactions").doc(`paymongo_${sessionId}`).set({
+                status: "paid",
+                amount: actualAmountPaid,
+                userId,
+                plan,
+                isUpgrade,
+                processedAt: new Date().toISOString(),
+                sessionId
+              });
+
+              await db.collection("users").doc(userId).set(
+                {
+                  paymentStatus: "paid",
+                  isActive: true,
+                  plan: plan,
+                  amount: actualAmountPaid,
+                  isUpgrade: isUpgrade,
+                  paymentSource: "GCASH",
+                  approvedAt: new Date().toISOString(),
+                  approvedBy: "PAYMONGO CHECKOUT",
+                  pendingVerification: null,
+                  paymentDiscrepancy: null // clear any prior discrepancy
+                },
+                { merge: true },
+              );
+            } catch (dbErr) {
+              console.error("Failed to update DB from server verification:", dbErr);
+            }
+          }
         }
       }
       res.json({ status: "paid", userId, plan });
+    } else if (transactionStatus === "failed" || transactionStatus === "refunded") {
+      // 3. Keep account synchronized when payment failed or refunded
+      if (userId && db) {
+        await db.collection("users").doc(userId).set(
+          {
+            paymentStatus: transactionStatus,
+            isActive: false, // shut down service
+          },
+          { merge: true }
+        );
+      }
+      res.json({ status: transactionStatus, userId, plan });
     } else {
       res.json({ status: "pending" });
     }
@@ -293,29 +438,92 @@ app.post("/api/paymongo-webhook", async (req, res) => {
     // Process the checkout_session.payment.paid event
     if (type === "checkout_session.payment.paid") {
       const checkoutSessionInfo = body.data.attributes.data.attributes;
+      const checkoutSessionId = body.data.attributes.data.id;
+      
+      // Duplication verification logic
+      if (db) {
+        const transRef = db.collection("transactions").doc(`paymongo_${checkoutSessionId}`);
+        const transSnap = await transRef.get();
+        if (transSnap.exists && transSnap.data()?.status === "paid") {
+          console.log(`Webhook: transaction paymongo_${checkoutSessionId} already processed.`);
+          return res.json({ received: true, msg: "Already processed" });
+        }
+      }
+
       const metadata = checkoutSessionInfo.metadata;
       const userId = metadata?.userId;
       const plan = metadata?.plan || "premium";
-      const amountPaid = metadata?.amount ? parseFloat(metadata.amount) : null;
       const isUpgrade = metadata?.isUpgrade === "true";
 
-      if (userId && db) {
-        // Find the user and update access
-        console.log(`Webhook received: activating user ${userId} with plan ${plan} paid ${amountPaid}`);
-        await db.collection("users").doc(userId).set(
-          {
-            paymentStatus: "paid",
-            isActive: true,
-            plan: plan,
-            amount: amountPaid,
-            isUpgrade: isUpgrade,
-            paymentSource: "GCASH",
-            approvedAt: new Date().toISOString(),
-            approvedBy: "PAYMONGO CHECKOUT",
-            pendingVerification: null,
-          },
-          { merge: true },
-        );
+      const payments = checkoutSessionInfo.payments || [];
+      const paidPay = payments.find((p: any) => p.attributes.status === "paid");
+      const actualAmountPaid = paidPay ? paidPay.attributes.amount / 100 : (metadata?.amount ? parseFloat(metadata.amount) : 1499);
+
+      // Validate pricing on webhook to guard against custom API client calls or setting shifts
+      const expectedAmount = await calculateExpectedPrice(plan, isUpgrade);
+      const hasDiscrepancy = Math.abs(actualAmountPaid - expectedAmount) > 0.01;
+
+      if (db && userId) {
+        if (hasDiscrepancy) {
+          console.error(`PAYMENT AUDIT Webhook WARNING - DISCREPANCY DETECTED: expected ${expectedAmount}, actual paid ${actualAmountPaid}. checkoutSessionId: ${checkoutSessionId}`);
+          
+          await db.collection("payment_discrepancies").add({
+            sessionId: checkoutSessionId,
+            userId,
+            email: checkoutSessionInfo.customer_info?.email || "Unknown",
+            expectedAmount,
+            actualAmountPaid,
+            discrepancy: actualAmountPaid - expectedAmount,
+            plan,
+            isUpgrade,
+            checkedAt: new Date().toISOString(),
+            status: "pending_review",
+            paymentSource: "PAYMONGO CHECKOUT",
+            origin: "webhook"
+          });
+
+          await db.collection("users").doc(userId).set({
+            paymentStatus: "flagged_discrepancy",
+            isActive: false, // Suspend account
+            paymentDiscrepancy: {
+              expectedAmount,
+              actualAmountPaid,
+              checkedAt: new Date().toISOString(),
+              sessionId: checkoutSessionId,
+              resolved: false,
+              plan,
+              isUpgrade
+            }
+          }, { merge: true });
+        } else {
+          // Normal activation on payment matching
+          await db.collection("transactions").doc(`paymongo_${checkoutSessionId}`).set({
+            status: "paid",
+            amount: actualAmountPaid,
+            userId,
+            plan,
+            isUpgrade,
+            processedAt: new Date().toISOString(),
+            sessionId: checkoutSessionId
+          });
+
+          console.log(`Webhook received: activating user ${userId} with plan ${plan} paid ${actualAmountPaid}`);
+          await db.collection("users").doc(userId).set(
+            {
+              paymentStatus: "paid",
+              isActive: true,
+              plan: plan,
+              amount: actualAmountPaid,
+              isUpgrade: isUpgrade,
+              paymentSource: "GCASH",
+              approvedAt: new Date().toISOString(),
+              approvedBy: "PAYMONGO CHECKOUT",
+              pendingVerification: null,
+              paymentDiscrepancy: null
+            },
+            { merge: true },
+          );
+        }
       }
     }
 

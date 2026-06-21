@@ -7,7 +7,8 @@ import {
   query, 
   where, 
   orderBy, 
-  onSnapshot 
+  onSnapshot,
+  getDoc
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
@@ -100,12 +101,13 @@ export interface Invoice {
 
 // Global helper to create a deterministic, descriptive Invoice ID/No
 export const generateInvoiceId = (paymentReference: string, userId: string, dateStr: string) => {
-  const cleanRef = (paymentReference || "BYPASS").replace(/[^a-zA-Z0-9]/g, "").substring(0, 15).toUpperCase();
+  let cleanRef = (paymentReference || "BYPASS").replace(/[^a-zA-Z0-9]/g, "").substring(0, 15).toUpperCase();
+  if (cleanRef === "NONE" || cleanRef === "") cleanRef = "BYPASS";
   const rawDate = new Date(dateStr);
   const year = rawDate.getFullYear().toString().substring(2);
   const month = String(rawDate.getMonth() + 1).padStart(2, '0');
   const day = String(rawDate.getDate()).padStart(2, '0');
-  return `INV-${year}${month}${day}-${cleanRef || userId.substring(0, 6).toUpperCase()}`;
+  return `INV-${year}${month}${day}-${cleanRef}-${userId.substring(0, 5).toUpperCase()}`;
 };
 
 // Background safe helper to sync a single invoice record
@@ -118,15 +120,32 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
   const rawPlan = (userObj.plan || userObj.pendingVerification?.plan || "basic").toLowerCase();
   const isPremium = rawPlan === "premium";
   
-  // Resolve amount and payment details
-  let amountPaid = Number(userObj.amount || userObj.pendingVerification?.amount || 0);
-  if (amountPaid <= 0) {
-    amountPaid = isPremium ? 1499 : 999;
+  let basicPrice = 999;
+  let premiumPrice = 1499;
+  let upgradePrice = 500;
+  
+  try {
+    const pricingRef = doc(db, "settings", "pricing");
+    const pricingSnap = await getDoc(pricingRef);
+    if (pricingSnap.exists()) {
+      const data = pricingSnap.data();
+      if (typeof data.basicPrice === 'number') basicPrice = data.basicPrice;
+      if (typeof data.premiumPrice === 'number') premiumPrice = data.premiumPrice;
+      if (typeof data.upgradePrice === 'number') upgradePrice = data.upgradePrice;
+    }
+  } catch (err) {
+    console.warn("Could not fetch pricing settings for invoice generation, using defaults:", err);
   }
 
-  let regPrice = isPremium ? 1499 : 999;
+  // Resolve amount and payment details
+  let amountPaid = Number(userObj.amount || userObj.paymentAmount || userObj.pendingVerification?.amount || 0);
+  if (amountPaid <= 0) {
+    amountPaid = userObj.isUpgrade ? upgradePrice : (isPremium ? premiumPrice : basicPrice);
+  }
+
+  let regPrice = isPremium ? premiumPrice : basicPrice;
   if (userObj.isUpgrade) {
-    regPrice = 500; // standard upgrade price default
+    regPrice = upgradePrice;
   }
 
   const discount = Math.max(0, regPrice - amountPaid);
@@ -153,7 +172,7 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
     userId: uid,
     userName,
     userEmail: email,
-    plan: isPremium ? "Premium (Standard)" : "Basic (Standard)",
+    plan: userObj.isUpgrade ? "Premium (Upgrade)" : (isPremium ? "Premium (Standard)" : "Basic (Standard)"),
     billingPeriod,
     paymentMethod,
     amountPaid,
