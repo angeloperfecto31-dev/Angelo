@@ -3394,88 +3394,124 @@ export default function LoadSchedule({
 
       {/* Legend & Disclaimer */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-12 print:mt-8">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 print:border-2 print:border-slate-800">
-          <h4 className="flex items-center gap-2 text-sm font-bold text-slate-400 dark:text-slate-500 uppercase mb-4 print:text-slate-900">
-            <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 no-print" />
-            Legend & Technical Notes
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-6 text-xs font-medium text-slate-600 dark:text-slate-400 print:text-slate-900">
-            <div className="space-y-1.5">
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  L
-                </span>{" "}
-                — Lighting Outlets (100VA/outlet)
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  S / CO
-                </span>{" "}
-                — Socket / Convenience Outlets (180VA/outlet)
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  AC / ACU
-                </span>{" "}
-                — Air Conditioning Unit
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  FCU / CU
-                </span>{" "}
-                — Fan Coil / Condensing Unit
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  WH
-                </span>{" "}
-                — Water Heater
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  M / WP
-                </span>{" "}
-                — Motor / Water Pump
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  RE
-                </span>{" "}
-                — Range Equipment / Electric Stove
-              </p>
-              <p>
-                <span className="text-indigo-600 dark:text-indigo-400 font-bold print:text-slate-900">
-                  SP
-                </span>{" "}
-                — Spare / Future Circuit
-              </p>
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-lg print:border-2 print:border-slate-800 col-span-1 md:col-span-2">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+            <div>
+              <h4 className="flex items-center gap-2 text-md font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider print:text-slate-900">
+                <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400 no-print" />
+                Legend & Technical Reference Notes
+              </h4>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Conformity criteria defined under the Philippine Electrical Code (PEC) Part 1 2017 Edition</p>
             </div>
-            <div className="space-y-1.5 leading-relaxed">
-              <p>
-                • <strong>Wiring:</strong> {panel.conductorMaterial || "Copper"} {panel.insulationType || "THHN"} as per PEC
-              </p>
-              <p>
-                • <strong>Min Wire Size:</strong> 2.0mm² (Lighting), 3.5mm²
-                (Power)
-              </p>
-              <p>
-                • <strong>Conduit:</strong> Schedule 40 PVC, EMT, or RSC
-              </p>
-              <p>
-                • <strong>Grounding:</strong> Equipment grounded per PEC Table
-                2.50.6.13
-              </p>
-              <p>
-                • <strong>Voltage Drop:</strong> Max 3% (Branch), Max 5%
-                (Feeder)
-              </p>
-              <p>
-                • <strong>Protection (CB):</strong> Rated ≥125% continuous load
-              </p>
-              <p>
-                • <strong>Installation:</strong> Conform to local utility & PEC
-                guidelines
-              </p>
+            <span className="text-[10px] font-mono tracking-widest text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 px-2 py-1 rounded-md self-start md:self-auto">
+              PEC-2017-CH2-DRAFT
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-xs font-medium text-slate-600 dark:text-slate-400 print:text-slate-900">
+            {/* Classification & Symbols Legend */}
+            <div className="space-y-4">
+              <h5 className="text-[10px] uppercase tracking-widest font-black text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                Classification Abbreviations
+              </h5>
+              <div className="space-y-2.5 font-mono text-[11px]">
+                <div className="flex items-start gap-2">
+                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                    L / LO
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Lighting Outlets</p>
+                    <p className="text-[10px] text-slate-400">100VA per active lamp outlet / fixed luminaire strap (PEC 2.20.2.3(C))</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                    S / CO
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Convenience Outlets</p>
+                    <p className="text-[10px] text-slate-400">Duplex receptacle rated at 180VA per simplex / strap assembly (PEC 2.20.2.3(I))</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                    ACU
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Air Conditioning Units</p>
+                    <p className="text-[10px] text-slate-400">Hermetic refrigerant motor-compressors sized at 125% FLC (PEC Article 4.40)</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                    M / WP
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Motors / Pumps</p>
+                    <p className="text-[10px] text-slate-400">Continuous motor loads sized per FLC values in PEC Tables 4.30 (largest motor @ 125%)</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                    WH / RE
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Water Heaters & Ranges</p>
+                    <p className="text-[10px] text-slate-400">Fixed appliances rated at nameplate VA. Range demand factor PEC Table 2.20.3.16</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                    SP/SPAC
+                  </span>
+                  <div className="space-y-0.5">
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Spare & Space</p>
+                    <p className="text-[10px] text-slate-400">Spare (active overcurrent protector) or Space (empty enclosure bus physical slot)</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Wiring, Material & Conduit Standards */}
+            <div className="space-y-4">
+              <h5 className="text-[10px] uppercase tracking-widest font-black text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                Conductors & Conduits
+              </h5>
+              <div className="space-y-3 font-sans text-[11px] leading-relaxed">
+                <p className="bg-slate-50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                  ⚡ <strong>Wiring Medium:</strong> {panel.conductorMaterial || "Copper"} conductors with type {panel.insulationType || "THHN"}/{panel.insulationType === "THW" ? "THW" : "THWN-2"} thermoplastic jackets, rated for 90°C dry / 75°C wet operating conditions.
+                </p>
+                <p>
+                  📏 <strong>Minimum Wire Sizes:</strong> Branch circuits feeding lighting loads must use a minimum wire size of <strong>2.0mm²</strong> (14 AWG) copper. Power and general convenience outlet circuits must use at least <strong>3.5mm²</strong> (12 AWG) copper.
+                </p>
+                <p>
+                  📂 <strong>Conduit Specification:</strong> Thick-wall Schedule 40 PVC, Electrical Metallic Tubing (EMT), or Rigid Steel Conduit (RSC). Standard cross-sectional fill ratio must not exceed <strong>40%</strong> for three or more conductors (PEC Chapter 9, Tabular limits).
+                </p>
+                <p>
+                  📉 <strong>Voltage Drop Limitations:</strong> Recommended maximum voltage drop on branch circuits is <strong>3%</strong>, and <strong>3%</strong> on feeder lines, with a maximum cumulative voltage drop of <strong>5%</strong> for overall system efficiency (PEC Part 1, FPN 2.10.1.19 & 2.15.1.2).
+                </p>
+              </div>
+            </div>
+
+            {/* Overcurrent & Grounding Rules */}
+            <div className="space-y-4">
+              <h5 className="text-[10px] uppercase tracking-widest font-black text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                Protection & Grounding
+              </h5>
+              <div className="space-y-3 font-sans text-[11px] leading-relaxed">
+                <p>
+                  🛡️ <strong>Overcurrent Protection:</strong> Sized according to load type: continuous loads are rated at <strong>125%</strong> of nominal ampacity, plus <strong>100%</strong> of non-continuous loads (PEC 2.15.1.3). Breakers utilize standard molded-case inverse-time principles.
+                </p>
+                <p>
+                  🌱 <strong>Equipment Grounding Conductor (EGC):</strong> High-conductivity copper grounding conductor installed in all power conduits, sized per PEC Table 2.50.6.13 corresponding to circuit breaker rating. Conductor must remain insulated and color-coded Green or bare.
+                </p>
+                <p>
+                  🔌 <strong>Service Grounding Electrode Conductor (GEC):</strong> Serves as main reference link to grounding rod / grid array. Sized per service entrance size in strict conformance with PEC Table 2.50.3.17.
+                </p>
+                <p className="bg-slate-50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 text-[10px]">
+                  ⚖️ <strong>Dynamic Phase Balancing:</strong> Symmetrical balance must be maintained across Phase Line R, Y, and B. Target total imbalance is ideally <strong>&lt; 15%</strong> to minimize circulating neural currents and reduce feeder heat.
+                </p>
+              </div>
             </div>
           </div>
         </div>
