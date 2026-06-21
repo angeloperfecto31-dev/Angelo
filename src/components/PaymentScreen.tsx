@@ -3308,9 +3308,9 @@ export default function PaymentScreen({
           )}
 
           {/* Compact Modern SaaS Table/List container */}
-          <div className="bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] overflow-hidden animate-fade-in no-print">
+          <div className="bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] md:overflow-visible overflow-hidden animate-fade-in no-print">
             {filteredUsers.length === 0 ? (
-              <div className="py-16 px-6 text-center bg-white flex flex-col items-center">
+              <div className="py-16 px-6 text-center bg-white rounded-2xl flex flex-col items-center">
                 <Users className="w-10 h-10 text-slate-300 mb-2.5" />
                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-tight">
                   No matching user accounts
@@ -3332,11 +3332,11 @@ export default function PaymentScreen({
             ) : (
               <>
                 {/* Desktop and Tablet Responsive Table */}
-                <div className="hidden md:block overflow-x-auto">
+                <div className="hidden md:block md:overflow-visible">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-50/85 border-b border-slate-200/60 select-none">
-                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider first:rounded-tl-2xl">
                           Subscriber
                         </th>
                         <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
@@ -3348,7 +3348,7 @@ export default function PaymentScreen({
                         <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
                           Approval & Reference
                         </th>
-                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-455 tracking-wider text-right w-[80px]">
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-455 tracking-wider text-right w-[80px] last:rounded-tr-2xl">
                           Actions
                         </th>
                       </tr>
@@ -3373,7 +3373,7 @@ export default function PaymentScreen({
                         return (
                           <tr 
                             key={u.uid} 
-                            className={`hover:bg-slate-50/50 transition-colors duration-150 ${isPending ? "bg-amber-50/10" : ""}`}
+                            className={`hover:bg-slate-50/50 transition-colors duration-150 ${isPending ? "bg-amber-50/10" : ""} ${activeDropdownUid === u.uid ? "relative z-50 pointer-events-auto" : ""}`}
                           >
                             {/* USER COLUMN */}
                             <td className="px-5 py-3 max-w-sm">
