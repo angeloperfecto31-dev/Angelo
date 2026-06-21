@@ -117,6 +117,9 @@ export default function App() {
         setIsActive(false);
         isActiveRef.current = false;
         setAuthLoading(false);
+      } else {
+        // Prevent layout/payment screen flickering during authentication/subscription checks
+        setAuthLoading(true);
       }
     });
     return () => unsubscribe();
