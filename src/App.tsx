@@ -21,6 +21,13 @@ import {
   Receipt,
   Hammer,
   Cpu,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  Settings,
+  Lock,
+  LogOut,
+  Info,
 } from "lucide-react";
 import {
   Zap,
@@ -100,6 +107,10 @@ export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [userPlan, setUserPlan] = useState<"basic" | "premium" | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+  const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
 
   const isAdmin =
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
@@ -180,6 +191,7 @@ export default function App() {
     | "lighting"
     | "floor-plan"
     | "verify"
+    | "verify-registrations"
     | "current-calc"
     | "egc"
     | "system-sld"
@@ -1482,6 +1494,13 @@ export default function App() {
           {
             id: "verify",
             label: "Verify Users",
+            icon: Users,
+            color: "text-amber-600",
+            bg: "bg-amber-50",
+          },
+          {
+            id: "verify-registrations",
+            label: "Verify Registrations",
             icon: ShieldCheck,
             color: "text-amber-600",
             bg: "bg-amber-50",
@@ -2443,168 +2462,397 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Sidebar Navigation */}
-      <aside className="w-64 bg-slate-900 dark:bg-slate-950 border-r border-slate-800 flex flex-col justify-between hidden md:flex shrink-0 no-print transition-all">
-        <div>
-          {/* Logo and Brand */}
-          <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800/50 bg-slate-900/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-400 rounded-lg shadow-sm">
-                <Zap className="w-5 h-5 text-yellow-900" />
+      <aside 
+        className={`${isSidebarCollapsed ? "w-[76px]" : "w-64"} bg-slate-900 dark:bg-slate-950 border-r border-slate-800 flex flex-col justify-between hidden md:flex shrink-0 no-print transition-all duration-300 ease-in-out relative z-30`}
+      >
+        <div className="flex flex-col h-full overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {/* Logo, Brand & Collapse Toggler */}
+          <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/60 bg-slate-900/40 relative">
+            <div className={`flex items-center gap-3 transition-opacity duration-200 ${isSidebarCollapsed ? "mx-auto justify-center" : ""}`}>
+              <div className="p-2 bg-gradient-to-tr from-yellow-300 to-amber-500 rounded-xl shadow-md shadow-amber-500/10 shrink-0 transform hover:rotate-12 transition-transform duration-300">
+                <Zap className="w-5 h-5 text-slate-950 fill-slate-950" />
               </div>
-              <div>
-                <span className="font-black text-white tracking-tight text-lg">
-                  ElectricalPH
-                </span>
-                <p className="text-[10px] text-slate-400 font-bold uppercase -mt-1 tracking-wider">
-                  Engineering Tool
-                </p>
-              </div>
-            </div>
-            {/* Desktop Theme Switcher */}
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
-              title={
-                isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"
-              }
-            >
-              {isDarkMode ? (
-                <Sun className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Moon className="w-4 h-4 text-slate-400" />
+              {!isSidebarCollapsed && (
+                <div className="flex flex-col select-none animate-fade-in">
+                  <span className="font-extrabold text-white tracking-tight text-base font-sans drop-shadow-sm">
+                    ElectricalPH
+                  </span>
+                  <p className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-widest -mt-1 font-mono">
+                    Engineering Tool
+                  </p>
+                </div>
               )}
-            </button>
-          </div>
+            </div>
 
-          {/* Navigation Menu */}
-          <div className="p-4 space-y-1">
-            <p className="px-2 text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 mt-4">
-              Modules
-            </p>
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                  activeTab === tab.id
-                    ? `bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-inner`
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                }`}
-              >
-                <tab.icon
-                  className={`w-4 h-4 ${activeTab === tab.id ? "text-indigo-400" : "text-slate-500"}`}
-                />
-                <span>{tab.label}</span>
-                {activeTab === tab.id && (
-                  <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                )}
-              </button>
-            ))}
+            {/* Desktop Collapse Toggler Button */}
+            {!isSidebarCollapsed && (
+              <div className="flex items-center gap-1">
+                {/* Theme Switcher inside header to keep it compact */}
+                <button
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className="p-1.5 hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+                  title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                >
+                  {isDarkMode ? (
+                    <Sun className="w-4 h-4 text-amber-400" />
+                  ) : (
+                    <Moon className="w-4 h-4 text-slate-400" />
+                  )}
+                </button>
+                <button
+                  onClick={() => setIsSidebarCollapsed(true)}
+                  className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  title="Collapse Sidebar"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
-            {/* Verify Users for Admin */}
-            {isAdmin && (
+            {/* When collapsed, show expand button */}
+            {isSidebarCollapsed && (
               <button
-                onClick={() => setActiveTab("verify")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 mt-8 rounded-lg text-sm font-semibold transition-all ${
-                  activeTab === "verify"
-                    ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                    : "text-amber-400/70 hover:text-amber-400 hover:bg-slate-800/50"
-                }`}
+                onClick={() => setIsSidebarCollapsed(false)}
+                className="absolute -right-3 top-5 bg-slate-850 hover:bg-emerald-600 border border-slate-700 hover:border-emerald-500 text-slate-300 hover:text-white p-1 rounded-full shadow-lg z-50 cursor-pointer transition-all duration-200 hover:scale-110 active:scale-95"
+                title="Expand Sidebar"
               >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Verify Registrations</span>
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
+
+          {/* Navigation Menu */}
+          <div className="flex-1 py-4 px-3 space-y-6">
+            
+            {/* MODULES SECTION */}
+            <div>
+              <div className="flex items-center justify-between mb-2 px-3">
+                {!isSidebarCollapsed ? (
+                  <p className="text-xxs font-black text-slate-500 uppercase tracking-widest">
+                    MODULES
+                  </p>
+                ) : (
+                  <div className="w-full h-[1px] bg-slate-800/60 my-1"></div>
+                )}
+              </div>
+              
+              <div className="space-y-1">
+                {[
+                  { id: "dashboard", label: "Dashboard", icon: Gauge, requiresPremium: false },
+                  { id: "schedule", label: "Load Schedule", icon: Layout, requiresPremium: false },
+                  { id: "isc", label: "Short Circuit", icon: ShieldAlert, requiresPremium: false },
+                  { id: "vd", label: "Voltage Drop", icon: Ruler, requiresPremium: false },
+                  { id: "lighting", label: "Illumination", icon: Lightbulb, requiresPremium: false },
+                  { id: "system-sld", label: "System SLD", icon: Network, requiresPremium: false },
+                  { id: "floor-plan", label: "Floor Plan", icon: Map, requiresPremium: false },
+                  { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
+                  { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
+                  { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: false }
+                ].map((item) => {
+                  const isActive = activeTab === item.id;
+                  const IconComponent = item.icon;
+                  return (
+                    <div key={item.id} className="relative group">
+                      <button
+                        onClick={() => setActiveTab(item.id as any)}
+                        className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
+                          isActive
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner"
+                            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
+                        }`}
+                      >
+                        {/* Active vertical left bar */}
+                        {isActive && !isSidebarCollapsed && (
+                          <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-emerald-500 rounded-r" />
+                        )}
+                        <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-500 group-hover:text-slate-300"}`} />
+                        {!isSidebarCollapsed && <span className="ml-3 truncate">{item.label}</span>}
+                      </button>
+
+                      {/* Tooltip for Collapsed Sidebar */}
+                      {isSidebarCollapsed && (
+                        <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
+                          {item.label}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ACCOUNT / ADMIN SECTION */}
+            <div>
+              <div className="flex items-center justify-between mb-2 px-3">
+                {!isSidebarCollapsed ? (
+                  <p className="text-xxs font-black text-slate-500 uppercase tracking-widest">
+                    ACCOUNT / ADMIN
+                  </p>
+                ) : (
+                  <div className="w-full h-[1px] bg-slate-800/60 my-2"></div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                {[
+                  { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
+                  { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
+                  { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" }
+                ].map((item) => {
+                  const isActive = activeTab === item.id;
+                  const IconComponent = item.icon;
+                  return (
+                    <div key={item.id} className="relative group">
+                      <button
+                        onClick={() => {
+                          if (item.restricted) {
+                            alert("Administrator Access Required\n\nThis module contains confidential billing ledgers, verify queues, and user registration directories. Access is restricted to angeloperfecto31@gmail.com.");
+                            return;
+                          }
+                          setActiveTab(item.id as any);
+                        }}
+                        className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
+                          isActive
+                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-inner"
+                            : item.restricted
+                              ? "text-slate-500/60 opacity-50 cursor-not-allowed hover:bg-transparent"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
+                        }`}
+                        disabled={false}
+                      >
+                        {/* Active vertical left bar */}
+                        {isActive && !isSidebarCollapsed && (
+                          <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-amber-500 rounded-r" />
+                        )}
+                        <span className="relative">
+                          <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"}`} />
+                          
+                          {/* Miniature Red Notification badge on icon when collapsed */}
+                          {item.badge && isSidebarCollapsed && (
+                            <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-rose-500 border border-slate-900 rounded-full animate-ping" />
+                          )}
+                        </span>
+                        
+                        {!isSidebarCollapsed && (
+                          <>
+                            <span className="ml-3 truncate">{item.label}</span>
+                            {/* Restricted Lock Icon */}
+                            {item.restricted && (
+                              <Lock className="w-3 h-3 text-slate-600 ml-auto shrink-0" />
+                            )}
+                            
+                            {/* Custom Notification Badge */}
+                            {item.badge && !item.restricted && (
+                              <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-sans font-extrabold shadow-sm ${
+                                item.badge === "3" ? "bg-rose-500/20 text-rose-450 border border-rose-500/30 font-mono animate-pulse" : "bg-amber-550/20 text-amber-400 border border-amber-500/30"
+                              }`}>
+                                {item.badge}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+
+                      {/* Tooltip for Collapsed Sidebar */}
+                      {isSidebarCollapsed && (
+                        <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap flex items-center gap-1.5">
+                          {item.label}
+                          {item.restricted && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                          {item.badge && <span className="bg-rose-500 text-white text-[8px] px-1 rounded font-sans font-extrabold">{item.badge}</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+          </div>
         </div>
 
-        {/* Bottom Sidebar - User Profile & Actions */}
-        <div className="p-4 border-t border-slate-800/50 space-y-3 bg-slate-900/50">
-          {(userPlan !== "premium" || isAdmin) && (
-            <button
-              onClick={() => setShowUpgrade(true)}
-              className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-lg text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 mb-2 border border-amber-400/50"
-            >
-              <Zap className="w-4 h-4 fill-white" />
-              Upgrade to Premium {isAdmin && "(Admin Test)"}
-            </button>
-          )}
+        {/* Bottom Actions, Upgrade, and Profile Card */}
+        <div className="p-3 border-t border-slate-800/60 bg-slate-950/60 space-y-2 shrink-0">
+          
+          {/* Action CTAs Area */}
+          <div className="space-y-1.5">
+            {/* Upgrade to Premium */}
+            {(userPlan !== "premium" || isAdmin) && (
+              <div className="relative group">
+                <button
+                  onClick={() => setShowUpgrade(true)}
+                  className={`w-full flex items-center justify-center gap-2 h-10 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-400 hover:to-rose-400 text-white font-extrabold uppercase tracking-wider text-[10px] transition-all duration-200 shadow-lg shadow-amber-500/10 hover:shadow-orange-500/20 active:scale-98 border border-amber-300/30 ${isSidebarCollapsed ? "p-0" : "px-3"}`}
+                  title="Unlock Exporting Word & DXF CAD Blocks"
+                >
+                  <Zap className="w-3.5 h-3.5 fill-white animate-pulse shrink-0" />
+                  {!isSidebarCollapsed && <span>Premium {isAdmin && "(Admin Test)"}</span>}
+                </button>
+                {isSidebarCollapsed && (
+                  <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xxs font-black tracking-wider uppercase rounded-md shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
+                    Upgrade to Premium
+                  </div>
+                )}
+              </div>
+            )}
 
-          <button
-            onClick={() => setIsProjectManagerOpen(true)}
-            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20 mb-2 border border-slate-700/50"
-          >
-            <FolderOpen className="w-4 h-4" />
-            <span>Manage Projects</span>
-          </button>
-
-          <button
-            onClick={
-              userPlan === "premium" || isAdmin
-                ? handleExportWord
-                : () => setShowUpgrade(true)
-            }
-            className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 ${userPlan === "premium" || isAdmin ? "bg-indigo-600 hover:bg-indigo-500 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"} rounded-lg text-xs font-bold transition-colors shadow-lg shadow-indigo-900/20`}
-            title={
-              userPlan !== "premium" && !isAdmin
-                ? "Available on Premium Plan"
-                : "Generate Word Report"
-            }
-          >
-            <FileText className="w-4 h-4" />
-            <span>
-              {userPlan !== "premium" && !isAdmin
-                ? "Report (Premium)"
-                : "Generate Report"}
-            </span>
-          </button>
-          <button
-            onClick={exportToExcel}
-            className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 hover:text-white transition-colors border border-slate-700/50"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Export to Excel</span>
-          </button>
-          <button
-            onClick={() => {
-              if (userPlan === "premium" || isAdmin) {
-                exportToCAD(
-                  panel,
-                  circuits,
-                  subPanels,
-                  iscParams,
-                  "ALL",
-                  vdCalculations,
-                  illumParams,
-                  subSubPanels
-                );
-              } else {
-                setShowUpgrade(true);
+            {/* Standardized Actions Grid or Stack */}
+            {[
+              { label: "Manage Projects", icon: FolderOpen, onClick: () => setIsProjectManagerOpen(true), priority: "secondary" },
+              { 
+                label: userPlan !== "premium" && !isAdmin ? "Report (Premium)" : "Generate Report", 
+                icon: FileText, 
+                onClick: userPlan === "premium" || isAdmin ? handleExportWord : () => setShowUpgrade(true), 
+                priority: "primary", 
+                title: userPlan !== "premium" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary"
+              },
+              { label: "Export to Excel", icon: FileSpreadsheet, onClick: exportToExcel, priority: "secondary" },
+              { 
+                label: userPlan !== "premium" && !isAdmin ? "CAD Export (Premium)" : "Export AutoCAD Drawing", 
+                icon: Layers, 
+                onClick: () => {
+                  if (userPlan === "premium" || isAdmin) {
+                    exportToCAD(panel, circuits, subPanels, iscParams, "ALL", vdCalculations, illumParams, subSubPanels);
+                  } else {
+                    setShowUpgrade(true);
+                  }
+                }, 
+                priority: "secondary",
+                title: "Complete Load Schedule and calculations directly to AutoCAD schema blocks"
               }
-            }}
-            className={`w-full flex items-center gap-2 justify-center px-4 py-2.5 rounded-lg text-xs font-bold transition-all border ${
-              userPlan === "premium" || isAdmin
-                ? "bg-sky-950/45 text-sky-400 hover:bg-sky-900/60 border-sky-800/60 cursor-pointer"
-                : "bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700/50 cursor-pointer"
-            }`}
-            title={
-              userPlan !== "premium" && !isAdmin
-                ? "AutoCAD Export is available on the Premium Plan"
-                : "Export complete Load Schedule Table and Short Circuit calculations directly to DWG/DXF AutoCAD format"
-            }
-          >
-            <Layers
-              className={`w-4 h-4 ${userPlan === "premium" || isAdmin ? "text-sky-400" : "text-slate-500"}`}
-            />
-            <span>
-              {userPlan !== "premium" && !isAdmin
-                ? "Export AutoCAD (Premium)"
-                : "Export AutoCAD Drawing"}
-            </span>
-          </button>
-          <div className="pt-2 flex justify-center">
-            <Auth />
+            ].map((btn, index) => {
+              const isPri = btn.priority === "primary";
+              return (
+                <div key={index} className="relative group">
+                  <button
+                    onClick={btn.onClick}
+                    title={btn.title || btn.label}
+                    className={`w-full flex items-center justify-center gap-2 h-9 rounded-lg font-extrabold text-[10px] uppercase tracking-wider transition-all duration-200 active:scale-98 border ${
+                      isPri 
+                        ? "bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/10 text-white border-indigo-500/40" 
+                        : "bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/60"
+                    } ${isSidebarCollapsed ? "p-0" : "px-3"}`}
+                  >
+                    <btn.icon className={`w-3.5 h-3.5 shrink-0 ${isPri ? "text-indigo-200" : "text-slate-400 group-hover:text-slate-200"}`} />
+                    {!isSidebarCollapsed && <span className="truncate">{btn.label}</span>}
+                  </button>
+                  {isSidebarCollapsed && (
+                    <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
+                      {btn.label}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+
+          {/* Fully Redesigned User Profile Card */}
+          <div className="pt-2 border-t border-slate-800/80 relative">
+            {user ? (
+              <div className="relative">
+                <button
+                  onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                  className={`w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800/60 hover:border-slate-750 transition-all text-left group/profile cursor-pointer ${isSidebarCollapsed ? "justify-center p-1.5" : ""}`}
+                >
+                  <div className="relative shrink-0 select-none">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm shadow-md ring-2 ring-emerald-500/20">
+                      {user.photoURL ? (
+                        <img 
+                          src={user.photoURL} 
+                          alt="Avatar" 
+                          className="w-full h-full rounded-xl object-cover" 
+                          referrerPolicy="no-referrer" 
+                        />
+                      ) : (
+                        user.displayName ? user.displayName.charAt(0).toUpperCase() : (user.email?.charAt(0).toUpperCase() || "?")
+                      )}
+                    </div>
+                    {/* Active online dot */}
+                    <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full" />
+                  </div>
+
+                  {!isSidebarCollapsed && (
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-black text-slate-200 truncate group-hover/profile:text-emerald-400 transition-colors">
+                          {user.displayName || "Authorized User"}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-medium text-slate-500 truncate block mt-0.5">
+                        {user.email}
+                      </span>
+                      {/* Subscription indicator bubble */}
+                      <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full mt-1 ${
+                        isAdmin 
+                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                          : userPlan === "premium" 
+                            ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" 
+                            : "bg-slate-800 text-slate-400 border border-slate-700/50"
+                      }`}>
+                        {isAdmin ? "Admin Engine" : userPlan === "premium" ? "Premium Access" : "Free Member"}
+                      </span>
+                    </div>
+                  )}
+                </button>
+
+                {/* Profile Quick-Access Dropdown Panel (Absolute Popover) */}
+                {isProfileDropdownOpen && (
+                  <div className={`absolute bottom-14 ${isSidebarCollapsed ? "left-14" : "left-0 right-0"} w-56 bg-slate-950 border border-slate-850 rounded-xl shadow-2xl p-1.5 z-50 animate-fade-in`}>
+                    <div className="px-3 py-2 border-b border-slate-850/60 pb-1.5 mb-1.5">
+                      <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">QUICK METERS</p>
+                      <p className="text-xs font-extrabold text-slate-200 mt-0.5 truncate">{user.displayName || "User Profile"}</p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        setIsProfileSettingsOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-900 rounded-lg cursor-pointer transition-colors"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Profile Settings</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setIsProfileDropdownOpen(false);
+                        setIsAccountSettingsOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-900 rounded-lg cursor-pointer transition-colors"
+                    >
+                      <Cpu className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Account Settings</span>
+                    </button>
+
+                    <div className="h-[1px] bg-slate-850/60 my-1"></div>
+
+                    <button
+                      onClick={async () => {
+                        setIsProfileDropdownOpen(false);
+                        try {
+                          await signOut(auth);
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-extrabold text-rose-450 hover:text-white hover:bg-rose-550/10 rounded-lg cursor-pointer transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowUpgrade(true)}
+                className={`w-full h-10 flex items-center justify-center gap-2 bg-slate-900/60 hover:bg-slate-900 text-slate-300 hover:text-white rounded-xl border border-slate-850/60 active:scale-98 transition-all font-bold text-xs ${isSidebarCollapsed ? "p-0" : "px-3"}`}
+              >
+                <Users className="w-4 h-4 text-slate-400 shrink-0" />
+                {!isSidebarCollapsed && <span>Sign in / Sign up</span>}
+              </button>
+            )}
+          </div>
+
         </div>
       </aside>
 
@@ -3925,10 +4173,10 @@ export default function App() {
               </div>
 
               {/* Verify Admin Tab */}
-              <div className={activeTab === "verify" ? "w-full" : "hidden"}>
+              <div className={activeTab === "verify" || activeTab === "verify-registrations" ? "w-full" : "hidden"}>
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
-                  animate={activeTab === "verify" ? { opacity: 1, y: 0 } : {}}
+                  animate={activeTab === "verify" || activeTab === "verify-registrations" ? { opacity: 1, y: 0 } : {}}
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
@@ -4042,6 +4290,193 @@ export default function App() {
                       className="px-5 py-2.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-600/15 hover:shadow-none cursor-pointer"
                     >
                       Duplicate Design
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Profile Settings Modal Overlay */}
+            {isProfileSettingsOpen && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 no-print animate-fade-in">
+                <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+                  {/* Modal Header */}
+                  <div className="px-6 py-5 border-b border-slate-800 bg-slate-950/40 flex justify-between items-center">
+                    <h2 className="text-base font-black tracking-tight text-white flex items-center gap-2.5">
+                      <Settings className="w-5 h-5 text-emerald-450" />
+                      PROFILE SETTINGS & AUTHENTICATION
+                    </h2>
+                    <button
+                      onClick={() => setIsProfileSettingsOpen(false)}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Modal Content */}
+                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Professional Credentials</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Full Name</label>
+                          <input 
+                            type="text" 
+                            defaultValue={user.displayName || "Authorized Electrical Designer"} 
+                            className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-white font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">PRC EE License Number</label>
+                          <input 
+                            type="text" 
+                            placeholder="e.g. 0041529" 
+                            className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-white font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Primary Account Email</label>
+                      <input 
+                        type="email" 
+                        disabled 
+                        value={user.email || ""} 
+                        className="w-full bg-slate-950/60 border border-slate-850 rounded-xl px-3 py-2 text-xs text-slate-400 font-semibold cursor-not-allowed" 
+                      />
+                    </div>
+
+                    <div className="bg-slate-950/40 p-3.5 rounded-2xl border border-slate-850/60 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xxs font-bold text-slate-400">Account Security ID:</span>
+                        <span className="text-xxs font-mono text-emerald-450 font-bold select-all truncate max-w-[200px]" title={user.uid}>{user.uid}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xxs font-bold text-slate-400">Database Connection Status:</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                          <span className="text-xxs font-bold text-slate-200">Online & Encrypted</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/20 flex justify-end gap-3">
+                    <button
+                      onClick={() => setIsProfileSettingsOpen(false)}
+                      className="px-4 py-2 border border-slate-800 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg text-xxs font-black uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsProfileSettingsOpen(false);
+                      }}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xxs font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-600/10 cursor-pointer"
+                    >
+                      Save Configuration
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Account Settings Modal Overlay */}
+            {isAccountSettingsOpen && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 no-print animate-fade-in">
+                <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+                  {/* Modal Header */}
+                  <div className="px-6 py-5 border-b border-slate-800 bg-slate-950/40 flex justify-between items-center">
+                    <h2 className="text-base font-black tracking-tight text-white flex items-center gap-2.5">
+                      <Cpu className="w-5 h-5 text-amber-500" />
+                      ELECTRICAL ENGINEERING COMPONENT DEFAULTS
+                    </h2>
+                    <button
+                      onClick={() => setIsAccountSettingsOpen(false)}
+                      className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Modal Content */}
+                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Subscription Tier</p>
+                      <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
+                        <div>
+                          <p className="text-xs font-black text-amber-400">Subscription Status: {userPlan === "premium" ? "PREMIUM LICENSE" : "FREE TRIAL TIER"}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
+                        </div>
+                        {userPlan !== "premium" && (
+                          <button
+                            onClick={() => {
+                              setIsAccountSettingsOpen(false);
+                              setShowUpgrade(true);
+                            }}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
+                          >
+                            Upgrade
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">Design Codes & Physics Standard</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Electrical Code Reference</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
+                          <option>PEC 10th Edition (2017)</option>
+                          <option>National Electrical Code (NEC 2020)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Physics Frequency Rating</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
+                          <option>60 Cycles/Sec (60 Hz)</option>
+                          <option>50 Cycles/Sec (50 Hz)</option>
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Conductor Ampacity Temp</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
+                          <option>75°C (Recommended Standard)</option>
+                          <option>90°C (Extended Rating)</option>
+                          <option>60°C (Muted Baseline)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Maximum Allowed Voltage Drop</label>
+                        <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
+                          <option>3.00% (Branch Standard)</option>
+                          <option>2.00% (Feeder Target)</option>
+                          <option>5.00% (Total Stack Maximum)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/20 flex justify-end gap-3">
+                    <button
+                      onClick={() => setIsAccountSettingsOpen(false)}
+                      className="px-4 py-2 border border-slate-800 hover:bg-slate-850 text-slate-300 hover:text-white rounded-lg text-xxs font-black uppercase tracking-wider transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsAccountSettingsOpen(false);
+                      }}
+                      className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-xxs font-black uppercase tracking-wider transition-all shadow-md shadow-amber-500/10 cursor-pointer"
+                    >
+                      Save Parameters
                     </button>
                   </div>
                 </div>
