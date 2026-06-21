@@ -2582,90 +2582,92 @@ export default function App() {
             </div>
 
             {/* ACCOUNT / ADMIN SECTION */}
-            <div>
-              <div className="flex items-center justify-between mb-2 px-3">
-                {!isSidebarCollapsed ? (
-                  <p className="text-xxs font-black text-slate-500 uppercase tracking-widest">
-                    ACCOUNT / ADMIN
-                  </p>
-                ) : (
-                  <div className="w-full h-[1px] bg-slate-800/60 my-2"></div>
-                )}
-              </div>
+            {isAdmin && (
+              <div>
+                <div className="flex items-center justify-between mb-2 px-3">
+                  {!isSidebarCollapsed ? (
+                    <p className="text-xxs font-black text-slate-500 uppercase tracking-widest">
+                      ACCOUNT / ADMIN
+                    </p>
+                  ) : (
+                    <div className="w-full h-[1px] bg-slate-800/60 my-2"></div>
+                  )}
+                </div>
 
-              <div className="space-y-1">
-                {[
-                  { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
-                  { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
-                  { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" }
-                ].map((item) => {
-                  const isActive = activeTab === item.id;
-                  const IconComponent = item.icon;
-                  return (
-                    <div key={item.id} className="relative group">
-                      <button
-                        onClick={() => {
-                          if (item.restricted) {
-                            alert("Administrator Access Required\n\nThis module contains confidential billing ledgers, verify queues, and user registration directories. Access is restricted to angeloperfecto31@gmail.com.");
-                            return;
-                          }
-                          setActiveTab(item.id as any);
-                        }}
-                        className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
-                          isActive
-                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-inner"
-                            : item.restricted
-                              ? "text-slate-500/60 opacity-50 cursor-not-allowed hover:bg-transparent"
-                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
-                        }`}
-                        disabled={false}
-                      >
-                        {/* Active vertical left bar */}
-                        {isActive && !isSidebarCollapsed && (
-                          <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-amber-500 rounded-r" />
-                        )}
-                        <span className="relative">
-                          <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"}`} />
-                          
-                          {/* Miniature Red Notification badge on icon when collapsed */}
-                          {item.badge && isSidebarCollapsed && (
-                            <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-rose-500 border border-slate-900 rounded-full animate-ping" />
+                <div className="space-y-1">
+                  {[
+                    { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
+                    { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
+                    { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" }
+                  ].map((item) => {
+                    const isActive = activeTab === item.id;
+                    const IconComponent = item.icon;
+                    return (
+                      <div key={item.id} className="relative group">
+                        <button
+                          onClick={() => {
+                            if (item.restricted) {
+                              alert("Administrator Access Required\n\nThis module contains confidential billing ledgers, verify queues, and user registration directories. Access is restricted to angeloperfecto31@gmail.com.");
+                              return;
+                            }
+                            setActiveTab(item.id as any);
+                          }}
+                          className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
+                            isActive
+                              ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-inner"
+                              : item.restricted
+                                ? "text-slate-500/60 opacity-50 cursor-not-allowed hover:bg-transparent"
+                                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
+                          }`}
+                          disabled={false}
+                        >
+                          {/* Active vertical left bar */}
+                          {isActive && !isSidebarCollapsed && (
+                            <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-amber-500 rounded-r" />
                           )}
-                        </span>
-                        
-                        {!isSidebarCollapsed && (
-                          <>
-                            <span className="ml-3 truncate">{item.label}</span>
-                            {/* Restricted Lock Icon */}
-                            {item.restricted && (
-                              <Lock className="w-3 h-3 text-slate-600 ml-auto shrink-0" />
-                            )}
+                          <span className="relative">
+                            <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"}`} />
                             
-                            {/* Custom Notification Badge */}
-                            {item.badge && !item.restricted && (
-                              <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-sans font-extrabold shadow-sm ${
-                                item.badge === "3" ? "bg-rose-500/20 text-rose-450 border border-rose-500/30 font-mono animate-pulse" : "bg-amber-550/20 text-amber-400 border border-amber-500/30"
-                              }`}>
-                                {item.badge}
-                              </span>
+                            {/* Miniature Red Notification badge on icon when collapsed */}
+                            {item.badge && isSidebarCollapsed && (
+                              <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-rose-500 border border-slate-900 rounded-full animate-ping" />
                             )}
-                          </>
-                        )}
-                      </button>
+                          </span>
+                          
+                          {!isSidebarCollapsed && (
+                            <>
+                              <span className="ml-3 truncate">{item.label}</span>
+                              {/* Restricted Lock Icon */}
+                              {item.restricted && (
+                                <Lock className="w-3 h-3 text-slate-600 ml-auto shrink-0" />
+                              )}
+                              
+                              {/* Custom Notification Badge */}
+                              {item.badge && !item.restricted && (
+                                <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-sans font-extrabold shadow-sm ${
+                                  item.badge === "3" ? "bg-rose-500/20 text-rose-450 border border-rose-500/30 font-mono animate-pulse" : "bg-amber-550/20 text-amber-400 border border-amber-500/30"
+                                }`}>
+                                  {item.badge}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </button>
 
-                      {/* Tooltip for Collapsed Sidebar */}
-                      {isSidebarCollapsed && (
-                        <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap flex items-center gap-1.5">
-                          {item.label}
-                          {item.restricted && <Lock className="w-2.5 h-2.5 text-slate-500" />}
-                          {item.badge && <span className="bg-rose-500 text-white text-[8px] px-1 rounded font-sans font-extrabold">{item.badge}</span>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        {/* Tooltip for Collapsed Sidebar */}
+                        {isSidebarCollapsed && (
+                          <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap flex items-center gap-1.5">
+                            {item.label}
+                            {item.restricted && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                            {item.badge && <span className="bg-rose-500 text-white text-[8px] px-1 rounded font-sans font-extrabold">{item.badge}</span>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
           </div>
         </div>

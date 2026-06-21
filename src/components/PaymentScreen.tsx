@@ -33,6 +33,18 @@ import {
   Copy,
   ArrowUpRight,
   ArrowRight,
+  MoreVertical,
+  MoreHorizontal,
+  Clock,
+  TrendingUp,
+  FileSpreadsheet,
+  FileText,
+  Sparkles,
+  Filter,
+  Trash2,
+  ChevronDown,
+  Plus,
+  Zap,
 } from "lucide-react";
 import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
@@ -182,6 +194,8 @@ export default function PaymentScreen({
     email: string;
     currentActiveStatus?: boolean;
   } | null>(null);
+  const [activeDropdownUid, setActiveDropdownUid] = useState<string | null>(null);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState<{ uid: string; email: string } | null>(null);
 
   const isAdminUser =
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
@@ -2852,124 +2866,192 @@ export default function PaymentScreen({
           </div>
 
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Total Users
-              </span>
-              <span className="text-2xl font-black text-slate-900 font-mono">
-                {allUsers.length}
-              </span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {/* KPI Card 1: Total Users */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
+                  Total Users
+                </span>
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors">
+                  <Users className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900 tracking-tight font-sans">
+                  {allUsers.length}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                  <TrendingUp className="w-3 h-3" />
+                  +12.4%
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
+                Platform Account Base
+              </p>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm">
-              <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block mb-1">
-                Pending Approval
-              </span>
-              <span className="text-2xl font-black text-indigo-600 font-mono">
-                {
-                  allUsers.filter(
-                    (u) => u.paymentStatus === "pending_verification",
-                  ).length
-                }
-              </span>
+
+            {/* KPI Card 2: Pending Approval */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
+                  Pending Approval
+                </span>
+                <div className="p-2 bg-amber-50 text-amber-650 rounded-xl group-hover:bg-amber-100 transition-colors">
+                  <Clock className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className={`text-3xl font-black tracking-tight font-sans ${allUsers.filter((u) => u.paymentStatus === "pending_verification").length > 0 ? "text-amber-550" : "text-slate-900"}`}>
+                  {allUsers.filter((u) => u.paymentStatus === "pending_verification").length}
+                </span>
+                {allUsers.filter((u) => u.paymentStatus === "pending_verification").length > 0 ? (
+                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md animate-pulse">
+                    Action Required
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-md">
+                    No backlog
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
+                Awaiting Verification
+              </p>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-emerald-100 shadow-sm">
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-1">
-                Activated Paid
-              </span>
-              <span className="text-2xl font-black text-emerald-600 font-mono">
-                {allUsers.filter((u) => u.isActive === true).length}
-              </span>
+
+            {/* KPI Card 3: Activated Paid */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
+                  Activated Paid
+                </span>
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-100 transition-colors">
+                  <Sparkles className="w-4 h-4 text-emerald-500" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-emerald-600 tracking-tight font-sans">
+                  {allUsers.filter((u) => u.isActive === true).length}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
+                  {allUsers.length > 0 ? ((allUsers.filter((u) => u.isActive === true).length / allUsers.length) * 100).toFixed(0) : 0}% ratio
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
+                Premium active licenses
+              </p>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-50 shadow-sm">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Unpaid List
-              </span>
-              <span className="text-2xl font-black text-slate-500 font-mono">
-                {
-                  allUsers.filter(
-                    (u) =>
-                      u.isActive !== true &&
-                      u.paymentStatus !== "pending_verification",
-                  ).length
-                }
-              </span>
+
+            {/* KPI Card 4: Unpaid Accounts */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
+                  Unpaid Users
+                </span>
+                <div className="p-2 bg-slate-100 text-slate-600 rounded-xl group-hover:bg-slate-200 transition-colors">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-700 tracking-tight font-sans">
+                  {
+                    allUsers.filter(
+                      (u) =>
+                        u.isActive !== true &&
+                        u.paymentStatus !== "pending_verification",
+                    ).length
+                  }
+                </span>
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                  {allUsers.length > 0 ? ((allUsers.filter((u) => u.isActive !== true && u.paymentStatus !== "pending_verification").length / allUsers.length) * 100).toFixed(0) : 0}% base
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
+                Trial / Free Tier Base
+              </p>
             </div>
           </div>
 
-          {/* Controls Bar */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-6 flex flex-col gap-5">
-            {/* Top Row: Search & Actions */}
+          {/* Controls Bar / Sticky Unified Toolbar */}
+          <div className="sticky top-0 z-[30] bg-slate-50/95 backdrop-blur-md pb-4 pt-2 mb-6 border-b border-slate-200/50 flex flex-col gap-4 no-print -mx-6 px-6">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              {/* Search */}
-              <div className="relative flex-1 max-w-md w-full">
+              {/* Left group: Search in unified display */}
+              <div className="relative flex-1 max-w-lg w-full">
                 <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search by Email, ID, Ref No, or Name..."
+                  placeholder="Search by Email, UID, Ref No, or Name..."
                   value={searchQuery || ""}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-600 transition-all font-mono"
+                  className="w-full pl-10 pr-10 py-3 text-xs font-semibold bg-white border border-slate-200 hover:border-slate-300 focus:border-indigo-600 rounded-xl transition-all font-sans text-slate-900 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-600"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
-                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                    className="absolute right-3.5 top-[14px] text-slate-405 hover:text-slate-600 transition-colors p-1 rounded-full hover:bg-slate-100 cursor-pointer"
                     title="Clear Search"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              {/* Actions */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Export Excel */}
+              {/* Right group: Clean Action Panel */}
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-end lg:self-center">
+                {/* Export Excel with icon */}
                 <button
                   onClick={handleExportToExcel}
-                  className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl transition-all flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] cursor-pointer"
+                  className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm active:scale-[0.98] flex items-center gap-2 hover:shadow text-xxs cursor-pointer"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                  </svg>
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
                   Export to Excel
                 </button>
 
-                {/* Word Financial Report */}
+                {/* Word Financial Report with icon */}
                 <button
                   onClick={handleExportFinancialReportWord}
-                  className="px-4 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all flex items-center gap-2 shadow-sm hover:shadow active:scale-[0.98] cursor-pointer"
+                  className="px-4 py-2.5 bg-indigo-550 hover:bg-indigo-600 active:bg-indigo-750 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_12px_rgba(79,70,229,0.15)] hover:shadow-[0_6px_16px_rgba(79,70,229,0.25)] active:scale-[0.98] flex items-center gap-2 text-xxs cursor-pointer"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                  </svg>
-                  Export Financial Report (Word)
+                  <FileText className="w-3.5 h-3.5" />
+                  Word Financial Report
                 </button>
+
+                {/* Clean inline Indicator helper */}
+                {(searchQuery || planFilter !== "all" || adminFilter !== "all") && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery("");
+                      setPlanFilter("all");
+                      setAdminFilter("all");
+                    }}
+                    className="px-3.5 py-2.5 border border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-slate-900 rounded-xl text-xxs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer"
+                    title="Clear all active filters"
+                  >
+                    <X className="w-3 h-3" />
+                    Reset Filters
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Divider line between rows */}
-            <hr className="border-slate-100" />
-
-            {/* Bottom Row: Filters (Plan & Status) */}
-            <div className="flex flex-col md:flex-row md:items-center gap-6 justify-between">
-              <div className="flex flex-wrap items-center gap-6">
-                {/* Plan Filter */}
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 select-none">
-                    Plan Tier
+            {/* Bottom Row: Segmented Filters (Plan & Status) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-200/30">
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Plan Tier Segmented Selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 select-none">
+                    Plan
                   </span>
-                  <div className="flex gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                  <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
                     {(["all", "basic", "premium"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setPlanFilter(mode)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
+                        className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer ${
                           planFilter === mode
-                            ? "bg-white shadow-sm text-indigo-600 border border-slate-100/80"
-                            : "text-slate-500 hover:text-slate-800"
+                            ? "bg-white shadow-sm text-indigo-650 font-black border border-slate-250/20"
+                            : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
                         {mode === "all" ? "All Plans" : mode}
@@ -2978,20 +3060,20 @@ export default function PaymentScreen({
                   </div>
                 </div>
 
-                {/* Status Filter */}
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 select-none">
-                    Status Group
+                {/* Status Group Segmented Selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 select-none">
+                    Status
                   </span>
-                  <div className="flex gap-1 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                  <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
                     {(["all", "pending", "paid", "unpaid"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setAdminFilter(mode)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all select-none ${
+                        className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer ${
                           adminFilter === mode
-                            ? "bg-white shadow-sm text-indigo-600 border border-slate-100/80"
-                            : "text-slate-500 hover:text-slate-800"
+                            ? "bg-white shadow-sm text-indigo-650 font-black border border-slate-250/20"
+                            : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
                         {mode === "all"
@@ -3008,248 +3090,542 @@ export default function PaymentScreen({
               </div>
 
               {/* Status Indicator counter */}
-              <div className="text-right text-[11px] font-semibold text-slate-400 font-mono">
-                Showing {filteredUsers.length} of {allUsers.length} users
+              <div className="text-right text-[10px] font-bold text-slate-400 font-mono select-none uppercase tracking-wider">
+                Showing {filteredUsers.length} of {allUsers.length} Users
               </div>
             </div>
           </div>
 
-          {/* Users List */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-md divide-y divide-slate-100 overflow-hidden">
+          {/* User List Dropdown Click Closer Mask */}
+          {activeDropdownUid && (
+            <div 
+              className="fixed inset-0 z-40 bg-transparent no-print" 
+              onClick={() => setActiveDropdownUid(null)} 
+            />
+          )}
+
+          {/* Compact Modern SaaS Table/List container */}
+          <div className="bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] overflow-hidden animate-fade-in no-print">
             {filteredUsers.length === 0 ? (
-              <div className="p-12 text-center bg-white flex flex-col items-center">
-                <Users className="w-12 h-12 text-slate-300 mb-3" />
-                <h3 className="text-sm font-bold text-slate-700">
+              <div className="py-16 px-6 text-center bg-white flex flex-col items-center">
+                <Users className="w-10 h-10 text-slate-300 mb-2.5" />
+                <h3 className="text-xs font-black text-slate-700 uppercase tracking-tight">
                   No matching user accounts
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Change your search terms or filter to see users.
+                  Try adjusting search terms, plan tier or status filters.
                 </p>
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setPlanFilter("all");
+                    setAdminFilter("all");
+                  }}
+                  className="mt-4 px-4 py-2 bg-slate-105 hover:bg-slate-200 text-slate-700 text-xxs font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                >
+                  Reset parameters
+                </button>
               </div>
             ) : (
-              filteredUsers.map((u) => {
-                const isPending = u.paymentStatus === "pending_verification";
-                const isUserActive = u.isActive === true;
+              <>
+                {/* Desktop and Tablet Responsive Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/85 border-b border-slate-200/60 select-none">
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
+                          Subscriber
+                        </th>
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
+                          Plan Tier
+                        </th>
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
+                          State Status
+                        </th>
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
+                          Approval & Reference
+                        </th>
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-455 tracking-wider text-right w-[80px]">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredUsers.map((u, idx) => {
+                        const isPending = u.paymentStatus === "pending_verification";
+                        const isUserActive = u.isActive === true;
+                        const finance = getUserFinanceDetails(u);
+                        const initials = getUserName(u) ? getUserName(u).split(" ").map((w: string) => w[0]).join("").substring(0,2).toUpperCase() : "EE";
 
-                return (
-                  <div
-                    key={u.uid}
-                    className={`p-6 transition-colors ${isPending ? "bg-amber-50/50" : "hover:bg-slate-50"}`}
-                  >
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                      {/* Left: Metadata */}
-                      <div className="w-full md:w-3/5">
-                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <span className="font-extrabold text-slate-900 text-sm tracking-tight text-indigo-950 dark:text-white">
-                            {getUserName(u)}
-                          </span>
-                          <span className="text-xs text-slate-500 hover:text-indigo-600 font-mono transition-colors">
-                            {u.email ? `(${u.email})` : "(No Email)"}
-                          </span>
-                          <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded font-mono text-slate-400 shrink-0">
-                            ID: {u.uid.slice(0, 8)}...
-                          </span>
-                          
-                          {u.plan && (
-                            <span className="text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded font-bold uppercase tracking-wider shrink-0">
-                              {u.plan === 'premium' ? "Premium Tier" : "Basic Tier"}
-                            </span>
-                          )}
+                        // Aesthetic background coloring based on status
+                        const avatarColors = [
+                          "bg-indigo-100 text-indigo-700",
+                          "bg-emerald-100 text-emerald-700",
+                          "bg-purple-100 text-purple-700",
+                          "bg-blue-100 text-blue-700",
+                          "bg-amber-100 text-amber-700"
+                        ];
+                        const colorClass = avatarColors[idx % avatarColors.length];
 
-                          {/* Badges */}
-                          {isUserActive ? (
-                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 rounded">
-                              Active Pro
-                            </span>
-                          ) : isPending ? (
-                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 rounded animate-pulse">
-                              Pending Review
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 rounded">
-                              Inactive
-                            </span>
-                          )}
-                        </div>
+                        return (
+                          <tr 
+                            key={u.uid} 
+                            className={`hover:bg-slate-50/50 transition-colors duration-150 ${isPending ? "bg-amber-50/10" : ""}`}
+                          >
+                            {/* USER COLUMN */}
+                            <td className="px-5 py-3 max-w-sm">
+                              <div className="flex items-center gap-3">
+                                {/* Compact Custom Avatar */}
+                                <div className={`w-8 h-8 rounded-xl ${colorClass} flex items-center justify-center text-xs font-black tracking-tighter shrink-0 shadow-sm`}>
+                                  {initials}
+                                </div>
+                                <div className="min-w-0 flex flex-col">
+                                  <span className="font-extrabold text-slate-950 text-xs tracking-tight truncate leading-tight">
+                                    {getUserName(u)}
+                                  </span>
+                                  <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                                    <span className="text-[10px] text-slate-400 font-medium truncate max-w-[150px]" title={u.email}>
+                                      {u.email || "No email"}
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        if (u.email) {
+                                          navigator.clipboard.writeText(u.email);
+                                          setAdminStatusMsg(`Copied email to clipboard: ${u.email}`);
+                                        }
+                                      }}
+                                      className="text-slate-400 hover:text-indigo-600 transition-colors p-0.5 rounded cursor-pointer"
+                                      title="Copy email address"
+                                    >
+                                      <Copy className="w-2.5 h-2.5" />
+                                    </button>
+                                  </div>
+                                  <span className="text-[9px] font-mono font-bold text-slate-350 tracking-wider uppercase mt-0.5">
+                                    uid: {u.uid.slice(0, 8)}...
+                                  </span>
+                                </div>
+                              </div>
+                            </td>
 
-                        {/* If pending manual verification, render detail box */}
-                        {isPending && u.pendingVerification && (
-                          <div className="mt-3 p-4 bg-white border border-amber-200 rounded-xl leading-relaxed shadow-sm">
-                            <span className="text-[10px] uppercase font-black tracking-widest text-amber-500 mb-2 flex items-center gap-2">
-                              Manual Submission Data
-                              {u.pendingVerification.plan && (
-                                <span className={`px-1.5 py-0.5 rounded font-black tracking-wider text-[9px] ${u.pendingVerification.plan === 'premium' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
-                                  {u.pendingVerification.plan === 'premium' ? "PREMIUM" : "BASIC"}
+                            {/* PLAN COLUMN */}
+                            <td className="px-5 py-3">
+                              <div className="flex flex-col items-start gap-1">
+                                {finance.isPremiumTier ? (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-purple-550/10 text-purple-700 border border-purple-255/15 rounded-md flex items-center gap-1 shadow-sm">
+                                    <Sparkles className="w-2.5 h-2.5 text-purple-650" />
+                                    Premium Pro
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md shadow-sm">
+                                    Basic Tier
+                                  </span>
+                                )}
+                                <span className="text-[11px] font-bold text-slate-900 font-mono mt-0.5">
+                                  {u.isActive ? fPHP(finance.amountPaid) : "—"}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* STATUS COLUMN */}
+                            <td className="px-5 py-3">
+                              {isUserActive ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+                                  Active Paid
+                                </span>
+                              ) : isPending ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200/50 shadow-sm animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                  Pending Review
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200/60 shadow-sm">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                  Unpaid
                                 </span>
                               )}
-                            </span>
-                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                            </td>
+
+                            {/* APPROVAL & TRANSACTION INFO COLUMN */}
+                            <td className="px-5 py-3">
+                              {isPending && u.pendingVerification ? (
+                                <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-xl text-[10px] space-y-1 max-w-xs shadow-sm">
+                                  <div className="flex justify-between font-bold">
+                                    <span className="text-slate-400 uppercase text-[9px] tracking-wide">Method/Name:</span>
+                                    <span className="text-slate-800 uppercase font-black">
+                                      {u.pendingVerification.method || "GCash"} ({u.pendingVerification.senderName || "Unknown"})
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Ref ID:</span>
+                                    <span className="text-indigo-600 font-mono font-extrabold tracking-wider bg-indigo-50/50 px-1 rounded">
+                                      {u.pendingVerification.referenceNo || "—"}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between text-[9px] text-slate-500">
+                                    <span>Date:</span>
+                                    <span className="font-semibold">
+                                      {new Date(u.pendingVerification.submittedAt).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : u.approvedAt ? (
+                                <div className="text-[10px] shrink-0">
+                                  <div className="font-extrabold text-slate-800 flex items-center gap-1">
+                                    <Check className="w-3.5 h-3.5 text-emerald-505" />
+                                    APPROVED SYSTEM
+                                  </div>
+                                  <div className="text-slate-400 mt-0.5 font-semibold text-[9px] uppercase tracking-wider">
+                                    By {u.approvedBy || "Admin"} • {new Date(u.approvedAt).toLocaleDateString()}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-350 italic font-medium select-none">
+                                  No transaction log
+                                </span>
+                              )}
+                            </td>
+
+                            {/* COMPACT CLERK-STYLE ACTIONS DROPDOWN */}
+                            <td className="px-5 py-3 text-right">
+                              <div className="relative inline-block text-left">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveDropdownUid(activeDropdownUid === u.uid ? null : u.uid);
+                                  }}
+                                  className="p-1 px-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                  title="Expand Options Menu"
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </button>
+
+                                {activeDropdownUid === u.uid && (
+                                  <div className="absolute right-0 mt-1.5 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-55 py-2 overflow-hidden animate-scale-up text-left">
+                                    <p className="px-3.5 py-1.5 text-[8px] font-extrabold text-slate-400 uppercase tracking-widest border-b border-slate-100 mb-1 select-none">
+                                      System Actions
+                                    </p>
+                                    
+                                    {isPending ? (
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            setActiveDropdownUid(null);
+                                            setConfirmingAction({
+                                              uid: u.uid,
+                                              type: "approve",
+                                              email: u.email,
+                                            });
+                                          }}
+                                          className="w-full px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-emerald-600 transition-colors flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                          Approve Payment
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setActiveDropdownUid(null);
+                                            setConfirmingAction({
+                                              uid: u.uid,
+                                              type: "reject",
+                                              email: u.email,
+                                            });
+                                          }}
+                                          className="w-full px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-red-500 transition-colors flex items-center gap-2 cursor-pointer"
+                                        >
+                                          <X className="w-3.5 h-3.5 text-red-500" />
+                                          Reject Submission
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          setActiveDropdownUid(null);
+                                          setConfirmingAction({
+                                            uid: u.uid,
+                                            type: "toggle",
+                                            email: u.email,
+                                            currentActiveStatus: isUserActive,
+                                          });
+                                        }}
+                                        className="w-full px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-indigo-650 transition-colors flex items-center gap-2 cursor-pointer"
+                                      >
+                                        <Zap className="w-3.5 h-3.5 text-indigo-505" />
+                                        {isUserActive ? "Revoke Pro Access" : "Direct Activate (Trial)"}
+                                      </button>
+                                    )}
+
+                                    <div className="h-px bg-slate-100 my-1" />
+                                    
+                                    <button
+                                      onClick={() => {
+                                        setActiveDropdownUid(null);
+                                        setShowDeleteConfirmModal({ uid: u.uid, email: u.email });
+                                      }}
+                                      className="w-full px-3.5 py-2 text-xs font-bold text-red-650 hover:bg-red-50 transition-colors flex items-center gap-2 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      Delete Account
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile View: High density visual cards layout */}
+                <div className="block md:hidden divide-y divide-slate-100">
+                  {filteredUsers.map((u) => {
+                    const isPending = u.paymentStatus === "pending_verification";
+                    const isUserActive = u.isActive === true;
+                    const finance = getUserFinanceDetails(u);
+
+                    return (
+                      <div key={u.uid} className="p-4 bg-white hover:bg-slate-50 transition-all">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            {/* Profile head */}
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="font-extrabold text-slate-900 text-sm truncate">
+                                {getUserName(u)}
+                              </span>
+                              
+                              {/* Tier Badge */}
+                              {finance.isPremiumTier ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 rounded border border-purple-205/15">
+                                  PREMIUM
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 rounded border border-blue-200">
+                                  BASIC
+                                </span>
+                              )}
+                            </div>
+                            
+                            <p className="text-[10px] text-slate-400 font-mono truncate">{u.email}</p>
+                            <span className="text-[9px] font-mono text-slate-350 tracking-wider">UID: {u.uid.slice(0, 10)}...</span>
+                          </div>
+
+                          {/* Status Badge */}
+                          <div className="shrink-0">
+                            {isUserActive ? (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                ACTIVE
+                              </span>
+                            ) : isPending ? (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-100 animate-pulse">
+                                PENDING
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-205">
+                                UNPAID
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Transaction sub-details box for mobile */}
+                        {isPending && u.pendingVerification && (
+                          <div className="mt-3 bg-slate-50 border border-slate-200/60 p-3 rounded-xl text-[10px] space-y-1.5 shadow-inner">
+                            <p className="font-extrabold text-slate-500 uppercase text-[8px] tracking-widest border-b border-slate-200 pb-1">
+                              Submission Details
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 mt-1">
                               <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                  Method
-                                </span>
-                                <span className="text-xs font-black text-slate-700 uppercase">
-                                  {u.pendingVerification.method || "GCash"}
-                                </span>
+                                <span className="text-slate-400 font-bold block text-[8px] uppercase">Sender / Channel:</span>
+                                <span className="font-black text-slate-800 uppercase">{u.pendingVerification.senderName || "Unknown"} ({u.pendingVerification.method})</span>
                               </div>
                               <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                  Sender Name
-                                </span>
-                                <span className="text-xs font-black text-slate-700 uppercase">
-                                  {u.pendingVerification.senderName}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                  Reference ID
-                                </span>
-                                <span className="text-xs font-black text-indigo-600 font-mono tracking-wider">
-                                  {u.pendingVerification.referenceNo}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                  Amount
-                                </span>
-                                <span className="text-xs font-black text-emerald-600 font-mono tracking-wider">
-                                  ₱{u.pendingVerification.amount || (u.pendingVerification.plan === 'premium' ? 1499 : 999)}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                  Submitted On
-                                </span>
-                                <span className="text-[11px] font-bold text-slate-500">
-                                  {new Date(
-                                    u.pendingVerification.submittedAt,
-                                  ).toLocaleString()}
-                                </span>
+                                <span className="text-slate-400 font-bold block text-[8px] uppercase">Ref ID Number:</span>
+                                <span className="font-mono font-extrabold text-indigo-650 tracking-wide bg-indigo-50 px-1 rounded">{u.pendingVerification.referenceNo}</span>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* If previously approved history */}
-                        {!isPending && isUserActive && u.approvedAt && (
-                          <p className="text-[10px] text-slate-400 mt-1.5 font-bold uppercase font-sans">
-                            ✅ Approved by {u.approvedBy || "Admin"} on{" "}
-                            {new Date(u.approvedAt).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Right: Actions */}
-                      <div className="flex gap-2 shrink-0 w-full md:w-auto justify-end">
-                        {confirmingAction?.uid === u.uid ? (
-                          <div className="flex flex-col items-end gap-2 bg-amber-50 p-3 rounded-xl border border-amber-200 shadow-sm max-w-[280px]">
-                            <span className="text-[10px] font-black text-amber-900 leading-normal text-right">
-                              Confirm{" "}
-                              {confirmingAction.type === "approve"
-                                ? "APPROVAL & ACTIVATION"
-                                : confirmingAction.type === "reject"
-                                  ? "REJECTION"
-                                  : confirmingAction.type === "delete"
-                                    ? "DELETION"
-                                    : confirmingAction.currentActiveStatus
-                                      ? "DEACTIVATION"
-                                      : "ACTIVATION"}
-                              ?
-                            </span>
-                            <div className="flex gap-1.5">
-                              <button
-                                onClick={executeConfirmedAction}
-                                className={`px-2.5 py-1 text-white font-black rounded-md text-[10px] uppercase shadow-sm transition-transform active:scale-95 cursor-pointer ${
-                                  confirmingAction.type === "approve" ||
-                                  (confirmingAction.type === "toggle" &&
-                                    !confirmingAction.currentActiveStatus)
-                                    ? "bg-emerald-600 hover:bg-emerald-700"
-                                    : "bg-red-600 hover:bg-red-700"
-                                }`}
-                              >
-                                Yes
-                              </button>
-                              <button
-                                onClick={() => setConfirmingAction(null)}
-                                className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black rounded-md text-[10px] uppercase cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : isPending ? (
-                          <>
-                            <button
-                              onClick={() =>
-                                setConfirmingAction({
-                                  uid: u.uid,
-                                  type: "approve",
-                                  email: u.email,
-                                })
-                              }
-                              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              Approve
-                            </button>
-                            <button
-                              onClick={() =>
-                                setConfirmingAction({
-                                  uid: u.uid,
-                                  type: "reject",
-                                  email: u.email,
-                                })
-                              }
-                              className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg text-xs transition-all border border-red-100 flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              Reject
-                            </button>
-                          </>
-                        ) : (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() =>
-                                setConfirmingAction({
-                                  uid: u.uid,
-                                  type: "toggle",
-                                  email: u.email,
-                                  currentActiveStatus: isUserActive,
-                                })
-                              }
-                              className={`px-3.5 py-2 font-bold rounded-lg text-xs transition-all border shadow-sm active:scale-95 cursor-pointer ${
-                                isUserActive
-                                  ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-100"
-                                  : "bg-indigo-600 hover:bg-indigo-700 text-white border-transparent"
-                              }`}
-                            >
-                              {isUserActive
-                                ? "Revoke Pro Access"
-                                : "Direct Activate (Trial)"}
-                            </button>
-                            {!isUserActive && (
+                        {/* User action options for mobile */}
+                        <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-100/60">
+                          {isPending ? (
+                            <>
                               <button
                                 onClick={() =>
                                   setConfirmingAction({
                                     uid: u.uid,
-                                    type: "delete",
+                                    type: "reject",
                                     email: u.email,
                                   })
                                 }
-                                className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs transition-all border border-transparent shadow-sm active:scale-95 cursor-pointer"
+                                className="px-2.5 py-1.5 border border-red-200 text-red-650 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all cursor-pointer bg-red-white hover:bg-red-50"
                               >
-                                Delete User
+                                Reject
                               </button>
-                            )}
-                          </div>
-                        )}
+                              <button
+                                onClick={() =>
+                                  setConfirmingAction({
+                                    uid: u.uid,
+                                    type: "approve",
+                                    email: u.email,
+                                  })
+                                }
+                                className="px-3.5 py-1.5 bg-emerald-600 font-black text-white rounded-lg text-[10px] uppercase tracking-wider hover:bg-emerald-700 cursor-pointer shadow-sm shadow-emerald-500/10"
+                              >
+                                Approve
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() =>
+                                  setConfirmingAction({
+                                    uid: u.uid,
+                                    type: "toggle",
+                                    email: u.email,
+                                    currentActiveStatus: isUserActive,
+                                  })
+                                }
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-colors cursor-pointer border ${
+                                  isUserActive
+                                    ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-150"
+                                    : "bg-indigo-50 border-indigo-200 text-indigo-700"
+                                }`}
+                              >
+                                {isUserActive ? "Revoke Access" : "Direct Activate"}
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setShowDeleteConfirmModal({ uid: u.uid, email: u.email })
+                                }
+                                className="p-1 px-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete user"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
+
+          {/* Action Confirming Modal Overlay for Approve, Reject, and Toggle operations */}
+          {confirmingAction && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 no-print animate-fade-in">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-md w-full p-6 animate-scale-up">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-sm ${
+                  confirmingAction.type === "approve" || (confirmingAction.type === "toggle" && !confirmingAction.currentActiveStatus)
+                    ? "bg-emerald-100 text-emerald-600"
+                    : "bg-red-100 text-red-600"
+                }`}>
+                  {confirmingAction.type === "approve" || (confirmingAction.type === "toggle" && !confirmingAction.currentActiveStatus) ? (
+                    <CheckCircle2 className="w-6 h-6" />
+                  ) : (
+                    <AlertCircle className="w-6 h-6" />
+                  )}
+                </div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight mb-2">
+                  Confirm Account Action
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-semibold mb-6">
+                  Are you absolutely sure you want to proceed with{" "}
+                  <span className="font-extrabold text-slate-800 uppercase">
+                    {confirmingAction.type === "approve"
+                      ? "APPROVAL & SYSTEM ACTIVATION"
+                      : confirmingAction.type === "reject"
+                        ? "REJECTION"
+                        : confirmingAction.type === "delete"
+                          ? "PERMANENT DELETION"
+                          : confirmingAction.currentActiveStatus
+                            ? "ACCESS DEACTIVATION"
+                            : "MANUAL TRIAL ACTIVATION"}
+                  </span>{" "}
+                  for the subscriber account: <span className="font-extrabold text-slate-800">{confirmingAction.email}</span>?
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setConfirmingAction(null)}
+                    className="px-4 py-2 border border-slate-200 text-slate-650 hover:text-slate-800 text-xxs font-black uppercase tracking-wider rounded-xl transition-all hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={executeConfirmedAction}
+                    className={`px-5 py-2 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer ${
+                      confirmingAction.type === "approve" || (confirmingAction.type === "toggle" && !confirmingAction.currentActiveStatus)
+                        ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/10"
+                        : "bg-red-600 hover:bg-red-500 shadow-red-600/10"
+                    }`}
+                  >
+                    Yes, Proceed
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Account Dedicated Confirming Modal Overlay */}
+          {showDeleteConfirmModal && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 no-print animate-fade-in">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-md w-full p-6 animate-scale-up">
+                <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-605 mb-4 shadow-sm">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight mb-2">
+                  Permanently Delete User Record?
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-semibold mb-6">
+                  Are you absolutely sure you want to permanently delete <span className="font-extrabold text-slate-800">{showDeleteConfirmModal.email}</span>'s account from the database? This action is <span className="text-red-600 font-extrabold">IRREVERSIBLE</span> and the user will lose all saved calculations, compliance reports, and invoices.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirmModal(null)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 hover:text-slate-800 text-xxs font-black uppercase tracking-wider rounded-xl transition-all hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const { uid, email } = showDeleteConfirmModal;
+                      setShowDeleteConfirmModal(null);
+                      await handleAdminDelete(uid, email);
+                    }}
+                    className="px-5 py-2 bg-red-600 hover:bg-red-550 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/10 cursor-pointer"
+                  >
+                    Confirm Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Floating Clerk-style dismissible System Notifications Toast */}
+          {adminStatusMsg && (
+            <div className="fixed bottom-6 right-6 z-[9999] max-w-md bg-slate-900 text-white rounded-2xl shadow-2xl shadow-slate-955/20 border border-slate-800 p-4 flex gap-3 items-start animate-fade-in no-print">
+              <div className="p-1 text-emerald-450 bg-emerald-500/15 rounded-lg shrink-0">
+                <Sparkles className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-400">System Notification</p>
+                <p className="text-xs text-slate-300 mt-1 font-semibold leading-relaxed">
+                  {adminStatusMsg}
+                </p>
+              </div>
+              <button
+                onClick={() => setAdminStatusMsg("")}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           </>
           )}
         </div>
