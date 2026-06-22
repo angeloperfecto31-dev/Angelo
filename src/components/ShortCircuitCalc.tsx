@@ -3,7 +3,7 @@ import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } 
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { exportToCAD } from '../utils/exportDxf';
-import { computePanelScheduleValues } from '../utils/computeEngine';
+import { computePanelScheduleValues, parseSystemVoltage } from '../utils/computeEngine';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -20,21 +20,12 @@ export interface ShortCircuitCalcProps {
 
 export const getRunsBySystem = (system?: string): number => {
   if (!system) return 1;
-  if (system === '230V, 1PH, 2W') return 2;
-  if (
-    system === '230V, 3PH, 3W' ||
-    system === '380V, 3PH, 3W' ||
-    system === '400V, 3PH, 3W' ||
-    system === '440V, 3PH, 3W' ||
-    system === '480V, 3PH, 3W'
-  ) return 3;
-  if (
-    system === '380V/230V, 3PH, 4W' ||
-    system === '400V/230V, 3PH, 4W' ||
-    system === '440V/230V, 3PH, 4W' ||
-    system === '480V/230V, 3PH, 4W'
-  ) return 4;
-  return 1;
+  try {
+    const parsed = parseSystemVoltage(system);
+    return parsed.wireCount;
+  } catch (e) {
+    return 1;
+  }
 };
 
 const DraggableBox = ({ 

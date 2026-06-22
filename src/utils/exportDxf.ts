@@ -7,7 +7,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
-import { computePanelScheduleValues } from "./computeEngine";
+import { computePanelScheduleValues, getPanelSystemVoltageFallback } from "./computeEngine";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -2267,38 +2267,8 @@ export const exportToCAD = (
     );
     cy -= 12;
 
-    // Local Helper for System Voltage Fallback
-    const getSystemVoltageLFallback = (
-      system: string,
-      is3P: boolean,
-      connectionType?: string,
-    ): number => {
-      if (system === "380V/230V, 3PH, 4W") {
-        return is3P ? 380 : connectionType === "Line-to-Line" ? 380 : 230;
-      }
-      if (system === "400V/230V, 3PH, 4W") {
-        return is3P ? 400 : connectionType === "Line-to-Line" ? 400 : 230;
-      }
-      if (system === "440V/230V, 3PH, 4W") {
-        return is3P ? 440 : connectionType === "Line-to-Line" ? 440 : 230;
-      }
-      if (system === "480V/230V, 3PH, 4W") {
-        return is3P ? 480 : connectionType === "Line-to-Line" ? 480 : 230;
-      }
-      if (system === "380V, 3PH, 3W") {
-        return 380;
-      }
-      if (system === "400V, 3PH, 3W") {
-        return 400;
-      }
-      if (system === "440V, 3PH, 3W") {
-        return 440;
-      }
-      if (system === "480V, 3PH, 3W") {
-        return 480;
-      }
-      return 230;
-    };
+    // Local Helper delegation for System Voltage Fallback
+    const getSystemVoltageLFallback = getPanelSystemVoltageFallback;
 
     // Calculate Highest Motor Load (HML) in Amperes
     const motorCircuitsList = currentCircuits.filter(

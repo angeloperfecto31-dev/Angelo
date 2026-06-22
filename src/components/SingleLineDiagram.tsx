@@ -1,6 +1,7 @@
 // SingleLineDiagram.tsx
 import React from 'react';
 import { Circuit, PanelConfig } from '../types';
+import { parseSystemVoltage } from '../utils/computeEngine';
 
 interface SingleLineDiagramProps {
   panel: PanelConfig;
@@ -18,12 +19,33 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   const boxTop = 260;
   const boxBottom = startY + numRows * rowHeight;
   
-  const is3Phase = panel.system.includes('3PH');
+  const parsedSys = parseSystemVoltage(panel.system);
+  const is3Phase = parsedSys.is3Phase;
   const voltage = panel.voltage;
   const connectionStr = !is3Phase && panel.connectionType === "Line-to-Neutral" ? "(L-N)" : (!is3Phase && panel.connectionType === "Line-to-Line" ? "(L-L)" : "");
   const phaseText = is3Phase ? `3-Φ` : `1-Φ ${connectionStr}`.trim();
   
-  const wireNumber = is3Phase ? (panel.system.includes('4W') ? 4 : 3) : (panel.connectionType === "Line-to-Line" ? 2 : 2); 
+  const wireNumber = parsedSys.wireCount; 
+
+  // Helpers to describe sub-panel dynamic connection configurations
+  const getFeederText = (c: Circuit) => {
+    const isSub = c.loadType === 'SUB' || c.loadType === 'SUBSUB';
+    if (!isSub) return "";
+    
+    let phaseText = "1-Φ L-N";
+    if (c.mcbP === 3) {
+      phaseText = "3-Φ";
+    } else if (c.mcbP === 2) {
+      phaseText = "1-Φ L-L";
+    }
+
+    const pText = `${c.mcbP}P`;
+    const conductors = `${c.mcbP}-#${c.wireSize || '8.0'}mm²`;
+    const ground = c.groundSize ? ` + 1-#${c.groundSize}mm²(G)` : '';
+    const conduit = c.conduitSize ? ` IN ${c.conduitSize}mmØ ${(c.conduitType || 'PVC').toUpperCase()}` : '';
+    
+    return `${phaseText}, ${c.voltage}V | ${pText}, ${conductors}${ground}${conduit}`;
+  };
 
   // Dynamically calculate recommended transformer size for Main panel
   const recommendedTransformerKVA = React.useMemo(() => {
@@ -137,7 +159,13 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                     <line x1="250" y1={y} x2="210" y2={y} className="sld-line" />
                     
                     <polygon points={`190,${y} 210,${y - 10} 210,${y + 10}`} fill="#94a3b8" stroke="#1e293b" />
-                    <text x="180" y={y - 6} className="sld-text" textAnchor="end">{row.left.description}</text>
+                    
+                    <text x="180" y={(row.left.loadType === 'SUB' || row.left.loadType === 'SUBSUB') ? y - 8 : y - 6} className="sld-text" textAnchor="end">{row.left.description}</text>
+                    {(row.left.loadType === 'SUB' || row.left.loadType === 'SUBSUB') && (
+                      <text x="180" y={y + 12} className="sld-text-small text-slate-500" textAnchor="end" style={{ fontSize: '10px', fill: '#64748b' }}>
+                        {getFeederText(row.left)}
+                      </text>
+                    )}
                  </g>
               )}
               {row.right && (
@@ -165,7 +193,13 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                     {/* Arrow going OUT. Pointing Right. Tip is 610, Base is 590 */}
                     <line x1="550" y1={y} x2="590" y2={y} className="sld-line" />
                     <polygon points={`610,${y} 590,${y - 10} 590,${y + 10}`} fill="#94a3b8" stroke="#1e293b" />
-                    <text x="620" y={y - 6} className="sld-text" textAnchor="start">{row.right.description}</text>
+                    
+                    <text x="620" y={(row.right.loadType === 'SUB' || row.right.loadType === 'SUBSUB') ? y - 8 : y - 6} className="sld-text" textAnchor="start">{row.right.description}</text>
+                    {(row.right.loadType === 'SUB' || row.right.loadType === 'SUBSUB') && (
+                      <text x="620" y={y + 12} className="sld-text-small text-slate-500" textAnchor="start" style={{ fontSize: '10px', fill: '#64748b' }}>
+                        {getFeederText(row.right)}
+                      </text>
+                    )}
                  </g>
               )}
            </g>

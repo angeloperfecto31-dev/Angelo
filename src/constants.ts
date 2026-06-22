@@ -29,17 +29,22 @@ export const STANDARD_CB_RATINGS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110
 export const SYSTEM_VOLTAGES = {
   // Single-Phase Systems
   '230V, 1PH, 2W': 230,
+  '230V, 1PH, 3W': 230,
 
   // Three-Phase, 4-Wire (3PH, 4W) Systems
   '115V/66V, 3PH, 4W': 115,
   '200V/115V, 3PH, 4W': 200,
   '208V/120V, 3PH, 4W': 208,
+  '380V/220V, 3PH, 4W': 380,
   '380V/230V, 3PH, 4W': 380,
   '400V/230V, 3PH, 4W': 400,
+  '415V/240V, 3PH, 4W': 415,
   '440V/230V, 3PH, 4W': 440,
   '460V/265V, 3PH, 4W': 460,
   '480V/230V, 3PH, 4W': 480,
+  '480V/277V, 3PH, 4W': 480,
   '575V/330V, 3PH, 4W': 575,
+  '600V/347V, 3PH, 4W': 600,
 
   // Three-Phase, 3-Wire (3PH, 3W) Systems
   '115V, 3PH, 3W': 115,

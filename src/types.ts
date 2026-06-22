@@ -67,7 +67,7 @@ export interface PanelConfig {
   location: string;
   designation: string;
   type: string;
-  system: '230V, 1PH, 2W' | '230V, 3PH, 3W' | '380V, 3PH, 3W' | '400V, 3PH, 3W' | '440V, 3PH, 3W' | '480V, 3PH, 3W' | '380V/230V, 3PH, 4W' | '400V/230V, 3PH, 4W' | '440V/230V, 3PH, 4W' | '480V/230V, 3PH, 4W';
+  system: string;
   connectionType?: 'Line-to-Line' | 'Line-to-Neutral';
   transformerConnection?: string;
   mounting: string;

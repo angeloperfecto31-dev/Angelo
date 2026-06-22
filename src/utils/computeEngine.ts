@@ -172,18 +172,156 @@ export function extractHorsepowerFromDescription(desc: string): string | null {
   return null;
 }
 
+export interface ParsedVoltageSystem {
+  vll: number;       // Line-to-Line voltage (e.g. 380, 480, 230)
+  vln: number | null; // Line-to-Neutral voltage (e.g. 225, 277, null)
+  is3Phase: boolean; // boolean
+  wireCount: number; // e.g. 2, 3, 4
+}
+
+export function parseSystemVoltage(sys: string | undefined | null): ParsedVoltageSystem {
+  const defaultSystem: ParsedVoltageSystem = { vll: 230, vln: null, is3Phase: false, wireCount: 2 };
+  if (!sys) return defaultSystem;
+
+  // Normalize representations: replace Ø with PH (or support both)
+  const normalized = sys.replace(/Ø/g, "PH").replace(/ø/g, "PH").replace(/\s+/g, "");
+
+  // Extract wire count
+  let wireCount = 2;
+  const wireMatch = normalized.match(/(\d+)W/i);
+  if (wireMatch) {
+    wireCount = parseInt(wireMatch[1]);
+  }
+
+  // Extract phase
+  const is3Phase = normalized.includes("3PH");
+
+  // Now extract the voltage section (part before the first comma)
+  const voltPartMatch = sys.split(",")[0].trim().replace(/[Vv]/g, ""); // e.g. "380/230" or "230"
+  let vll = 230;
+  let vln: number | null = null;
+
+  if (voltPartMatch.includes("/")) {
+    const parts = voltPartMatch.split("/");
+    const v1 = parseInt(parts[0]);
+    const v2 = parseInt(parts[1]);
+    if (!isNaN(v1) && !isNaN(v2)) {
+      vll = Math.max(v1, v2);
+      vln = Math.min(v1, v2);
+    } else if (!isNaN(v1)) {
+      vll = v1;
+    }
+  } else {
+    // Single number with no slash
+    const num = parseInt(voltPartMatch);
+    if (!isNaN(num)) {
+      vll = num;
+    }
+    // Automatically determine VN if 4W or 3W split
+    if (is3Phase && wireCount === 4) {
+      vln = Math.round(vll / 1.732);
+    } else if (!is3Phase && wireCount === 3) {
+      vln = Math.round(vll / 2);
+    }
+  }
+
+  return { vll, vln, is3Phase, wireCount };
+}
+
+export function validateSubPanelConnection(
+  parentSystem: string,
+  childSystem: string,
+  childVoltage: number
+): {
+  isValid: boolean;
+  connectionType: 'Line-to-Line' | 'Line-to-Neutral' | 'Three-Phase' | null;
+  reason?: string;
+  providedVoltage?: number;
+} {
+  const parent = parseSystemVoltage(parentSystem);
+  const child = parseSystemVoltage(childSystem);
+
+  // 1. If child is Three-Phase (3Ø)
+  if (child.is3Phase) {
+    if (!parent.is3Phase) {
+      return {
+        isValid: false,
+        connectionType: null,
+        reason: `Cannot connect Three-Phase sub-panel to a Single-Phase parent system (${parentSystem}).`,
+        providedVoltage: undefined
+      };
+    }
+    if (parent.vll !== childVoltage) {
+      return {
+        isValid: false,
+        connectionType: null,
+        reason: `Voltage mismatch: Parent provides ${parent.vll}V Line-to-Line for three-phase, but sub-panel expects ${childVoltage}V.`,
+        providedVoltage: parent.vll
+      };
+    }
+    return {
+      isValid: true,
+      connectionType: 'Three-Phase',
+      providedVoltage: parent.vll
+    };
+  }
+
+  // 2. Child is Single-Phase (1Ø)
+  const canBeLN = parent.vln !== null && parent.vln === childVoltage;
+  const canBeLL = parent.vll === childVoltage;
+
+  if (canBeLN && canBeLL) {
+    // If both are possible, dynamic fallback
+    return {
+      isValid: true,
+      connectionType: 'Line-to-Neutral',
+      providedVoltage: parent.vln!
+    };
+  }
+
+  if (canBeLN) {
+    return {
+      isValid: true,
+      connectionType: 'Line-to-Neutral',
+      providedVoltage: parent.vln!
+    };
+  }
+
+  if (canBeLL) {
+    return {
+      isValid: true,
+      connectionType: 'Line-to-Line',
+      providedVoltage: parent.vll
+    };
+  }
+
+  // Truly invalid connection
+  let reason = "";
+  if (parent.vln === null) {
+    reason = `Parent system (${parentSystem}) has Line-to-Line voltage of ${parent.vll}V and does not support Line-to-Neutral connections. Sub-panel expects ${childVoltage}V.`;
+  } else {
+    reason = `Voltage mismatch: Parent provides ${parent.vll}V Line-to-Line or ${parent.vln}V Line-to-Neutral, but sub-panel expects ${childVoltage}V.`;
+  }
+
+  return {
+    isValid: false,
+    connectionType: null,
+    reason,
+    providedVoltage: undefined
+  };
+}
+
 export const getPanelSystemVoltageFallback = (
   system: string,
   is3Phase: boolean,
   connectionType?: string,
 ): number => {
-  const lineMatch = system.match(/^(\d+)/);
-  const neutralMatch = system.match(/\/(\d+)/);
-  const vLine = lineMatch ? parseInt(lineMatch[1]) : 230;
-  const vNeutral = neutralMatch ? parseInt(neutralMatch[1]) : 230;
-
-  if (is3Phase) return vLine;
-  return connectionType === "Line-to-Line" ? vLine : vNeutral;
+  const parsed = parseSystemVoltage(system);
+  if (is3Phase) return parsed.vll;
+  if (connectionType === "Line-to-Neutral" && parsed.vln !== null) {
+    return parsed.vln;
+  }
+  return parsed.vll;
 };
 
 export const calculateCircuitValues = (
@@ -198,6 +336,7 @@ export const calculateCircuitValues = (
 ): Partial<Circuit> => {
   const c = { ...cParam };
   const is3PhaseLoad = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
+  let is3PhaseLoadFinal = is3PhaseLoad;
   
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
   if (
@@ -221,12 +360,15 @@ export const calculateCircuitValues = (
         0,
       );
 
-      const is3PhaseMain = is3PhaseLoad;
+      const is3PhaseSP = sp.panel.system.includes("3PH");
+      c.is3PhaseMarker = is3PhaseSP;
+      is3PhaseLoadFinal = is3PhaseSP;
+
       const subVoltage = sp.panel.voltage || 230;
       const computedDemandAmp = subMainCurrent.baseAmp || 0;
 
       // Calculate the demand-based VA for the subpanel reference row in parent
-      const demandVA = is3PhaseMain
+      const demandVA = is3PhaseLoadFinal
         ? Math.round(computedDemandAmp * subVoltage * 1.732)
         : Math.round(computedDemandAmp * subVoltage);
 
@@ -234,7 +376,19 @@ export const calculateCircuitValues = (
       c.loadVA = demandVA;
       c.loadA = Number(computedDemandAmp.toFixed(2));
       c.quantity = 1;
-      c.mcbP = subMainFeeder.poles;
+      
+      const connValidation = validateSubPanelConnection(panel.system, sp.panel.system, sp.panel.voltage || 230);
+      let calculatedPoles = subMainFeeder.poles;
+      if (connValidation.isValid && connValidation.connectionType) {
+        if (connValidation.connectionType === "Three-Phase") {
+          calculatedPoles = panel.system.includes("3PH") ? 3 : 2;
+        } else if (connValidation.connectionType === "Line-to-Line") {
+          calculatedPoles = 2;
+        } else if (connValidation.connectionType === "Line-to-Neutral") {
+          calculatedPoles = 1;
+        }
+      }
+      c.mcbP = calculatedPoles;
       c.voltage = subVoltage;
       c.mcbAT = subMainFeeder.cb;
       c.mcbAF = subMainFeeder.af;
@@ -253,7 +407,7 @@ export const calculateCircuitValues = (
   let mcbP = c.mcbP || 1;
 
   // Auto-update poles for three-phase circuits when in a three-phase system
-  if (panel.system.includes("3PH") && is3PhaseLoad) {
+  if (panel.system.includes("3PH") && is3PhaseLoadFinal) {
     if (mcbP !== 4) {
       mcbP = 3;
     }
@@ -310,11 +464,14 @@ export const calculateCircuitValues = (
       c.subLoads.map((sl) => sl.description).join(", ") || "Multiple Loads";
   }
 
-  const defaultV = getPanelSystemVoltageFallback(
-    panel.system,
-    is3PhaseLoad,
-    panel.connectionType,
-  );
+  const isSubPanel = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+  const defaultV = isSubPanel && c.voltage
+    ? c.voltage
+    : getPanelSystemVoltageFallback(
+        panel.system,
+        is3PhaseLoadFinal,
+        panel.connectionType,
+      );
 
   const v = defaultV;
   c.voltage = v;
@@ -327,7 +484,7 @@ export const calculateCircuitValues = (
     (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) &&
     effectiveHP
   ) {
-    const is3P = panel.system.includes("3PH") && is3PhaseLoad;
+    const is3P = panel.system.includes("3PH") && is3PhaseLoadFinal;
     const fVal = getMotorFLC(effectiveHP, v, is3P);
     c.motorHP = effectiveHP || undefined;
     c.motorFLC = fVal;
@@ -342,7 +499,7 @@ export const calculateCircuitValues = (
       c.loadType === LoadType.SUB_SUB_PANEL
     ) {
       loadA = c.loadA || 0;
-    } else if (panel.system.includes("3PH") && is3PhaseLoad) {
+    } else if (panel.system.includes("3PH") && is3PhaseLoadFinal) {
       loadA = va / (v * 1.732);
     } else {
       loadA = va / v;
