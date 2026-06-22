@@ -286,24 +286,25 @@ export const calculateCircuitValues = (
     (c.description && c.description.toUpperCase() === "SPACE") ||
     c.loadType === LoadType.SPACE;
 
+  const pf = c.pf !== undefined ? c.pf : 1.0;
   let qty = c.quantity || 1;
   let w = isSpace ? 0 : c.wattage || 0;
   let va =
     c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL
       ? (c.loadVA ?? qty * w)
-      : Math.round(qty * w);
+      : Math.round((qty * w) / (pf === 0 ? 1 : pf));
 
   if (c.subLoads && c.subLoads.length > 0) {
-    va = c.subLoads.reduce((sum, sl) => sum + sl.wattage * sl.quantity, 0);
+    const rawW = c.subLoads.reduce((sum, sl) => sum + sl.wattage * sl.quantity, 0);
+    va = Math.round(rawW / (pf === 0 ? 1 : pf));
     qty = 1;
-    w = va;
+    w = rawW;
     c.wattage = w;
     c.quantity = qty;
     c.description =
       c.subLoads.map((sl) => sl.description).join(", ") || "Multiple Loads";
   }
 
-  const pf = 1.0;
   const defaultV = getPanelSystemVoltageFallback(
     panel.system,
     is3PhaseLoad,
@@ -327,7 +328,7 @@ export const calculateCircuitValues = (
     c.motorFLC = fVal;
     loadA = fVal * qty;
     va = Math.round(is3P ? loadA * v * 1.732 : loadA * v);
-    w = Math.round(is3P ? fVal * v * 1.732 : fVal * v);
+    w = Math.round(va * (pf === 0 ? 1 : pf));
     c.wattage = w;
     c.loadVA = va;
   } else {
@@ -575,15 +576,22 @@ export const computePanelScheduleValues = (
   const motorPhaseVAs = { R: 0, Y: 0, B: 0 };
 
   const getCircuitActiveLines = (
-    phases: string[],
+    cir: Circuit,
     connectionType: string | undefined,
   ): string[] => {
+    const phases = cir.phases || [];
     if (phases.length === 3) {
       return ["R", "Y", "B"];
     }
     if (phases.length === 1) {
       const ph = phases[0];
-      if (connectionType === "Line-to-Line") {
+      let effectiveConnType = connectionType;
+      
+      if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
+        effectiveConnType = cir.mcbP === 1 ? "Line-to-Neutral" : "Line-to-Line";
+      }
+
+      if (effectiveConnType === "Line-to-Line") {
         if (ph === "R") return ["R", "Y"];
         if (ph === "Y") return ["Y", "B"];
         if (ph === "B") return ["B", "R"];
@@ -599,7 +607,7 @@ export const computePanelScheduleValues = (
     const isMotor =
       cir.loadType === LoadType.AIR_CON || cir.loadType === LoadType.MOTOR;
     const activeLines = getCircuitActiveLines(
-      cir.phases || [],
+      cir,
       p.connectionType,
     );
 
@@ -649,7 +657,7 @@ export const computePanelScheduleValues = (
     if (isIdleSpareOrSpace(cir)) return;
 
     const activeLines = getCircuitActiveLines(
-      cir.phases || [],
+      cir,
       p.connectionType,
     );
     const is3Phase = cir.phases && cir.phases.length === 3;
@@ -738,7 +746,7 @@ export const computePanelScheduleValues = (
 
     const extraI = largestMotorI * 0.25;
     const activeLines = getCircuitActiveLines(
-      largestMotorCir.phases || [],
+      largestMotorCir,
       p.connectionType,
     );
     activeLines.forEach((ph) => {
@@ -785,9 +793,10 @@ export const computePanelScheduleValues = (
       if (is3Phase) {
         localPhaseAmps.threePhase += loadI;
       } else {
-        if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-        if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-        if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+        const activeLines = getCircuitActiveLines(cir, p.connectionType);
+        if (activeLines.includes("R")) localPhaseAmps.R += loadI;
+        if (activeLines.includes("Y")) localPhaseAmps.Y += loadI;
+        if (activeLines.includes("B")) localPhaseAmps.B += loadI;
       }
     });
 
@@ -877,7 +886,10 @@ export const computePanelScheduleValues = (
     cb = nextSize;
   }
 
-  const poles = p.system.includes("3PH") ? 3 : 2;
+  let poles = p.system.includes("3PH") ? 3 : 2;
+  if (!p.system.includes("3PH") && p.connectionType === "Line-to-Neutral") {
+    poles = 1;
+  }
   const wire = getWireForBreakerLocal(
     cb,
     designAmp,

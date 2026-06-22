@@ -2704,11 +2704,53 @@ export default function LoadSchedule({
                              {c.linkedSubPanelId ? (() => {
                                const sp = availableSubPanels?.find(s => s.id === c.linkedSubPanelId);
                                if (sp) {
+                                 const getParentVLine = (sys: string) => {
+                                   const match = sys.match(/^(\d+)/);
+                                   return match ? parseInt(match[1]) : 230;
+                                 };
+                                 const getParentVNeutral = (sys: string) => {
+                                   if (!sys.includes("4W") && !sys.includes("1PH")) return null;
+                                   const match = sys.match(/\/(\d+)/);
+                                   return match ? parseInt(match[1]) : 230;
+                                 };
+
+                                 const is3PhaseSP = sp.panel.system.includes("3PH");
+                                 let providedVoltage = null;
+                                 
+                                 if (is3PhaseSP) {
+                                   providedVoltage = getParentVLine(panel.system);
+                                 } else {
+                                   if (sp.panel.connectionType === "Line-to-Neutral") {
+                                      providedVoltage = getParentVNeutral(panel.system);
+                                   } else {
+                                      providedVoltage = getParentVLine(panel.system);
+                                   }
+                                 }
+
+                                 const isInvalidConnection = providedVoltage === null;
+                                 const isVoltageMismatch = !isInvalidConnection && c.voltage !== sp.panel.voltage;
+                                 const isVoltageIncompatible = !isInvalidConnection && providedVoltage !== sp.panel.voltage;
+
                                  const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
-                                 const isVoltageMismatch = c.voltage !== sp.panel.voltage;
                                  const isDesignationMismatch = c.description !== (sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel"));
                                  const isBreakerMismatch = c.mcbAT !== subMainFeeder.cb;
                                  const isWireSizeMismatch = c.wireSize !== formatWireSizeLocal(subMainFeeder.wire.size);
+
+                                 if (isInvalidConnection || isVoltageIncompatible) {
+                                   return (
+                                     <div className="flex flex-col gap-1 mt-1 no-print">
+                                       <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit">
+                                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                         <span>Invalid Connection</span>
+                                       </div>
+                                       <span className="text-[8px] text-rose-500 font-semibold pl-1 leading-tight max-w-xs">
+                                         {isInvalidConnection 
+                                            ? `Parent system (${panel.system}) does not support ${sp.panel.connectionType === "Line-to-Neutral" ? "Line-to-Neutral" : "this"} connections.`
+                                            : `Voltage mismatch: Parent provides ${providedVoltage}V, but sub-panel expects ${sp.panel.voltage}V.`}
+                                       </span>
+                                     </div>
+                                   );
+                                 }
 
                                  if (isVoltageMismatch || isDesignationMismatch || isBreakerMismatch || isWireSizeMismatch) {
                                    const reasons = [];

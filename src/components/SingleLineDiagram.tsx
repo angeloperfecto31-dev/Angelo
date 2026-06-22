@@ -20,9 +20,10 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   
   const is3Phase = panel.system.includes('3PH');
   const voltage = panel.voltage;
-  const phaseText = is3Phase ? `3-Φ` : `1-Φ`;
+  const connectionStr = !is3Phase && panel.connectionType === "Line-to-Neutral" ? "(L-N)" : (!is3Phase && panel.connectionType === "Line-to-Line" ? "(L-L)" : "");
+  const phaseText = is3Phase ? `3-Φ` : `1-Φ ${connectionStr}`.trim();
   
-  const wireNumber = is3Phase ? (panel.system.includes('4W') ? 4 : 3) : 2; 
+  const wireNumber = is3Phase ? (panel.system.includes('4W') ? 4 : 3) : (panel.connectionType === "Line-to-Line" ? 2 : 2); 
 
   // Dynamically calculate recommended transformer size for Main panel
   const recommendedTransformerKVA = React.useMemo(() => {
