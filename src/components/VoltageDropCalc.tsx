@@ -124,8 +124,8 @@ export default function VoltageDropCalc({
 
         const existingBranch = prevMap.get(c.id);
         const branchName = `Circuit ${c.circuitNo}: ${c.description}`;
-        const branchSystemType: "1PH" | "3PH" =
-          c.phases.length > 2 ? "3PH" : "1PH";
+        const branchIs3P = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2);
+        const branchSystemType: "1PH" | "3PH" = branchIs3P ? "3PH" : "1PH";
 
         if (existingBranch) {
           const isLoadADiff = existingBranch.loadA !== c.loadA && !(Number.isNaN(existingBranch.loadA) && Number.isNaN(c.loadA));
@@ -221,8 +221,8 @@ export default function VoltageDropCalc({
 
             const existingSpBranch = prevMap.get(c.id);
             const branchNameSp = `${sp.panel.designation || "Sub-Panel"} - Circuit ${c.circuitNo}: ${c.description}`;
-            const branchSystemTypeSp: "1PH" | "3PH" =
-              c.phases.length > 2 ? "3PH" : "1PH";
+            const branchIs3PSp = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2);
+            const branchSystemTypeSp: "1PH" | "3PH" = branchIs3PSp ? "3PH" : "1PH";
 
             if (existingSpBranch) {
               const isLoadADiff = existingSpBranch.loadA !== c.loadA && !(Number.isNaN(existingSpBranch.loadA) && Number.isNaN(c.loadA));
@@ -397,7 +397,7 @@ export default function VoltageDropCalc({
           length: newLength,
           wireSize: c.wireSize,
           voltage: c.voltage,
-          systemType: c.phases.length > 2 ? "3PH" : "1PH",
+          systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
         };
         setCalculations([...calculations, newCalc]);
       }

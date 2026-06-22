@@ -197,6 +197,8 @@ export const calculateCircuitValues = (
   vdCalculations?: VoltageDropCalculation[],
 ): Partial<Circuit> => {
   const c = { ...cParam };
+  const is3PhaseLoad = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
+  
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
   if (
     (c.loadType === LoadType.SUB_PANEL ||
@@ -219,7 +221,7 @@ export const calculateCircuitValues = (
         0,
       );
 
-      const is3PhaseMain = c.phases && c.phases.length === 3;
+      const is3PhaseMain = is3PhaseLoad;
       const subVoltage = sp.panel.voltage || 230;
       const computedDemandAmp = subMainCurrent.baseAmp || 0;
 
@@ -251,7 +253,7 @@ export const calculateCircuitValues = (
   let mcbP = c.mcbP || 1;
 
   // Auto-update poles for three-phase circuits when in a three-phase system
-  if (panel.system.includes("3PH") && c.phases && c.phases.length === 3) {
+  if (panel.system.includes("3PH") && is3PhaseLoad) {
     if (mcbP !== 4) {
       mcbP = 3;
     }
@@ -302,7 +304,6 @@ export const calculateCircuitValues = (
   }
 
   const pf = 1.0;
-  const is3PhaseLoad = c.phases && c.phases.length === 3;
   const defaultV = getPanelSystemVoltageFallback(
     panel.system,
     is3PhaseLoad,
@@ -456,7 +457,7 @@ export const calculateCircuitValues = (
         currentA,
         calc.length || 30,
         c.voltage || panel.voltage || 230,
-        (c.phases && c.phases.length === 3) ? "3PH" : "1PH",
+        is3PhaseLoad ? "3PH" : "1PH",
         limit,
         c.conduitType || "PVC"
       );
@@ -693,25 +694,28 @@ export const computePanelScheduleValues = (
   if (motorCircuits.length > 0) {
     let largestMotorCir = motorCircuits[0];
     motorCircuits.forEach((mc) => {
+      const mcIs3P = mc.is3PhaseMarker !== undefined ? mc.is3PhaseMarker : (mc.phases && mc.phases.length === 3);
+      const largestIs3P = largestMotorCir.is3PhaseMarker !== undefined ? largestMotorCir.is3PhaseMarker : (largestMotorCir.phases && largestMotorCir.phases.length === 3);
+
       const mcV =
         mc.voltage ||
         getPanelSystemVoltageFallback(
           p.system,
-          mc.phases.length === 3,
+          mcIs3P,
           p.connectionType,
         );
       const largestV =
         largestMotorCir.voltage ||
         getPanelSystemVoltageFallback(
           p.system,
-          largestMotorCir.phases.length === 3,
+          largestIs3P,
           p.connectionType,
         );
 
       const mcI =
-        mc.phases.length === 3 ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
+        mcIs3P ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
       const largestI =
-        largestMotorCir.phases.length === 3
+        largestIs3P
           ? largestMotorCir.loadVA / (largestV * 1.732)
           : largestMotorCir.loadVA / largestV;
 

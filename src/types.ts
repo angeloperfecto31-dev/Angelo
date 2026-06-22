@@ -39,6 +39,7 @@ export interface Circuit {
   loadVA: number; // Changed from loadKVA to loadVA
   voltage: number;
   phases: Phase[];
+  is3PhaseMarker?: boolean;
   loadA: number;
   mcbAT: number;
   mcbAF: number;

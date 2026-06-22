@@ -746,6 +746,7 @@ export default function LoadSchedule({
       quantity: 1,
       voltage: panel.voltage,
       phases: ["R"],
+      is3PhaseMarker: false,
       loadType: LoadType.POWER,
       mcbType: MCBType.BOLT_ON,
       wireType: "THHN",
@@ -764,6 +765,7 @@ export default function LoadSchedule({
       circuits.length > 0
         ? Math.max(...circuits.map((c) => c.circuitNo)) + 1
         : 1;
+    const is3P = ((item.loadType === LoadType.MOTOR || item.loadType === LoadType.AIR_CON) && panel.system.includes("3PH"));
     const base: Partial<Circuit> = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
@@ -771,7 +773,8 @@ export default function LoadSchedule({
       wattage: item.wattage,
       quantity: 1,
       voltage: panel.voltage,
-      phases: ((item.loadType === LoadType.MOTOR || item.loadType === LoadType.AIR_CON) && panel.system.includes("3PH")) ? ["R", "Y", "B"] : ["R"],
+      phases: is3P ? ["R", "Y", "B"] : ["R"],
+      is3PhaseMarker: is3P,
       loadType: item.loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
       wireType: "THHN",
@@ -798,6 +801,7 @@ export default function LoadSchedule({
 
     const totalVA = subLoads.reduce((sum, sl) => sum + sl.wattage, 0);
 
+    const is3P = ((selectedPresets[0].loadType === LoadType.MOTOR || selectedPresets[0].loadType === LoadType.AIR_CON) && panel.system.includes("3PH"));
     const base: Partial<Circuit> = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
@@ -805,7 +809,8 @@ export default function LoadSchedule({
       wattage: totalVA,
       quantity: 1,
       voltage: panel.voltage,
-      phases: ((selectedPresets[0].loadType === LoadType.MOTOR || selectedPresets[0].loadType === LoadType.AIR_CON) && panel.system.includes("3PH")) ? ["R", "Y", "B"] : ["R"],
+      phases: is3P ? ["R", "Y", "B"] : ["R"],
+      is3PhaseMarker: is3P,
       loadType: selectedPresets[0].loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
       wireType: "THHN",
@@ -2919,13 +2924,18 @@ export default function LoadSchedule({
                             <button
                               key={p}
                               onClick={() => {
+                                const currentIs3P = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
                                 if (p === "3Ø") {
                                   updateCircuit(c.id, {
                                     phases: ["R", "Y", "B"],
+                                    is3PhaseMarker: currentIs3P,
                                   });
                                 } else {
                                   // Single phase selection replaces other phases to ensure it's reflected correctly
-                                  updateCircuit(c.id, { phases: [p as Phase] });
+                                  updateCircuit(c.id, { 
+                                    phases: [p as Phase],
+                                    is3PhaseMarker: currentIs3P,
+                                  });
                                 }
                               }}
                               className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
@@ -2955,28 +2965,28 @@ export default function LoadSchedule({
                           {isSpace
                             ? "-"
                             : c.phases.includes("R") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-yellow-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.includes("Y") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-blue-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.includes("B") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
                               : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-indigo-600 print:text-slate-900">
                           {isSpace
                             ? "-"
                             : c.phases.length === 3
-                              ? <AmpsInput c={c} panel={panel} is3P={true} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, true)} />
+                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? true} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? true)} />
                               : "-"}
                         </td>
                       </>

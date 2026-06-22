@@ -368,8 +368,8 @@ export default function App() {
 
         const existingBranch = prevMap.get(c.id);
         const branchName = `Circuit ${c.circuitNo}: ${c.description}`;
-        const branchSystemType: "1PH" | "3PH" =
-          c.phases.length > 2 ? "3PH" : "1PH";
+        const branchIs3P = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
+        const branchSystemType: "1PH" | "3PH" = branchIs3P ? "3PH" : "1PH";
 
         if (existingBranch) {
           const isLoadADiff = existingBranch.loadA !== c.loadA && !(Number.isNaN(existingBranch.loadA) && Number.isNaN(c.loadA));
@@ -834,7 +834,7 @@ export default function App() {
               const subVoltage = ssp.panel.voltage;
               const designation = ssp.panel.designation || "Sub-Sub Panel";
 
-              const is3PhaseMain = c.phases && c.phases.length === 3;
+              const is3PhaseMain = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
               const cirV = c.voltage || subVoltage || 230;
               const loadI = subMainCurrent.baseAmp;
               const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
@@ -925,7 +925,7 @@ export default function App() {
 
             // Calculate loadA for this sub-panel circuit in the main panel
             // Since it's connected to the main panel, using the main panel's system/poles for current calculation:
-            const is3PhaseMain = c.phases && c.phases.length === 3;
+            const is3PhaseMain = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
             const cirV = c.voltage || subVoltage || 230;
             const loadI = subMainCurrent.baseAmp;
             const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
