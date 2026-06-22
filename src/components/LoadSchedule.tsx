@@ -900,7 +900,8 @@ export default function LoadSchedule({
     const v = c.voltage || getPanelSystemVoltageFallback(panel.system, is3P, panel.connectionType);
     const newVA = Math.round(is3P ? newAmps * v * 1.732 : newAmps * v);
     const qty = c.quantity || 1;
-    const newWattage = Math.round(newVA / qty);
+    const pf = c.pf !== undefined ? c.pf : 1.0;
+    const newWattage = Math.round((newVA * pf) / qty);
     updateCircuit(id, { loadVA: newVA, wattage: newWattage, motorHP: "" });
   };
 
@@ -1873,6 +1874,7 @@ export default function LoadSchedule({
                       return {
                         ...cir,
                         phases: is3PH ? ["R", "Y", "B"] : ["R"],
+                        is3PhaseMarker: is3PH,
                       };
                     }
                     return cir;
@@ -3039,17 +3041,16 @@ export default function LoadSchedule({
                             <button
                               key={p}
                               onClick={() => {
-                                const currentIs3P = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
                                 if (p === "3Ø") {
                                   updateCircuit(c.id, {
                                     phases: ["R", "Y", "B"],
-                                    is3PhaseMarker: currentIs3P,
+                                    is3PhaseMarker: true,
                                   });
                                 } else {
                                   // Single phase selection replaces other phases to ensure it's reflected correctly
                                   updateCircuit(c.id, { 
                                     phases: [p as Phase],
-                                    is3PhaseMarker: currentIs3P,
+                                    is3PhaseMarker: false,
                                   });
                                 }
                               }}

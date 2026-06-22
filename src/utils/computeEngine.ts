@@ -271,8 +271,13 @@ export const calculateCircuitValues = (
   }
 
   // Auto-sanitize phases array if switching from a 3PH to a 1PH system
-  if (!panel.system.includes("3PH") && c.phases && c.phases.length > 1) {
-    c.phases = ["R"];
+  if (!panel.system.includes("3PH")) {
+    if (c.phases && c.phases.length > 1) {
+      c.phases = ["R"];
+    }
+    if (c.is3PhaseMarker) {
+      c.is3PhaseMarker = false;
+    }
   }
 
   if (!c.mcbP) {
