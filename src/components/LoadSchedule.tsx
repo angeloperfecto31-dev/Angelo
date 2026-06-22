@@ -16,7 +16,8 @@ import {
   ArrowUp,
   ArrowDown,
   GripVertical,
-  MoveVertical
+  MoveVertical,
+  Search
 } from "lucide-react";
 import {
   DndContext,
@@ -496,6 +497,15 @@ export default function LoadSchedule({
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
   const [showRearrangeModal, setShowRearrangeModal] = useState<boolean>(false);
   const [selectedPresets, setSelectedPresets] = useState<any[]>([]);
+  
+  // Search and Filter States for Presets
+  const [presetSearch, setPresetSearch] = useState<string>("");
+  const [presetCategoryFilter, setPresetCategoryFilter] = useState<string>("All");
+  const [presetLoadTypeFilter, setPresetLoadTypeFilter] = useState<string>("All");
+  const [presetPhaseFilter, setPresetPhaseFilter] = useState<string>("All");
+  const [presetSortBy, setPresetSortBy] = useState<string>("Alphabetical");
+  const [presetSortOrder, setPresetSortOrder] = useState<"asc" | "desc">("asc");
+
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
 
   // Drag and Drop Sensors
@@ -595,6 +605,69 @@ export default function LoadSchedule({
       return category;
     });
   }, [dbThreePhaseFLC, panel.system, panel.voltage]);
+
+  const filteredLoadPresets = useMemo(() => {
+    let result = dynamicLoadPresets.map(cat => ({...cat, items: [...cat.items]}));
+
+    // 1. Category Filter
+    if (presetCategoryFilter !== "All") {
+      result = result.filter(cat => cat.category === presetCategoryFilter);
+    }
+
+    // Process items within remaining categories
+    result = result.map(cat => {
+      let filteredItems = cat.items;
+
+      // 2. Load Type Filter
+      if (presetLoadTypeFilter !== "All") {
+        filteredItems = filteredItems.filter(item => {
+          if (presetLoadTypeFilter === "Lighting" && item.loadType === "L") return true;
+          if (presetLoadTypeFilter === "Receptacle" && item.loadType === "S") return true;
+          if (presetLoadTypeFilter === "Motor" && item.loadType === "M") return true;
+          if (presetLoadTypeFilter === "Air Conditioning" && item.loadType === "AC") return true;
+          if (presetLoadTypeFilter === "Appliance" && item.loadType === "A") return true;
+          if (presetLoadTypeFilter === "Other" && item.loadType === "O") return true;
+          return false;
+        });
+      }
+
+      // 3. Phase Type Filter
+      if (presetPhaseFilter !== "All") {
+        filteredItems = filteredItems.filter(item => {
+          const is3P = ((item.loadType === "M" || item.loadType === "AC") && panel.system.includes("3PH"));
+          if (presetPhaseFilter === "3 Phase" && is3P) return true;
+          if (presetPhaseFilter === "1 Phase" && !is3P) return true;
+          return false;
+        });
+      }
+
+      // 4. Search Keyword Filter
+      if (presetSearch.trim() !== "") {
+        const query = presetSearch.toLowerCase();
+        filteredItems = filteredItems.filter(item => 
+          item.description.toLowerCase().includes(query) ||
+          item.label.toLowerCase().includes(query) ||
+          cat.category.toLowerCase().includes(query)
+        );
+      }
+
+      // 5. Sorting Items
+      filteredItems.sort((a, b) => {
+        let comp = 0;
+        if (presetSortBy === "Alphabetical") {
+          comp = a.description.localeCompare(b.description);
+        } else if (presetSortBy === "Wattage") {
+          comp = a.wattage - b.wattage;
+        }
+        return presetSortOrder === "asc" ? comp : -comp;
+      });
+
+      return { ...cat, items: filteredItems };
+    });
+
+    // Remove empty categories
+    return result.filter(cat => cat.items.length > 0);
+  }, [dynamicLoadPresets, presetSearch, presetCategoryFilter, presetLoadTypeFilter, presetPhaseFilter, presetSortBy, presetSortOrder, panel.system]);
 
   // Load FLC values from Firestore
   useEffect(() => {
@@ -3817,24 +3890,121 @@ export default function LoadSchedule({
             onClick={() => setShowPresetsModal(false)}
           ></div>
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-slate-200">
-            <div className="flex justify-between items-center p-6 border-b border-slate-100 shrink-0">
-              <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                <List className="w-6 h-6 text-indigo-600" />
-                Load Schedule Reference Guide
-              </h2>
-              <button
-                onClick={() => {
-                  setShowPresetsModal(false);
-                  setSelectedPresets([]);
-                }}
-                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <div className="p-6 border-b border-slate-100 shrink-0 flex flex-col gap-4 bg-slate-50 rounded-t-2xl">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                  <List className="w-6 h-6 text-indigo-600" />
+                  Load Schedule Reference Guide
+                </h2>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-bold text-slate-500 bg-white px-3 py-1 rounded border shadow-sm">
+                    {filteredLoadPresets.reduce((sum, cat) => sum + cat.items.length, 0)} items found
+                  </span>
+                  <button
+                    onClick={() => {
+                      setPresetSearch("");
+                      setPresetCategoryFilter("All");
+                      setPresetLoadTypeFilter("All");
+                      setPresetPhaseFilter("All");
+                      setPresetSortBy("Alphabetical");
+                      setPresetSortOrder("asc");
+                    }}
+                    className="text-xs font-bold text-slate-500 hover:text-indigo-600 transition"
+                  >
+                    Clear Filters
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowPresetsModal(false);
+                      setSelectedPresets([]);
+                    }}
+                    className="p-2 hover:bg-slate-200 bg-white rounded-full transition-colors text-slate-500 shadow-sm border border-slate-200"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+                <div className="lg:col-span-2 relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search description, label, category..."
+                    value={presetSearch}
+                    onChange={(e) => setPresetSearch(e.target.value)}
+                    className="w-full text-sm font-bold pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <select
+                    value={presetCategoryFilter}
+                    onChange={(e) => setPresetCategoryFilter(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white shadow-sm"
+                  >
+                    <option value="All">All Categories</option>
+                    {dynamicLoadPresets.map(cat => (
+                      <option key={cat.category} value={cat.category}>{cat.category}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <select
+                    value={presetLoadTypeFilter}
+                    onChange={(e) => setPresetLoadTypeFilter(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white shadow-sm"
+                  >
+                    <option value="All">All Load Types</option>
+                    <option value="Lighting">Lighting</option>
+                    <option value="Receptacle">Receptacle</option>
+                    <option value="Motor">Motor</option>
+                    <option value="Air Conditioning">Air Conditioning</option>
+                    <option value="Appliance">Appliance</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <select
+                    value={presetPhaseFilter}
+                    onChange={(e) => setPresetPhaseFilter(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white shadow-sm"
+                    disabled={!panel.system.includes("3PH")}
+                  >
+                    <option value="All">All Phases</option>
+                    <option value="1 Phase">1 Phase</option>
+                    <option value="3 Phase">3 Phase</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-2">
+                  <select
+                    value={presetSortBy}
+                    onChange={(e) => setPresetSortBy(e.target.value)}
+                    className="w-full text-xs font-bold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white shadow-sm truncate"
+                  >
+                    <option value="Alphabetical">Sort: A-Z</option>
+                    <option value="Wattage">Sort: Wattage</option>
+                  </select>
+                  <button
+                    onClick={() => setPresetSortOrder(prev => prev === "asc" ? "desc" : "asc")}
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 shadow-sm transition"
+                    title={presetSortOrder === "asc" ? "Ascending" : "Descending"}
+                  >
+                    {presetSortOrder === "asc" ? "↑" : "↓"}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="p-6 overflow-y-auto w-full grid grid-cols-1 md:grid-cols-2 gap-8">
-              {dynamicLoadPresets.map((category, catIdx) => (
+              {filteredLoadPresets.length === 0 ? (
+                <div className="col-span-1 md:col-span-2 text-center py-12 text-slate-500 font-bold">
+                  No matching loads found. Try clearing your filters.
+                </div>
+              ) : filteredLoadPresets.map((category, catIdx) => (
                 <div
                   key={catIdx}
                   className="bg-slate-50 rounded-xl p-5 border border-slate-200"
