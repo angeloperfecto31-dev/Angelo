@@ -1792,48 +1792,85 @@ export default function App() {
             if (!ws[cellAddress]) ws[cellAddress] = { t: "s", v: "" };
 
             let style: any = {
-              font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+              font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
               fill: { fgColor: { rgb: "FFFFFF" } },
+              alignment: { vertical: "center", horizontal: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "E2E8F0" } },
+                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                left: { style: "thin", color: { rgb: "E2E8F0" } },
+                right: { style: "thin", color: { rgb: "E2E8F0" } },
+              },
             };
 
             if (R === 0 || R === 1) {
-              style.font.bold = true;
-              style.fill.fgColor.rgb = "F3F4F6";
-            } else if (R >= 3 && R <= 3 + headerRowOffset) {
-              style.font.bold = true;
-              style.font.color = { rgb: "FFFFFF" };
-              style.fill.fgColor.rgb = "000000";
-              style.alignment = { horizontal: "center", vertical: "center" };
+              // Main Banner title
+              style.font = { name: "Segoe UI", sz: R === 0 ? 12 : 9.5, bold: true, color: { rgb: "FFFFFF" } };
+              style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
+              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
               style.border = {
-                bottom: { style: "medium", color: { rgb: "000000" } },
-                top: { style: "medium", color: { rgb: "000000" } },
-                left: { style: "thin", color: { rgb: "333333" } },
-                right: { style: "thin", color: { rgb: "333333" } },
+                top: R === 0 ? { style: "medium", color: { rgb: "172554" } } : { style: "none" },
+                bottom: R === 1 ? { style: "medium", color: { rgb: "172554" } } : { style: "none" },
+                left: { style: "medium", color: { rgb: "172554" } },
+                right: { style: "medium", color: { rgb: "172554" } },
+              };
+            } else if (R >= 3 && R <= 3 + headerRowOffset) {
+              // Table Header row (Load schedule columns header group)
+              style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
+              style.fill.fgColor.rgb = "312E81"; // Indigo Navy
+              style.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "1E1B4B" } },
+                top: { style: "medium", color: { rgb: "1E1B4B" } },
+                left: { style: "thin", color: { rgb: "C7D2FE" } },
+                right: { style: "thin", color: { rgb: "C7D2FE" } },
               };
             } else if (
               R >= 4 + headerRowOffset &&
               R < 4 + headerRowOffset + c.length
             ) {
+              // Table data rows
               style.border = {
-                bottom: { style: "thin", color: { rgb: "CCCCCC" } },
+                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                left: { style: "thin", color: { rgb: "E2E8F0" } },
+                right: { style: "thin", color: { rgb: "E2E8F0" } },
+                top: { style: "thin", color: { rgb: "E2E8F0" } },
               };
               if (R % 2 !== 0) {
-                style.fill.fgColor.rgb = "F9FAFB";
+                style.fill.fgColor.rgb = "F8FAFC"; // Alternating Slate border zebra
               }
-              if (C !== 1) {
-                style.alignment = { horizontal: "center" };
+              if (C === 1) {
+                // Description (load name) of circuit - align left
+                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              } else {
+                style.alignment = { horizontal: "center", vertical: "center" };
               }
-            } else if (R === 4 + headerRowOffset + c.length + 1) {
-              style.font.bold = true;
-              style.fill.fgColor.rgb = "000000";
-              style.font.color = { rgb: "FFFFFF" };
-            } else if (R === 4 + headerRowOffset + c.length + 2) {
-              style.font.bold = true;
-              style.fill.fgColor.rgb = "000000";
-              style.font.color = { rgb: "FFFFFF" };
+            } else if (R === 4 + headerRowOffset + c.length + 1 || R === 4 + headerRowOffset + c.length + 2) {
+              // Total rows
+              style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "1E1B4B" } };
+              style.fill.fgColor.rgb = "EEF2FF"; // soft indigo background for accountant calculations
+              style.alignment = { horizontal: C <= 3 ? "left" : "center", vertical: "center", indent: C <= 3 ? 1 : 0 };
+              style.border = {
+                top: { style: "thin", color: { rgb: "312E81" } },
+                bottom: R === 4 + headerRowOffset + c.length + 2 ? { style: "double", color: { rgb: "312E81" } } : { style: "thin", color: { rgb: "312E81" } },
+                left: { style: "thin", color: { rgb: "C7D2FE" } },
+                right: { style: "thin", color: { rgb: "C7D2FE" } },
+              };
             } else if (R >= 4 + headerRowOffset + c.length + 4) {
-              style.fill.fgColor.rgb = "F3F4F6";
-              if (C === 0) style.font.bold = true;
+              // Summaries at bottom
+              style.fill.fgColor.rgb = "F8FAFC";
+              style.font = { name: "Segoe UI", sz: 9.5, color: { rgb: "475569" } };
+              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              style.border = {
+                top: { style: "thin", color: { rgb: "F1F5F9" } },
+                bottom: { style: "thin", color: { rgb: "F1F5F9" } },
+                left: { style: "none" },
+                right: { style: "none" },
+              };
+              if (C === 0) {
+                style.font.bold = true;
+                style.font.color = { rgb: "0F172A" };
+              }
             }
 
             ws[cellAddress].s = style;
@@ -1944,7 +1981,18 @@ export default function App() {
         ];
         wsVd["!cols"] = wscolsVd;
 
+        wsVd["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
+
         const rangeVd = XLSX.utils.decode_range(wsVd["!ref"] || "A1:A1");
+        const wsrowsVd = [];
+        for (let r = 0; r <= rangeVd.e.r; r++) {
+          if (r === 0) wsrowsVd.push({ hpt: 28 });
+          else if (r === 1) wsrowsVd.push({ hpt: 12 });
+          else if (r === 2) wsrowsVd.push({ hpt: 24 });
+          else wsrowsVd.push({ hpt: 20 });
+        }
+        wsVd["!rows"] = wsrowsVd;
+
         for (let R = rangeVd.s.r; R <= rangeVd.e.r; ++R) {
           for (let C = rangeVd.s.c; C <= rangeVd.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -1958,17 +2006,69 @@ export default function App() {
 
             if (!wsVd[cellAddress]) wsVd[cellAddress] = { t: "s", v: "" };
             let style: any = {
-              font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+              font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
               fill: { fgColor: { rgb: "FFFFFF" } },
-              alignment: { horizontal: "center", vertical: "center" },
+              alignment: { vertical: "center", horizontal: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "E2E8F0" } },
+                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                left: { style: "thin", color: { rgb: "E2E8F0" } },
+                right: { style: "thin", color: { rgb: "E2E8F0" } }
+              }
             };
+            
             if (R === 0) {
-              style.font.bold = true;
-              style.font.sz = 14;
-              style.alignment = { horizontal: "left", vertical: "center" };
+              // Title Banner block
+              style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+              style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
+              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "172554" } }
+              };
+            } else if (R === 1) {
+              // Spacer row
+              style.border = {
+                top: { style: "none" },
+                bottom: { style: "none" },
+                left: { style: "none" },
+                right: { style: "none" }
+              };
             } else if (R === 2) {
-              style.font.bold = true;
-              style.fill.fgColor.rgb = "F3F4F6";
+              // Table header columns
+              style.font = { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } };
+              style.fill.fgColor.rgb = "312E81"; // Indigo Navy
+              style.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "1E1B4B" } },
+                top: { style: "medium", color: { rgb: "1E1B4B" } }
+              };
+            } else {
+              // Zebra Row Striping
+              if (R % 2 === 0) {
+                style.fill.fgColor.rgb = "F8FAFC"; // Slate-50 alternating row bg
+              }
+
+              // Adjust alignment based on column type
+              if (C === 0 || C === 1) {
+                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              } else if (C === 2 || C === 3 || C === 7 || C === 8) {
+                style.alignment = { horizontal: "right", vertical: "center" };
+              } else {
+                style.alignment = { horizontal: "center", vertical: "center" };
+              }
+
+              // Bold status badge colors
+              if (C === 9) {
+                style.font.bold = true;
+                const val = String(wsVd[cellAddress].v).toUpperCase();
+                if (val.includes("PASSED") || val.includes("PASS")) {
+                  style.font.color = { rgb: "047857" }; // Emerald-700
+                  style.fill.fgColor.rgb = "D1FAE5"; // Emerald-100
+                } else if (val.includes("FAILED") || val.includes("FAIL")) {
+                  style.font.color = { rgb: "B91C1C" }; // Red-700
+                  style.fill.fgColor.rgb = "FEE2E2"; // Red-100
+                }
+              }
             }
             wsVd[cellAddress].s = style;
           }
@@ -2185,10 +2285,21 @@ export default function App() {
       ]);
 
       const wsSc = XLSX.utils.aoa_to_sheet(scData);
-      const wscolsSc = [{ wch: 45 }, { wch: 25 }, { wch: 15 }];
+      const wscolsSc = [{ wch: 55 }, { wch: 25 }, { wch: 18 }];
       wsSc["!cols"] = wscolsSc;
 
+      wsSc["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+
       const rangeSc = XLSX.utils.decode_range(wsSc["!ref"] || "A1:A1");
+      const wsrowsSc = [];
+      for (let r = 0; r <= rangeSc.e.r; r++) {
+        if (r === 0) wsrowsSc.push({ hpt: 28 });
+        else if (scData[r] && scData[r].length === 0) wsrowsSc.push({ hpt: 12 });
+        else if (r === 2 || r === 15 || r === 25) wsrowsSc.push({ hpt: 24 });
+        else wsrowsSc.push({ hpt: 20 });
+      }
+      wsSc["!rows"] = wsrowsSc;
+
       for (let R = rangeSc.s.r; R <= rangeSc.e.r; ++R) {
         for (let C = rangeSc.s.c; C <= rangeSc.e.c; ++C) {
           const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -2202,17 +2313,60 @@ export default function App() {
 
           if (!wsSc[cellAddress]) wsSc[cellAddress] = { t: "s", v: "" };
           let style: any = {
-            font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+            font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
             fill: { fgColor: { rgb: "FFFFFF" } },
-            alignment: { horizontal: "center", vertical: "center" },
+            alignment: { vertical: "center", horizontal: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "E2E8F0" } },
+              bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+              left: { style: "thin", color: { rgb: "E2E8F0" } },
+              right: { style: "thin", color: { rgb: "E2E8F0" } }
+            }
           };
+
           if (R === 0) {
-            style.font.bold = true;
-            style.font.sz = 14;
-            style.alignment = { horizontal: "left", vertical: "center" };
+            // Main Banner Title
+            style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+            style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
+            style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+            style.border = {
+              bottom: { style: "medium", color: { rgb: "172554" } }
+            };
+          } else if (wsSc[cellAddress].v === "" && !isHeader) {
+            // Spacer row / Blank cells
+            style.border = {
+              top: { style: "none" },
+              bottom: { style: "none" },
+              left: { style: "none" },
+              right: { style: "none" }
+            };
           } else if (R === 2 || R === 15 || R === 25) {
-            style.font.bold = true;
-            style.fill.fgColor.rgb = "F3F4F6";
+            // Section Headers
+            style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
+            style.fill.fgColor.rgb = "312E81"; // Indigo Navy
+            style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+            style.border = {
+              bottom: { style: "medium", color: { rgb: "1E1B4B" } },
+              top: { style: "medium", color: { rgb: "1E1B4B" } }
+            };
+          } else {
+            // Zebra data row striping
+            if (R % 2 === 0) {
+              style.fill.fgColor.rgb = "F8FAFC"; // Slate-50 alternating bg
+            }
+
+            // Alignments
+            if (C === 0) {
+              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+            } else if (C === 1) {
+              style.alignment = { horizontal: "right", vertical: "center" };
+              style.font.bold = true;
+              style.font.color = { rgb: "0F172A" }; // Slate-900 (key values bold)
+            } else if (C === 2) {
+              style.alignment = { horizontal: "center", vertical: "center" };
+              style.font.italic = true;
+              style.font.color = { rgb: "64748B" }; // Muted Slate
+            }
           }
           wsSc[cellAddress].s = style;
         }
@@ -2291,7 +2445,18 @@ export default function App() {
         ];
         wsIll["!cols"] = wscolsIll;
 
+        wsIll["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+
         const rangeIll = XLSX.utils.decode_range(wsIll["!ref"] || "A1:A1");
+        const wsrowsIll = [];
+        for (let r = 0; r <= rangeIll.e.r; r++) {
+          if (r === 0) wsrowsIll.push({ hpt: 28 });
+          else if (r === 1) wsrowsIll.push({ hpt: 12 });
+          else if (r === 2) wsrowsIll.push({ hpt: 24 });
+          else wsrowsIll.push({ hpt: 20 });
+        }
+        wsIll["!rows"] = wsrowsIll;
+
         for (let R = rangeIll.s.r; R <= rangeIll.e.r; ++R) {
           for (let C = rangeIll.s.c; C <= rangeIll.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -2305,17 +2470,69 @@ export default function App() {
 
             if (!wsIll[cellAddress]) wsIll[cellAddress] = { t: "s", v: "" };
             let style: any = {
-              font: { name: "Arial", sz: 10, color: { rgb: "000000" } },
+              font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
               fill: { fgColor: { rgb: "FFFFFF" } },
-              alignment: { horizontal: "center", vertical: "center" },
+              alignment: { vertical: "center", horizontal: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "E2E8F0" } },
+                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                left: { style: "thin", color: { rgb: "E2E8F0" } },
+                right: { style: "thin", color: { rgb: "E2E8F0" } }
+              }
             };
+
             if (R === 0) {
-              style.font.bold = true;
-              style.font.sz = 14;
-              style.alignment = { horizontal: "left", vertical: "center" };
+              // Main Banner Title
+              style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+              style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
+              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "172554" } }
+              };
+            } else if (R === 1) {
+              // Spacer row
+              style.border = {
+                top: { style: "none" },
+                bottom: { style: "none" },
+                left: { style: "none" },
+                right: { style: "none" }
+              };
             } else if (R === 2) {
-              style.font.bold = true;
-              style.fill.fgColor.rgb = "F3F4F6";
+              // Table header columns
+              style.font = { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } };
+              style.fill.fgColor.rgb = "312E81"; // Indigo Navy
+              style.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "1E1B4B" } },
+                top: { style: "medium", color: { rgb: "1E1B4B" } }
+              };
+            } else {
+              // Zebra data row striping
+              if (R % 2 === 0) {
+                style.fill.fgColor.rgb = "F8FAFC"; // Slate-50 alternating bg
+              }
+
+              // Adjust alignment based on column type
+              if (C === 0 || C === 3) {
+                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              } else if (C === 1 || C === 2 || C === 4 || C === 5 || C === 6 || C === 7 || C === 8) {
+                style.alignment = { horizontal: "right", vertical: "center" };
+              } else {
+                style.alignment = { horizontal: "center", vertical: "center" };
+              }
+
+              // Bold status badge colors
+              if (C === 9) {
+                style.font.bold = true;
+                const val = String(wsIll[cellAddress].v).toUpperCase();
+                if (val.includes("PASSED") || val.includes("PASS")) {
+                  style.font.color = { rgb: "047857" }; // Emerald-700
+                  style.fill.fgColor.rgb = "D1FAE5"; // Emerald-100
+                } else if (val.includes("FAILED") || val.includes("FAIL")) {
+                  style.font.color = { rgb: "B91C1C" }; // Red-700
+                  style.fill.fgColor.rgb = "FEE2E2"; // Red-100
+                }
+              }
             }
             wsIll[cellAddress].s = style;
           }

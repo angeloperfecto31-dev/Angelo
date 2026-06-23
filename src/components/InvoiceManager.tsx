@@ -75,7 +75,7 @@ import {
   Check
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 
 // Strict Invoice Interface matching the schema
 export interface Invoice {
@@ -586,21 +586,109 @@ export default function InvoiceManager({
     
     // Clean column widths configuration
     const maxCols = [
-      { wch: 18 }, // No
-      { wch: 22 }, // Name
-      { wch: 28 }, // Email
-      { wch: 12 }, // Date
-      { wch: 35 }, // Range
-      { wch: 25 }, // Plan
-      { wch: 15 }, // Sub
-      { wch: 15 }, // Tax
-      { wch: 15 }, // Disc
-      { wch: 18 }, // Total
+      { wch: 22 }, // No
+      { wch: 24 }, // Name
+      { wch: 32 }, // Email
+      { wch: 14 }, // Date
+      { wch: 38 }, // Range
+      { wch: 26 }, // Plan
+      { wch: 18 }, // Sub
+      { wch: 18 }, // Tax
+      { wch: 18 }, // Disc
+      { wch: 20 }, // Total
       { wch: 18 }, // Method
-      { wch: 15 }, // Status
-      { wch: 20 }  // Ref
+      { wch: 16 }, // Status
+      { wch: 22 }  // Ref
     ];
     worksheet['!cols'] = maxCols;
+
+    // Apply custom row heights
+    const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
+    const wsrows = [];
+    for (let r = 0; r <= range.e.r; r++) {
+      if (r === 0) {
+        wsrows.push({ hpt: 26 }); // Header taller
+      } else {
+        wsrows.push({ hpt: 20 }); // Data rows roomier
+      }
+    }
+    worksheet["!rows"] = wsrows;
+
+    // Loop through cells and apply elegant corporate formatting
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!worksheet[cellAddress]) continue;
+
+        const cell = worksheet[cellAddress];
+
+        // Ensure text type cell uses appropriate alignment
+        cell.s = {
+          font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
+          alignment: { vertical: "center", horizontal: "left" },
+          border: {
+            top: { style: "thin", color: { rgb: "E2E8F0" } },
+            bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+            left: { style: "thin", color: { rgb: "E2E8F0" } },
+            right: { style: "thin", color: { rgb: "E2E8F0" } }
+          }
+        };
+
+        // Header style
+        if (R === 0) {
+          cell.s.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
+          cell.s.fill = { fgColor: { rgb: "1E3A8A" } }; // Royal/Navy Blue theme
+          cell.s.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+          cell.s.border = {
+            bottom: { style: "medium", color: { rgb: "1E293B" } }
+          };
+        } else {
+          // Zebra striping for raw rows
+          if (R % 2 === 0) {
+            cell.s.fill = { fgColor: { rgb: "F8FAFC" } }; // Slate-50 alternating rows
+          }
+
+          // Alignment logic per columns
+          // C===0 (Invoice No), C===3 (Date), C===10 (Method), C===12 (Ref) -> Center
+          if (C === 0 || C === 3 || C === 10 || C === 12) {
+            cell.s.alignment = { horizontal: "center", vertical: "center" };
+            if (C === 0) {
+              cell.s.font.name = "Consolas";
+              cell.s.font.color = { rgb: "64748B" }; // Muted Slate-550
+            }
+          }
+          
+          // C===6, C===7, C===8, C===9 (Currency values) -> Right with clean formatting
+          else if (C === 6 || C === 7 || C === 8 || C === 9) {
+            cell.s.alignment = { horizontal: "right", vertical: "center" };
+            cell.s.font.bold = (C === 9); // Bold total amount
+            cell.s.font.color = (C === 9) ? { rgb: "0F172A" } : { rgb: "334155" };
+            
+            // Format number as currency (₱#,##0.00) if numeric
+            if (typeof cell.v === "number") {
+              cell.z = '"₱"#,##0.00';
+            }
+          }
+
+          // C===11 (Status) -> Center & badge color coding
+          else if (C === 11) {
+            cell.s.alignment = { horizontal: "center", vertical: "center" };
+            cell.s.font.bold = true;
+            const status = String(cell.v).toLowerCase();
+            if (status.includes("paid")) {
+              cell.s.font.color = { rgb: "047857" }; // Emerald-700
+              cell.s.fill = { fgColor: { rgb: "D1FAE5" } }; // Emerald-100 bg
+            } else if (status.includes("pending")) {
+              cell.s.font.color = { rgb: "D97706" }; // Amber-600
+              cell.s.fill = { fgColor: { rgb: "FEF3C7" } }; // Amber-100 bg
+            } else {
+              cell.s.font.color = { rgb: "E11D48" }; // Rose-600
+              cell.s.fill = { fgColor: { rgb: "FFE4E6" } }; // Rose-100 bg
+            }
+          }
+        }
+      }
+    }
 
     XLSX.utils.book_append_sheet(workbook, worksheet, "Financial Ledger");
     XLSX.writeFile(workbook, `Historical_Invoices_${label}_${new Date().toISOString().substring(0, 10)}.xlsx`);

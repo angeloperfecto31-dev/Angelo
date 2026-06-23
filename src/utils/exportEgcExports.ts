@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { Document, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, Packer } from "docx";
 import { jsPDF } from "jspdf";
 import Drawing from "dxf-writer";
@@ -89,20 +89,20 @@ export function findEgcSize(ocpdValue: number, material: "Copper" | "Aluminum" |
 // ---------------- EXCEL EXPORT ----------------
 export function exportEgcToExcel(ocpdValue: number, material: "Copper" | "Aluminum" | "Copper-Clad Aluminum", result: ReturnType<typeof findEgcSize>) {
   // We'll build an elegant block layout
-  const rows = [
+  const rows: any[][] = [
     ["PHILIPPINE ELECTRICAL CODE (PEC) - EQUIPMENT GROUNDING CONDUCTOR SIZING ANALYSIS"],
     ["Generated in compliance with PEC 2017 Table 2.50.6.13"],
     [],
-    ["SUMMARY CARD OF SIZING VALUES"],
-    ["Parameter Name", "Design Parameter Value", "Units / PEC Reference"],
-    ["System Overcurrent Protective Device (OCPD)", ocpdValue, "Amperes"],
-    ["Selected Grounding Wire Material", material, "---"],
-    ["Sized Minimum Grounding wire Cross Section Size", result.sizeMm2, "sq.mm. (mm²)"],
-    ["Equivalent Standard Sizing (AWG/kcmil)", result.sizeAwg, "AWG / kcmil Equivalent"],
-    ["Conductor Diameter (mm)", result.sizeDia === "---" ? "N/A" : result.sizeDia, "Millimeter (mm)"],
-    ["Calculation Standard Source Code", "Table 2.50.6.13", "PEC 2017 Edition Part 1"],
+    ["SUMMARY CARD OF SIZING VALUES", "", ""],
+    ["Parameter Name", "Design Parameter Value", "Units / PEC Reference", "", "", "", ""],
+    ["System Overcurrent Protective Device (OCPD)", ocpdValue, "Amperes", "", "", "", ""],
+    ["Selected Grounding Wire Material", material, "---", "", "", "", ""],
+    ["Sized Minimum Grounding wire Cross Section Size", result.sizeMm2, "sq.mm. (mm²)", "", "", "", ""],
+    ["Equivalent Standard Sizing (AWG/kcmil)", result.sizeAwg, "AWG / kcmil Equivalent", "", "", "", ""],
+    ["Conductor Diameter (mm)", result.sizeDia === "---" ? "N/A" : result.sizeDia, "Millimeter (mm)", "", "", "", ""],
+    ["Calculation Standard Source Code", "Table 2.50.6.13", "PEC 2017 Edition Part 1", "", "", "", ""],
     [],
-    ["PEC REFERENCE DATA - TABLE 2.50.6.13"],
+    ["PEC REFERENCE DATA - TABLE 2.50.6.13_HEADER", "", "", "", "", "", ""],
     ["OCPD Rating (A)", "Copper Size (mm²)", "Copper Diameter (mm)", "Copper AWG/kcmil", "Alum/Copper-Clad Alum Size (mm²)", "Alum Diameter (mm)", "Alum AWG/kcmil"]
   ];
 
@@ -119,22 +119,247 @@ export function exportEgcToExcel(ocpdValue: number, material: "Copper" | "Alumin
     ]);
   });
 
+  const refEndIndex = rows.length;
+
   rows.push([]);
-  rows.push(["ENGINEERING DISCLAIMER:"]);
-  rows.push(["This computation and analysis is based on PEC 2017 Table 2.50.6.13. Final engineering designs and layouts shall be vetted and approved by a licensed Professional Electrical Engineer (PEE) in accordance with local municipal building regulations and valid engineering standards."]);
+  rows.push(["ENGINEERING COMPLIANCE GENERAL DISCLAIMER NOTICE", "", "", "", "", "", ""]);
+  rows.push(["This computation and analysis is based on PEC 2017 Table 2.50.6.13. Final engineering designs and layouts shall be vetted and approved by a licensed Professional Electrical Engineer (PEE) in accordance with local municipal building regulations and valid engineering standards.", "", "", "", "", "", ""]);
 
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
 
+  // Set merges
+  worksheet["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, // Title
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } }, // Subtitle
+    { s: { r: 3, c: 0 }, e: { r: 3, c: 6 } }, // Section summary heading
+    { s: { r: 12, c: 0 }, e: { r: 12, c: 6 } }, // Section reference heading
+    { s: { r: refEndIndex + 1, c: 0 }, e: { r: refEndIndex + 1, c: 6 } }, // Disclaimer title
+    { s: { r: refEndIndex + 2, c: 0 }, e: { r: refEndIndex + 2, c: 6 } }, // Disclaimer text
+  ];
+
   // Column widths
   worksheet["!cols"] = [
-    { wch: 38 }, // OCPD or Parameter
-    { wch: 28 }, // Selected or Copper mm2
-    { wch: 20 }, // Units or Dia
-    { wch: 20 }, // AWG
-    { wch: 26 }, // Alum mm2
-    { wch: 18 }, // Alum Dia
-    { wch: 18 }  // Alum AWG
+    { wch: 42 }, // Parameter or OCPD
+    { wch: 30 }, // Value or Copper mm2
+    { wch: 24 }, // Units or Dia
+    { wch: 22 }, // AWG
+    { wch: 30 }, // Alum mm2
+    { wch: 20 }, // Alum Dia
+    { wch: 20 }  // Alum AWG
   ];
+
+  // Apply row heights
+  worksheet["!rows"] = [
+    { hpt: 30 }, // Title
+    { hpt: 20 }, // Subtitle
+    { hpt: 15 }, // empty
+    { hpt: 24 }, // summary section header
+    { hpt: 22 }, // sub table headers
+    { hpt: 18 }, // summary row 1
+    { hpt: 18 }, // summary row 2
+    { hpt: 18 }, // summary row 3
+    { hpt: 18 }, // summary row 4
+    { hpt: 18 }, // summary row 5
+    { hpt: 18 }, // summary row 6
+    { hpt: 15 }, // empty
+    { hpt: 24 }, // ref table section header
+    { hpt: 22 }, // ref table headers
+  ];
+
+  const decoded = XLSX.utils.decode_range(worksheet["!ref"] || "A1:A1");
+  for (let R = decoded.s.r; R <= decoded.e.r; ++R) {
+    for (let C = decoded.s.c; C <= decoded.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!worksheet[cellAddress]) {
+        // Create empty styled cell if within headers or styled boundaries
+        if (R <= 1 || R === 3 || R === 12 || R >= refEndIndex + 1) {
+          worksheet[cellAddress] = { t: "s", v: "" };
+        } else {
+          continue;
+        }
+      }
+
+      const cell = worksheet[cellAddress];
+      
+      // Default cell styling (Slate theme)
+      cell.s = {
+        font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
+        alignment: { vertical: "center", horizontal: "left" },
+        border: {
+          top: { style: "thin", color: { rgb: "E2E8F0" } },
+          bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+          left: { style: "thin", color: { rgb: "E2E8F0" } },
+          right: { style: "thin", color: { rgb: "E2E8F0" } }
+        }
+      };
+
+      // 1. Title Row
+      if (R === 0) {
+        cell.s.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+        cell.s.fill = { fgColor: { rgb: "1E3A8A" } }; // Royal/Navy Blue
+        cell.s.alignment = { horizontal: "center", vertical: "center" };
+        cell.s.border = {
+          bottom: { style: "none" }
+        };
+      }
+      
+      // 2. Subtitle Row
+      else if (R === 1) {
+        cell.s.font = { name: "Segoe UI", sz: 9.5, italic: true, color: { rgb: "E2E8F0" } };
+        cell.s.fill = { fgColor: { rgb: "1E3A8A" } }; // Royal/Navy Blue
+        cell.s.alignment = { horizontal: "center", vertical: "center" };
+        cell.s.border = {
+          top: { style: "none" }
+        };
+      }
+
+      // 3. Section Sizing values Header
+      else if (R === 3) {
+        cell.s.font = { name: "Segoe UI", sz: 11, bold: true, color: { rgb: "FFFFFF" } };
+        cell.s.fill = { fgColor: { rgb: "312E81" } }; // Indigo 900
+        cell.s.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+      }
+
+      // 4. Subtable Columns header (Sizing card values)
+      else if (R === 4) {
+        cell.s.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "0F172A" } };
+        cell.s.fill = { fgColor: { rgb: "E2E8F0" } }; // Slate 200
+        cell.s.alignment = { horizontal: "center", vertical: "center" };
+        cell.s.border = {
+          top: { style: "medium", color: { rgb: "94A3B8" } },
+          bottom: { style: "medium", color: { rgb: "94A3B8" } },
+          left: { style: "thin", color: { rgb: "CBD5E1" } },
+          right: { style: "thin", color: { rgb: "CBD5E1" } }
+        };
+      }
+
+      // 5. Card contents
+      else if (R >= 5 && R <= 10) {
+        // Zebra design for card values
+        if (R % 2 === 1) {
+          cell.s.fill = { fgColor: { rgb: "F8FAFC" } };
+        }
+        
+        // Parameter label bold
+        if (C === 0) {
+          cell.s.font.bold = true;
+          cell.s.font.color = { rgb: "0F172A" };
+        }
+        
+        // Value design
+        if (C === 1) {
+          cell.s.font.bold = true;
+          cell.s.font.color = { rgb: "4F46E5" }; // Indigo
+          cell.s.alignment = { horizontal: "center", vertical: "center" };
+        }
+        
+        if (C === 2) {
+          cell.s.font.italic = true;
+          cell.s.font.color = { rgb: "64748B" }; // Muted Slate
+          cell.s.alignment = { horizontal: "left", vertical: "center" };
+        }
+        
+        // Blank cells styled appropriately to maintain card boundary
+        if (C > 2) {
+          cell.v = "";
+          cell.t = "s";
+          cell.s.border = {
+            top: { style: "none" },
+            bottom: { style: "none" },
+            left: { style: "none" },
+            right: { style: "none" }
+          };
+          cell.s.fill = { fgColor: { rgb: "FFFFFF" } };
+        }
+      }
+
+      // 6. PEC Reference Section Header
+      else if (R === 12) {
+        cell.v = "PEC REFERENCE DATA - TABLE 2.50.6.13"; // Overwrite the internal header string
+        cell.s.font = { name: "Segoe UI", sz: 11, bold: true, color: { rgb: "FFFFFF" } };
+        cell.s.fill = { fgColor: { rgb: "0F172A" } }; // Slate 900
+        cell.s.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+      }
+
+      // 7. PEC Reference Columns Header
+      else if (R === 13) {
+        cell.s.font = { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } };
+        cell.s.fill = { fgColor: { rgb: "1E293B" } }; // Slate 800
+        cell.s.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+        cell.s.border = {
+          bottom: { style: "medium", color: { rgb: "000000" } }
+        };
+      }
+
+      // 8. PEC reference Rows
+      else if (R >= 14 && R < refEndIndex) {
+        const ratingVal = rows[R][0];
+        const isSelectedRow = (ratingVal === result.entry.rating);
+
+        if (isSelectedRow) {
+          // Highlight selected wire parameter
+          cell.s.fill = { fgColor: { rgb: "EFF6FF" } }; // Indigo/Sky soft blue highlight
+          cell.s.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "2563EB" } }; // Blue-600
+          cell.s.border = {
+            top: { style: "medium", color: { rgb: "93C5FD" } },
+            bottom: { style: "medium", color: { rgb: "93C5FD" } },
+            left: { style: "medium", color: { rgb: "93C5FD" } },
+            right: { style: "medium", color: { rgb: "93C5FD" } }
+          };
+        } else {
+          // Regular rows with light zebra striping
+          if (R % 2 === 0) {
+            cell.s.fill = { fgColor: { rgb: "F8FAFC" } };
+          }
+        }
+
+        // Alignments
+        if (C === 0) {
+          cell.s.alignment = { horizontal: "right", vertical: "center" };
+        } else if (C === 1 || C === 4) {
+          cell.s.alignment = { horizontal: "center", vertical: "center" };
+        } else {
+          cell.s.alignment = { horizontal: "center", vertical: "center" };
+        }
+      }
+
+      // 9. Engineering Disclaimer
+      else if (R === refEndIndex + 1) {
+        cell.s.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "991B1B" } }; // Red-800
+        cell.s.fill = { fgColor: { rgb: "FEF2F2" } }; // Warning light red
+        cell.s.alignment = { horizontal: "center", vertical: "center" };
+        cell.s.border = {
+          top: { style: "medium", color: { rgb: "FCA5A5" } },
+          left: { style: "medium", color: { rgb: "FCA5A5" } },
+          right: { style: "medium", color: { rgb: "FCA5A5" } },
+          bottom: { style: "none" }
+        };
+      }
+      
+      else if (R === refEndIndex + 2) {
+        cell.s.font = { name: "Segoe UI", sz: 8.5, color: { rgb: "7F1D1D" }, italic: true }; // Red-900
+        cell.s.fill = { fgColor: { rgb: "FEF2F2" } };
+        cell.s.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+        cell.s.border = {
+          bottom: { style: "medium", color: { rgb: "FCA5A5" } },
+          left: { style: "medium", color: { rgb: "FCA5A5" } },
+          right: { style: "medium", color: { rgb: "FCA5A5" } },
+          top: { style: "none" }
+        };
+      }
+      
+      // 10. Space rows (R === 2, 11, refEndIndex)
+      else {
+        cell.s.border = {
+          top: { style: "none" },
+          bottom: { style: "none" },
+          left: { style: "none" },
+          right: { style: "none" }
+        };
+        cell.s.fill = { fgColor: { rgb: "FFFFFF" } };
+      }
+    }
+  }
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "EGC Sizing Report");

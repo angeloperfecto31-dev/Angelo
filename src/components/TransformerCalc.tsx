@@ -451,6 +451,15 @@ export default function TransformerCalc({
 
       // Apply cell formatting using xlsx-js-style wrapper mapping
       const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+      const wsrows = [];
+      for (let r = 0; r <= range.e.r; r++) {
+        if (r === 0) wsrows.push({ hpt: 28 });
+        else if (r === 19) wsrows.push({ hpt: 24 });
+        else if (r === 2 || r === 8 || r === 13) wsrows.push({ hpt: 24 });
+        else wsrows.push({ hpt: 20 });
+      }
+      ws["!rows"] = wsrows;
+
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -460,39 +469,71 @@ export default function TransformerCalc({
             font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
             alignment: { vertical: "center", horizontal: "left" },
             border: {
-              top: { style: "thin", color: { rgb: "F1F5F9" } },
-              bottom: { style: "thin", color: { rgb: "F1F5F9" } },
-              left: { style: "thin", color: { rgb: "F1F5F9" } },
-              right: { style: "thin", color: { rgb: "F1F5F9" } },
+              top: { style: "thin", color: { rgb: "E2E8F0" } },
+              bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+              left: { style: "thin", color: { rgb: "E2E8F0" } },
+              right: { style: "thin", color: { rgb: "E2E8F0" } },
             }
           };
+
+          // Zebra striping for non-heading, non-formula rows
+          if (R > 2 && R < 19 && R % 2 === 0) {
+            ws[cellAddress].s.fill = { fgColor: { rgb: "F8FAFC" } };
+          }
 
           // Main Header style
           if (R === 0) {
             ws[cellAddress].s.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
-            ws[cellAddress].s.fill = { fgColor: { rgb: "0F172A" } }; // Slate 900
+            ws[cellAddress].s.fill = { fgColor: { rgb: "1E3A8A" } }; // Royal Navy Blue
             ws[cellAddress].s.alignment = { vertical: "center", horizontal: "center" };
+            ws[cellAddress].s.border = {
+              bottom: { style: "medium", color: { rgb: "172554" } }
+            };
           }
 
           // Section rows styles
-          if ((R === 2) || (R === 8) || (R === 13) || (R === 19)) {
+          else if ((R === 2) || (R === 8) || (R === 13) || (R === 19)) {
             ws[cellAddress].s.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
-            ws[cellAddress].s.fill = { fgColor: { rgb: "4F46E5" } }; // Indigo 600
+            ws[cellAddress].s.fill = { fgColor: { rgb: "312E81" } }; // Indigo Navy
             ws[cellAddress].s.alignment = { vertical: "center", horizontal: "center" };
           }
 
-          // Labels style (col A and C)
-          if ((C === 0 || C === 2) && R > 2 && R < 18) {
-            ws[cellAddress].s.font.bold = true;
-            ws[cellAddress].s.font.color = { rgb: "1E293B" };
-          }
+          else {
+            // Labels style (col A and C)
+            if ((C === 0 || C === 2) && R > 2 && R < 18) {
+              ws[cellAddress].s.font.bold = true;
+              ws[cellAddress].s.font.color = { rgb: "0F172A" }; // Dark Slate
+              ws[cellAddress].s.alignment = { vertical: "center", horizontal: "left", indent: 1 };
+            }
 
-          // Formula block text style
-          if (R >= 20 && R <= 25) {
-            ws[cellAddress].s.font.name = "Consolas";
-            ws[cellAddress].s.font.sz = 9.5;
-            ws[cellAddress].s.font.color = { rgb: "4F46E5" };
-            ws[cellAddress].s.fill = { fgColor: { rgb: "EEF2FF" } };
+            // Values style (col B and D)
+            if ((C === 1 || C === 3) && R > 2 && R < 18) {
+              ws[cellAddress].s.alignment = { vertical: "center", horizontal: "right" };
+              ws[cellAddress].s.font.bold = true;
+
+              // Check if status compliant/noncompliant
+              const valStr = String(ws[cellAddress].v).toUpperCase();
+              if (valStr.includes("PASSED") || valStr.includes("COMPLIANT") || valStr.includes("SAFE")) {
+                ws[cellAddress].s.font.color = { rgb: "047857" }; // Emerald-700
+                ws[cellAddress].s.fill = { fgColor: { rgb: "D1FAE5" } }; // Emerald-100 bg
+              } else if (valStr.includes("OVERLOADED") || valStr.includes("NONCOMPLIANT")) {
+                ws[cellAddress].s.font.color = { rgb: "B91C1C" }; // Red-700
+                ws[cellAddress].s.fill = { fgColor: { rgb: "FEE2E2" } }; // Red-100 bg
+              }
+            }
+
+            // Formula block text style
+            if (R >= 20 && R <= 25) {
+              ws[cellAddress].s.font = { name: "Segoe UI", sz: 9.5, color: { rgb: "312E81" } };
+              ws[cellAddress].s.alignment = { vertical: "center", horizontal: "left", indent: 1 };
+              ws[cellAddress].s.fill = { fgColor: { rgb: "EEF2FF" } }; // Soft Indigo background
+              ws[cellAddress].s.border = {
+                top: { style: "thin", color: { rgb: "C7D2FE" } },
+                bottom: { style: "thin", color: { rgb: "C7D2FE" } },
+                left: { style: "thin", color: { rgb: "C7D2FE" } },
+                right: { style: "thin", color: { rgb: "C7D2FE" } }
+              };
+            }
           }
         }
       }
