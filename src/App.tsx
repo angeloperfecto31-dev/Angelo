@@ -4170,6 +4170,9 @@ export default function App() {
                     setDemandFactor={setTransformerDemandFactor}
                     loadingFactor={transformerLoadingFactor}
                     setLoadingFactor={setTransformerLoadingFactor}
+                    isPremium={userPlan === "premium" || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                    user={user}
                   />
                 </motion.div>
               </div>

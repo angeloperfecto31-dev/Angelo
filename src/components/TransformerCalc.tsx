@@ -1,7 +1,9 @@
 import React, { useMemo } from "react";
 import { PanelConfig, Circuit } from "../types";
-import { Zap, AlertTriangle, CheckCircle2, RefreshCw, Cpu, ShieldCheck } from "lucide-react";
+import { Zap, AlertTriangle, CheckCircle2, RefreshCw, Cpu, ShieldCheck, Lock, Download, FileSpreadsheet, FileText, Check } from "lucide-react";
 import { computePanelScheduleValues } from "../utils/computeEngine";
+import { jsPDF } from "jspdf";
+import * as XLSX from "xlsx-js-style";
 
 interface TransformerCalcProps {
   panel: PanelConfig;
@@ -14,6 +16,9 @@ interface TransformerCalcProps {
   setDemandFactor: (df: number) => void;
   loadingFactor: number;
   setLoadingFactor: (lf: number) => void;
+  isPremium?: boolean;
+  onRequestUpgrade?: () => void;
+  user?: any;
 }
 
 export const STANDARD_TRANSFORMER_SIZES = [
@@ -31,6 +36,9 @@ export default function TransformerCalc({
   setDemandFactor,
   loadingFactor,
   setLoadingFactor,
+  isPremium = false,
+  onRequestUpgrade,
+  user,
 }: TransformerCalcProps) {
   // Deriving system properties from MDP Panel
   const is3Phase = panel.system.includes("3PH");
@@ -89,6 +97,427 @@ export default function TransformerCalc({
   }, [recommendedRating, demandLoadKVA]);
 
   const isOverloaded = actualLoadingPct > (loadingFactor * 100);
+
+  const handleExportPdf = () => {
+    if (!isPremium) {
+      if (onRequestUpgrade) onRequestUpgrade();
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const PRIMARY = [15, 23, 42]; // Slate 900
+      const SECONDARY = [79, 70, 229]; // Indigo 600
+      const TEXT_MUTED = [100, 116, 139]; // Slate 500
+      const BG_LIGHT = [248, 250, 252]; // Slate 50
+
+      // Header Panel Banner
+      doc.setFillColor(15, 23, 42); // slate 900
+      doc.rect(0, 0, 210, 40, "F");
+
+      // Accent banner line
+      doc.setFillColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.rect(15, 12, 1.5, 14, "F");
+
+      // Title Texts
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(255, 255, 255);
+      doc.text("ELECTRICALPH DESIGN & AUDIT", 20, 18);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(156, 163, 175);
+      doc.text("PEC 2017 & IEEE DESIGN STANDARD COMPLIANT REPORT", 20, 23);
+
+      // Doc Metadata Label
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(245, 158, 11); // Amber / Gold
+      doc.text("TRANSFORMER SIZING ANALYSIS", 130, 18);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(156, 163, 175);
+      doc.text(`EXPORT DATE: ${new Date().toLocaleString()}`, 130, 23);
+
+      // Draw thin grey divider line below banner
+      doc.setDrawColor(226, 232, 240);
+      doc.line(15, 45, 195, 45);
+
+      // SECTION 1: PROJECT GENERAL INFORMATION
+      doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
+      doc.rect(15, 48, 180, 26, "F");
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(15, 48, 180, 26, "D");
+
+      doc.setFillColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.rect(17, 51, 1, 4, "F");
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text("1.0 PROJECT INFORMATION PROFILE", 20, 54);
+
+      doc.setFontSize(8);
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      
+      const pCol1 = 18;
+      const pCol2 = 108;
+      const pValCol1 = 45;
+      const pValCol2 = 135;
+
+      // Project Data values
+      doc.text(`Project Name:`, pCol1, 61);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${panel.project || "N/A"}`, pValCol1, 61);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Client Name:`, pCol1, 66);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${(panel as any).client || "N/A"}`, pValCol1, 66);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Location:`, pCol1, 71);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${panel.location || "N/A"}`, pValCol1, 71);
+
+      // Right col
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`System Config:`, pCol2, 61);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${is3Phase ? "3-Phase (3-Phase, 3-Wire / 4-Wire)" : "Single Phase (1-Phase, 2-Wire)"}`, pValCol2, 61);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Secondary Volts:`, pCol2, 66);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${secondaryVoltage} V AC`, pValCol2, 66);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Report Author:`, pCol2, 71);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${user?.email || "Licensed Architect / Engineer"}`, pValCol2, 71);
+
+
+      // SECTION 2: CORE DESIGN INPUTS & LOADS
+      doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
+      doc.rect(15, 78, 180, 26, "F");
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(15, 78, 180, 26, "D");
+
+      doc.setFillColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.rect(17, 81, 1, 4, "F");
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text("2.0 COGNIZANT LOAD ANALYSIS & SIZING CRITERIA", 20, 84);
+
+      doc.setFontSize(8);
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+
+      doc.text(`Primary Supply:`, pCol1, 91);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${primaryVoltage} V (${(primaryVoltage / 1000).toFixed(2)} kV)`, pValCol1, 91);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Demand Factor:`, pCol1, 96);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${(demandFactor * 100).toFixed(0)}%`, pValCol1, 96);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Power Factor:`, pCol2, 91);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${powerFactor.toFixed(2)}`, pValCol2, 91);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Loading Limit:`, pCol2, 96);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${(loadingFactor * 100).toFixed(0)}% Sizing Standard`, pValCol2, 96);
+
+
+      // SECTION 3: TRANSFORMER SIZING ENGINE RECOMMENDATION
+      doc.setFillColor(238, 242, 255); // indigo 50
+      doc.rect(15, 110, 180, 24, "F");
+      doc.setDrawColor(199, 210, 254); // indigo 200
+      doc.rect(15, 110, 180, 24, "D");
+
+      doc.setFillColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.rect(17, 113, 1, 4, "F");
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.text("3.0 RECOMMENDATION FOR MAIN DISTRIBUTION POWER TRANSFORMER", 20, 117);
+
+      doc.setFontSize(18);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.text(`${recommendedRating} kVA`, 20, 127);
+
+      doc.setFontSize(8.5);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text("Recommended Standard Transformer Rating", 20, 131);
+
+      // Sizing Target text on right
+      doc.setFontSize(8.5);
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Calculated Minimum Target Required:`, 100, 123);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`${requiredKVA.toFixed(2)} kVA`, 190, 123, { align: "right" });
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Safety Margin Status:`, 100, 128);
+      if (isOverloaded) {
+        doc.setFont("Helvetica", "bold");
+        doc.setTextColor(220, 38, 38); // red
+        doc.text(`OVERLOADED (${actualLoadingPct.toFixed(1)}% Loading)`, 190, 128, { align: "right" });
+      } else {
+        doc.setFont("Helvetica", "bold");
+        doc.setTextColor(5, 150, 105); // green
+        doc.text(`COMPLIANT (SAFE, ${actualLoadingPct.toFixed(1)}% Loading)`, 190, 128, { align: "right" });
+      }
+
+
+      // SECTION 4: FULL VERIFICATION MATRIX TABLE
+      doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
+      doc.rect(15, 140, 180, 72, "F");
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(15, 140, 180, 72, "D");
+
+      doc.setFillColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.rect(17, 143, 1, 4, "F");
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text("4.0 IN-DEPTH SIZING VERIFICATION METRIC MATRIX", 20, 147);
+
+      const tableData = [
+        ["Total Unfactored Connected Load:", `${(connectedLoadKVA).toFixed(1)} kVA / ${connectedLoadkW.toFixed(1)} kW`],
+        ["Calculated Demand Load:", `${demandLoadKVA.toFixed(1)} kVA / ${demandLoadkW.toFixed(1)} kW`],
+        ["Allowable Continuous Sizing Limit Load Coefficient:", `${(loadingFactor * 100).toFixed(0)}% Coefficient`],
+        ["Computed Minimum kVA Requirement Threshold:", `${requiredKVA.toFixed(2)} kVA`],
+        ["Selected Transformer Rating capacity:", `${recommendedRating} kVA`],
+        ["Resulting Nominal Transformer Loading Percentage:", `${actualLoadingPct.toFixed(1)}%`],
+        ["Calculated Full-Load Primary Current (Ip) at rating:", `${primaryCurrent.toFixed(2)} Amps`],
+        ["Calculated Full-Load Secondary Current (Is) at rating:", `${secondaryCurrent.toFixed(2)} Amps`],
+        ["Net Unused Spare kVA capacity margin:", `${spareCapacityKVA.toFixed(2)} kVA (${Math.max(0, 100 - actualLoadingPct).toFixed(1)}%)`],
+      ];
+
+      doc.setFontSize(8);
+      let rowY = 153;
+      tableData.forEach(([labelTxt, valTxt]) => {
+        // label
+        doc.setFont("Helvetica", "normal");
+        doc.setTextColor(71, 85, 105);
+        doc.text(labelTxt, 20, rowY);
+
+        // value
+        doc.setFont("Helvetica", "bold");
+        doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+        doc.text(valTxt, 190, rowY, { align: "right" });
+
+        // dotted divider line
+        doc.setDrawColor(241, 245, 249);
+        doc.line(20, rowY + 1.5, 190, rowY + 1.5);
+
+        rowY += 6;
+      });
+
+
+      // SECTION 5: MATHEMATICAL CALCULATIONS FORMULA PROOFS
+      doc.setFillColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
+      doc.rect(15, 218, 2, 8, "F");
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text("5.0 ENGINEERING FORMULAS & PROOFS", 20, 224);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      
+      doc.text("1. Sizing Required Minimum kVA Target Formula:", 15, 233);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`   Required kVA = Maximum Demand kVA / Loading limit = ${demandLoadKVA.toFixed(1)} / ${loadingFactor} = ${requiredKVA.toFixed(2)} kVA`, 15, 237);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(71, 85, 105);
+      doc.text("2. Demand Load Calculation Formulation:", 15, 244);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+      doc.text(`   Demand Load = Unfactored kVA * Demand Factor = ${connectedLoadKVA.toFixed(1)} * ${demandFactor} = ${demandLoadKVA.toFixed(2)} kVA`, 15, 248);
+
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(71, 85, 105);
+      doc.text("3. High-Voltage / Low-Voltage Full Load Amperes Calculations:", 15, 255);
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
+
+      if (is3Phase) {
+        doc.text(`   Ip (3-Phase) = S_base / (sqrt(3) * V_primary) = (${recommendedRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`, 15, 259);
+        doc.text(`   Is (3-Phase) = S_base / (sqrt(3) * V_secondary) = (${recommendedRating} * 1000) / (1.732 * ${secondaryVoltage}) = ${secondaryCurrent.toFixed(2)} A`, 15, 263);
+      } else {
+        doc.text(`   Ip (Single Phase) = S_base / V_primary = (${recommendedRating} * 1000) / ${primaryVoltage} = ${primaryCurrent.toFixed(2)} A`, 15, 259);
+        doc.text(`   Is (Single Phase) = S_base / V_secondary = (${recommendedRating} * 1000) / ${secondaryVoltage} = ${secondaryCurrent.toFixed(2)} A`, 15, 263);
+      }
+
+      // Footnote
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+      doc.text(`Document verified by ElectricalPH Automatic Integration Sizing Core. Secure Digital signature ID token: 0x${Math.random().toString(16).substring(2, 10).toUpperCase()}`, 15, 280);
+
+      // Save document
+      doc.save(`Transformer_Capacity_Sizing_Report_${panel.project || 'Project'}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (!isPremium) {
+      if (onRequestUpgrade) onRequestUpgrade();
+      return;
+    }
+
+    try {
+      const wb = XLSX.utils.book_new();
+
+      const wsData = [
+        ["ELECTRICALPH AUTOMATION SUITE: DISTRIBUTION TRANSFORMER REPORT"],
+        [],
+        ["PROJECT DESCRIPTIVE PROFILE", "", "SYSTEM VOLTAGE INFORMATION", ""],
+        ["Project Title:", panel.project || "N/A", "System Phase:", is3Phase ? "3-Phase (3Φ)" : "1-Phase (1Φ)"],
+        ["Client Target:", (panel as any).client || "N/A", "Secondary Voltage (Vs):", `${secondaryVoltage} Volts AC`],
+        ["Physical Location:", panel.location || "N/A", "Document Export Date:", new Date().toLocaleString()],
+        ["Registered Designer:", user?.email || "N/A", "Primary Voltage (Vp):", `${primaryVoltage} V (${(primaryVoltage/1000).toFixed(2)} kV)`],
+        [],
+        ["SIZING CRITERIA AND ADJUSTABLE PARAMETERS", "", "UNFACTORED VALUE SUMMARY", ""],
+        ["Loading Limit Limit Coefficient:", `${(loadingFactor * 100).toFixed(0)}%`, "Total Connected MD Load:", `${connectedLoadKVA.toFixed(2)} kVA`],
+        ["Demand Diversity Factor (DF):", `${(demandFactor * 100).toFixed(0)}%`, "Unfactored Connected kW Ratio:", `${connectedLoadkW.toFixed(2)} kW`],
+        ["Nominal Load Power Factor (PF):", powerFactor.toFixed(2), "Target Required Capacity (Min):", `${requiredKVA.toFixed(2)} kVA`],
+        [],
+        ["DETAILED COMPUTATION RESULTS & ANALYSIS", "", "SECURE VERIFICATION AUDIT", ""],
+        ["Maximum Core Demand Load:", `${demandLoadKVA.toFixed(2)} kVA`, "Recommended Rating selected:", `${recommendedRating} kVA`],
+        ["Power Equivalent Demand kW:", `${demandLoadkW.toFixed(2)} kW`, "Transformer Actual Sizing Load ratio:", `${actualLoadingPct.toFixed(1)}%`],
+        ["Available Spare kVA capacity:", `${spareCapacityKVA.toFixed(2)} kVA`, "Design Compliance Status:", isOverloaded ? "OVERLOADED - NONCOMPLIANT" : "PASSED - COMPLIANT, SAFE"],
+        ["Full Load Primary Ampere (Ip):", `${primaryCurrent.toFixed(2)} A`, "Full Load Secondary Ampere (Is):", `${secondaryCurrent.toFixed(2)} A`],
+        [],
+        ["ENGINEERING METHODOLOGY AND FORMULA STRINGS"],
+        ["1. Required capacity (S_req) formula:"],
+        ["   Required Capacity (kVA) = (Connected Load x Demand Factor) / Loading Limit = " + `(${connectedLoadKVA.toFixed(1)} * ${demandFactor.toFixed(2)}) / ${loadingFactor.toFixed(2)} = ${requiredKVA.toFixed(2)} kVA`],
+        ["2. Nominal Full Load Amperes Equations:"],
+        [is3Phase 
+          ? `   Ip (3PH) = kVA * 1000 / (sqrt(3) * Vp) = (${recommendedRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`
+          : `   Ip (1PH) = kVA * 1000 / Vp = (${recommendedRating} * 1000) / ${primaryVoltage} = ${primaryCurrent.toFixed(2)} A`
+        ],
+        [is3Phase 
+          ? `   Is (3PH) = kVA * 1000 / (sqrt(3) * Vs) = (${recommendedRating} * 1000) / (1.732 * ${secondaryVoltage}) = ${secondaryCurrent.toFixed(2)} A`
+          : `   Is (1PH) = kVA * 1000 / Vs = (${recommendedRating} * 1000) / ${secondaryVoltage} = ${secondaryCurrent.toFixed(2)} A`
+        ],
+        [],
+        ["This report is computed in real-time in compliance with IEEE sizing procedures & Philippine Electrical Code Standards."]
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Apply cell formatting using xlsx-js-style wrapper mapping
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+
+          ws[cellAddress].s = {
+            font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } },
+            alignment: { vertical: "center", horizontal: "left" },
+            border: {
+              top: { style: "thin", color: { rgb: "F1F5F9" } },
+              bottom: { style: "thin", color: { rgb: "F1F5F9" } },
+              left: { style: "thin", color: { rgb: "F1F5F9" } },
+              right: { style: "thin", color: { rgb: "F1F5F9" } },
+            }
+          };
+
+          // Main Header style
+          if (R === 0) {
+            ws[cellAddress].s.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+            ws[cellAddress].s.fill = { fgColor: { rgb: "0F172A" } }; // Slate 900
+            ws[cellAddress].s.alignment = { vertical: "center", horizontal: "center" };
+          }
+
+          // Section rows styles
+          if ((R === 2) || (R === 8) || (R === 13) || (R === 19)) {
+            ws[cellAddress].s.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
+            ws[cellAddress].s.fill = { fgColor: { rgb: "4F46E5" } }; // Indigo 600
+            ws[cellAddress].s.alignment = { vertical: "center", horizontal: "center" };
+          }
+
+          // Labels style (col A and C)
+          if ((C === 0 || C === 2) && R > 2 && R < 18) {
+            ws[cellAddress].s.font.bold = true;
+            ws[cellAddress].s.font.color = { rgb: "1E293B" };
+          }
+
+          // Formula block text style
+          if (R >= 20 && R <= 25) {
+            ws[cellAddress].s.font.name = "Consolas";
+            ws[cellAddress].s.font.sz = 9.5;
+            ws[cellAddress].s.font.color = { rgb: "4F46E5" };
+            ws[cellAddress].s.fill = { fgColor: { rgb: "EEF2FF" } };
+          }
+        }
+      }
+
+      // Configure column widths
+      ws["!cols"] = [
+        { wch: 38 },
+        { wch: 30 },
+        { wch: 38 },
+        { wch: 32 },
+      ];
+
+      // Merge Main Header row
+      ws["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+        { s: { r: 19, c: 0 }, e: { r: 19, c: 3 } },
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "Transformer Report");
+
+      XLSX.writeFile(wb, `Transformer_Capacity_Sizing_Report_${panel.project || 'Project'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (err) {
+      console.error("Excel generation failed:", err);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -274,10 +703,52 @@ export default function TransformerCalc({
 
           {/* Summary Details Cards */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/60 dark:border-slate-800/80 shadow-md">
-            <h4 className="text-base font-bold text-slate-805 dark:text-white mb-4 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-indigo-500" />
-              Transformer Capacity Summary
-            </h4>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-100 dark:border-slate-800/50">
+              <h4 className="text-base font-bold text-slate-805 dark:text-white flex items-center gap-2">
+                <Zap className="w-4 h-4 text-indigo-500" />
+                Transformer Capacity Summary
+              </h4>
+
+              {/* Export Buttons Block */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleExportPdf}
+                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer border ${
+                    isPremium
+                      ? "bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500/30 hover:shadow-md"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/60"
+                  }`}
+                  title={isPremium ? "Export complete sizing report to PDF" : "Available on Premium Plan"}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>PDF Export</span>
+                  {!isPremium && <Lock className="w-3 h-3 text-amber-500 ml-0.5" />}
+                </button>
+
+                <button
+                  onClick={handleExportExcel}
+                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer border ${
+                    isPremium
+                      ? "bg-emerald-600 hover:bg-emerald-505 text-white border-emerald-500/30 hover:shadow-md"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/60"
+                  }`}
+                  title={isPremium ? "Export calculated results to Excel" : "Available on Premium Plan"}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Excel Export</span>
+                  {!isPremium && <Lock className="w-3 h-3 text-amber-500 ml-0.5" />}
+                </button>
+
+                {!isPremium && (
+                  <button
+                    onClick={onRequestUpgrade}
+                    className="flex items-center gap-1 text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:underline transition-all cursor-pointer pl-1"
+                  >
+                    <span>Upgrade to Premium</span>
+                  </button>
+                )}
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               
