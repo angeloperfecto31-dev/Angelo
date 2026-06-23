@@ -45,6 +45,8 @@ import {
   ChevronDown,
   Plus,
   Zap,
+  ArrowUpDown,
+  CalendarRange,
 } from "lucide-react";
 import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
@@ -185,8 +187,11 @@ export default function PaymentScreen({
   const [discrepancies, setDiscrepancies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [adminFilter, setAdminFilter] = useState<
-    "all" | "pending" | "paid" | "unpaid"
+    "all" | "pending" | "paid" | "lifetime" | "unpaid"
   >("all");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [planFilter, setPlanFilter] = useState<"all" | "basic" | "premium">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [confirmingAction, setConfirmingAction] = useState<{
@@ -657,7 +662,29 @@ export default function PaymentScreen({
       (snapshot) => {
         const usersList: any[] = [];
         snapshot.forEach((snapDoc) => {
-          usersList.push({ uid: snapDoc.id, ...snapDoc.data() });
+          const uData = snapDoc.data();
+          const u = { uid: snapDoc.id, ...uData };
+          usersList.push(u);
+
+          // Add auto-correction review check for Lifetime Access Protection:
+          // Verified active paid subscribers are Lifetime Access and must never have an expiration date key
+          if (uData && uData.isActive === true) {
+            const keysToCheck = ["expiresAt", "validUntil", "expirationDate", "expiry", "expires"];
+            const hasExpiry = keysToCheck.some(k => k in uData && uData[k] !== null && uData[k] !== undefined);
+            if (hasExpiry) {
+              console.warn(`[Lifetime Access Correction]: Detected expiration fields in active subscriber (${uData.email || u.uid}). Correcting permanently...`);
+              const userRef = doc(db, "users", snapDoc.id);
+              setDoc(userRef, {
+                expiresAt: null,
+                validUntil: null,
+                expirationDate: null,
+                expiry: null,
+                expires: null
+              }, { merge: true }).catch((err) => {
+                console.error(`[Lifetime Access Correction Error] Failed to correct user ${snapDoc.id}:`, err);
+              });
+            }
+          }
         });
         setAllUsers(usersList);
       },
@@ -881,6 +908,27 @@ export default function PaymentScreen({
       };
       await createOrGetInvoiceData(userRefObj, targetUid);
 
+      // Log subscription change to admin activity logs
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: "resolve_payment_discrepancy",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          targetUserUid: targetUid,
+          targetUserEmail: userEmail,
+          details: {
+            discrepancyId,
+            plan,
+            amount: actualPaid,
+            isUpgrade,
+            verifiedPaidLifetime: true,
+            notes: "Manually resolved PayMongo discrepancy and granted lifelong active access."
+          }
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log:", logErr);
+      }
+
       setAdminStatusMsg("Highly secure reconciliation applied: discrepancy resolved, account upgraded, and clean invoice logged.");
     } catch (err: any) {
       console.error("Failed to reconcile discrepancy:", err);
@@ -934,6 +982,28 @@ export default function PaymentScreen({
       };
       await createOrGetInvoiceData(userRefObj, targetUid);
 
+      // Log subscription change to admin activity logs
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: "approve_manual_payment",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          targetUserUid: targetUid,
+          targetUserEmail: userEmail,
+          details: {
+            plan: planToSet,
+            amount: amountVal,
+            paymentSource: paymentSourceVal,
+            paymentReference: paymentReferenceVal,
+            isUpgrade: isUpgradeVal,
+            verifiedPaidLifetime: true,
+            notes: "Approved manual payment/verification and successfully granted Lifetime Access."
+          }
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log:", logErr);
+      }
+
       setAdminStatusMsg(`Successfully activated account for ${userEmail} on ${planToSet} plan and generated invoice.`);
     } catch (err: any) {
       setAdminStatusMsg("Error activating account: " + err.message);
@@ -960,6 +1030,24 @@ export default function PaymentScreen({
         },
         { merge: true },
       );
+
+      // Log manual payment rejection to admin activity logs
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: "reject_manual_payment",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          targetUserUid: targetUid,
+          targetUserEmail: userEmail,
+          details: {
+            isAlreadyActive,
+            notes: "Rejected pending manual payment verification details review."
+          }
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log:", logErr);
+      }
+
       setAdminStatusMsg(`Rejected submission for ${userEmail}`);
     } catch (err: any) {
       setAdminStatusMsg("Error rejecting submission: " + err.message);
@@ -1003,6 +1091,27 @@ export default function PaymentScreen({
         await createOrGetInvoiceData(userRefObj, targetUid);
       }
 
+      // Log interactive direct system activation/revocation toggle
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: nextActive ? "grant_lifetime_access" : "revoke_pro_access",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          targetUserUid: targetUid,
+          targetUserEmail: userEmail,
+          details: {
+            previousActiveState: currentActiveStatus,
+            newActiveState: nextActive,
+            verifiedPaidLifetime: nextActive,
+            notes: nextActive
+              ? "Manually granted Lifetime Access to subscriber."
+              : "Revoked subscriber access/billing level manually."
+          }
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log:", logErr);
+      }
+
       setAdminStatusMsg(`Updated status for ${userEmail} and triggered auto-generation.`);
     } catch (err: any) {
       setAdminStatusMsg("Error updating status: " + err.message);
@@ -1016,6 +1125,23 @@ export default function PaymentScreen({
     setAdminStatusMsg("");
     try {
       await deleteDoc(doc(db, "users", targetUid));
+
+      // Log user profile deletion to admin activity logs
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: "delete_user",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          targetUserUid: targetUid,
+          targetUserEmail: userEmail,
+          details: {
+            notes: "Permanently deleted user account database records."
+          }
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log:", logErr);
+      }
+
       setAdminStatusMsg(`Deleted user record for ${userEmail}`);
     } catch (err: any) {
       setAdminStatusMsg("Error deleting user: " + err.message);
@@ -1045,6 +1171,26 @@ export default function PaymentScreen({
     signOut(auth);
   };
 
+  // Helper to determine subscription/registration date for sorting & filtering
+  const getSubscriptionDate = (u: any): Date => {
+    if (u.approvedAt) {
+      return new Date(u.approvedAt);
+    }
+    if (u.activatedAt) {
+      return new Date(u.activatedAt);
+    }
+    if (u.pendingVerification?.submittedAt) {
+      return new Date(u.pendingVerification.submittedAt);
+    }
+    if (u.createdAt) {
+      if (typeof u.createdAt === "object" && u.createdAt.seconds) {
+        return new Date(u.createdAt.seconds * 1000);
+      }
+      return new Date(u.createdAt);
+    }
+    return new Date(0); // Epoch fallback for safety
+  };
+
   // Filter users for the Admin panel view
   const filteredUsers = allUsers.filter((u) => {
     const q = searchQuery.toLowerCase();
@@ -1061,13 +1207,41 @@ export default function PaymentScreen({
       if (uPlan !== planFilter) return false;
     }
 
-    if (adminFilter === "pending")
-      return u.paymentStatus === "pending_verification";
-    if (adminFilter === "paid") return u.isActive === true;
-    if (adminFilter === "unpaid")
-      return u.isActive !== true && u.paymentStatus !== "pending_verification";
+    // Filter by Admin Status
+    if (adminFilter === "pending") {
+      if (u.paymentStatus !== "pending_verification") return false;
+    } else if (adminFilter === "paid") {
+      if (u.isActive !== true) return false;
+    } else if (adminFilter === "lifetime") {
+      // verified paid subscribers have Lifetime Access
+      if (u.isActive !== true) return false;
+    } else if (adminFilter === "unpaid") {
+      if (u.isActive === true || u.paymentStatus === "pending_verification") return false;
+    }
+
+    // Filter by Subscription Date Range
+    if (startDate || endDate) {
+      const subDate = getSubscriptionDate(u);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        if (subDate < start) return false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (subDate > end) return false;
+      }
+    }
     
     return true;
+  });
+
+  // Automatically arrange and display all subscribers based on their subscription date
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    const dateA = getSubscriptionDate(a).getTime();
+    const dateB = getSubscriptionDate(b).getTime();
+    return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
   });
 
   // Unified helper for currency formatting
@@ -3069,7 +3243,7 @@ export default function PaymentScreen({
           </div>
 
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             {/* KPI Card 1: Total Users */}
             <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
               <div className="flex items-center justify-between">
@@ -3077,7 +3251,7 @@ export default function PaymentScreen({
                   Total Users
                 </span>
                 <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors">
-                  <Users className="w-4 h-4" />
+                  <span className="shrink-0"><Users className="w-4 h-4" /></span>
                 </div>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
@@ -3100,8 +3274,8 @@ export default function PaymentScreen({
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
                   Pending Approval
                 </span>
-                <div className="p-2 bg-amber-50 text-amber-650 rounded-xl group-hover:bg-amber-100 transition-colors">
-                  <Clock className="w-4 h-4" />
+                <div className="p-2 bg-amber-50 text-amber-655 rounded-xl group-hover:bg-amber-100 transition-colors">
+                  <Clock className="w-4 h-4 text-amber-500" />
                 </div>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
@@ -3123,18 +3297,18 @@ export default function PaymentScreen({
               </p>
             </div>
 
-            {/* KPI Card 3: Activated Paid */}
+            {/* KPI Card 3: Active Subscribers */}
             <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
-                  Activated Paid
+                  Active Subscribers
                 </span>
                 <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-100 transition-colors">
                   <Sparkles className="w-4 h-4 text-emerald-500" />
                 </div>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-3xl font-black text-emerald-600 tracking-tight font-sans">
+                <span className="text-3xl font-black text-emerald-600 tracking-tight font-sans font-extrabold">
                   {allUsers.filter((u) => u.isActive === true).length}
                 </span>
                 <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">
@@ -3142,11 +3316,34 @@ export default function PaymentScreen({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
-                Premium active licenses
+                Pro Active Licenses
               </p>
             </div>
 
-            {/* KPI Card 4: Unpaid Accounts */}
+            {/* KPI Card 4: Lifetime Subscribers */}
+            <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest">
+                  Lifetime Subscribers
+                </span>
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors">
+                  <UserCheck className="w-4 h-4 text-indigo-500" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-indigo-600 tracking-tight font-sans font-extrabold">
+                  {allUsers.filter((u) => u.isActive === true).length}
+                </span>
+                <span className="text-[10px] font-bold text-indigo-605 bg-indigo-50 px-1.5 py-0.5 rounded text-indigo-750 font-black">
+                  100% Secure
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
+                Permanent Access Tier
+              </p>
+            </div>
+
+            {/* KPI Card 5: Unpaid Accounts */}
             <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_28px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between group min-h-[120px]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
@@ -3157,7 +3354,7 @@ export default function PaymentScreen({
                 </div>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-3xl font-black text-slate-700 tracking-tight font-sans">
+                <span className="text-3xl font-black text-slate-705 tracking-tight font-sans">
                   {
                     allUsers.filter(
                       (u) =>
@@ -3221,26 +3418,29 @@ export default function PaymentScreen({
                 </button>
 
                 {/* Clean inline Indicator helper */}
-                {(searchQuery || planFilter !== "all" || adminFilter !== "all") && (
+                {(searchQuery || planFilter !== "all" || adminFilter !== "all" || startDate || endDate || sortOrder !== "newest") && (
                   <button
                     onClick={() => {
                       setSearchQuery("");
                       setPlanFilter("all");
                       setAdminFilter("all");
+                      setStartDate("");
+                      setEndDate("");
+                      setSortOrder("newest");
                     }}
                     className="px-3.5 py-2.5 border border-slate-200 hover:bg-slate-100 text-slate-600 hover:text-slate-900 rounded-xl text-xxs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer"
                     title="Clear all active filters"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                     Reset Filters
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Bottom Row: Segmented Filters (Plan & Status) */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-200/30">
-              <div className="flex flex-wrap items-center gap-4">
+            {/* Bottom Row: Segmented Filters, Sorting, and Date Range */}
+            <div className="flex flex-col gap-4 pt-4 border-t border-slate-200/30">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 {/* Plan Tier Segmented Selector */}
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 select-none">
@@ -3268,8 +3468,8 @@ export default function PaymentScreen({
                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 select-none">
                     Status
                   </span>
-                  <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
-                    {(["all", "pending", "paid", "unpaid"] as const).map((mode) => (
+                  <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40 flex-wrap">
+                    {(["all", "pending", "paid", "lifetime", "unpaid"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setAdminFilter(mode)}
@@ -3285,16 +3485,86 @@ export default function PaymentScreen({
                             ? "Pending"
                             : mode === "paid"
                               ? "Active"
-                              : "Unpaid"}
+                              : mode === "lifetime"
+                                ? "Lifetime"
+                                : "Unpaid"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sorted Options: Subscription Date */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 select-none flex items-center gap-1">
+                    <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                    Sort
+                  </span>
+                  <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
+                    {(["newest", "oldest"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setSortOrder(mode)}
+                        className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition-all select-none cursor-pointer flex items-center gap-1 ${
+                          sortOrder === mode
+                            ? "bg-white shadow-sm text-indigo-600 font-black border border-slate-200"
+                            : "text-slate-500 hover:text-slate-800 font-bold"
+                        }`}
+                      >
+                        {mode === "newest" ? "Newest to Oldest" : "Oldest to Newest"}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
 
-              {/* Status Indicator counter */}
-              <div className="text-right text-[10px] font-bold text-slate-400 font-mono select-none uppercase tracking-wider">
-                Showing {filteredUsers.length} of {allUsers.length} Users
+              {/* Row 3: Subscription Date Range Calendar pickers */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-3 border-t border-slate-200/20">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 select-none flex items-center gap-1">
+                    <CalendarRange className="w-3 h-3 text-slate-400 shrink-0" />
+                    Sub Date Range
+                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white border border-slate-200 focus:border-indigo-600 rounded-xl outline-none shadow-sm transition-all text-center select-none cursor-pointer"
+                        title="Start registration/subscription date"
+                      />
+                    </div>
+                    <span className="text-slate-350 text-xs font-bold font-mono">to</span>
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white border border-slate-200 focus:border-indigo-600 rounded-xl outline-none shadow-sm transition-all text-center select-none cursor-pointer"
+                        title="End registration/subscription date"
+                      />
+                    </div>
+
+                    {(startDate || endDate) && (
+                      <button
+                        onClick={() => {
+                          setStartDate("");
+                          setEndDate("");
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Clear Date Filters"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Status Indicator counter */}
+                <div className="text-right text-[10px] font-bold text-slate-400 font-mono select-none uppercase tracking-wider">
+                  Showing {sortedUsers.length} of {allUsers.length} Users
+                </div>
               </div>
             </div>
           </div>
@@ -3309,7 +3579,7 @@ export default function PaymentScreen({
 
           {/* Compact Modern SaaS Table/List container */}
           <div className="bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] md:overflow-visible overflow-hidden animate-fade-in no-print">
-            {filteredUsers.length === 0 ? (
+            {sortedUsers.length === 0 ? (
               <div className="py-16 px-6 text-center bg-white rounded-2xl flex flex-col items-center">
                 <Users className="w-10 h-10 text-slate-300 mb-2.5" />
                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-tight">
@@ -3323,6 +3593,9 @@ export default function PaymentScreen({
                     setSearchQuery("");
                     setPlanFilter("all");
                     setAdminFilter("all");
+                    setStartDate("");
+                    setEndDate("");
+                    setSortOrder("newest");
                   }}
                   className="mt-4 px-4 py-2 bg-slate-105 hover:bg-slate-200 text-slate-700 text-xxs font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
                 >
@@ -3354,7 +3627,7 @@ export default function PaymentScreen({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredUsers.map((u, idx) => {
+                      {sortedUsers.map((u, idx) => {
                         const isPending = u.paymentStatus === "pending_verification";
                         const isUserActive = u.isActive === true;
                         const finance = getUserFinanceDetails(u);
@@ -3382,7 +3655,7 @@ export default function PaymentScreen({
                                 <div className={`w-8 h-8 rounded-xl ${colorClass} flex items-center justify-center text-xs font-black tracking-tighter shrink-0 shadow-sm`}>
                                   {initials}
                                 </div>
-                                <div className="min-w-0 flex flex-col">
+                                <div className="min-w-0 flex flex-col gap-0.5">
                                   <span className="font-extrabold text-slate-950 text-xs tracking-tight truncate leading-tight">
                                     {getUserName(u)}
                                   </span>
@@ -3403,9 +3676,20 @@ export default function PaymentScreen({
                                       <Copy className="w-2.5 h-2.5" />
                                     </button>
                                   </div>
-                                  <span className="text-[9px] font-mono font-bold text-slate-350 tracking-wider uppercase mt-0.5">
-                                    uid: {u.uid.slice(0, 8)}...
-                                  </span>
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] font-mono font-bold text-slate-350 tracking-wider uppercase">
+                                      uid: {u.uid.slice(0, 8)}...
+                                    </span>
+                                    <span className="text-[9px] font-bold text-slate-450 tracking-tight flex items-center gap-1">
+                                      <Clock className="w-2.5 h-2.5 text-slate-300 shrink-0" />
+                                      Sub Date: {getSubscriptionDate(u).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                                    </span>
+                                    {isUserActive && (
+                                      <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/50 self-start mt-0.5">
+                                        Lifetime Access
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -3626,7 +3910,7 @@ export default function PaymentScreen({
 
                 {/* Mobile View: High density visual cards layout */}
                 <div className="block md:hidden divide-y divide-slate-100">
-                  {filteredUsers.map((u) => {
+                  {sortedUsers.map((u) => {
                     const isPending = u.paymentStatus === "pending_verification";
                     const isUserActive = u.isActive === true;
                     const finance = getUserFinanceDetails(u);
@@ -3654,7 +3938,13 @@ export default function PaymentScreen({
                             </div>
                             
                             <p className="text-[10px] text-slate-400 font-mono truncate">{u.email}</p>
-                            <span className="text-[9px] font-mono text-slate-350 tracking-wider">UID: {u.uid.slice(0, 10)}...</span>
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <span className="text-[9px] font-mono text-slate-350 tracking-wider">UID: {u.uid.slice(0, 10)}...</span>
+                              <span className="text-[9px] font-bold text-slate-400">Sub Date: {getSubscriptionDate(u).toLocaleDateString()}</span>
+                              {isUserActive && (
+                                <span className="text-[9px] font-black uppercase text-emerald-600">Subscription Type: Lifetime Access</span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Status Badge */}
