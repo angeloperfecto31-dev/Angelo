@@ -157,59 +157,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     return { motorLoadVA: mVA, nonMotorLoadVA: nmVA };
   }, [circuits, subPanels, subSubPanels]);
 
-  // Calculate nearest standard transformer size based on Load Schedule
-  useEffect(() => {
-    if (!circuits || !panel) return;
-    
-    if (source === 'auto') {
-      const { mainCurrent, mainFeeder, totalVA } = computePanelScheduleValues(panel, circuits);
-      const totalKVA = totalVA / 1000;
-      
-      // Standard transformer ratings in kVA
-      const standardKVA = [10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500, 2000, 2500];
-      const recommendedKVA = standardKVA.find(k => k >= totalKVA) || standardKVA[standardKVA.length - 1];
 
-      let recommendedFeederSize = mainFeeder.wire.size.toString();
-      let recommendedRuns = getRunsBySystem(panel.system);
-
-      if (mainFeeder.cb > 250) {
-        recommendedRuns = mainFeeder.wire.runs; 
-        recommendedFeederSize = mainFeeder.wire.size.toString();
-      }
-
-      setParams(p => {
-        if (
-          p.transformerKVA === recommendedKVA && 
-          p.transformerVoltage === panel.voltage && 
-          p.feederSize === recommendedFeederSize && 
-          p.feederRuns === recommendedRuns &&
-          (!panel.transformerConnection || p.transformerConnection === panel.transformerConnection)
-        ) {
-          return p;
-        }
-        return {
-          ...p,
-          transformerKVA: recommendedKVA,
-          transformerVoltage: panel.voltage,
-          feederSize: recommendedFeederSize,
-          feederRuns: recommendedRuns,
-          transformerConnection: panel.transformerConnection || p.transformerConnection
-        };
-      });
-    }
-  }, [source, circuits, panel]);
-
-  // Synchronize feederRuns with the system voltage configuration throughout the Short Circuit calculation process
-  useEffect(() => {
-    if (!panel?.system) return;
-    const expectedRuns = getRunsBySystem(panel.system);
-    if (params.feederRuns !== expectedRuns) {
-      setParams(current => ({
-        ...current,
-        feederRuns: expectedRuns
-      }));
-    }
-  }, [panel?.system, params.feederRuns, setParams]);
 
   const calculation = useMemo(() => {
     // Determine connection phase factors based on Philippine Electrical Code (PEC) Practices

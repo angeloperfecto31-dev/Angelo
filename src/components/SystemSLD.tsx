@@ -630,7 +630,7 @@ export default function SystemSLD({
             // Staggered horizontal channels to prevent overlap
             const yChannel = SpYOffset - 75 + i * 12;
             const spFeedX = spXOffset + 270;
-            const spFeedY = SpYOffset + 100;
+            const spFeedY = SpYOffset + 150;
 
             // Beautiful clean orthogonal layout line paths
             const pathY = y1 + 25;
@@ -642,7 +642,7 @@ export default function SystemSLD({
             path += ` L ${spFeedX},${spFeedY}`;
 
             return (
-              <g key={id}>
+              <g key={`page-l2-${id}`}>
                 {/* Routing Line connects MDP branch to SP feed */}
                 <path d={path} className="sld-thick" />
 
@@ -709,11 +709,12 @@ export default function SystemSLD({
             const parentXOffset = parentPos.x;
 
             const y1 = SpYOffset + 50 + 320 + layout.rowIndex * 60; // relative to parent yOffset = SpYOffset + 50
-            const x1 = parentXOffset + (isLeft ? 190 : 610);
+            const isLeftBranchInParent = parentLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
+            const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
 
             // Staggered drop column for Sub-Sub Panels
             let dropX = 0;
-            if (isLeft) {
+            if (isLeftBranchInParent) {
               dropX = parentXOffset + 150 - (i + 1) * 20;
             } else {
               dropX = parentXOffset + 650 + (i + 1) * 20;
@@ -722,7 +723,7 @@ export default function SystemSLD({
             // Staggered horizontal channels
             const yChannel = SspYOffset - 75 + i * 12;
             const sspFeedX = sspXOffset + 270;
-            const sspFeedY = SspYOffset + 100;
+            const sspFeedY = SspYOffset + 150;
 
             const pathY = y1 + 25;
             let path = `M ${x1},${y1}`;
@@ -733,7 +734,7 @@ export default function SystemSLD({
             path += ` L ${sspFeedX},${sspFeedY}`;
 
             return (
-              <g key={id}>
+              <g key={`page-l3-${id}`}>
                 {/* Routing Line connects SP branch to SSP feed */}
                 <path d={path} className="sld-thick" />
 
@@ -987,7 +988,7 @@ export default function SystemSLD({
       
                   const yChannel = SpYOffset - 75 + i * 12;
                   const spFeedX = spXOffset + 270;
-                  const spFeedY = SpYOffset + 100;
+                  const spFeedY = SpYOffset + 150;
       
                   const pathY = y1 + 25;
                   let path = `M ${x1},${y1}`;
@@ -998,7 +999,7 @@ export default function SystemSLD({
                   path += ` L ${spFeedX},${spFeedY}`;
       
                   return (
-                    <g key={id}>
+                    <g key={`max-l2-${id}`}>
                       <path d={path} className="sld-thick" />
                       <rect
                         x={spFeedX - 62.5}
@@ -1059,10 +1060,11 @@ export default function SystemSLD({
                   const parentXOffset = parentPos.x;
       
                   const y1 = SpYOffset + 50 + 320 + layout.rowIndex * 60;
-                  const x1 = parentXOffset + (isLeft ? 190 : 610);
+                  const isLeftBranchInParent = parentLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
+                  const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
       
                   let dropX = 0;
-                  if (isLeft) {
+                  if (isLeftBranchInParent) {
                     dropX = parentXOffset + 150 - (i + 1) * 20;
                   } else {
                     dropX = parentXOffset + 650 + (i + 1) * 20;
@@ -1070,7 +1072,7 @@ export default function SystemSLD({
       
                   const yChannel = SspYOffset - 75 + i * 12;
                   const sspFeedX = sspXOffset + 270;
-                  const sspFeedY = SspYOffset + 100;
+                  const sspFeedY = SspYOffset + 150;
       
                   const pathY = y1 + 25;
                   let path = `M ${x1},${y1}`;
@@ -1081,7 +1083,7 @@ export default function SystemSLD({
                   path += ` L ${sspFeedX},${sspFeedY}`;
       
                   return (
-                    <g key={id}>
+                    <g key={`max-l3-${id}`}>
                       <path d={path} className="sld-thick" />
                       <rect
                         x={sspFeedX - 62.5}
