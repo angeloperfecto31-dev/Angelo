@@ -727,8 +727,7 @@ export default function PaymentScreen({
           document.title,
           window.location.pathname,
         );
-        alert("Payment Successful! Please log in to your account to continue.");
-        signOut(auth).catch(console.error);
+        alert("Payment Successful! Your account has been upgraded and is now active.");
         if (onPaymentSuccess) {
           onPaymentSuccess();
         }

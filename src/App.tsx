@@ -117,12 +117,6 @@ export default function App() {
   const isActiveRef = useRef(false);
 
   useEffect(() => {
-    // Determine if we should sign out (first time this instance runs)
-    if (!window.sessionStorage.getItem("hasRunBefore")) {
-      window.sessionStorage.setItem("hasRunBefore", "true");
-      signOut(auth).catch(console.error);
-    }
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser) {
@@ -140,47 +134,63 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // Listen to user document in Firestore to check active status
     let initialLoad = true;
-    const unsubscribe = onSnapshot(
-      doc(db, "users", user.uid),
-      (docSnap) => {
-        if (docSnap.exists() && docSnap.data().isActive === true) {
-          const data = docSnap.data();
-          setUserPlan(data.plan || "premium");
-          if (!initialLoad && !isActiveRef.current && !isAdmin) {
-            // Transitioned from inactive to active while logged in!
-            // Give a tiny delay for payment screen to unmount or show a message if we wanted, but the prompt says redirect automatically.
-            alert(
-              "Your account has been manually approved and activated! Please log in to your account to continue.",
-            );
-            signOut(auth).catch(console.error);
-          } else {
+    let unsubscribe: () => void;
+    let retryTimeout: NodeJS.Timeout;
+
+    const setupListener = () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+      
+      unsubscribe = onSnapshot(
+        doc(db, "users", user.uid),
+        (docSnap) => {
+          if (docSnap.exists() && docSnap.data().isActive === true) {
+            const data = docSnap.data();
+            setUserPlan(data.plan || "premium");
             setIsActive(true);
             isActiveRef.current = true;
+          } else {
+            setIsActive(false);
+            isActiveRef.current = false;
+            setUserPlan(null);
           }
-        } else {
-          setIsActive(false);
-          isActiveRef.current = false;
-          setUserPlan(null);
-        }
-        initialLoad = false;
-        setAuthLoading(false);
-      },
-      (error) => {
-        console.error("Firestore listener error:", error);
-        setIsActive(false);
-        isActiveRef.current = false;
-        setAuthLoading(false);
-        try {
-          handleFirestoreError(error, OperationType.GET, "users/" + user.uid);
-        } catch (e) {
-          // Keep the error from breaking state, but ensure it's reported
-        }
-      },
-    );
+          initialLoad = false;
+          setAuthLoading(false);
+        },
+        (error: any) => {
+          console.error("Firestore listener error:", error);
+          
+          // Only mark as inactive if it's a definitive permission error
+          if (error.code === 'permission-denied' || error.code === 'unauthenticated') {
+            setIsActive(false);
+            isActiveRef.current = false;
+            setUserPlan(null);
+            setAuthLoading(false);
+          } else {
+            // Transient error (like network disconnect)
+            // Attempt to reconnect gracefully without breaking the user session
+            retryTimeout = setTimeout(() => {
+              setupListener();
+            }, 5000);
+          }
 
-    return () => unsubscribe();
+          try {
+            handleFirestoreError(error, OperationType.GET, "users/" + user.uid);
+          } catch (e) {
+            // Keep the error from breaking state, but ensure it's reported
+          }
+        },
+      );
+    };
+
+    setupListener();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+      if (retryTimeout) clearTimeout(retryTimeout);
+    };
   }, [user, isAdmin]);
 
   const [activeTab, setActiveTab] = useState<
