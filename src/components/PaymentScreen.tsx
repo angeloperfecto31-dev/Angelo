@@ -89,8 +89,8 @@ export default function PaymentScreen({
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Tabs for the customer view: "maribank", "manual" or "paymongo"
-  const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual" | "paymongo">(
+  // Tabs for the customer view: "maribank", "manual", "paymongo", or "maya"
+  const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual" | "paymongo" | "maya">(
     "maribank"
   );
 
@@ -106,8 +106,10 @@ export default function PaymentScreen({
   // GCash QR Code configuration settings state
   const [gcashQrUrl, setGcashQrUrl] = useState<string>("");
   const [maribankQrUrl, setMaribankQrUrl] = useState<string>("");
+  const [mayaQrUrl, setMayaQrUrl] = useState<string>("");
   const [uploadingQr, setUploadingQr] = useState(false);
   const [uploadingMaribankQr, setUploadingMaribankQr] = useState(false);
+  const [uploadingMayaQr, setUploadingMayaQr] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium">("premium");
 
@@ -116,6 +118,7 @@ export default function PaymentScreen({
   const [confirmCancelReview, setConfirmCancelReview] = useState(false);
   const [confirmResetGcash, setConfirmResetGcash] = useState(false);
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
+  const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
   const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices">("verifications");
 
@@ -139,6 +142,7 @@ export default function PaymentScreen({
     enableMaribank: true,
     enableGCash: true,
     enablePayMongo: true,
+    enableMaya: true,
   });
 
   // Admin Pricing Input States
@@ -155,6 +159,7 @@ export default function PaymentScreen({
   const [adminEnableMaribank, setAdminEnableMaribank] = useState<boolean>(true);
   const [adminEnableGCash, setAdminEnableGCash] = useState<boolean>(true);
   const [adminEnablePayMongo, setAdminEnablePayMongo] = useState<boolean>(true);
+  const [adminEnableMaya, setAdminEnableMaya] = useState<boolean>(true);
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
 
@@ -246,17 +251,24 @@ export default function PaymentScreen({
 
   useEffect(() => {
     // If the currently selected method is disabled, switch to another available method
-    if (paymentMethod === "maribank" && !pricingSettings.enableMaribank) {
-      if (pricingSettings.enableGCash) setPaymentMethod("manual");
-      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
-    } else if (paymentMethod === "manual" && !pricingSettings.enableGCash) {
-      if (pricingSettings.enableMaribank) setPaymentMethod("maribank");
-      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
-    } else if (paymentMethod === "paymongo" && !pricingSettings.enablePayMongo) {
+    if (paymentMethod === "maya" && !pricingSettings.enableMaya) {
       if (pricingSettings.enableMaribank) setPaymentMethod("maribank");
       else if (pricingSettings.enableGCash) setPaymentMethod("manual");
+      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
+    } else if (paymentMethod === "maribank" && !pricingSettings.enableMaribank) {
+      if (pricingSettings.enableMaya) setPaymentMethod("maya");
+      else if (pricingSettings.enableGCash) setPaymentMethod("manual");
+      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
+    } else if (paymentMethod === "manual" && !pricingSettings.enableGCash) {
+      if (pricingSettings.enableMaya) setPaymentMethod("maya");
+      else if (pricingSettings.enableMaribank) setPaymentMethod("maribank");
+      else if (pricingSettings.enablePayMongo) setPaymentMethod("paymongo");
+    } else if (paymentMethod === "paymongo" && !pricingSettings.enablePayMongo) {
+      if (pricingSettings.enableMaya) setPaymentMethod("maya");
+      else if (pricingSettings.enableMaribank) setPaymentMethod("maribank");
+      else if (pricingSettings.enableGCash) setPaymentMethod("manual");
     }
-  }, [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo, paymentMethod]);
+  }, [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo, pricingSettings.enableMaya, paymentMethod]);
 
   useEffect(() => {
     // Listen to real-time changes in global GCash payment settings
@@ -294,6 +306,23 @@ export default function PaymentScreen({
       },
     );
 
+    const unsubscribeMaya = onSnapshot(
+      doc(db, "settings", "maya"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.qrCodeDataUrl) {
+            setMayaQrUrl(data.qrCodeDataUrl);
+          } else {
+            setMayaQrUrl("");
+          }
+        }
+      },
+      (error) => {
+        console.error("settings maya onSnapshot error:", error);
+      },
+    );
+
     const unsubscribePricing = onSnapshot(
       doc(db, "settings", "pricing"),
       async (docSnap) => {
@@ -312,6 +341,7 @@ export default function PaymentScreen({
           const enableMaribank = data.enableMaribank !== false; // defaults to true
           const enableGCash = data.enableGCash !== false;
           const enablePayMongo = data.enablePayMongo !== false;
+          const enableMaya = data.enableMaya !== false;
 
           setPricingSettings({
             basicPrice: basic,
@@ -327,6 +357,7 @@ export default function PaymentScreen({
             enableMaribank,
             enableGCash,
             enablePayMongo,
+            enableMaya,
           });
 
           // Prefill admin panels only on first load, to prevent overwriting active admin edits
@@ -344,6 +375,7 @@ export default function PaymentScreen({
             setAdminEnableMaribank(enableMaribank);
             setAdminEnableGCash(enableGCash);
             setAdminEnablePayMongo(enablePayMongo);
+            setAdminEnableMaya(enableMaya);
             hasLoadedPricingInputs.current = true;
           }
         } else {
@@ -362,6 +394,7 @@ export default function PaymentScreen({
             enableMaribank: true,
             enableGCash: true,
             enablePayMongo: true,
+            enableMaya: true,
           });
 
           if (isAdminUser) {
@@ -380,6 +413,7 @@ export default function PaymentScreen({
                 enableMaribank: true,
                 enableGCash: true,
                 enablePayMongo: true,
+                enableMaya: true,
                 updatedBy: "System (Auto-generated)",
                 updatedAt: new Date().toISOString()
               });
@@ -397,6 +431,7 @@ export default function PaymentScreen({
     return () => {
       unsubscribeGcash();
       unsubscribeMaribank();
+      unsubscribeMaya();
       unsubscribePricing();
     };
   }, []);
@@ -506,6 +541,60 @@ export default function PaymentScreen({
 
     reader.readAsDataURL(file);
   };
+
+  const handleMayaQrUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 800 * 1024) {
+      setAdminStatusMsg(
+        "Error: Selected image file is too large. Please select a cropped QR image of less than 800KB.",
+      );
+      return;
+    }
+
+    setUploadingMayaQr(true);
+    setAdminStatusMsg("");
+    const reader = new FileReader();
+
+    reader.onload = async (event) => {
+      const base64String = event.target?.result as string;
+      if (!base64String) {
+        setAdminStatusMsg("Error: Failed to process image file.");
+        setUploadingMayaQr(false);
+        return;
+      }
+
+      try {
+        await setDoc(
+          doc(db, "settings", "maya"),
+          {
+            qrCodeDataUrl: base64String,
+            updatedBy: user.email || "",
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+        setAdminStatusMsg("Maya QR Code updated successfully!");
+      } catch (err: any) {
+        setAdminStatusMsg("Failed to update QR Code: " + err.message);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, "settings/maya");
+        } catch (e) {}
+      } finally {
+        setUploadingMayaQr(false);
+      }
+    };
+
+    reader.onerror = () => {
+      setAdminStatusMsg("Error reading image file.");
+      setUploadingMayaQr(false);
+    };
+
+    reader.readAsDataURL(file);
+  };
   
   const handleSavePricing = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -537,7 +626,7 @@ export default function PaymentScreen({
       }
     }
 
-    if (!adminEnableMaribank && !adminEnableGCash && !adminEnablePayMongo) {
+    if (!adminEnableMaribank && !adminEnableGCash && !adminEnablePayMongo && !adminEnableMaya) {
       setAdminStatusMsg("Error: At least one payment method must remain active to prevent checkout issues.");
       setSavingPricing(false);
       return;
@@ -560,6 +649,7 @@ export default function PaymentScreen({
           enableMaribank: adminEnableMaribank,
           enableGCash: adminEnableGCash,
           enablePayMongo: adminEnablePayMongo,
+          enableMaya: adminEnableMaya,
           updatedBy: user.email || "",
           updatedAt: new Date().toISOString()
         },
@@ -576,6 +666,7 @@ export default function PaymentScreen({
             maribank: adminEnableMaribank,
             gcash: adminEnableGCash,
             paymongo: adminEnablePayMongo,
+            maya: adminEnableMaya,
           },
         });
       } catch (logErr) {
@@ -798,6 +889,8 @@ export default function PaymentScreen({
       console.warn("Manual payment has a non-standard reference number length.");
     } else if (paymentMethod === "maribank" && cleanedRef.length < 6) {
       console.warn("MariBank reference number length is non-standard.");
+    } else if (paymentMethod === "maya" && cleanedRef.length < 6) {
+      console.warn("Maya reference number length is non-standard.");
     }
 
     setSubmittingManual(true);
@@ -809,7 +902,7 @@ export default function PaymentScreen({
         email: user.email,
         paymentStatus: "pending_verification",
         pendingVerification: {
-          method: paymentMethod === "maribank" ? "MariBank" : "GCash",
+          method: paymentMethod === "maribank" ? "MariBank" : paymentMethod === "maya" ? "Maya" : "GCash",
           senderName: manualName.trim(),
           referenceNo: cleanedRef,
           amount: isUpgrade ? upgradeFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice),
@@ -827,7 +920,7 @@ export default function PaymentScreen({
       await setDoc(doc(db, "users", user.uid), updateData, { merge: true });
 
       setManualMessage(
-        `Your ${paymentMethod === "maribank" ? "MariBank" : "GCash"} Payment details have been submitted successfully.`,
+        `Your ${paymentMethod === "maribank" ? "MariBank" : paymentMethod === "maya" ? "Maya" : "GCash"} Payment details have been submitted successfully.`,
       );
       setManualName("");
       setManualRefNo("");
@@ -2900,6 +2993,115 @@ export default function PaymentScreen({
                 )}
               </div>
             </div>
+
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2 mt-8">
+              <QrCode className="w-5 h-5 text-emerald-600" />
+              Maya QR Code Image Configuration
+            </h2>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Upload your original Maya QR code image to display it for the Direct Maya option.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              {/* File Input and Controls */}
+              <div className="space-y-4">
+                <div className="border border-dashed border-slate-200 hover:border-emerald-500 rounded-xl p-6 transition-all text-center relative cursor-pointer bg-slate-50/50">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleMayaQrUpload}
+                    disabled={uploadingMayaQr}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="flex flex-col items-center">
+                    <QrCode className="w-8 h-8 text-slate-400 mb-2" />
+                    <span className="text-xs font-bold text-slate-600">
+                      {uploadingMayaQr
+                        ? "Processing file..."
+                        : "Click or Drag & Drop Maya QR Image to Upload"}
+                    </span>
+                    <span className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-mono">
+                      PNG, JPG, or WEBP up to 800KB
+                    </span>
+                  </div>
+                </div>
+                {uploadingMayaQr && (
+                  <div className="flex items-center gap-2 text-emerald-600 font-bold text-xs">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>
+                      Processing image and saving to Firestore setting...
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Current QR Code Preview */}
+              <div className="flex flex-col items-center p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">
+                  Active Maya QR Code Preview
+                </span>
+                {mayaQrUrl ? (
+                  <div className="relative flex flex-col items-center">
+                    <img
+                      src={mayaQrUrl}
+                      alt="Active Maya QR Code"
+                      referrerPolicy="no-referrer"
+                      className="w-40 h-40 object-contain rounded-lg shadow-sm border border-slate-200 bg-white p-1"
+                    />
+                    <span className="text-[9px] text-[#00C27C] font-bold mt-1 uppercase tracking-wider">
+                      ★ Active Overridden Custom QR
+                    </span>
+                    <button
+                      onClick={async () => {
+                        if (!confirmResetMaya) {
+                          setConfirmResetMaya(true);
+                          setTimeout(() => setConfirmResetMaya(false), 4000);
+                          return;
+                        }
+                        setConfirmResetMaya(false);
+                        try {
+                          await setDoc(
+                            doc(db, "settings", "maya"),
+                            { qrCodeDataUrl: "" },
+                            { merge: true },
+                          );
+                          setMayaQrUrl("");
+                          setAdminStatusMsg("Removed Maya QR.");
+                        } catch (err: any) {
+                          setAdminStatusMsg(
+                            "Error resetting QR: " + err.message,
+                          );
+                          try {
+                            handleFirestoreError(
+                              err,
+                              OperationType.WRITE,
+                              "settings/maya",
+                            );
+                          } catch (e) {}
+                        }
+                      }}
+                      className={`absolute -top-2 -right-3 border font-bold text-[10px] p-1.5 rounded-full transition-all shadow-sm ${
+                        confirmResetMaya
+                          ? "bg-red-600 border-red-700 text-white animate-pulse"
+                          : "bg-red-100 border-red-200 text-red-600 hover:bg-red-200"
+                      }`}
+                      title={confirmResetMaya ? "Click again to confirm reset" : "Reset to default"}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <div className="w-40 h-40 flex items-center justify-center bg-slate-200 rounded-lg shadow-sm border border-slate-200">
+                      <QrCode className="w-10 h-10 text-slate-400" />
+                    </div>
+                    <span className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-wider">
+                      No Image Uploaded
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Dynamic Pricing Management Panel */}
@@ -3130,6 +3332,19 @@ export default function PaymentScreen({
                     <div className="flex flex-col">
                       <span className="text-sm font-bold text-[#0157E4]">GCash QR</span>
                       <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Enable or disable GCash direct wallet payments</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-all">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-emerald-500 rounded bg-slate-100 border-slate-300 focus:ring-emerald-400 cursor-pointer"
+                      checked={adminEnableMaya}
+                      onChange={(e) => setAdminEnableMaya(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-900">Maya QR</span>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Enable or disable Direct Maya transfers</span>
                     </div>
                   </label>
 
@@ -4551,12 +4766,28 @@ export default function PaymentScreen({
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">2. Select Payment Method</h3>
             {/* Selector Tabs */}
             <div className={`grid gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6 ${
-              [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo].filter(Boolean).length === 3 
-                ? 'grid-cols-3' 
-                : [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo].filter(Boolean).length === 2 
-                  ? 'grid-cols-2' 
-                  : 'grid-cols-1'
+              [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo, pricingSettings.enableMaya].filter(Boolean).length === 4
+                ? 'grid-cols-2 md:grid-cols-4'
+                : [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo, pricingSettings.enableMaya].filter(Boolean).length === 3 
+                  ? 'grid-cols-3' 
+                  : [pricingSettings.enableMaribank, pricingSettings.enableGCash, pricingSettings.enablePayMongo, pricingSettings.enableMaya].filter(Boolean).length === 2 
+                    ? 'grid-cols-2' 
+                    : 'grid-cols-1'
             }`}>
+              {pricingSettings.enableMaya && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("maya")}
+                  className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    paymentMethod === "maya"
+                      ? "bg-white text-emerald-600 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5 shrink-0" />
+                  Maya QR
+                </button>
+              )}
               {pricingSettings.enableMaribank && (
                 <button
                   type="button"
@@ -4621,7 +4852,124 @@ export default function PaymentScreen({
           )}
 
           {/* Conditional View Method */}
-          {paymentMethod === "maribank" ? (
+          {paymentMethod === "maya" ? (
+            <div className="space-y-6">
+              {/* Maya QR Card Visualization */}
+              <div className="flex justify-center flex-col items-center">
+                <div className="w-full max-w-sm bg-emerald-600 rounded-3xl p-6 shadow-2xl border border-emerald-500 flex flex-col items-center select-none font-sans relative overflow-hidden text-white">
+                  {/* Maya Wave Background Decors */}
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full scale-150 -translate-y-12 translate-x-12"></div>
+                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full scale-150 translate-y-12 -translate-x-12"></div>
+
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-5 justify-center">
+                    <span className="text-3xl font-black tracking-tight">
+                      Maya
+                    </span>
+                    <span className="text-[10px] bg-white text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                      InstaPay
+                    </span>
+                  </div>
+
+                  {/* QR Card Container */}
+                  <div className="bg-white rounded-2xl p-5 w-full shadow-inner border border-slate-100 flex flex-col items-center">
+                    {/* QR code itself */}
+                    <div className="bg-white rounded-2xl p-4 w-44 h-44 flex items-center justify-center relative shadow-sm overflow-hidden border border-slate-100">
+                      {mayaQrUrl ? (
+                        <img
+                          src={mayaQrUrl}
+                          alt="Maya Scan QR"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-contain rounded-lg select-none"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-slate-100 flex items-center justify-center rounded-lg border border-dashed border-slate-300">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase text-center px-2">
+                            Image not uploaded
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Transfer fees text */}
+                    <span className="text-[10px] font-bold text-slate-400 mt-4 uppercase tracking-wide">
+                      Free InstaPay Transfers
+                    </span>
+
+                    {/* Payee Name */}
+                    <span className="text-lg font-black text-emerald-600 tracking-tight mt-1 uppercase text-center leading-tight">
+                      ANGELO PERFECTO
+                    </span>
+
+                    {/* Bank Account */}
+                    <div className="flex flex-col items-center gap-1 mt-1.5">
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        Maya
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                    Please transfer exactly{" "}
+                    <strong className="text-slate-800">₱{(isUpgrade ? upgradeFinalPrice : (selectedPlan === 'premium' ? premiumFinalPrice : basicFinalPrice)).toLocaleString()}.00</strong> via
+                    Maya QR.
+                  </span>
+                </div>
+              </div>
+
+              {/* Reference Number Submission Form */}
+              <form
+                onSubmit={handleManualSubmit}
+                className="space-y-4 pt-2 border-t border-slate-100"
+              >
+                <span className="text-[10px] uppercase tracking-widest font-black text-emerald-600 block text-center">
+                  Submit Proof of Bank Transfer
+                </span>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
+                    Your Bank Account Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    placeholder="e.g. JUAN DELA CRUZ"
+                    className="appearance-none block w-full px-3 py-2 border border-slate-200 rounded-xl placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold uppercase tracking-wider transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 animate-pulse">
+                    InstaPay / Bank Reference No.
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={manualRefNo}
+                    onChange={(e) => setManualRefNo(e.target.value)}
+                    placeholder="e.g. 20240529..."
+                    className="appearance-none block w-full px-3 py-2 border border-slate-200 rounded-xl placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-black tracking-widest font-mono transition-all"
+                  />
+                  <span className="text-[9px] text-slate-400 mt-1 block">
+                    Double-check reference ID from your transfer receipt.
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingManual}
+                  className="w-full flex justify-center py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-colors disabled:opacity-50"
+                >
+                  {submittingManual
+                    ? "Submitting Ledger Details..."
+                    : "Activate via Reference ID"}
+                </button>
+              </form>
+            </div>
+          ) : paymentMethod === "maribank" ? (
             <div className="space-y-6">
               {/* MariBank QR Card Visualization */}
               <div className="flex justify-center flex-col items-center">

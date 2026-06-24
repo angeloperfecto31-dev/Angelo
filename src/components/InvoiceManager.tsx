@@ -888,6 +888,7 @@ export default function InvoiceManager({
                 <option value="all">🏦 All Channels</option>
                 <option value="gcash">GCash E-Wallet</option>
                 <option value="maribank">MariBank Direct</option>
+                <option value="maya">Maya Direct</option>
                 <option value="bypass">Bypass Admin Activation</option>
               </select>
             </div>
