@@ -35,8 +35,13 @@ import {
   Download,
   Filter,
   PenBox,
-  AlertCircle
+  AlertCircle,
+  FileText,
+  Copy,
+  FileDown,
+  Printer
 } from 'lucide-react';
+import { exportToCAD } from '../utils/exportDxf';
 import { auth, db } from '../firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { toPng } from 'html-to-image';
@@ -1070,11 +1075,61 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
     }
   };
 
-  const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy'>('3d');
+  const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy' | 'reports'>('3d');
   const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag'>('3d');
   const [draggedFixtureId, setDraggedFixtureId] = useState<string | null>(null);
   const [rotatingFixtureId, setRotatingFixtureId] = useState<string | null>(null);
   const dragContainerRef = useRef<HTMLDivElement>(null);
+
+  // Manual Floor Plan Designer States
+  const [floorPlanObjects, setFloorPlanObjects] = useState<any[]>([
+    { id: 'col-1', type: 'column', x1: 0.5, z1: 0.5, x2: 0.9, z2: 0.9, label: 'Column C1' },
+    { id: 'win-1', type: 'window', x1: 1.5, z1: 0, x2: 3.0, z2: 0.1, label: 'Window W1' },
+    { id: 'door-1', type: 'door', x1: 0.2, z1: 4.8, x2: 1.0, z2: 4.9, label: 'Main Entrance' },
+  ]);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [activeTool, setActiveTool] = useState<'select' | 'wall' | 'door' | 'window' | 'partition' | 'column' | 'structural' | 'pan'>('select');
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [zoomScale, setZoomScale] = useState(1.0);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [drawingStart, setDrawingStart] = useState<{ x: number, z: number } | null>(null);
+  const [drawingCurrent, setDrawingCurrent] = useState<{ x: number, z: number } | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [redoHistory, setRedoHistory] = useState<any[]>([]);
+  const [heatmapMode, setHeatmapMode] = useState<'heatmap' | 'fixtures' | 'combined'>('combined');
+
+  // Professional Reporting System States
+  const [reportPreparedFor, setReportPreparedFor] = useState('Confidential Client');
+  const [reportPreparedBy, setReportPreparedBy] = useState('Lead Lighting Engineer');
+  const [reportProjectName, setReportProjectName] = useState('Premium Commercial Space');
+  const [reportExecutiveSummary, setReportExecutiveSummary] = useState('The lighting design presented in this report is optimized for maximum eye comfort, minimal carbon footprint, and complete code compliance. Utilizing high-efficiency fixtures, the design provides exceptional uniformity while remaining well below ASHRAE power limits.');
+  const [reportIncludeSummary, setReportIncludeSummary] = useState(true);
+  const [reportIncludeFloorPlan, setReportIncludeFloorPlan] = useState(true);
+  const [reportIncludeUniformity, setReportIncludeUniformity] = useState(true);
+  const [reportIncludeEnergy, setReportIncludeEnergy] = useState(true);
+  const [reportIncludeAppendix, setReportIncludeAppendix] = useState(true);
+
+  const pushToHistory = (newObjects: any[]) => {
+    setHistory(prev => [...prev, floorPlanObjects]);
+    setRedoHistory([]);
+    setFloorPlanObjects(newObjects);
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setRedoHistory(r => [...r, floorPlanObjects]);
+    setFloorPlanObjects(prev);
+    setHistory(h => h.slice(0, -1));
+  };
+
+  const handleRedo = () => {
+    if (redoHistory.length === 0) return;
+    const next = redoHistory[redoHistory.length - 1];
+    setHistory(h => [...h, floorPlanObjects]);
+    setFloorPlanObjects(next);
+    setRedoHistory(r => r.slice(0, -1));
+  };
 
   const isCurrentlyCustom = useMemo(() => {
     if (editingFixtureIndex !== null && params.activeFixtures && params.activeFixtures[editingFixtureIndex]) {
@@ -1514,6 +1569,107 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
   const handleDragEnd = () => {
     setDraggedFixtureId(null);
     setRotatingFixtureId(null);
+  };
+
+  const getMeterCoords = (clientX: number, clientY: number) => {
+    if (!dragContainerRef.current) return { x: 0, z: 0 };
+    const rect = dragContainerRef.current.getBoundingClientRect();
+    const w = params.roomWidth || 4;
+    const l = params.roomLength || 5;
+    let rx = ((clientX - rect.left) / rect.width) * w;
+    let rz = ((clientY - rect.top) / rect.height) * l;
+    
+    if (snapToGrid) {
+      rx = Math.round(rx / 0.1) * 0.1;
+      rz = Math.round(rz / 0.1) * 0.1;
+    }
+    
+    // clamp to room bounds
+    rx = Math.max(0, Math.min(w, rx));
+    rz = Math.max(0, Math.min(l, rz));
+    return { x: rx, z: rz };
+  };
+
+  const handleContainerMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+    if (activeTool === 'select' || activeTool === 'pan') return;
+    
+    let clientX = 0;
+    let clientY = 0;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    const coords = getMeterCoords(clientX, clientY);
+    setDrawingStart(coords);
+    setDrawingCurrent(coords);
+  };
+
+  const handleContainerMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (activeTool === 'select' || activeTool === 'pan' || !drawingStart) return;
+    
+    let clientX = 0;
+    let clientY = 0;
+    if ('touches' in e) {
+      if (e.touches.length === 0) return;
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    const coords = getMeterCoords(clientX, clientY);
+    setDrawingCurrent(coords);
+  };
+
+  const handleContainerMouseUp = () => {
+    if (activeTool === 'select' || activeTool === 'pan' || !drawingStart || !drawingCurrent) return;
+    
+    // If start and current are basically the same, let's provide a default rectangular footprint
+    let x1 = Number(drawingStart.x.toFixed(2));
+    let z1 = Number(drawingStart.z.toFixed(2));
+    let x2 = Number(drawingCurrent.x.toFixed(2));
+    let z2 = Number(drawingCurrent.z.toFixed(2));
+
+    const dist = Math.sqrt((x2 - x1) ** 2 + (z2 - z1) ** 2);
+    if (dist < 0.15) {
+      // Small click - create default size
+      if (activeTool === 'column') {
+        x2 = x1 + 0.4;
+        z2 = z1 + 0.4;
+      } else if (activeTool === 'door') {
+        x2 = x1 + 0.9;
+        z2 = z1 + 0.1;
+      } else if (activeTool === 'window') {
+        x2 = x1 + 1.2;
+        z2 = z1 + 0.15;
+      } else {
+        x2 = x1 + 1.0;
+        z2 = z1 + 0.1;
+      }
+    }
+    
+    // Add the new object
+    const newId = `obj-${activeTool}-${Date.now()}`;
+    const newObj = {
+      id: newId,
+      type: activeTool,
+      x1: Number(x1.toFixed(2)),
+      z1: Number(z1.toFixed(2)),
+      x2: Number(x2.toFixed(2)),
+      z2: Number(z2.toFixed(2)),
+      label: `${activeTool.toUpperCase()} ${floorPlanObjects.length + 1}`,
+      rotation: 0
+    };
+    
+    pushToHistory([...floorPlanObjects, newObj]);
+    setDrawingStart(null);
+    setDrawingCurrent(null);
   };
 
   // Active fixture model derived from selection or manual input
@@ -2017,6 +2173,8 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
     setParams({ ...params, savedRooms: newRooms });
   };
 
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   const removeSavedRoom = (id: string) => {
     if (!params.savedRooms) return;
     setParams({
@@ -2026,18 +2184,37 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
   };
 
   return (
-    <div className="w-full max-w-full space-y-6">
+    <div className={`w-full max-w-full space-y-6 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-50 dark:bg-slate-950 overflow-y-auto p-4 md:p-8 !m-0' : ''}`}>
+      {isFullscreen && (
+        <div className="flex justify-between items-center mb-6">
+           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+             <Sparkles className="w-6 h-6 text-indigo-500" />
+             Professional Lighting Design Suite
+           </h1>
+           <button onClick={() => setIsFullscreen(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 font-medium flex items-center gap-2">
+             <X className="w-4 h-4" /> Exit Full Screen
+           </button>
+        </div>
+      )}
       <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 no-print">
         <div className="flex items-center justify-between mb-6">
            <div className="flex items-center gap-2">
-             <Target className="w-5 h-5 text-indigo-600 dark:text-indigo-455" />
+             <Target className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Space Parameters</h2>
            </div>
            
-           {/* Global input mode toggle */}
-           <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
-             <button title="Dimensions Mode" onClick={() => setParams({...params, inputMode: 'dimensions'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'dimensions' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Dimensions</button>
-             <button title="Area Mode" onClick={() => setParams({...params, inputMode: 'area'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'area' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Total Area</button>
+           <div className="flex items-center gap-3">
+             <button
+               onClick={() => setIsFullscreen(true)}
+               className="hidden md:flex px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-md items-center gap-2 transition-colors uppercase tracking-wider"
+             >
+               <Maximize className="w-4 h-4" /> Maximize Workspace
+             </button>
+             {/* Global input mode toggle */}
+             <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+               <button title="Dimensions Mode" onClick={() => setParams({...params, inputMode: 'dimensions'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'dimensions' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Dimensions</button>
+               <button title="Area Mode" onClick={() => setParams({...params, inputMode: 'area'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'area' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Total Area</button>
+             </div>
            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -2112,6 +2289,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
            
            <div className="flex gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg self-start">
              <button title="3D Visualizer" onClick={() => setActiveSubTab('3d')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === '3d' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Maximize className="w-3.5 h-3.5" /> 3D View</button>
+             <button title="Reports" onClick={() => setActiveSubTab('reports')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'reports' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><FileText className="w-3.5 h-3.5" /> Reports</button>
              <button title="Lux Grid" onClick={() => setActiveSubTab('grid')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'grid' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Activity className="w-3.5 h-3.5" /> Uniformity Grid</button>
              <button title="Daylight" onClick={() => setActiveSubTab('daylight')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'daylight' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Sun className="w-3.5 h-3.5" /> Daylight</button>
              <button title="Glare Index" onClick={() => setActiveSubTab('glare')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'glare' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Eye className="w-3.5 h-3.5" /> Glare (UGR)</button>
@@ -2493,7 +2671,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                          onClick={() => setLayoutViewMode('drag')}
                          className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${layoutViewMode === 'drag' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                        >
-                         <Maximize className="w-2.5 h-2.5" /> 2D Drag & Place
+                         <Grid className="w-2.5 h-2.5" /> Interactive Floor Plan
                        </button>
                      </div>
 
@@ -2549,29 +2727,122 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                         <div className="absolute inset-0 opacity-[0.07] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#38bdf8 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
                         
                         {/* Heading & stats */}
-                        <div className="absolute top-3 left-4 text-left z-10">
-                          <span className="block text-[9px] font-black text-sky-400 uppercase tracking-widest">Tactile Placement Editor</span>
-                          <span className="block text-xs font-bold text-slate-300">Drag fixtures to reposition. Calculations update instantly.</span>
+                        <div className="absolute top-3 left-4 text-left z-10 flex flex-col gap-0.5">
+                          <span className="block text-[9px] font-black text-sky-400 uppercase tracking-widest flex items-center gap-1.5"><PenBox className="w-3.5 h-3.5 animate-pulse"/> Professional CAD Floor Plan Designer</span>
+                          <span className="block text-[10px] font-bold text-slate-400">Select tools to draw structural walls, windows, columns, and doors.</span>
                         </div>
 
-                        <div className="absolute top-3 right-4 z-10 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // snap to a crisp 10cm grid
-                              if (params.customPositions) {
-                                const snapped = params.customPositions.map(cp => ({
-                                  ...cp,
-                                  x: Number((Math.round(cp.x * 10) / 10).toFixed(1)),
-                                  z: Number((Math.round(cp.z * 10) / 10).toFixed(1))
-                                }));
-                                setParams(prev => ({ ...prev, customPositions: snapped }));
-                              }
-                            }}
-                            className="text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-sky-405 px-2.5 py-1 rounded border border-slate-705 transition-colors flex items-center gap-1 text-sky-400"
-                          >
-                            <Grid className="w-3 h-3" /> Snap to 10cm Grid
-                          </button>
+                        {/* Professional CAD Floating Toolbar */}
+                        <div className="absolute top-3 right-4 z-20 flex flex-wrap items-center gap-1.5 bg-slate-900/90 border border-slate-700/60 p-1.5 rounded-xl shadow-2xl backdrop-blur-md">
+                          {/* Main Selection/Drawing Tools */}
+                          <div className="flex items-center gap-1 border-r border-slate-700/60 pr-1.5 mr-1">
+                            <button
+                              type="button"
+                              title="Select & Move Objects"
+                              onClick={() => { setActiveTool('select'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'select' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Maximize className="w-3.5 h-3.5 transform rotate-45" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Draw Wall (Line)"
+                              onClick={() => { setActiveTool('wall'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'wall' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Square className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Draw Partition (Dashed Line)"
+                              onClick={() => { setActiveTool('partition'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'partition' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Grid className="w-3.5 h-3.5 opacity-70" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Place Column (Hatched Square)"
+                              onClick={() => { setActiveTool('column'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'column' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Database className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Place Door (Swing Arc)"
+                              onClick={() => { setActiveTool('door'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'door' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <TrendingUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Place Window"
+                              onClick={() => { setActiveTool('window'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'window' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Sun className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Zoom & Canvas Actions */}
+                          <div className="flex items-center gap-1 border-r border-slate-700/60 pr-1.5 mr-1">
+                            <button
+                              type="button"
+                              title="Zoom In"
+                              onClick={() => setZoomScale(prev => Math.min(2.5, prev + 0.15))}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-850 rounded-lg transition-colors"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Zoom Out"
+                              onClick={() => setZoomScale(prev => Math.max(0.6, prev - 0.15))}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-850 rounded-lg transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5 scale-90" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Reset Zoom & Pan"
+                              onClick={() => { setZoomScale(1.0); setPanOffset({ x: 0, y: 0 }); }}
+                              className="p-1.5 text-[9px] font-black text-sky-400 hover:text-sky-300 hover:bg-slate-850 rounded-lg transition-colors"
+                            >
+                              RESET
+                            </button>
+                          </div>
+
+                          {/* History & Snap Controls */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              title="Undo (Ctrl+Z)"
+                              disabled={history.length === 0}
+                              onClick={handleUndo}
+                              className={`p-1.5 rounded-lg transition-colors ${history.length > 0 ? 'text-slate-300 hover:text-white hover:bg-slate-850' : 'text-slate-600 cursor-not-allowed'}`}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 transform -rotate-180 scale-x-[-1]" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Redo (Ctrl+Y)"
+                              disabled={redoHistory.length === 0}
+                              onClick={handleRedo}
+                              className={`p-1.5 rounded-lg transition-colors ${redoHistory.length > 0 ? 'text-slate-300 hover:text-white hover:bg-slate-850' : 'text-slate-600 cursor-not-allowed'}`}
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 transform rotate-0" />
+                            </button>
+                            <button
+                              type="button"
+                              title={snapToGrid ? "Disable Snap to Grid" : "Enable Snap to Grid"}
+                              onClick={() => setSnapToGrid(!snapToGrid)}
+                              className={`p-1.5 rounded-lg transition-all ${snapToGrid ? 'text-sky-400 hover:bg-sky-505/10' : 'text-slate-500 hover:text-white'}`}
+                            >
+                              <Grid className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Centered Floor Container */}
@@ -2586,12 +2857,30 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                           return (
                             <div 
                               ref={dragContainerRef}
-                              onMouseMove={handleDragMove}
-                              onTouchMove={handleDragMove}
-                              onMouseUp={handleDragEnd}
-                              onTouchEnd={handleDragEnd}
-                              className="relative border-4 border-slate-600/80 bg-slate-950/40 rounded shadow-2xl transition-all overflow-hidden cursor-crosshair select-none touch-none"
-                              style={{ width: `${pixW}px`, height: `${pixL}px` }}
+                              onMouseDown={handleContainerMouseDown}
+                              onTouchStart={handleContainerMouseDown}
+                              onMouseMove={(e) => {
+                                handleDragMove(e);
+                                handleContainerMouseMove(e);
+                              }}
+                              onTouchMove={(e) => {
+                                handleDragMove(e);
+                                handleContainerMouseMove(e);
+                              }}
+                              onMouseUp={() => {
+                                handleDragEnd();
+                                handleContainerMouseUp();
+                              }}
+                              onTouchEnd={() => {
+                                handleDragEnd();
+                                handleContainerMouseUp();
+                              }}
+                              className={`relative border-4 border-slate-600/80 bg-slate-950/40 rounded shadow-2xl transition-all overflow-hidden select-none touch-none ${activeTool === 'select' ? 'cursor-default' : 'cursor-crosshair'}`}
+                              style={{ 
+                                width: `${pixW}px`, 
+                                height: `${pixL}px`,
+                                transform: `scale(${zoomScale}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+                              }}
                             >
                               {/* Uniformity Grid live background if False Color Render is enabled */}
                               {showFalseColor && (
@@ -2656,6 +2945,149 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                                   style={{ imageRendering: 'pixelated' }}
                                 />
                               )}
+
+                              {/* Floor Plan Objects (SVG Overlay) */}
+                              <svg className="absolute inset-0 w-full h-full pointer-events-none z-15">
+                                {floorPlanObjects.map((obj) => {
+                                  const px1 = (obj.x1 / w) * pixW;
+                                  const pz1 = (obj.z1 / l) * pixL;
+                                  const px2 = (obj.x2 / w) * pixW;
+                                  const pz2 = (obj.z2 / l) * pixL;
+                                  
+                                  const isSelected = selectedObjectId === obj.id;
+                                  const strokeColor = isSelected ? '#38bdf8' : '#475569'; // Sky vs Slate-600
+                                  const fillColor = isSelected ? 'rgba(56, 189, 248, 0.25)' : 'rgba(71, 85, 105, 0.15)';
+
+                                  if (obj.type === 'wall' || obj.type === 'partition') {
+                                    const isDashed = obj.type === 'partition';
+                                    return (
+                                      <g key={obj.id} className="pointer-events-auto cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedObjectId(obj.id); }}>
+                                        <line
+                                          x1={px1}
+                                          y1={pz1}
+                                          x2={px2}
+                                          y2={pz2}
+                                          stroke={strokeColor}
+                                          strokeWidth={obj.type === 'wall' ? 8 : 4}
+                                          strokeDasharray={isDashed ? '4 4' : undefined}
+                                        />
+                                        <text
+                                          x={(px1 + px2) / 2}
+                                          y={(pz1 + pz2) / 2 - 8}
+                                          fill="#38bdf8"
+                                          fontSize="8"
+                                          textAnchor="middle"
+                                          fontWeight="bold"
+                                        >
+                                          {Math.sqrt((obj.x2 - obj.x1)**2 + (obj.z2 - obj.z1)**2).toFixed(2)}m
+                                        </text>
+                                      </g>
+                                    );
+                                  }
+
+                                  if (obj.type === 'door') {
+                                    const dx = px2 - px1;
+                                    const dz = pz2 - pz1;
+                                    const doorLen = Math.sqrt(dx*dx + dz*dz);
+                                    return (
+                                      <g key={obj.id} className="pointer-events-auto cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedObjectId(obj.id); }}>
+                                        <line x1={px1} y1={pz1} x2={px2} y2={pz2} stroke={strokeColor} strokeWidth="3" />
+                                        <path
+                                          d={`M ${px1} ${pz1} A ${doorLen} ${doorLen} 0 0 1 ${px1 + dz} ${pz1 - dx}`}
+                                          fill="none"
+                                          stroke={strokeColor}
+                                          strokeWidth="1.5"
+                                          strokeDasharray="2 2"
+                                        />
+                                        <line x1={px1} y1={pz1} x2={px1 + dz} y2={pz1 - dx} stroke={strokeColor} strokeWidth="3" />
+                                        <text x={(px1+px2)/2} y={(pz1+pz2)/2 - 6} fill="#38bdf8" fontSize="8" textAnchor="middle">{obj.label || 'Door'}</text>
+                                      </g>
+                                    );
+                                  }
+
+                                  if (obj.type === 'window') {
+                                    return (
+                                      <g key={obj.id} className="pointer-events-auto cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedObjectId(obj.id); }}>
+                                        <rect
+                                          x={Math.min(px1, px2)}
+                                          y={Math.min(pz1, pz2) - 3}
+                                          width={Math.max(10, Math.abs(px2 - px1))}
+                                          height={Math.max(6, Math.abs(pz2 - pz1))}
+                                          fill="rgba(56, 189, 248, 0.15)"
+                                          stroke={strokeColor}
+                                          strokeWidth="2"
+                                        />
+                                        <line x1={px1} y1={(pz1+pz2)/2} x2={px2} y2={(pz1+pz2)/2} stroke="#38bdf8" strokeWidth="1" />
+                                        <text x={(px1+px2)/2} y={Math.min(pz1, pz2) - 6} fill="#94a3b8" fontSize="8" textAnchor="middle">{obj.label || 'Window'}</text>
+                                      </g>
+                                    );
+                                  }
+
+                                  if (obj.type === 'column' || obj.type === 'structural') {
+                                    const rx = Math.min(px1, px2);
+                                    const rz = Math.min(pz1, pz2);
+                                    const rw = Math.max(10, Math.abs(px2 - px1));
+                                    const rh = Math.max(10, Math.abs(pz2 - pz1));
+                                    return (
+                                      <g key={obj.id} className="pointer-events-auto cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedObjectId(obj.id); }}>
+                                        <rect
+                                          x={rx}
+                                          y={rz}
+                                          width={rw}
+                                          height={rh}
+                                          fill={fillColor}
+                                          stroke={strokeColor}
+                                          strokeWidth="2.5"
+                                        />
+                                        <line x1={rx} y1={rz} x2={rx + rw} y2={rz + rh} stroke={strokeColor} strokeWidth="1" opacity="0.4" />
+                                        <line x1={rx} y1={rz + rh} x2={rx + rw} y2={rz} stroke={strokeColor} strokeWidth="1" opacity="0.4" />
+                                        <text x={rx + rw/2} y={rz + rh/2 + 3} fill="#94a3b8" fontSize="7" fontWeight="bold" textAnchor="middle">{obj.label || 'Column'}</text>
+                                      </g>
+                                    );
+                                  }
+
+                                  return null;
+                                })}
+
+                                {/* Live drawing feedback */}
+                                {drawingStart && drawingCurrent && (
+                                  <g>
+                                    {activeTool === 'wall' || activeTool === 'partition' ? (
+                                      <line
+                                        x1={(drawingStart.x / w) * pixW}
+                                        y1={(drawingStart.z / l) * pixL}
+                                        x2={(drawingCurrent.x / w) * pixW}
+                                        y2={(drawingCurrent.z / l) * pixL}
+                                        stroke="#f43f5e"
+                                        strokeWidth={activeTool === 'wall' ? 8 : 4}
+                                        strokeDasharray={activeTool === 'partition' ? '4 4' : undefined}
+                                        opacity="0.85"
+                                      />
+                                    ) : (
+                                      <rect
+                                        x={Math.min((drawingStart.x / w) * pixW, (drawingCurrent.x / w) * pixW)}
+                                        y={Math.min((drawingStart.z / l) * pixL, (drawingCurrent.z / l) * pixL)}
+                                        width={Math.max(5, Math.abs(((drawingCurrent.x - drawingStart.x) / w) * pixW))}
+                                        height={Math.max(5, Math.abs(((drawingCurrent.z - drawingStart.z) / l) * pixL))}
+                                        fill="rgba(244, 63, 94, 0.15)"
+                                        stroke="#f43f5e"
+                                        strokeWidth="2"
+                                        strokeDasharray="3 3"
+                                      />
+                                    )}
+                                    <text
+                                      x={((drawingStart.x + drawingCurrent.x)/2 / w) * pixW}
+                                      y={((drawingStart.z + drawingCurrent.z)/2 / l) * pixL - 10}
+                                      fill="#f43f5e"
+                                      fontSize="9"
+                                      fontWeight="bold"
+                                      textAnchor="middle"
+                                    >
+                                      {Math.sqrt((drawingCurrent.x - drawingStart.x)**2 + (drawingCurrent.z - drawingStart.z)**2).toFixed(2)}m
+                                    </text>
+                                  </g>
+                                )}
+                              </svg>
 
                               {/* Floor tick boundary measurements labels */}
                               <div className="absolute inset-0 pointer-events-none opacity-[0.12] border-t border-b border-sky-400" style={{ backgroundSize: `${scale}px ${scale}px`, backgroundImage: 'linear-gradient(to right, #38bdf8 1px, transparent 1px), linear-gradient(to bottom, #38bdf8 1px, transparent 1px)' }} />
@@ -2776,10 +3208,157 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                         </div>
                       </div>
 
+                      {/* Dynamic Floor Plan Object Inspector */}
+                      {(() => {
+                        const selectedObj = floorPlanObjects.find(o => o.id === selectedObjectId);
+                        if (!selectedObj) return null;
+
+                        const handleNudge = (dx: number, dz: number) => {
+                          const updated = floorPlanObjects.map(o => {
+                            if (o.id === selectedObjectId) {
+                              return {
+                                ...o,
+                                x1: Number((o.x1 + dx).toFixed(2)),
+                                z1: Number((o.z1 + dz).toFixed(2)),
+                                x2: Number((o.x2 + dx).toFixed(2)),
+                                z2: Number((o.z2 + dz).toFixed(2)),
+                              };
+                            }
+                            return o;
+                          });
+                          pushToHistory(updated);
+                        };
+
+                        const handleRotate95 = () => {
+                          const updated = floorPlanObjects.map(o => {
+                            if (o.id === selectedObjectId) {
+                              const cx = (o.x1 + o.x2) / 2;
+                              const cz = (o.z1 + o.z2) / 2;
+                              const halfW = (o.x2 - o.x1) / 2;
+                              const halfH = (o.z2 - o.z1) / 2;
+                              // swap dimensions around center for 90 deg rotation
+                              return {
+                                ...o,
+                                x1: Number((cx - halfH).toFixed(2)),
+                                z1: Number((cz - halfW).toFixed(2)),
+                                x2: Number((cx + halfH).toFixed(2)),
+                                z2: Number((cz + halfW).toFixed(2)),
+                              };
+                            }
+                            return o;
+                          });
+                          pushToHistory(updated);
+                        };
+
+                        const handleDuplicate = () => {
+                          const dup = {
+                            ...selectedObj,
+                            id: `obj-${selectedObj.type}-${Date.now()}`,
+                            x1: Number((selectedObj.x1 + 0.3).toFixed(2)),
+                            z1: Number((selectedObj.z1 + 0.3).toFixed(2)),
+                            x2: Number((selectedObj.x2 + 0.3).toFixed(2)),
+                            z2: Number((selectedObj.z2 + 0.3).toFixed(2)),
+                            label: `${selectedObj.label} (Copy)`
+                          };
+                          pushToHistory([...floorPlanObjects, dup]);
+                          setSelectedObjectId(dup.id);
+                        };
+
+                        const handleDelete = () => {
+                          const updated = floorPlanObjects.filter(o => o.id !== selectedObjectId);
+                          pushToHistory(updated);
+                          setSelectedObjectId(null);
+                        };
+
+                        return (
+                          <div className="bg-slate-55 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 p-4 rounded-xl shadow-inner space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] bg-sky-500 text-slate-950 px-2 py-0.5 rounded font-black tracking-widest uppercase">
+                                  {selectedObj.type} Selected
+                                </span>
+                                <span className="text-xs text-slate-400 font-mono">ID: {selectedObj.id}</span>
+                              </div>
+                              <button 
+                                type="button" 
+                                onClick={() => setSelectedObjectId(null)}
+                                className="text-slate-400 hover:text-white bg-slate-800 rounded px-1.5 py-0.5 text-[9px] font-bold"
+                              >
+                                Deselect
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {/* Label Editing */}
+                              <div className="space-y-1">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Object Label</label>
+                                <input
+                                  type="text"
+                                  value={selectedObj.label || ''}
+                                  onChange={(e) => {
+                                    const updated = floorPlanObjects.map(o => o.id === selectedObjectId ? { ...o, label: e.target.value } : o);
+                                    setFloorPlanObjects(updated);
+                                  }}
+                                  className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 dark:text-slate-100"
+                                />
+                              </div>
+
+                              {/* Positional Info */}
+                              <div className="space-y-1 flex flex-col justify-center">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Dimensions & Coordinates</span>
+                                <span className="text-xs font-mono text-sky-400">
+                                  Start: ({selectedObj.x1.toFixed(2)}m, {selectedObj.z1.toFixed(2)}m)<br />
+                                  End: ({selectedObj.x2.toFixed(2)}m, {selectedObj.z2.toFixed(2)}m)
+                                </span>
+                              </div>
+
+                              {/* Object Actions Panel */}
+                              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                                <button
+                                  type="button"
+                                  title="Duplicate Object"
+                                  onClick={handleDuplicate}
+                                  className="bg-slate-800 hover:bg-slate-700 text-sky-450 border border-slate-700 p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all"
+                                >
+                                  <Copy className="w-3.5 h-3.5" /> Duplicate
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Rotate 90 Degrees"
+                                  onClick={handleRotate95}
+                                  className="bg-slate-800 hover:bg-slate-700 text-amber-450 border border-slate-700 p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all"
+                                >
+                                  <RotateCw className="w-3.5 h-3.5" /> Rotate 90°
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Delete Object"
+                                  onClick={handleDelete}
+                                  className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-450 border border-rose-500/30 p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Precise Nudge / Shift Pad */}
+                            <div className="flex items-center gap-3 border-t border-slate-800 pt-3">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Shift Controls (10cm steps):</span>
+                              <div className="flex items-center gap-1">
+                                <button type="button" onClick={() => handleNudge(-0.1, 0)} className="bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded text-xs font-bold">X- Left</button>
+                                <button type="button" onClick={() => handleNudge(0.1, 0)} className="bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded text-xs font-bold">X+ Right</button>
+                                <button type="button" onClick={() => handleNudge(0, -0.1)} className="bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded text-xs font-bold">Z- Up</button>
+                                <button type="button" onClick={() => handleNudge(0, 0.1)} className="bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded text-xs font-bold">Z+ Down</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Tactical Reset and Helper Actions Toolbar */}
                       <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 border border-slate-205 dark:border-slate-700 p-4 rounded-xl shadow-sm">
                         <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                           <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                             Tactile Placement Synced: <strong className="font-extrabold text-indigo-600 dark:text-indigo-400">{params.customPositions?.length || 0} Fixtures Connected</strong>
                           </span>
@@ -2842,9 +3421,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                               }
                               setParams(prev => ({ ...prev, customPositions: list }));
                             }}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-850 dark:text-slate-200 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5"
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md text-xs font-bold rounded-lg transition-all flex items-center gap-2"
                           >
-                            <RefreshCw className="w-3.5 h-3.5" /> Snap to Spacing Grid
+                            <Sparkles className="w-4 h-4" /> Execute Intelligent Auto-Layout
                           </button>
                         </div>
                       </div>
@@ -3040,8 +3619,48 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                 </div>
 
                 {/* Compliance Report */}
-                <div className="space-y-3.5">
-                   <h5 className="text-xs font-black text-slate-500 uppercase tracking-wider block">Visual Quality & Uniformity metrics</h5>
+                <div className="space-y-3.5 mt-4">
+                   <h5 className="text-xs font-black text-slate-500 uppercase tracking-wider block flex items-center gap-2">
+                     <Shield className="w-4 h-4 text-emerald-500" />
+                     Smart Compliance Checker
+                   </h5>
+                   <div className="bg-white p-4 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4 shadow-sm">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-bold text-slate-700">PEC Illuminance Requirement</span>
+                          <span className={`text-[10px] uppercase px-2 py-1 rounded font-black border ${luxGridData.averageLux >= params.targetLux * 0.9 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                            {luxGridData.averageLux >= params.targetLux * 0.9 ? 'PEC Compliant' : 'Fail - Add Fixtures'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <span>Target: <strong className="text-slate-800">{params.targetLux} lx</strong></span>
+                          <span>|</span>
+                          <span>Actual: <strong className={luxGridData.averageLux >= params.targetLux * 0.9 ? 'text-emerald-600' : 'text-rose-600'}>{luxGridData.averageLux} lx</strong></span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full mt-1 overflow-hidden">
+                          <div className={`h-full ${luxGridData.averageLux >= params.targetLux * 0.9 ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${Math.min(100, (luxGridData.averageLux / params.targetLux) * 100)}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-bold text-slate-700">Green Building LPD</span>
+                          <span className={`text-[10px] uppercase px-2 py-1 rounded font-black border ${energyAudit.passLPD ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                            {energyAudit.passLPD ? 'ASHRAE Compliant' : 'Warning - High Energy'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                          <span>Limit: <strong className="text-slate-800">{lpdLimitInfo.limit} W/m²</strong></span>
+                          <span>|</span>
+                          <span>Actual: <strong className={energyAudit.passLPD ? 'text-emerald-600' : 'text-amber-600'}>{energyAudit.lpd} W/m²</strong></span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full mt-1 overflow-hidden">
+                          <div className={`h-full ${energyAudit.passLPD ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, (energyAudit.lpd / lpdLimitInfo.limit) * 100)}%` }} />
+                        </div>
+                      </div>
+                   </div>
+
+                   <h5 className="text-xs font-black text-slate-500 uppercase tracking-wider block mt-4">Visual Quality & Uniformity metrics</h5>
                    
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                      <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-1">
@@ -3341,6 +3960,461 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
         </div>
         
 
+
+            {/* TAB 6: Professional Reporting System */}
+            {activeSubTab === 'reports' && (() => {
+              const handleExportWord = () => {
+                const roomArea = params.roomWidth * params.roomLength;
+                const totalFixtures = params.customPositions?.length || calculation.fixtures || 0;
+                const totalWatts = totalFixtures * activeFixture.wattage;
+                const avgLux = luxGridData.averageLux;
+                const uniformity = luxGridData.uniformityU0;
+
+                const htmlContent = `
+                  <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+                  <head>
+                    <meta charset="utf-8">
+                    <title>Lighting Design Report</title>
+                    <style>
+                      body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333333; margin: 40px; }
+                      .cover-page { text-align: center; margin-top: 100px; margin-bottom: 100px; page-break-after: always; }
+                      .project-title { font-size: 32px; font-weight: bold; color: #1e3a8a; margin-bottom: 10px; }
+                      .project-subtitle { font-size: 14px; color: #6b7280; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 50px; }
+                      .meta-box { margin-top: 150px; border-top: 2px solid #e5e7eb; padding-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
+                      .meta-line { font-size: 14px; margin-bottom: 8px; }
+                      .meta-label { font-weight: bold; color: #4b5563; }
+                      h1 { font-size: 24px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-top: 40px; }
+                      h2 { font-size: 18px; color: #2563eb; margin-top: 30px; }
+                      table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }
+                      th { background-color: #f3f4f6; color: #1e293b; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #d1d5db; }
+                      td { padding: 10px; border: 1px solid #d1d5db; }
+                      .success-badge { color: #16a34a; font-weight: bold; }
+                      .warning-badge { color: #d97706; font-weight: bold; }
+                      .formula-box { background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; font-family: Consolas, monospace; font-size: 13px; margin: 15px 0; }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="cover-page">
+                      <div class="project-title">${reportProjectName}</div>
+                      <div class="project-subtitle">Professional Lighting Design & Compliance Audit</div>
+                      <div class="meta-box">
+                        <div class="meta-line"><span class="meta-label">Prepared For:</span> ${reportPreparedFor}</div>
+                        <div class="meta-line"><span class="meta-label">Prepared By:</span> ${reportPreparedBy}</div>
+                        <div class="meta-line"><span class="meta-label">Date:</span> ${new Date().toLocaleDateString()}</div>
+                        <div class="meta-line"><span class="meta-label">Standard Reference:</span> Philippine Electrical Code (PEC)</div>
+                      </div>
+                    </div>
+
+                    <h1>1. Executive Summary</h1>
+                    <p>${reportExecutiveSummary}</p>
+
+                    <h1>2. Design Metrics & Room Details</h1>
+                    <table>
+                      <tr>
+                        <th>Parameter</th>
+                        <th>Designed Value</th>
+                        <th>Target / Limit</th>
+                        <th>Compliance Status</th>
+                      </tr>
+                      <tr>
+                        <td>Room Dimensions</td>
+                        <td>${params.roomWidth}m x ${params.roomLength}m x ${params.ceilingHeight}m</td>
+                        <td>-</td>
+                        <td><span class="success-badge">Valid Dimensions</span></td>
+                      </tr>
+                      <tr>
+                        <td>Average Calculated Illuminance</td>
+                        <td>${avgLux} lx</td>
+                        <td>${params.targetLux} lx</td>
+                        <td><span class="${avgLux >= params.targetLux * 0.9 ? 'success-badge' : 'warning-badge'}">${avgLux >= params.targetLux * 0.9 ? 'PEC Compliant' : 'Needs Correction'}</span></td>
+                      </tr>
+                      <tr>
+                        <td>Overall Uniformity (U₀)</td>
+                        <td>${uniformity}</td>
+                        <td>&ge; 0.40</td>
+                        <td><span class="${uniformity >= 0.4 ? 'success-badge' : 'warning-badge'}">${uniformity >= 0.4 ? 'Pass' : 'Low'}</span></td>
+                      </tr>
+                      <tr>
+                        <td>Lighting Power Density (LPD)</td>
+                        <td>${energyAudit.lpd} W/m²</td>
+                        <td>&le; ${lpdLimitInfo.limit} W/m²</td>
+                        <td><span class="${energyAudit.passLPD ? 'success-badge' : 'warning-badge'}">${energyAudit.passLPD ? 'ASHRAE Compliant' : 'Warning'}</span></td>
+                      </tr>
+                    </table>
+
+                    <h1>3. Fixture Schedule & Specifications</h1>
+                    <table>
+                      <tr>
+                        <th>Fixture Name</th>
+                        <th>Type</th>
+                        <th>Quantity</th>
+                        <th>Lamp Wattage</th>
+                        <th>Luminous Flux</th>
+                      </tr>
+                      <tr>
+                        <td>${activeFixture.lightType || 'Custom Fixture'}</td>
+                        <td>${activeFixture.lightType || 'LED Panel'}</td>
+                        <td>${totalFixtures}</td>
+                        <td>${activeFixture.wattage}W</td>
+                        <td>${activeFixture.lumens} lm</td>
+                      </tr>
+                    </table>
+
+                    <h1>4. Appendix - Calculations & Equations</h1>
+                    <div class="formula-box">
+                      Average Illuminance (E_avg) = (N * Phi * CU * LLF) / Area<br>
+                      LPD = Total Wattage / Area<br>
+                      U0 = E_min / E_avg
+                    </div>
+                  </body>
+                  </html>
+                `;
+                
+                const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${reportProjectName.replace(/\s+/g, '_')}_Lighting_Report.doc`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              };
+
+              return (
+                <div className="space-y-6 animate-fade-in text-slate-800 dark:text-slate-200">
+                  <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                     <div>
+                       <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block font-mono">Executive Reporting System</span>
+                       <span className="text-base font-extrabold text-slate-800 dark:text-slate-100">Professional Lighting Design Report Manager</span>
+                     </div>
+                     <div className="flex flex-wrap items-center gap-2">
+                       <button
+                         type="button"
+                         onClick={handleExportWord}
+                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                       >
+                         <FileDown className="w-3.5 h-3.5" /> Export Word (.doc)
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => window.print()}
+                         className="bg-slate-800 hover:bg-slate-700 text-white border border-slate-750 px-3.5 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                       >
+                         <Printer className="w-3.5 h-3.5" /> Print / PDF Report
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => {
+                           const roomArea = params.roomWidth * params.roomLength;
+                           const currentSavedRooms = [
+                             {
+                               id: 'room-1',
+                               roomName: params.targetRoomName || 'Main Room',
+                               targetLux: params.targetLux || 300,
+                               area: roomArea,
+                               fixtureLightType: activeFixture.lightType || 'LED',
+                               fixturesCount: params.customPositions?.length || calculation.fixtures || 0,
+                               totalLumens: (params.customPositions?.length || calculation.fixtures || 0) * (activeFixture.lumens || 3200),
+                               totalWattage: (params.customPositions?.length || calculation.fixtures || 0) * (activeFixture.wattage || 36),
+                               circuitNo: 1
+                             }
+                           ];
+                           const illumData = {
+                             savedRooms: currentSavedRooms
+                           };
+                           const dummyPanel: PanelConfig = {
+                             project: 'Premium Commercial Space',
+                             location: 'Electrical Room',
+                             designation: 'LDP-1',
+                             type: 'Distribution Panel',
+                             system: '1PH 2W',
+                             mounting: 'Surface',
+                             enclosure: 'NEMA 1',
+                             mainBreakerAT: 60,
+                             mainBreakerAF: 100,
+                             icRating: '10',
+                             voltage: 230,
+                             frequency: 60
+                           };
+                           const defaultIscParams = {
+                             transformerKVA: 100,
+                             transformerZ: 5,
+                             transformerVoltage: panel?.voltage || dummyPanel.voltage || 230,
+                             primaryVoltage: 34500,
+                             transformerConnection: 'Delta-Wye (Δ-Y)',
+                             utilityShortCircuitMVA: 500,
+                             feederLength: 10,
+                             feederSize: '30',
+                             feederRuns: 1,
+                             conductorType: 'Copper' as const
+                           };
+                           exportToCAD(
+                             panel || dummyPanel,
+                             circuits || [],
+                             [],
+                             defaultIscParams,
+                             'ALL',
+                             [],
+                             illumData
+                           );
+                         }}
+                         className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                       >
+                         <Download className="w-3.5 h-3.5" /> Export CAD (.dxf)
+                       </button>
+                     </div>
+                  </div>
+
+                  {/* Grid controls */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    {/* Left Column: Report Settings */}
+                    <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl space-y-4">
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2.5">
+                        <PenBox className="w-4 h-4 text-indigo-500" /> Report Title block & Metadata
+                      </h4>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 dark:text-slate-450 uppercase tracking-wider mb-1">Project / Facility Name</label>
+                          <input
+                            type="text"
+                            value={reportProjectName}
+                            onChange={(e) => setReportProjectName(e.target.value)}
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-black text-slate-400 dark:text-slate-450 uppercase tracking-wider mb-1">Prepared For</label>
+                            <input
+                              type="text"
+                              value={reportPreparedFor}
+                              onChange={(e) => setReportPreparedFor(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-slate-400 dark:text-slate-450 uppercase tracking-wider mb-1">Prepared By</label>
+                            <input
+                              type="text"
+                              value={reportPreparedBy}
+                              onChange={(e) => setReportPreparedBy(e.target.value)}
+                              className="w-full bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 dark:text-slate-450 uppercase tracking-wider mb-1">Executive Summary</label>
+                          <textarea
+                            rows={4}
+                            value={reportExecutiveSummary}
+                            onChange={(e) => setReportExecutiveSummary(e.target.value)}
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-250 dark:border-slate-800 rounded-lg p-3 text-xs font-medium text-slate-705 dark:text-slate-300 leading-relaxed resize-none"
+                          />
+                        </div>
+                      </div>
+
+                      <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2.5 pt-2">
+                        <Shield className="w-4 h-4 text-indigo-500" /> Active Sections selection
+                      </h4>
+
+                      <div className="space-y-2.5 pt-1">
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeSummary}
+                            onChange={(e) => setReportIncludeSummary(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Executive Summary & Metadata Cover</span>
+                        </label>
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeFloorPlan}
+                            onChange={(e) => setReportIncludeFloorPlan(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Interactive Floor Plan CAD Layout details</span>
+                        </label>
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeUniformity}
+                            onChange={(e) => setReportIncludeUniformity(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Detailed Uniformity & Lux Grid report</span>
+                        </label>
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeEnergy}
+                            onChange={(e) => setReportIncludeEnergy(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Green Building Energy & Carbon footprint audit</span>
+                        </label>
+                        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={reportIncludeAppendix}
+                            onChange={(e) => setReportIncludeAppendix(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Engineering Equations & Formulas Appendix</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Live Sheet Preview */}
+                    <div className="lg:col-span-7 bg-white dark:bg-slate-950 border border-slate-205 dark:border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+                      <div className="bg-slate-900 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Document Print Layout Live Preview</span>
+                        </div>
+                        <span className="text-[9px] bg-indigo-950 text-indigo-400 px-2 py-0.5 rounded font-bold uppercase font-mono">Page 1 of 1</span>
+                      </div>
+
+                      <div className="p-8 space-y-6 max-h-[580px] overflow-y-auto font-sans bg-white text-slate-800">
+                        {/* Document Cover */}
+                        {reportIncludeSummary && (
+                          <div className="border-b border-slate-200 pb-6 text-center sm:text-left space-y-3">
+                            <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded font-black uppercase tracking-widest">Lighting Design & Audit report</span>
+                            <h2 className="text-2xl font-black text-slate-900 leading-tight">{reportProjectName}</h2>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-left pt-2 border-t border-slate-100 mt-2">
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase">Prepared For</span>
+                                <span className="text-xs font-bold text-slate-800">{reportPreparedFor}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase">Prepared By</span>
+                                <span className="text-xs font-bold text-slate-800">{reportPreparedBy}</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase">Standard</span>
+                                <span className="text-xs font-bold text-slate-800">PEC Reference</span>
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block uppercase">Date</span>
+                                <span className="text-xs font-bold text-slate-800">{new Date().toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Summary Text */}
+                        {reportIncludeSummary && (
+                          <div className="space-y-2">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">1. Executive Summary</h3>
+                            <p className="text-xs text-slate-600 leading-relaxed font-medium bg-slate-50 p-3.5 rounded-xl border border-slate-200/60 italic">
+                              "{reportExecutiveSummary}"
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Floor Plan Designer objects summary */}
+                        {reportIncludeFloorPlan && (
+                          <div className="space-y-2.5">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">2. Architectural & CAD Layout Elements</h3>
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                              <span className="text-[10px] text-slate-500 block">Drawn architectural elements in the 2D manual floor plan designer currently placed:</span>
+                              {floorPlanObjects.length === 0 ? (
+                                <span className="text-xs font-bold text-slate-400 block">No structural components drawn. Use CAD toolbar above to add walls, doors, or windows.</span>
+                              ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  {floorPlanObjects.map((obj, i) => (
+                                    <div key={obj.id} className="bg-white px-2.5 py-1.5 rounded border border-slate-200 flex items-center justify-between text-[11px]">
+                                      <div>
+                                        <span className="font-extrabold text-slate-700 block truncate">{obj.label || obj.id}</span>
+                                        <span className="text-[9px] font-mono text-indigo-605 uppercase font-black">{obj.type}</span>
+                                      </div>
+                                      <span className="text-[9px] text-slate-400 font-mono">#{i + 1}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Detailed Calculations summary */}
+                        {reportIncludeUniformity && (
+                          <div className="space-y-2">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">3. Uniformity & Grid Calculations</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <span className="text-[9px] text-slate-400 block uppercase font-bold">Calculated Average</span>
+                                <span className="text-sm font-black text-indigo-700">{luxGridData.averageLux} lx</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <span className="text-[9px] text-slate-400 block uppercase font-bold">Uniformity (U₀)</span>
+                                <span className={`text-sm font-black ${luxGridData.uniformityU0 >= 0.4 ? 'text-emerald-700' : 'text-amber-700'}`}>{luxGridData.uniformityU0}</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <span className="text-[9px] text-slate-400 block uppercase font-bold">Min Illuminance</span>
+                                <span className="text-sm font-black text-slate-700">{luxGridData.minLux} lx</span>
+                              </div>
+                              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                                <span className="text-[9px] text-slate-400 block uppercase font-bold">Max Illuminance</span>
+                                <span className="text-sm font-black text-slate-700">{luxGridData.maxLux} lx</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Energy Audit */}
+                        {reportIncludeEnergy && (
+                          <div className="space-y-2">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">4. Green Building Energy Audit</h3>
+                            <div className="border border-slate-200 rounded-xl overflow-hidden">
+                              <table className="w-full text-xs text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-slate-50 border-b border-slate-200">
+                                    <th className="p-2.5 font-bold text-slate-700">Audit Parameter</th>
+                                    <th className="p-2.5 font-bold text-slate-700 text-right">Value</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr className="border-b border-slate-150">
+                                    <td className="p-2.5">Lighting Power Density (LPD)</td>
+                                    <td className="p-2.5 text-right font-bold text-slate-800">{energyAudit.lpd} W/m²</td>
+                                  </tr>
+                                  <tr className="border-b border-slate-150">
+                                    <td className="p-2.5">Annual Energy consumption</td>
+                                    <td className="p-2.5 text-right font-bold text-slate-800">{energyAudit.annualKWhStandard} kWh</td>
+                                  </tr>
+                                  <tr className="border-b border-slate-150">
+                                    <td className="p-2.5">Annual Carbon equivalent footprint</td>
+                                    <td className="p-2.5 text-right font-bold text-indigo-700">{energyAudit.co2Standard} kg CO₂</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Appendix */}
+                        {reportIncludeAppendix && (
+                          <div className="space-y-2 pt-2 border-t border-slate-200">
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">5. Equations Appendix</h3>
+                            <div className="bg-slate-50 rounded-xl p-3.5 font-mono text-[10px] text-slate-550 text-slate-505 text-slate-500 leading-normal space-y-1">
+                              <div>• Average Illuminance: E_avg = (N * Φ * CU * LLF) / Room_Area</div>
+                              <div>• Lighting Power Density: LPD = Total_Wattage / Room_Area</div>
+                              <div>• Overall Uniformity: U₀ = Minimum_Lux / Average_Lux</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
         {/* Calculations & Formulas Section (Only visible during PDF export / print) */}
         <section className="hidden print-show mt-12 bg-white rounded-2xl border-2 border-slate-800 p-8">
