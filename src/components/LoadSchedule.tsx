@@ -800,10 +800,12 @@ export default function LoadSchedule({
     panel.connectionType,
     panel.voltage,
     dbThreePhaseFLC,
+    availableSubPanels,
+    vdCalculations,
   ]);
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {
-    return calculateCircuitValues(c, panel, availableSubPanels);
+    return calculateCircuitValues(c, panel, availableSubPanels, vdCalculations);
   };
 
   const addCircuit = () => {
@@ -920,6 +922,7 @@ export default function LoadSchedule({
             "loadType" in updates ||
             "pf" in updates ||
             "linkedSubPanelId" in updates ||
+            "subPanelReflectionMode" in updates ||
             "subLoads" in updates ||
             "motorHP" in updates
           ) {
@@ -954,9 +957,15 @@ export default function LoadSchedule({
   const phaseLoads = useMemo(() => {
     const loads = { R: 0, Y: 0, B: 0 };
     circuits.forEach((c) => {
-      c.phases.forEach((p) => {
-        loads[p as keyof typeof loads] += c.loadVA / c.phases.length;
-      });
+      if (c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseLoads) {
+        loads.R += c.reflectedPhaseLoads.R + c.reflectedPhaseLoads.ThreePhase / 3;
+        loads.Y += c.reflectedPhaseLoads.Y + c.reflectedPhaseLoads.ThreePhase / 3;
+        loads.B += c.reflectedPhaseLoads.B + c.reflectedPhaseLoads.ThreePhase / 3;
+      } else {
+        c.phases.forEach((p) => {
+          loads[p as keyof typeof loads] += c.loadVA / (c.phases.length || 1);
+        });
+      }
     });
     return loads;
   }, [circuits]);
@@ -972,7 +981,12 @@ export default function LoadSchedule({
   const phaseAmps = useMemo(() => {
     const amps = { R: 0, Y: 0, B: 0, threePhase: 0 };
     circuits.forEach((c) => {
-      if (c.phases.length === 3) {
+      if (c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps) {
+        amps.R += c.reflectedPhaseAmps.R;
+        amps.Y += c.reflectedPhaseAmps.Y;
+        amps.B += c.reflectedPhaseAmps.B;
+        amps.threePhase += c.reflectedPhaseAmps.ThreePhase;
+      } else if (c.phases.length === 3) {
         amps.threePhase += c.loadA;
       } else {
         if (c.phases.includes("R")) amps.R += c.loadA;
@@ -1004,16 +1018,24 @@ export default function LoadSchedule({
         if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
-        const loadI = is3Phase
-          ? cir.loadVA / (cirV * 1.732)
-          : cir.loadVA / cirV;
 
-        if (is3Phase) {
-          localPhaseAmps.threePhase += loadI;
+        if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
+          localPhaseAmps.R += cir.reflectedPhaseAmps.R;
+          localPhaseAmps.Y += cir.reflectedPhaseAmps.Y;
+          localPhaseAmps.B += cir.reflectedPhaseAmps.B;
+          localPhaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
         } else {
-          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+          const loadI = is3Phase
+            ? cir.loadVA / (cirV * 1.732)
+            : cir.loadVA / cirV;
+
+          if (is3Phase) {
+            localPhaseAmps.threePhase += loadI;
+          } else {
+            if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
+            if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
+            if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+          }
         }
       });
 
@@ -1120,16 +1142,24 @@ export default function LoadSchedule({
         if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
           cirV = cir.voltage || cirV;
         }
-        const loadI = is3Phase
-          ? cir.loadVA / (cirV * 1.732)
-          : cir.loadVA / cirV;
 
-        if (is3Phase) {
-          localPhaseAmps.threePhase += loadI;
+        if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
+          localPhaseAmps.R += cir.reflectedPhaseAmps.R;
+          localPhaseAmps.Y += cir.reflectedPhaseAmps.Y;
+          localPhaseAmps.B += cir.reflectedPhaseAmps.B;
+          localPhaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
         } else {
-          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+          const loadI = is3Phase
+            ? cir.loadVA / (cirV * 1.732)
+            : cir.loadVA / cirV;
+
+          if (is3Phase) {
+            localPhaseAmps.threePhase += loadI;
+          } else {
+            if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
+            if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
+            if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
+          }
         }
       });
 
@@ -2702,6 +2732,17 @@ export default function LoadSchedule({
                               ))}
                             </select>
 
+                             {panel.system.includes("3PH") && c.linkedSubPanelId && (
+                               <select
+                                 value={c.subPanelReflectionMode || "max_demand"}
+                                 onChange={(e) => updateCircuit(c.id, { subPanelReflectionMode: e.target.value as 'max_demand' | 'phase_loads' })}
+                                 className="mt-1 p-1 text-[10px] bg-slate-100 dark:bg-slate-800 border-0 rounded font-bold text-slate-700 dark:text-slate-300 w-full no-print"
+                               >
+                                 <option value="max_demand">Reflect Max Demand Current</option>
+                                 <option value="phase_loads">Reflect Phase Loads Directly</option>
+                               </select>
+                             )}
+
                              {/* Connection Sync & Discrepancy Warnings */}
                              {c.linkedSubPanelId ? (() => {
                                const sp = availableSubPanels?.find(s => s.id === c.linkedSubPanelId);
@@ -2717,7 +2758,7 @@ export default function LoadSchedule({
                                  const isVoltageIncompatible = !validation.isValid;
                                  const isVoltageMismatch = !isInvalidConnection && c.voltage !== sp.panel.voltage;
 
-                                 const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+                                 const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
                                  const isDesignationMismatch = c.description !== (sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel"));
                                  const isBreakerMismatch = c.mcbAT !== subMainFeeder.cb;
                                  const isWireSizeMismatch = c.wireSize !== formatWireSizeLocal(subMainFeeder.wire.size);
@@ -3017,6 +3058,34 @@ export default function LoadSchedule({
                     <td className="px-1 py-3 text-center">
                       {isSpace ? (
                         "-"
+                      ) : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseLoads ? (
+                        <div className="flex gap-0.5 justify-center flex-wrap">
+                          {["R", "Y", "B", "3Ø"].map((p) => {
+                            const isActive =
+                              (p === "R" && c.reflectedPhaseLoads!.R > 0) ||
+                              (p === "Y" && c.reflectedPhaseLoads!.Y > 0) ||
+                              (p === "B" && c.reflectedPhaseLoads!.B > 0) ||
+                              (p === "3Ø" && c.reflectedPhaseLoads!.ThreePhase > 0);
+                            if (!isActive) return null;
+                            return (
+                              <span
+                                key={p}
+                                className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                                  p === "3Ø"
+                                    ? "bg-indigo-600 text-white"
+                                    : p === "R"
+                                      ? "bg-red-600 text-white"
+                                      : p === "Y"
+                                        ? "bg-yellow-400 text-black"
+                                        : "bg-blue-600 text-white"
+                                }`}
+                                style={{ fontSize: tableFontSize - 4 }}
+                              >
+                                {p}
+                              </span>
+                            );
+                          })}
+                        </div>
                       ) : (
                         <div className="flex gap-0.5 justify-center flex-wrap">
                           {["R", "Y", "B", "3Ø"].map((p) => (
@@ -3062,30 +3131,38 @@ export default function LoadSchedule({
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-red-600 print:text-slate-900">
                           {isSpace
                             ? "-"
-                            : c.phases.includes("R") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
-                              : "-"}
+                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
+                              ? c.reflectedPhaseAmps.R > 0 ? c.reflectedPhaseAmps.R.toFixed(2) : "-"
+                              : c.phases.includes("R") && c.phases.length < 3
+                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
+                                : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-yellow-600 print:text-slate-900">
                           {isSpace
                             ? "-"
-                            : c.phases.includes("Y") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
-                              : "-"}
+                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
+                              ? c.reflectedPhaseAmps.Y > 0 ? c.reflectedPhaseAmps.Y.toFixed(2) : "-"
+                              : c.phases.includes("Y") && c.phases.length < 3
+                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
+                                : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-blue-600 print:text-slate-900">
                           {isSpace
                             ? "-"
-                            : c.phases.includes("B") && c.phases.length < 3
-                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
-                              : "-"}
+                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
+                              ? c.reflectedPhaseAmps.B > 0 ? c.reflectedPhaseAmps.B.toFixed(2) : "-"
+                              : c.phases.includes("B") && c.phases.length < 3
+                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
+                                : "-"}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-indigo-600 print:text-slate-900">
                           {isSpace
                             ? "-"
-                            : c.phases.length === 3
-                              ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? true} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? true)} />
-                              : "-"}
+                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
+                              ? c.reflectedPhaseAmps.ThreePhase > 0 ? c.reflectedPhaseAmps.ThreePhase.toFixed(2) : "-"
+                              : c.phases.length === 3
+                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? true} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? true)} />
+                                : "-"}
                         </td>
                       </>
                     ) : (

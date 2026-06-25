@@ -83,6 +83,7 @@ import {
   calculateCircuitValues,
   formatWireSizeLocal,
   isIdleSpareOrSpace,
+  setGlobalSubPanels,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from "recharts";
@@ -251,6 +252,10 @@ export default function App() {
       return true;
     });
   }, [subSubPanels]);
+
+  useEffect(() => {
+    setGlobalSubPanels([...uniqueSubPanels, ...uniqueSubSubPanels]);
+  }, [uniqueSubPanels, uniqueSubSubPanels]);
 
   // State for calculators to prevent reset on tab change
   const [iscParams, setIscParams] = useState<ShortCircuitParams>(
@@ -821,7 +826,7 @@ export default function App() {
           if (c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId) {
             const ssp = subSubPanels.find((s) => s.id === c.linkedSubPanelId);
             if (ssp) {
-              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(ssp.panel, ssp.circuits, { vdCalculations, panelId: ssp.id });
+              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent, explicitPhaseVAs: subExplicitPhaseVAs, phaseAmps: subPhaseAmps } = computePanelScheduleValues(ssp.panel, ssp.circuits, { vdCalculations, panelId: ssp.id });
 
               const subTotalWattage = ssp.circuits.reduce(
                 (sum, cc) =>
@@ -849,8 +854,30 @@ export default function App() {
               const loadI = subMainCurrent.baseAmp;
               const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
 
+              let expectedLoadVA = demandVA;
+              let expectedLoadA = Number(loadI.toFixed(2));
+              let expectedReflectedPhaseLoads = undefined;
+              let expectedReflectedPhaseAmps = undefined;
+
+              if (c.subPanelReflectionMode === "phase_loads") {
+                expectedReflectedPhaseLoads = {
+                  R: subExplicitPhaseVAs.R,
+                  Y: subExplicitPhaseVAs.Y,
+                  B: subExplicitPhaseVAs.B,
+                  ThreePhase: subExplicitPhaseVAs.threePhase,
+                };
+                expectedReflectedPhaseAmps = {
+                  R: subPhaseAmps.R,
+                  Y: subPhaseAmps.Y,
+                  B: subPhaseAmps.B,
+                  ThreePhase: subPhaseAmps.threePhase,
+                };
+                expectedLoadVA = subTotalVA;
+                expectedLoadA = Number(loadI.toFixed(2));
+              }
+
               if (
-                c.loadVA !== demandVA ||
+                c.loadVA !== expectedLoadVA ||
                 c.wattage !== subTotalWattage ||
                 c.mcbP !== subPoles ||
                 c.mcbAT !== subCB ||
@@ -862,14 +889,16 @@ export default function App() {
                 c.conduitSize !== subConduitSize ||
                 c.voltage !== subVoltage ||
                 c.description !== designation ||
-                Math.abs((c.loadA || 0) - Number(loadI.toFixed(2))) > 0.01
+                Math.abs((c.loadA || 0) - expectedLoadA) > 0.01 ||
+                JSON.stringify(c.reflectedPhaseLoads) !== JSON.stringify(expectedReflectedPhaseLoads) ||
+                JSON.stringify(c.reflectedPhaseAmps) !== JSON.stringify(expectedReflectedPhaseAmps)
               ) {
                 changed = true;
                 return {
                   ...c,
                   wattage: subTotalWattage,
-                  loadVA: demandVA,
-                  loadA: Number(loadI.toFixed(2)),
+                  loadVA: expectedLoadVA,
+                  loadA: expectedLoadA,
                   quantity: 1,
                   mcbP: subPoles,
                   mcbAT: subCB,
@@ -881,6 +910,8 @@ export default function App() {
                   conduitSize: subConduitSize,
                   voltage: subVoltage,
                   description: designation,
+                  reflectedPhaseLoads: expectedReflectedPhaseLoads,
+                  reflectedPhaseAmps: expectedReflectedPhaseAmps,
                 };
               }
             }
@@ -910,7 +941,7 @@ export default function App() {
           const sp = subPanels.find((s) => s.id === c.linkedSubPanelId);
           if (sp) {
             // Compute sub-panel actual values
-            const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent } = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
+            const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent, explicitPhaseVAs: subExplicitPhaseVAs, phaseAmps: subPhaseAmps } = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
 
             const subTotalWattage = sp.circuits.reduce(
               (sum, cc) =>
@@ -940,8 +971,30 @@ export default function App() {
             const loadI = subMainCurrent.baseAmp;
             const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
 
+            let expectedLoadVA = demandVA;
+            let expectedLoadA = Number(loadI.toFixed(2));
+            let expectedReflectedPhaseLoads = undefined;
+            let expectedReflectedPhaseAmps = undefined;
+
+            if (c.subPanelReflectionMode === "phase_loads") {
+              expectedReflectedPhaseLoads = {
+                R: subExplicitPhaseVAs.R,
+                Y: subExplicitPhaseVAs.Y,
+                B: subExplicitPhaseVAs.B,
+                ThreePhase: subExplicitPhaseVAs.threePhase,
+              };
+              expectedReflectedPhaseAmps = {
+                R: subPhaseAmps.R,
+                Y: subPhaseAmps.Y,
+                B: subPhaseAmps.B,
+                ThreePhase: subPhaseAmps.threePhase,
+              };
+              expectedLoadVA = subTotalVA;
+              expectedLoadA = Number(loadI.toFixed(2));
+            }
+
             if (
-              c.loadVA !== demandVA ||
+              c.loadVA !== expectedLoadVA ||
               c.wattage !== subTotalWattage ||
               c.mcbP !== subPoles ||
               c.mcbAT !== subCB ||
@@ -953,14 +1006,16 @@ export default function App() {
               c.conduitSize !== subConduitSize ||
               c.voltage !== subVoltage ||
               c.description !== designation ||
-              Math.abs((c.loadA || 0) - Number(loadI.toFixed(2))) > 0.01
+              Math.abs((c.loadA || 0) - expectedLoadA) > 0.01 ||
+              JSON.stringify(c.reflectedPhaseLoads) !== JSON.stringify(expectedReflectedPhaseLoads) ||
+              JSON.stringify(c.reflectedPhaseAmps) !== JSON.stringify(expectedReflectedPhaseAmps)
             ) {
               changed = true;
               return {
                 ...c,
                 wattage: subTotalWattage,
-                loadVA: demandVA,
-                loadA: Number(loadI.toFixed(2)),
+                loadVA: expectedLoadVA,
+                loadA: expectedLoadA,
                 quantity: 1,
                 mcbP: subPoles,
                 mcbAT: subCB,
@@ -972,6 +1027,8 @@ export default function App() {
                 conduitSize: subConduitSize,
                 voltage: subVoltage,
                 description: designation,
+                reflectedPhaseLoads: expectedReflectedPhaseLoads,
+                reflectedPhaseAmps: expectedReflectedPhaseAmps,
               };
             }
           }

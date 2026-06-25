@@ -56,6 +56,19 @@ export interface Circuit {
   wattage: number;
   vaPerUnit?: number;
   linkedSubPanelId?: string;
+  subPanelReflectionMode?: 'max_demand' | 'phase_loads';
+  reflectedPhaseLoads?: {
+    R: number;
+    Y: number;
+    B: number;
+    ThreePhase: number;
+  };
+  reflectedPhaseAmps?: {
+    R: number;
+    Y: number;
+    B: number;
+    ThreePhase: number;
+  };
   pf?: number;
   subLoads?: SubLoad[];
   motorHP?: string;

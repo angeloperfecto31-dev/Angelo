@@ -8,6 +8,17 @@ import {
 } from "./pecAmpacityDatabase";
 import { findEgcSize } from "./exportEgcExports";
 
+let globalSubPanels: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }> = [];
+
+export const setGlobalSubPanels = (panels: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }>) => {
+  globalSubPanels = panels;
+};
+
+export const getGlobalSubPanels = () => {
+  return globalSubPanels;
+};
+
+
 export const isIdleSpareOrSpace = (cir: {
   loadType: LoadType;
   wattage?: number;
@@ -351,7 +362,12 @@ export const calculateCircuitValues = (
         totalVA: subTotalVA,
         mainFeeder: subMainFeeder,
         mainCurrent: subMainCurrent,
-      } = computePanelScheduleValues(sp.panel, sp.circuits);
+        explicitPhaseVAs: subExplicitPhaseVAs,
+        phaseAmps: subPhaseAmps,
+      } = computePanelScheduleValues(sp.panel, sp.circuits, {
+        vdCalculations,
+        panelId: sp.id,
+      });
 
       const subTotalWattage = sp.circuits.reduce(
         (sum, cc) =>
@@ -367,14 +383,35 @@ export const calculateCircuitValues = (
       const subVoltage = sp.panel.voltage || 230;
       const computedDemandAmp = subMainCurrent.baseAmp || 0;
 
-      // Calculate the demand-based VA for the subpanel reference row in parent
-      const demandVA = is3PhaseLoadFinal
-        ? Math.round(computedDemandAmp * subVoltage * 1.732)
-        : Math.round(computedDemandAmp * subVoltage);
+      if (c.subPanelReflectionMode === 'phase_loads') {
+        c.reflectedPhaseLoads = {
+          R: subExplicitPhaseVAs.R,
+          Y: subExplicitPhaseVAs.Y,
+          B: subExplicitPhaseVAs.B,
+          ThreePhase: subExplicitPhaseVAs.threePhase,
+        };
+        c.reflectedPhaseAmps = {
+          R: subPhaseAmps.R,
+          Y: subPhaseAmps.Y,
+          B: subPhaseAmps.B,
+          ThreePhase: subPhaseAmps.threePhase,
+        };
+        // Mirror the exact calculated VA from the Sub-Panel
+        c.loadVA = subTotalVA;
+        // Mirror the exact calculated current (amperes) from the Sub-Panel
+        c.loadA = Number(computedDemandAmp.toFixed(2));
+      } else {
+        c.reflectedPhaseLoads = undefined;
+        c.reflectedPhaseAmps = undefined;
+        // Calculate the demand-based VA for the subpanel reference row in parent
+        const demandVA = is3PhaseLoadFinal
+          ? Math.round(computedDemandAmp * subVoltage * 1.732)
+          : Math.round(computedDemandAmp * subVoltage);
+        c.loadVA = demandVA;
+        c.loadA = Number(computedDemandAmp.toFixed(2));
+      }
 
       c.wattage = subTotalWattage;
-      c.loadVA = demandVA;
-      c.loadA = Number(computedDemandAmp.toFixed(2));
       c.quantity = 1;
       
       const connValidation = validateSubPanelConnection(panel.system, sp.panel.system, sp.panel.voltage || 230);
@@ -570,11 +607,19 @@ export const calculateCircuitValues = (
       ? c.mcbAT || 30
       : Math.max(requiredMcbAT, c.mcbAT || 0);
 
-  // Enforce the 80% loading rule on all breakers uniformly
-  while (mcbAT * 0.8 < mdcForBranch) {
-    const nextSize = STANDARD_CB_RATINGS.find((r) => r > mcbAT);
-    if (!nextSize) break;
-    mcbAT = nextSize;
+  // Enforce the 80% loading rule on all breakers uniformly (except sub-panel links and phase_loads mode which are synced directly)
+  const skip80PercentRule =
+    isSubPanelLink ||
+    c.subPanelReflectionMode === 'phase_loads' ||
+    c.loadType === LoadType.SUB_PANEL ||
+    c.loadType === LoadType.SUB_SUB_PANEL;
+
+  if (!skip80PercentRule) {
+    while (mcbAT * 0.8 < mdcForBranch) {
+      const nextSize = STANDARD_CB_RATINGS.find((r) => r > mcbAT);
+      if (!nextSize) break;
+      mcbAT = nextSize;
+    }
   }
 
   const mcbAF =
@@ -725,8 +770,29 @@ export const computePanelScheduleValues = (
     faultCurrentA?: number;
     vdCalculations?: VoltageDropCalculation[];
     panelId?: string;
+    availableSubPanels?: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }>;
   }
 ) => {
+  // Check if there is a connected sub-panel circuit that has reflection mode enabled
+  const activeReflectionCircuit = c.find(
+    (cir) =>
+      (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) &&
+      cir.linkedSubPanelId &&
+      (cir.subPanelReflectionMode === "phase_loads" || cir.subPanelReflectionMode === "max_demand")
+  );
+
+  const subPanelsList = options?.availableSubPanels || getGlobalSubPanels();
+  const sp = activeReflectionCircuit && subPanelsList?.find((s) => s.id === activeReflectionCircuit.linkedSubPanelId);
+
+  if (sp) {
+    const filteredSubPanelsList = subPanelsList.filter((s) => s.id !== options?.panelId);
+    return computePanelScheduleValues(sp.panel, sp.circuits, {
+      ...options,
+      panelId: sp.id,
+      availableSubPanels: filteredSubPanelsList,
+    });
+  }
+
   const systemVoltage = getSystemVoltage(p.system);
   const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
 
@@ -763,39 +829,66 @@ export const computePanelScheduleValues = (
     return phases;
   };
 
+  const explicitPhaseVAs = { R: 0, Y: 0, B: 0, threePhase: 0 };
+
   c.forEach((cir) => {
     if (isIdleSpareOrSpace(cir)) return;
 
-    const isMotor =
-      cir.loadType === LoadType.AIR_CON || cir.loadType === LoadType.MOTOR;
-    const activeLines = getCircuitActiveLines(
-      cir,
-      p.connectionType,
-    );
-
-    const perPhaseVA = cir.loadVA / (activeLines.length || 1);
-
-    activeLines.forEach((ph) => {
-      phaseLoads[ph as keyof typeof phaseLoads] += perPhaseVA;
-
-      if (ph === "R") {
-        phaseVAs.R += perPhaseVA;
-        if (isMotor) motorPhaseVAs.R += perPhaseVA;
-      }
-      if (ph === "Y") {
-        phaseVAs.Y += perPhaseVA;
-        if (isMotor) motorPhaseVAs.Y += perPhaseVA;
-      }
-      if (ph === "B") {
-        phaseVAs.B += perPhaseVA;
-        if (isMotor) motorPhaseVAs.B += perPhaseVA;
-      }
-    });
-
-    if (isMotor) {
-      motorVAs.push(cir.loadVA);
+    if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseLoads) {
+      explicitPhaseVAs.R += cir.reflectedPhaseLoads.R;
+      explicitPhaseVAs.Y += cir.reflectedPhaseLoads.Y;
+      explicitPhaseVAs.B += cir.reflectedPhaseLoads.B;
+      explicitPhaseVAs.threePhase += cir.reflectedPhaseLoads.ThreePhase;
+      
+      phaseLoads.R += cir.reflectedPhaseLoads.R + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseLoads.Y += cir.reflectedPhaseLoads.Y + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseLoads.B += cir.reflectedPhaseLoads.B + cir.reflectedPhaseLoads.ThreePhase / 3;
+      
+      phaseVAs.R += cir.reflectedPhaseLoads.R + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseVAs.Y += cir.reflectedPhaseLoads.Y + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseVAs.B += cir.reflectedPhaseLoads.B + cir.reflectedPhaseLoads.ThreePhase / 3;
+      
+      lightingReceptacleVA += cir.loadVA; // Just group it as continuous lighting/receptacle
     } else {
-      lightingReceptacleVA += cir.loadVA;
+      const isMotor =
+        cir.loadType === LoadType.AIR_CON || cir.loadType === LoadType.MOTOR;
+      const activeLines = getCircuitActiveLines(
+        cir,
+        p.connectionType,
+      );
+
+      const perPhaseVA = cir.loadVA / (activeLines.length || 1);
+
+      if (activeLines.length === 3) {
+        explicitPhaseVAs.threePhase += cir.loadVA;
+      } else {
+        activeLines.forEach((ph) => {
+          explicitPhaseVAs[ph as keyof typeof explicitPhaseVAs] += perPhaseVA;
+        });
+      }
+
+      activeLines.forEach((ph) => {
+        phaseLoads[ph as keyof typeof phaseLoads] += perPhaseVA;
+
+        if (ph === "R") {
+          phaseVAs.R += perPhaseVA;
+          if (isMotor) motorPhaseVAs.R += perPhaseVA;
+        }
+        if (ph === "Y") {
+          phaseVAs.Y += perPhaseVA;
+          if (isMotor) motorPhaseVAs.Y += perPhaseVA;
+        }
+        if (ph === "B") {
+          phaseVAs.B += perPhaseVA;
+          if (isMotor) motorPhaseVAs.B += perPhaseVA;
+        }
+      });
+
+      if (isMotor) {
+        motorVAs.push(cir.loadVA);
+      } else {
+        lightingReceptacleVA += cir.loadVA;
+      }
     }
   });
 
@@ -834,26 +927,45 @@ export const computePanelScheduleValues = (
       cirV = cir.voltage || cirV;
     }
 
-    const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
-    const isContinuous =
-      cir.loadType === LoadType.LIGHTING ||
-      cir.loadType === LoadType.AIR_CON ||
-      cir.loadType === LoadType.MOTOR;
-    const designI = isContinuous ? loadI * 1.25 : loadI;
+    if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseLoads) {
+      const is3PhaseMode = p.system.includes("3PH");
+      const v3 = is3PhaseMode ? cirV * 1.732 : cirV;
+      const v1 = cirV;
+      
+      const ir = cir.reflectedPhaseLoads.R / v1;
+      const iy = cir.reflectedPhaseLoads.Y / v1;
+      const ib = cir.reflectedPhaseLoads.B / v1;
+      const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
 
-    if (is3Phase) {
-      phaseBaseCurrents.R += loadI;
-      phaseBaseCurrents.Y += loadI;
-      phaseBaseCurrents.B += loadI;
+      phaseBaseCurrents.R += ir + i3;
+      phaseBaseCurrents.Y += iy + i3;
+      phaseBaseCurrents.B += ib + i3;
 
-      phaseDesignCurrents.R += designI;
-      phaseDesignCurrents.Y += designI;
-      phaseDesignCurrents.B += designI;
+      phaseDesignCurrents.R += ir + i3;
+      phaseDesignCurrents.Y += iy + i3;
+      phaseDesignCurrents.B += ib + i3;
     } else {
-      activeLines.forEach((ph) => {
-        phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] += loadI;
-        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += designI;
-      });
+      const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+      const isContinuous =
+        cir.loadType === LoadType.LIGHTING ||
+        cir.loadType === LoadType.AIR_CON ||
+        cir.loadType === LoadType.MOTOR;
+      const designI = isContinuous ? loadI * 1.25 : loadI;
+
+      if (is3Phase) {
+        phaseBaseCurrents.R += loadI;
+        phaseBaseCurrents.Y += loadI;
+        phaseBaseCurrents.B += loadI;
+
+        phaseDesignCurrents.R += designI;
+        phaseDesignCurrents.Y += designI;
+        phaseDesignCurrents.B += designI;
+      } else {
+        activeLines.forEach((ph) => {
+          phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] += loadI;
+          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += designI;
+        });
+      }
     }
   });
 
@@ -950,15 +1062,23 @@ export const computePanelScheduleValues = (
       ) {
         cirV = cir.voltage || cirV;
       }
-      const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
 
-      if (is3Phase) {
-        localPhaseAmps.threePhase += loadI;
+      if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
+        localPhaseAmps.R += cir.reflectedPhaseAmps.R;
+        localPhaseAmps.Y += cir.reflectedPhaseAmps.Y;
+        localPhaseAmps.B += cir.reflectedPhaseAmps.B;
+        localPhaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
       } else {
-        const activeLines = getCircuitActiveLines(cir, p.connectionType);
-        if (activeLines.includes("R")) localPhaseAmps.R += loadI;
-        if (activeLines.includes("Y")) localPhaseAmps.Y += loadI;
-        if (activeLines.includes("B")) localPhaseAmps.B += loadI;
+        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+
+        if (is3Phase) {
+          localPhaseAmps.threePhase += loadI;
+        } else {
+          const activeLines = getCircuitActiveLines(cir, p.connectionType);
+          if (activeLines.includes("R")) localPhaseAmps.R += loadI;
+          if (activeLines.includes("Y")) localPhaseAmps.Y += loadI;
+          if (activeLines.includes("B")) localPhaseAmps.B += loadI;
+        }
       }
     });
 
@@ -1175,7 +1295,12 @@ export const computePanelScheduleValues = (
 
   const phaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
   c.forEach((cir) => {
-    if (cir.phases.length === 3) {
+    if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
+      phaseAmps.R += cir.reflectedPhaseAmps.R;
+      phaseAmps.Y += cir.reflectedPhaseAmps.Y;
+      phaseAmps.B += cir.reflectedPhaseAmps.B;
+      phaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
+    } else if (cir.phases.length === 3) {
       phaseAmps.threePhase += cir.loadA;
     } else {
       if (cir.phases.includes("R")) phaseAmps.R += cir.loadA;
@@ -1187,6 +1312,7 @@ export const computePanelScheduleValues = (
   return {
     totalVA,
     phaseLoads,
+    explicitPhaseVAs,
     maxPhaseLoad,
     phaseImbalance,
     phaseAmps,
