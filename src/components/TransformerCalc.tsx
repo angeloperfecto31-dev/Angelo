@@ -54,10 +54,14 @@ export default function TransformerCalc({
   const connectedLoadKVA = connectedLoadVA / 1000;
   const connectedLoadkW = connectedLoadKVA * powerFactor;
 
-  // Demand Load calculation
-  // Maximum Demand Load is Connected Load * Demand Factor
-  const demandLoadKVA = connectedLoadKVA * demandFactor;
+  // Demand Load calculation from the actual engineering engine
+  const maxDemandCurrent = panelValues.mainCurrent.baseAmp;
+  const factor = is3Phase ? Math.sqrt(3) : 1;
+  const demandLoadKVA = (maxDemandCurrent * secondaryVoltage * factor) / 1000;
   const demandLoadkW = demandLoadKVA * powerFactor;
+
+  // Auto-calculated effective Demand Factor
+  const effectiveDemandFactor = connectedLoadKVA > 0 ? demandLoadKVA / connectedLoadKVA : 1.0;
 
   // Required transformer size based on loading factor
   // Required kVA = Maximum Demand Load (kVA) / Loading Factor
@@ -242,7 +246,7 @@ export default function TransformerCalc({
       doc.text(`Demand Factor:`, pCol1, 96);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${(demandFactor * 100).toFixed(0)}%`, pValCol1, 96);
+      doc.text(`${(effectiveDemandFactor * 100).toFixed(0)}%`, pValCol1, 96);
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
@@ -373,7 +377,7 @@ export default function TransformerCalc({
       doc.text("2. Demand Load Calculation Formulation:", 15, 244);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`   Demand Load = Unfactored kVA * Demand Factor = ${connectedLoadKVA.toFixed(1)} * ${demandFactor} = ${demandLoadKVA.toFixed(2)} kVA`, 15, 248);
+      doc.text(`   Demand Load = Computed Max Demand Current x Voltage x Factor = ${demandLoadKVA.toFixed(2)} kVA`, 15, 248);
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(71, 85, 105);
@@ -422,7 +426,7 @@ export default function TransformerCalc({
         [],
         ["SIZING CRITERIA AND ADJUSTABLE PARAMETERS", "", "UNFACTORED VALUE SUMMARY", ""],
         ["Loading Limit Limit Coefficient:", `${(loadingFactor * 100).toFixed(0)}%`, "Total Connected MD Load:", `${connectedLoadKVA.toFixed(2)} kVA`],
-        ["Demand Diversity Factor (DF):", `${(demandFactor * 100).toFixed(0)}%`, "Unfactored Connected kW Ratio:", `${connectedLoadkW.toFixed(2)} kW`],
+        ["Computed Demand Factor (DF):", `${(effectiveDemandFactor * 100).toFixed(0)}%`, "Unfactored Connected kW Ratio:", `${connectedLoadkW.toFixed(2)} kW`],
         ["Nominal Load Power Factor (PF):", powerFactor.toFixed(2), "Target Required Capacity (Min):", `${requiredKVA.toFixed(2)} kVA`],
         [],
         ["DETAILED COMPUTATION RESULTS & ANALYSIS", "", "SECURE VERIFICATION AUDIT", ""],
@@ -433,7 +437,7 @@ export default function TransformerCalc({
         [],
         ["ENGINEERING METHODOLOGY AND FORMULA STRINGS"],
         ["1. Required capacity (S_req) formula:"],
-        ["   Required Capacity (kVA) = (Connected Load x Demand Factor) / Loading Limit = " + `(${connectedLoadKVA.toFixed(1)} * ${demandFactor.toFixed(2)}) / ${loadingFactor.toFixed(2)} = ${requiredKVA.toFixed(2)} kVA`],
+        ["   Required Capacity (kVA) = Computed Demand Load / Loading Limit = " + `${demandLoadKVA.toFixed(2)} / ${loadingFactor.toFixed(2)} = ${requiredKVA.toFixed(2)} kVA`],
         ["2. Nominal Full Load Amperes Equations:"],
         [is3Phase 
           ? `   Ip (3PH) = kVA * 1000 / (sqrt(3) * Vp) = (${recommendedRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`
@@ -649,24 +653,21 @@ export default function TransformerCalc({
           </div>
 
           {/* Load Diversity/Demand Factor */}
-          <div className="space-y-2">
+          <div className="space-y-2 opacity-70">
             <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              <span>Demand Factor</span>
+              <span>Computed Demand Factor</span>
               <span className="font-mono text-indigo-505 dark:text-indigo-400">
-                {(demandFactor * 100).toFixed(0)}%
+                {(effectiveDemandFactor * 100).toFixed(0)}%
               </span>
             </div>
-            <input
-              type="range"
-              min="0.1"
-              max="1.0"
-              step="0.05"
-              value={demandFactor}
-              onChange={(e) => setDemandFactor(Number(e.target.value))}
-              className="w-full accent-indigo-505"
-            />
+            <div className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden">
+              <div 
+                className="h-full bg-indigo-500" 
+                style={{ width: `${effectiveDemandFactor * 100}%` }}
+              ></div>
+            </div>
             <p className="text-[10px] text-slate-400 leading-tight">
-              Default factor based on the electrical category of connected load groups.
+              Automatically derived from the engineering engine's maximum demand current.
             </p>
           </div>
 
@@ -979,10 +980,10 @@ export default function TransformerCalc({
               <div className="space-y-1">
                 <div className="font-bold text-slate-800 dark:text-slate-300">2. Demand Load Formula:</div>
                 <div className="bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50 text-indigo-600 dark:text-indigo-400 font-bold overflow-x-auto whitespace-nowrap">
-                  Demand Load = Connected kVA &times; Demand Factor
+                  Demand Load = Max Demand Current &times; Voltage &times; Factor
                 </div>
                 <div className="text-[10px] text-slate-450 pt-1">
-                  Connected Load ({connectedLoadKVA.toFixed(1)} kVA) &times; {(demandFactor).toFixed(2)} = {demandLoadKVA.toFixed(2)} kVA
+                  Engine Current ({maxDemandCurrent.toFixed(1)} A) &times; {secondaryVoltage} V &times; {(is3Phase ? 1.732 : 1).toFixed(3)} &divide; 1000 = {demandLoadKVA.toFixed(2)} kVA
                 </div>
               </div>
 

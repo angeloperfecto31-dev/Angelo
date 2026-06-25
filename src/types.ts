@@ -57,6 +57,8 @@ export interface Circuit {
   vaPerUnit?: number;
   linkedSubPanelId?: string;
   subPanelReflectionMode?: 'max_demand' | 'phase_loads';
+  reflectedDemandVA?: number;
+  reflectedDemandAmps?: number;
   reflectedPhaseLoads?: {
     R: number;
     Y: number;

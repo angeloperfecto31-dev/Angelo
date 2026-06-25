@@ -127,6 +127,29 @@ service cloud.firestore {
         && (!("paymentReference" in data) || data.paymentReference is string);
     }
 
+    function isValidSystemModule(data) {
+      return data.keys().hasAll(["id", "name", "status"])
+        && data.id is string
+        && data.name is string
+        && data.status in ["active", "hidden", "disabled", "maintenance"]
+        && (!("maintenanceMessage" in data) || data.maintenanceMessage == null || data.maintenanceMessage is string)
+        && (!("expectedCompletion" in data) || data.expectedCompletion == null || data.expectedCompletion is string)
+        && (!("updatedBy" in data) || data.updatedBy == null || data.updatedBy is string)
+        && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
+    function isValidModuleAuditLog(data) {
+      return data.keys().hasAll(["adminEmail", "moduleId", "newStatus", "timestamp"])
+        && data.adminEmail is string
+        && data.moduleId is string
+        && data.newStatus is string
+        && data.timestamp is string
+        && (!("adminName" in data) || data.adminName == null || data.adminName is string)
+        && (!("moduleName" in data) || data.moduleName == null || data.moduleName is string)
+        && (!("previousStatus" in data) || data.previousStatus == null || data.previousStatus is string)
+        && (!("reason" in data) || data.reason == null || data.reason is string);
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -229,6 +252,20 @@ service cloud.firestore {
     match /transactions/{transactionId} {
       allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow write: if isAdmin();
+    }
+
+    // 9. Module Management
+    match /modules/{moduleId} {
+      // Anyone can read the module configuration
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSystemModule(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /moduleAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidModuleAuditLog(incoming());
+      allow update, delete: if false; // Append-only
     }
   }
 }

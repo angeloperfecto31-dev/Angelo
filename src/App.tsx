@@ -53,6 +53,7 @@ import ShortCircuitCalc, {
   getRunsBySystem,
 } from "./components/ShortCircuitCalc";
 import VoltageDropCalc from "./components/VoltageDropCalc";
+import PowerSystemAnalysis from "./components/PowerSystemAnalysis";
 import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
 import FloorPlanUploader from "./components/FloorPlanUploader";
@@ -93,6 +94,8 @@ import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 import EgcSizingCalculator from "./components/EgcSizingCalculator";
 import TransformerCalc from "./components/TransformerCalc";
+import { ModuleManagement, SystemModule, DEFAULT_MODULES } from "./components/ModuleManagement";
+import { collection, onSnapshot as onFirestoreSnapshot } from "firebase/firestore";
 
 export const getFreshInitialCircuits = (): Circuit[] => {
   return INITIAL_CIRCUITS.map((c) => ({
@@ -207,8 +210,36 @@ export default function App() {
     | "egc"
     | "system-sld"
     | "transformer"
+    | "power-suite"
     | "billing"
+    | "module-management"
   >("dashboard");
+
+  const [systemModules, setSystemModules] = useState<SystemModule[]>(DEFAULT_MODULES);
+
+  useEffect(() => {
+    const unsub = onFirestoreSnapshot(collection(db, "modules"), (snapshot) => {
+      const docs = snapshot.docs.map(d => d.data() as SystemModule);
+      const merged = DEFAULT_MODULES.map(def => {
+        const found = docs.find(d => d.id === def.id);
+        return found || def;
+      });
+      setSystemModules(merged);
+    });
+    return unsub;
+  }, []);
+
+  const activeModuleStatus = systemModules.find(m => m.id === activeTab);
+  const isMaintenanceMode = activeModuleStatus?.status === "maintenance" && !isAdmin;
+  const isDisabledMode = activeModuleStatus?.status === "disabled" && !isAdmin;
+
+  // If a tab becomes disabled while a non-admin is on it, kick them to dashboard
+  useEffect(() => {
+    if (isDisabledMode) {
+      setActiveTab("dashboard");
+    }
+  }, [isDisabledMode]);
+
   const [activeScheduleTab, setActiveScheduleTab] = useState<string>("mdp");
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem("theme");
@@ -267,6 +298,11 @@ export default function App() {
     VoltageDropCalculation[]
   >(INITIAL_VOLTAGE_DROP_CALCULATIONS);
 
+  const [transformerPrimaryVoltage, setTransformerPrimaryVoltage] = useState<number>(13800);
+  const [transformerPowerFactor, setTransformerPowerFactor] = useState<number>(0.85);
+  const [transformerDemandFactor, setTransformerDemandFactor] = useState<number>(0.80);
+  const [transformerLoadingFactor, setTransformerLoadingFactor] = useState<number>(0.80);
+
   // Real-time synchronization of Short Circuit and Voltage Drop calculation parameters
   useEffect(() => {
     if (!circuits || !panel) return;
@@ -274,9 +310,11 @@ export default function App() {
     if (iscSource === "auto") {
       const { mainFeeder, totalVA } = computePanelScheduleValues(panel, circuits);
       const totalKVA = totalVA / 1000;
+      const demandKVA = totalKVA * transformerDemandFactor;
+      const requiredKVA = transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
       
       const standardKVA = [10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500, 2000, 2500];
-      const recommendedKVA = standardKVA.find(k => k >= totalKVA) || standardKVA[standardKVA.length - 1];
+      const recommendedKVA = standardKVA.find(k => k >= requiredKVA) || standardKVA[standardKVA.length - 1];
 
       let recommendedFeederSize = mainFeeder.wire.size.toString();
       let recommendedRuns = panel.system.includes("3PH") ? 3 : 2;
@@ -290,6 +328,7 @@ export default function App() {
         if (
           p.transformerKVA === recommendedKVA && 
           p.transformerVoltage === panel.voltage && 
+          p.primaryVoltage === transformerPrimaryVoltage &&
           p.feederSize === recommendedFeederSize && 
           p.feederRuns === recommendedRuns &&
           (!panel.transformerConnection || p.transformerConnection === panel.transformerConnection)
@@ -300,13 +339,14 @@ export default function App() {
           ...p,
           transformerKVA: recommendedKVA,
           transformerVoltage: panel.voltage,
+          primaryVoltage: transformerPrimaryVoltage,
           feederSize: recommendedFeederSize,
           feederRuns: recommendedRuns,
           transformerConnection: panel.transformerConnection || p.transformerConnection
         };
       });
     }
-  }, [iscSource, circuits, panel]);
+  }, [iscSource, circuits, panel, transformerDemandFactor, transformerLoadingFactor, transformerPrimaryVoltage]);
 
   // Real-time alignment of feederRuns with system phase count
   useEffect(() => {
@@ -491,11 +531,6 @@ export default function App() {
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
   );
-
-  const [transformerPrimaryVoltage, setTransformerPrimaryVoltage] = useState<number>(13800);
-  const [transformerPowerFactor, setTransformerPowerFactor] = useState<number>(0.85);
-  const [transformerDemandFactor, setTransformerDemandFactor] = useState<number>(0.80);
-  const [transformerLoadingFactor, setTransformerLoadingFactor] = useState<number>(0.80);
 
   // One-way sync: Illumination Saved Rooms -> Circuits
   useEffect(() => {
@@ -854,8 +889,10 @@ export default function App() {
               const loadI = subMainCurrent.baseAmp;
               const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
 
-              let expectedLoadVA = demandVA;
+              let expectedLoadVA = subTotalVA; // ALWAYS reflect the exact connected load
               let expectedLoadA = Number(loadI.toFixed(2));
+              let expectedReflectedDemandVA = demandVA;
+              let expectedReflectedDemandAmps = expectedLoadA;
               let expectedReflectedPhaseLoads = undefined;
               let expectedReflectedPhaseAmps = undefined;
 
@@ -872,8 +909,6 @@ export default function App() {
                   B: subPhaseAmps.B,
                   ThreePhase: subPhaseAmps.threePhase,
                 };
-                expectedLoadVA = subTotalVA;
-                expectedLoadA = Number(loadI.toFixed(2));
               }
 
               if (
@@ -890,6 +925,8 @@ export default function App() {
                 c.voltage !== subVoltage ||
                 c.description !== designation ||
                 Math.abs((c.loadA || 0) - expectedLoadA) > 0.01 ||
+                c.reflectedDemandVA !== expectedReflectedDemandVA ||
+                c.reflectedDemandAmps !== expectedReflectedDemandAmps ||
                 JSON.stringify(c.reflectedPhaseLoads) !== JSON.stringify(expectedReflectedPhaseLoads) ||
                 JSON.stringify(c.reflectedPhaseAmps) !== JSON.stringify(expectedReflectedPhaseAmps)
               ) {
@@ -910,6 +947,8 @@ export default function App() {
                   conduitSize: subConduitSize,
                   voltage: subVoltage,
                   description: designation,
+                  reflectedDemandVA: expectedReflectedDemandVA,
+                  reflectedDemandAmps: expectedReflectedDemandAmps,
                   reflectedPhaseLoads: expectedReflectedPhaseLoads,
                   reflectedPhaseAmps: expectedReflectedPhaseAmps,
                 };
@@ -971,8 +1010,10 @@ export default function App() {
             const loadI = subMainCurrent.baseAmp;
             const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
 
-            let expectedLoadVA = demandVA;
+            let expectedLoadVA = subTotalVA; // ALWAYS reflect exact connected load
             let expectedLoadA = Number(loadI.toFixed(2));
+            let expectedReflectedDemandVA = demandVA;
+            let expectedReflectedDemandAmps = expectedLoadA;
             let expectedReflectedPhaseLoads = undefined;
             let expectedReflectedPhaseAmps = undefined;
 
@@ -989,8 +1030,6 @@ export default function App() {
                 B: subPhaseAmps.B,
                 ThreePhase: subPhaseAmps.threePhase,
               };
-              expectedLoadVA = subTotalVA;
-              expectedLoadA = Number(loadI.toFixed(2));
             }
 
             if (
@@ -1007,6 +1046,8 @@ export default function App() {
               c.voltage !== subVoltage ||
               c.description !== designation ||
               Math.abs((c.loadA || 0) - expectedLoadA) > 0.01 ||
+              c.reflectedDemandVA !== expectedReflectedDemandVA ||
+              c.reflectedDemandAmps !== expectedReflectedDemandAmps ||
               JSON.stringify(c.reflectedPhaseLoads) !== JSON.stringify(expectedReflectedPhaseLoads) ||
               JSON.stringify(c.reflectedPhaseAmps) !== JSON.stringify(expectedReflectedPhaseAmps)
             ) {
@@ -1027,6 +1068,8 @@ export default function App() {
                 conduitSize: subConduitSize,
                 voltage: subVoltage,
                 description: designation,
+                reflectedDemandVA: expectedReflectedDemandVA,
+                reflectedDemandAmps: expectedReflectedDemandAmps,
                 reflectedPhaseLoads: expectedReflectedPhaseLoads,
                 reflectedPhaseAmps: expectedReflectedPhaseAmps,
               };
@@ -1569,6 +1612,13 @@ export default function App() {
             id: "verify-registrations",
             label: "Verify Registrations",
             icon: ShieldCheck,
+            color: "text-amber-600",
+            bg: "bg-amber-50",
+          },
+          {
+            id: "module-management",
+            label: "Module Visibility",
+            icon: Settings,
             color: "text-amber-600",
             bg: "bg-amber-50",
           },
@@ -2824,6 +2874,7 @@ export default function App() {
                 {[
                   { id: "dashboard", label: "Dashboard", icon: Gauge, requiresPremium: false },
                   { id: "schedule", label: "Load Schedule", icon: Layout, requiresPremium: false },
+                  { id: "power-suite", label: "Power Analysis Suite", icon: Zap, requiresPremium: true },
                   { id: "isc", label: "Short Circuit", icon: ShieldAlert, requiresPremium: false },
                   { id: "vd", label: "Voltage Drop", icon: Ruler, requiresPremium: false },
                   { id: "lighting", label: "Illumination", icon: Lightbulb, requiresPremium: false },
@@ -2832,7 +2883,12 @@ export default function App() {
                   { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
                   { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
                   { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: false }
-                ].map((item) => {
+                ].filter(item => {
+                  if (isAdmin) return true;
+                  const mod = systemModules.find(m => m.id === item.id);
+                  if (!mod) return true;
+                  return mod.status === "active" || mod.status === "maintenance";
+                }).map((item) => {
                   const isActive = activeTab === item.id;
                   const IconComponent = item.icon;
                   return (
@@ -2882,7 +2938,8 @@ export default function App() {
                   {[
                     { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
                     { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
-                    { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" }
+                    { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" },
+                    { id: "module-management", label: "Module Visibility", icon: Settings, restricted: !isAdmin, badge: null }
                   ].map((item) => {
                     const isActive = activeTab === item.id;
                     const IconComponent = item.icon;
@@ -3175,7 +3232,12 @@ export default function App() {
 
         {/* Mobile secondary navigation bar */}
         <div className="md:hidden bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-2 sticky top-16 z-20 overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex gap-2 no-print backdrop-blur-md">
-          {tabs.map((tab) => (
+          {tabs.filter(tab => {
+            if (isAdmin) return true;
+            const mod = systemModules.find(m => m.id === tab.id);
+            if (!mod) return true;
+            return mod.status === "active" || mod.status === "maintenance";
+          }).map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
@@ -3196,7 +3258,40 @@ export default function App() {
           className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 w-full"
         >
           <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-8 pb-32">
-            <div className="w-full">
+            {isMaintenanceMode && (
+              <div className="w-full flex flex-col items-center justify-center min-h-[50vh] text-center space-y-6">
+                <div className="bg-yellow-50 p-6 rounded-full inline-block mb-4">
+                  <AlertTriangle className="w-16 h-16 text-yellow-600" />
+                </div>
+                <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Module Under Maintenance</h1>
+                <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                  {activeModuleStatus?.maintenanceMessage || "This module is currently down for scheduled maintenance and upgrades. We apologize for the inconvenience. For urgent inquiries, please contact your system administrator."}
+                </p>
+                {activeModuleStatus?.expectedCompletion && (
+                  <div className="bg-white border border-gray-200 shadow-sm rounded-lg px-6 py-4 flex items-center space-x-3 mt-4">
+                    <CheckCircle2 className="w-5 h-5 text-indigo-500" />
+                    <span className="text-gray-700 font-medium">
+                      Expected Completion: <span className="text-gray-900 font-bold">{activeModuleStatus.expectedCompletion}</span>
+                    </span>
+                  </div>
+                )}
+                <div className="mt-8">
+                  <button 
+                    onClick={() => setActiveTab("dashboard")} 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl shadow-lg transition-all font-medium"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className={isMaintenanceMode ? "hidden" : "w-full"}>
+              {/* Module Management Tab */}
+              <div className={activeTab === "module-management" && isAdmin ? "w-full" : "hidden"}>
+                <ModuleManagement adminEmail={user?.email || undefined} />
+              </div>
+
               {/* Dashboard Tab */}
               <div
                 className={
@@ -4365,6 +4460,42 @@ export default function App() {
                     isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     vdCalculations={vdCalculations}
+                  />
+                </motion.div>
+              </div>
+
+              {/* Power Analysis Suite Tab */}
+              <div
+                className={
+                  activeTab === "power-suite" || isExporting
+                    ? "w-full"
+                    : "absolute left-[-9999px] top-0 opacity-0 pointer-events-none w-full select-none"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "power-suite" || isExporting
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full flex justify-center"
+                >
+                  <PowerSystemAnalysis
+                    panel={panel}
+                    circuits={circuits}
+                    subPanels={subPanels}
+                    subSubPanels={subSubPanels}
+                    iscParams={iscParams}
+                    setIscParams={setIscParams}
+                    vdCalculations={vdCalculations}
+                    isPremium={userPlan === "premium" || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                    transformerPrimaryVoltage={transformerPrimaryVoltage}
+                    transformerPowerFactor={transformerPowerFactor}
+                    transformerDemandFactor={transformerDemandFactor}
+                    transformerLoadingFactor={transformerLoadingFactor}
                   />
                 </motion.div>
               </div>

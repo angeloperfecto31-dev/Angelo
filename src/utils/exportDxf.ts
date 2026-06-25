@@ -159,6 +159,7 @@ class MText extends DatabaseObject {
 
 class DxfBuilder {
   drawing: Drawing;
+  isSLDMode: boolean = false;
 
   constructor() {
     this.drawing = new Drawing();
@@ -242,23 +243,28 @@ class DxfBuilder {
     const textStr = String(text).trim();
     if (textStr === "") return;
 
-    let adjustedHeight = height;
+    // Apply a global text height multiplier to improve legibility in AutoCAD as requested, only for SLD
+    const TEXT_SCALE_FACTOR = this.isSLDMode ? 1.6 : 1.0;
+    const baseHeight = height * TEXT_SCALE_FACTOR;
+
+    let adjustedHeight = baseHeight;
     if (wrapWidth > 0.0) {
       // Average character width factor for Arial is approx 0.55 of height
       const charWidthFactor = 0.55;
-      const estimatedWidth = textStr.length * height * charWidthFactor;
+      const estimatedWidth = textStr.length * baseHeight * charWidthFactor;
       if (estimatedWidth > wrapWidth) {
         // Try to scale down height to fit, but keep a minimum height of 1.1 for legibility
         const idealHeight = wrapWidth / (textStr.length * charWidthFactor);
-        adjustedHeight = Math.max(1.1, Math.min(height, idealHeight));
+        adjustedHeight = Math.max(1.1, Math.min(baseHeight, idealHeight));
       }
     }
 
     const cleanedText = sanitizeStringForDxf(textStr).slice(0, 250);
     this.drawing.setActiveLayer(layer);
 
-    // Compute the visual middle to compensate for old baseline-calibrated Y coordinates
-    const adjustedY = y + adjustedHeight / 2.0;
+    // Compute the visual middle using the caller's requested height to perfectly restore the original intended center
+    // (Callers pass y = centerY - height/2, so y + height/2 recovers the exact center)
+    const adjustedY = y + height / 2.0;
 
     // Instantiate and add our custom MText entity directly to the active layer shapes list
     let vAlign = "middle";
@@ -318,6 +324,8 @@ const drawCadPanelSLD = (
   isSubPanel: boolean,
   fedFromLabel: string = "FED FROM MDP",
 ) => {
+  const previousMode = b.isSLDMode;
+  b.isSLDMode = true;
   const is3Phase = panel.system.includes("3PH");
   const voltage = panel.voltage || 230;
   const phaseText = is3Phase ? "3-PH" : "1-PH";
@@ -664,6 +672,7 @@ const drawCadPanelSLD = (
     }
   }
 
+  b.isSLDMode = previousMode;
   return circuitMap;
 };
 
@@ -678,6 +687,8 @@ const drawSystemSLD = (
   sheetOffsetX: number = -1,
   subSubPanelsData: { id: string; panel: PanelConfig; circuits: Circuit[] }[] = [],
 ) => {
+  const previousMode = b.isSLDMode;
+  b.isSLDMode = true;
   const xOffset = sheetOffsetX !== -1 ? sheetOffsetX : sheetIndex * 900;
 
   const hasSubPanels = subPanelsData && subPanelsData.length > 0;
@@ -1058,6 +1069,8 @@ const drawSystemSLD = (
       );
     });
   }
+
+  b.isSLDMode = previousMode;
 };
 
 interface PanelLayoutMetrics {
@@ -2710,6 +2723,9 @@ export const exportToCAD = (
         "BORDER",
       );
 
+      const previousMode = b.isSLDMode;
+      b.isSLDMode = true;
+
       // Limit designation text size or length to prevent overlap
       b.addText(
         `SLD — ${sp.panel.designation || "SUB"}`,
@@ -2746,6 +2762,8 @@ export const exportToCAD = (
         true,
         fedFromLabel,
       );
+
+      b.isSLDMode = previousMode;
     });
   }
   if (

@@ -285,8 +285,50 @@
         "transactionDate"
       ]
     }
+    "SystemModule": {
+      "title": "SystemModule",
+      "description": "Module visibility and maintenance configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["active", "hidden", "disabled", "maintenance"]
+        },
+        "maintenanceMessage": { "type": "string" },
+        "expectedCompletion": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "ModuleAuditLog": {
+      "title": "ModuleAuditLog",
+      "description": "Audit trail for module status changes",
+      "type": "object",
+      "properties": {
+        "adminName": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "moduleName": { "type": "string" },
+        "previousStatus": { "type": "string" },
+        "newStatus": { "type": "string" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["adminEmail", "moduleId", "newStatus", "timestamp"]
+    }
   },
   "firestore": {
+    "modules/{moduleId}": {
+      "schema": "SystemModule",
+      "description": "Module state configurations"
+    },
+    "moduleAuditLogs/{logId}": {
+      "schema": "ModuleAuditLog",
+      "description": "Audit trail of module changes"
+    },
     "users/{userId}": {
       "schema": "User",
       "description": "User profiles and payment records"
