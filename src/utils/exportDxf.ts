@@ -253,9 +253,9 @@ class DxfBuilder {
       const charWidthFactor = 0.55;
       const estimatedWidth = textStr.length * baseHeight * charWidthFactor;
       if (estimatedWidth > wrapWidth) {
-        // Try to scale down height to fit, but keep a minimum height of 1.1 for legibility
+        // Only mildly scale down to 85% at most, otherwise let it wrap normally
         const idealHeight = wrapWidth / (textStr.length * charWidthFactor);
-        adjustedHeight = Math.max(1.1, Math.min(baseHeight, idealHeight));
+        adjustedHeight = Math.max(baseHeight * 0.85, Math.min(baseHeight, idealHeight));
       }
     }
 
@@ -1502,10 +1502,10 @@ export const exportToCAD = (
       "ELECTRICALPH CONSULTANTS",
       blockCenter,
       400,
-      3.5,
+      2.5,
       0,
       "TEXT_TITLE",
-      "center",
+      "center"
     );
     b.addText(
       "SEC REGISTERED ELECTRICAL ENGINEERS",
@@ -1514,7 +1514,7 @@ export const exportToCAD = (
       1.8,
       0,
       "TEXT_DATA",
-      "center",
+      "center"
     );
     b.addText(
       "PHILIPPINES DESIGN CONFORMITY PRACTICE",
@@ -1523,7 +1523,7 @@ export const exportToCAD = (
       1.5,
       0,
       "TEXT_DATA",
-      "center",
+      "center"
     );
 
     // Project metadata
@@ -1532,10 +1532,10 @@ export const exportToCAD = (
       panel.project || "UNSPECIFIED DESIGN PROJECT",
       tx,
       301,
-      2.5,
+      2.0,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
 
     b.addText("LOCATION:", tx, 280, 1.8, 0, "TEXT_HEADER", "left");
@@ -1555,19 +1555,19 @@ export const exportToCAD = (
       customTitle1 || `${currentPanel.designation || "SUB BOARD"} DISTRIBUTION`,
       blockCenter,
       205,
-      3.2,
+      2.8,
       0,
       "TEXT_TITLE",
-      "center",
+      "center"
     );
     b.addText(
       customTitle2 || "LOAD SCHEDULE & FAULT ANALYSIS",
       blockCenter,
       194,
-      2.8,
+      2.4,
       0,
       "TEXT_TITLE",
-      "center",
+      "center"
     );
 
     // Approval stamp / PEC statement
@@ -1633,7 +1633,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "   MADE IN ACCORDANCE WITH THE PHILIPPINE",
@@ -1642,7 +1642,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "   ELECTRICAL CODE (PEC) COMPLIANCE MANDATES.",
@@ -1651,7 +1651,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "2. CONDUCTORS FOR POWER LOADS SHALL BE EXCLUSIVELY",
@@ -1660,7 +1660,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "   COPPER THHN / THWN-2 HEAT RESISTANT TYPES.",
@@ -1669,7 +1669,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "3. ALL CIRCUITS SHALL RUN IN HEAVY DUTY CONDUIT.",
@@ -1678,7 +1678,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "4. COMPLIANCE STAMP INDICATES POINT-TO-POINT",
@@ -1687,7 +1687,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "   SHORT CIRCUIT EVALUATION AS PER SEC 1.10.1.24",
@@ -1696,7 +1696,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
     b.addText(
       "   FOR PROPER INTERRUPTING kAIC SAFETY RATINGS.",
@@ -1705,7 +1705,7 @@ export const exportToCAD = (
       1.6,
       0,
       "TEXT_DATA",
-      "left",
+      "left"
     );
   };
 
@@ -2679,9 +2679,9 @@ export const exportToCAD = (
       };
       const xOffset = sConf.xOffset;
 
-      // Since max table width is 345, we place them at 15 and 366 relative to sheet margins
-      const localXOffset = drawIsOdd ? 345 + 6 : -5; // First panel shifts -5 left, second right
-      const sheetContentOffset = xOffset + 20 + localXOffset; // e.g. xOffset + 20 - 5 = 15
+      // Since max table width is 345, we place them safely within the 701 usable area
+      const localXOffset = drawIsOdd ? 342 : -6; // Second panel at 362, first at 14 (gap from 10)
+      const sheetContentOffset = xOffset + 20 + localXOffset;
 
       // Run Calculations for local Sub Panel
       const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits);
@@ -2788,7 +2788,7 @@ export const exportToCAD = (
     const by = 20;
     const contentH = H - by - MARGIN_TOP;
 
-    const boundingW = sConfCalc.w - MARGIN_LEFT - MARGIN_RIGHT - 40;
+    const boundingW = sConfCalc.w - 150;
     const colW = boundingW / 2;
 
     // Draw card covering the full active width instead of only 540 width! Bounding width = 670.
@@ -2832,15 +2832,15 @@ export const exportToCAD = (
           formatLatexForCAD(t),
           xBase + 25,
           currentYSC,
-          2.5,
+          4.0,
           0,
           "TEXT_DATA",
           "left",
           colW - 50
         );
-        currentYSC -= 7.5;
+        currentYSC -= 12.0;
       });
-      currentYSC -= 4.0;
+      currentYSC -= 6.0;
     };
 
     let currentYVD = by + contentH - 22;
@@ -2975,7 +2975,7 @@ export const exportToCAD = (
     const contentH = H - by - MARGIN_TOP;
 
     // Draw outer boundary for drawing section (W-40 width, matching title block boundary)
-    const boundingW2 = sConfSld2.w - MARGIN_LEFT - MARGIN_RIGHT - 40;
+    const boundingW2 = sConfSld2.w - 150;
     b.addRect(xBase2, by, xBase2 + boundingW2, by + contentH, "BORDER");
     b.addRect(
       xBase2,
@@ -3041,12 +3041,12 @@ export const exportToCAD = (
     b.addLine(xLeft, y1 + 10, xLeft, y1 + 30, "SLD_GEOMETRY");
     b.addText(
       "UTILITY SERVICE ENTRANCE",
-      xLeft,
-      y1 - 18,
+      xLeft + 30,
+      y1 + 5,
       4.0,
       0,
       "TEXT_HEADER",
-      "center",
+      "left",
     );
 
     // Left Spec Box: GRID SUPPLY
@@ -3806,7 +3806,7 @@ export const exportToCAD = (
         "LINE NAME",
         "CURRENT (A)",
         "LENGTH (m)",
-        "WIRE SIZE (mm\\U+00B2)",
+        "WIRE SIZE (mm²)",
         "VOLTAGE",
         "SYSTEM TYPE",
         "VD (V)",
@@ -3831,18 +3831,18 @@ export const exportToCAD = (
     const numRows = calculationsToRender.length || 1;
     
     // Automatically adjust row height based on content density (budget roughly 350 units)
-    const rowH = Math.min(18.0, Math.max(10.0, Math.floor(350 / numRows)));
-    const dataFontSize = Number((rowH * 0.225).toFixed(2));
-    const headerFontSize = Number((dataFontSize * 1.1).toFixed(2));
+    const rowH = Math.min(18.0, Math.max(14.0, Math.floor(350 / numRows)));
+    const dataFontSize = Math.max(4.0, Number((rowH * 0.25).toFixed(2)));
+    const headerFontSize = Math.max(4.5, Number((dataFontSize * 1.1).toFixed(2)));
 
     // Header Border
-    const headH = Math.max(14.0, rowH * 1.3);
+    const headH = Math.max(20.0, rowH * 1.3);
     b.addRect(tableLeft, ty - headH, tableRight, ty, "BORDER");
     b.addText(
       "VOLTAGE DROP ANALYSIS REPORT TABLE",
       tableLeft + tableWidth / 2,
-      ty - headH * 0.6,
-      Math.max(3.2, dataFontSize * 1.6),
+      ty - headH / 2 - Math.max(5.5, dataFontSize * 1.6) / 2,
+      Math.max(5.5, dataFontSize * 1.6),
       0,
       "TEXT_TITLE",
       "center",
@@ -3851,7 +3851,7 @@ export const exportToCAD = (
     ty -= headH;
 
     // Header Row Columns labels
-    const labelH = Math.max(12.0, rowH * 1.1);
+    const labelH = Math.max(24.0, rowH * 1.3);
     b.addRect(tableLeft, ty - labelH, tableRight, ty, "BORDER");
     let currentX = tableLeft;
     const colPositions: number[] = [];
@@ -3860,7 +3860,7 @@ export const exportToCAD = (
       b.addText(
         col.name,
         currentX + col.w / 2,
-        ty - labelH * 0.6,
+        ty - labelH / 2 - Math.max(1.8, headerFontSize) / 2,
         Math.max(1.8, headerFontSize),
         0,
         "TEXT_HEADER",
@@ -3932,18 +3932,18 @@ export const exportToCAD = (
         }
       }
 
-      b.addText(sourceLabel, colPositions[0] + 3, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "left", cols[0].w - 4);
-      b.addText(calc.name, colPositions[1] + 3, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
-      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[2].w - 4);
-      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[3].w - 4);
-      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
-      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[5].w - 4);
-      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[6].w - 4);
-      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[7].w - 4);
-      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[8].w - 4);
+      b.addText(sourceLabel, colPositions[0] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[0].w - 4);
+      b.addText(calc.name, colPositions[1] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
+      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[2].w - 4);
+      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[3].w - 4);
+      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
+      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[5].w - 4);
+      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[6].w - 4);
+      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[7].w - 4);
+      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[8].w - 4);
       
       const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
-      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH * 0.6125, dataFontSize, 0, statLayer, "center", cols[9].w - 4);
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, statLayer, "center", cols[9].w - 4);
 
       ty -= rowH;
     });
@@ -3983,9 +3983,9 @@ export const exportToCAD = (
     let ty = 521; // Perfectly centered vertically
 
     const cols = [
-      { name: "PARAMETER / COMPONENT DESCRIPTION", w: 360 },
-      { name: "VALUE", w: 160 },
-      { name: "UNIT", w: 160 },
+      { name: "PARAMETER / COMPONENT DESCRIPTION", w: 320 },
+      { name: "VALUE", w: 100 },
+      { name: "UNIT", w: 100 },
     ];
 
     const tableWidth = cols.reduce((sum, col) => sum + col.w, 0); // 680 mm wide
@@ -4000,8 +4000,8 @@ export const exportToCAD = (
     b.addText(
       "SHORT CIRCUIT POINT-TO-POINT CALCULATION RESULTS",
       tableLeft + tableWidth / 2,
-      ty - headH * 0.6,
-      4.5,
+      ty - headH / 2 - 5.5 / 2,
+      5.5,
       0,
       "TEXT_TITLE",
       "center",
@@ -4019,8 +4019,8 @@ export const exportToCAD = (
       b.addText(
         col.name,
         currentX + col.w / 2,
-        ty - labelH * 0.6,
-        3.5,
+        ty - labelH / 2 - 4.5 / 2,
+        4.5,
         0,
         "TEXT_HEADER",
         "center",
@@ -4088,7 +4088,7 @@ export const exportToCAD = (
       { label: "Secondary Rated Bus Voltage (LV)", val: scParams.transformerVoltage, unit: "Volts" },
       { label: "Transformer Sizing Capacity", val: scParams.transformerKVA, unit: "kVA" },
       { label: "Transformer Percent Impedance (%Z)", val: scParams.transformerZ, unit: "%" },
-      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize, unit: "mm\\U+00B2 THHN" },
+      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize, unit: "mm² THHN" },
       { label: "Feeder Distance Length", val: scParams.feederLength, unit: "Meters" },
       { label: "Parallel Feeder Conductors", val: scParams.feederRuns, unit: "Runs" },
       { label: "Active Conductor Metal Type", val: scParams.conductorType, unit: "Copper/Aluminum" },
@@ -4115,20 +4115,31 @@ export const exportToCAD = (
 
     scRows.forEach((row) => {
       if (row.isSection) {
-        const sectH = 16.0;
+        const sectH = 14.0;
         b.addRect(tableLeft, ty - sectH, tableRight, ty, "BORDER");
         b.addText(
           row.label,
           tableLeft + 10,
-          ty - sectH * 0.6,
-          3.5,
+          ty - sectH / 2 - 5.5 / 2,
+          5.5,
           0,
           "TEXT_HEADER",
           "left"
         );
         ty -= sectH;
       } else {
-        const rowH = 15.0;
+        const valStr = row.val !== undefined ? row.val.toString() : "-";
+        
+        // Compute dynamic row height based on content
+        const charWidthFactor = 0.55;
+        const fontSize = 5.0;
+        const lines0 = Math.ceil((row.label.length * fontSize * charWidthFactor) / (cols[0].w - 10));
+        const lines1 = Math.ceil((valStr.length * fontSize * charWidthFactor) / (cols[1].w - 10));
+        const lines2 = Math.ceil((row.unit.length * fontSize * charWidthFactor) / (cols[2].w - 10));
+        const maxLines = Math.max(1, lines0, lines1, lines2);
+        
+        const rowH = 10.0 + (maxLines - 1) * 7.0;
+
         // Draw bottom horizontal line
         b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
         // Draw left outer vertical line
@@ -4141,11 +4152,9 @@ export const exportToCAD = (
           b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
         }
 
-        b.addText(row.label, colPositions[0] + 5, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "left", cols[0].w - 10);
-        
-        const valStr = row.val !== undefined ? row.val.toString() : "-";
-        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center", cols[1].w - 10);
-        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center", cols[2].w - 10);
+        b.addText(row.label, colPositions[0] + 5, ty - rowH / 2 - fontSize / 2, fontSize, 0, "TEXT_DATA", "left", cols[0].w - 10);
+        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - rowH / 2 - fontSize / 2, fontSize, 0, "TEXT_DATA", "center", cols[1].w - 10);
+        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - rowH / 2 - fontSize / 2, fontSize, 0, "TEXT_DATA", "center", cols[2].w - 10);
 
         ty -= rowH;
       }
@@ -4169,13 +4178,13 @@ export const exportToCAD = (
     const cols = [
       { name: "ROOM NAME", w: 80 },
       { name: "TARGET LUX", w: 45 },
-      { name: "AREA (m\\U+00B2)", w: 45 },
+      { name: "AREA (m²)", w: 45 },
       { name: "FIXTURE TYPE", w: 90 },
       { name: "FIXTURES COUNT", w: 50 },
       { name: "TOTAL LUMENS", w: 55 },
       { name: "TOTAL WATTAGE (W)", w: 60 },
-      { name: "LPD (W/m\\U+00B2)", w: 45 },
-      { name: "ASHRAE LIMIT (W/m\\U+00B2)", w: 65 },
+      { name: "LPD (W/m²)", w: 45 },
+      { name: "ASHRAE LIMIT (W/m²)", w: 65 },
       { name: "STATUS", w: 45 },
       { name: "CIRCUIT NO.", w: 50 },
     ];
@@ -4185,21 +4194,21 @@ export const exportToCAD = (
     const tableRight = tableLeft + tableWidth;
 
     // Header Border
-    b.addRect(tableLeft, ty - 12, tableRight, ty, "BORDER");
+    b.addRect(tableLeft, ty - 16, tableRight, ty, "BORDER");
     b.addText(
       "ILLUMINATION (LUMEN METHOD) ANALYSIS REPORT",
       tableLeft + tableWidth / 2,
-      ty - 7.6,
-      3.2,
+      ty - 10.5,
+      5.0,
       0,
       "TEXT_TITLE",
       "center",
     );
 
-    ty -= 12;
+    ty -= 16;
 
     // Header Row Column labels
-    b.addRect(tableLeft, ty - 10, tableRight, ty, "BORDER");
+    b.addRect(tableLeft, ty - 24, tableRight, ty, "BORDER");
     let currentX = tableLeft;
     const colPositions: number[] = [];
     cols.forEach((col) => {
@@ -4207,8 +4216,8 @@ export const exportToCAD = (
       b.addText(
         col.name,
         currentX + col.w / 2,
-        ty - 5.9,
-        1.8,
+        ty - 14.0,
+        4.0,
         0,
         "TEXT_HEADER",
         "center",
@@ -4220,15 +4229,26 @@ export const exportToCAD = (
 
     // Grid vertical lines for headers (inner dividers only)
     for (let i = 1; i < colPositions.length - 1; i++) {
-      b.addLine(colPositions[i], ty - 10, colPositions[i], ty, "BORDER");
+      b.addLine(colPositions[i], ty - 24, colPositions[i], ty, "BORDER");
     }
 
-    ty -= 10;
+    ty -= 24;
 
     // Data Row rendering
-    const rowH = 8.0;
-    
     illumParams.savedRooms.forEach((room: any) => {
+      const roomLPD = room.totalWattage / room.area;
+      const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
+      const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
+      const fixType = room.fixtureLightType || "Custom";
+
+      const charWidthFactor = 0.55;
+      const fontSize = 4.0;
+      const lines0 = Math.ceil((room.roomName.length * fontSize * charWidthFactor) / (cols[0].w - 4));
+      const lines3 = Math.ceil((fixType.length * fontSize * charWidthFactor) / (cols[3].w - 4));
+      const maxLines = Math.max(1, lines0, lines3);
+
+      const rowH = 14.0 + (maxLines - 1) * 6.0;
+
       // Draw bottom horizontal line
       b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
       // Draw left outer vertical line
@@ -4241,25 +4261,20 @@ export const exportToCAD = (
         b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
       }
 
-      const roomLPD = room.totalWattage / room.area;
-      const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
-      const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
-
-      b.addText(room.roomName, colPositions[0] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 4);
-      b.addText(room.targetLux.toString(), colPositions[1] + cols[1].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[1].w - 4);
-      b.addText(room.area.toFixed(2), colPositions[2] + cols[2].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[2].w - 4);
+      b.addText(room.roomName, colPositions[0] + 3, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "left", cols[0].w - 4);
+      b.addText(room.targetLux.toString(), colPositions[1] + cols[1].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[1].w - 4);
+      b.addText(room.area.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[2].w - 4);
       
-      const fixType = room.fixtureLightType || "Custom";
-      b.addText(fixType, colPositions[3] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[3].w - 4);
-      b.addText(room.fixturesCount.toString(), colPositions[4] + cols[4].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[4].w - 4);
-      b.addText(room.totalLumens.toString(), colPositions[5] + cols[5].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[5].w - 4);
-      b.addText(room.totalWattage.toString(), colPositions[6] + cols[6].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[6].w - 4);
-      b.addText(Number(roomLPD.toFixed(2)).toString(), colPositions[7] + cols[7].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[7].w - 4);
-      b.addText(limitLPD.toString(), colPositions[8] + cols[8].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[8].w - 4);
+      b.addText(fixType, colPositions[3] + 3, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "left", cols[3].w - 4);
+      b.addText(room.fixturesCount.toString(), colPositions[4] + cols[4].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[4].w - 4);
+      b.addText(room.totalLumens.toString(), colPositions[5] + cols[5].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[5].w - 4);
+      b.addText(room.totalWattage.toString(), colPositions[6] + cols[6].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[6].w - 4);
+      b.addText(Number(roomLPD.toFixed(2)).toString(), colPositions[7] + cols[7].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[7].w - 4);
+      b.addText(limitLPD.toString(), colPositions[8] + cols[8].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[8].w - 4);
       
       const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
-      b.addText(status, colPositions[9] + cols[9].w / 2, ty - 4.9, 1.8, 0, statLayer, "center", cols[9].w - 4);
-      b.addText(room.circuitNo ? room.circuitNo.toString() : "-", colPositions[10] + cols[10].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[10].w - 4);
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, statLayer, "center", cols[9].w - 4);
+      b.addText(room.circuitNo ? room.circuitNo.toString() : "-", colPositions[10] + cols[10].w / 2, ty - rowH / 2 - 2.0, 4.0, 0, "TEXT_DATA", "center", cols[10].w - 4);
 
       ty -= rowH;
     });
