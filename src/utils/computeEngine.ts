@@ -565,22 +565,18 @@ export const calculateCircuitValues = (
     const flc = loadA;
     const limit175 = flc * 1.75;
     const limit225 = flc * 2.25;
-    const ACU_STANDARD_RATINGS = [
-      15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200, 225,
-      250, 300, 400,
-    ];
-    const under175 = ACU_STANDARD_RATINGS.filter((r) => r <= limit175);
+    const under175 = STANDARD_CB_RATINGS.filter((r) => r <= limit175);
     const baseRating = under175.length > 0 ? under175[under175.length - 1] : 0;
-    const nextHigherIndex = ACU_STANDARD_RATINGS.findIndex(
+    const nextHigherIndex = STANDARD_CB_RATINGS.findIndex(
       (r) => r > baseRating,
     );
     const nextHigherRating =
-      nextHigherIndex !== -1 ? ACU_STANDARD_RATINGS[nextHigherIndex] : 15;
+      nextHigherIndex !== -1 ? STANDARD_CB_RATINGS[nextHigherIndex] : 15;
 
     if (nextHigherRating <= limit225) {
       requiredMcbAT = Math.max(15, nextHigherRating);
     } else {
-      const under225 = ACU_STANDARD_RATINGS.filter((r) => r <= limit225);
+      const under225 = STANDARD_CB_RATINGS.filter((r) => r <= limit225);
       requiredMcbAT =
         under225.length > 0 ? Math.max(15, under225[under225.length - 1]) : 15;
     }
@@ -773,26 +769,6 @@ export const computePanelScheduleValues = (
     availableSubPanels?: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }>;
   }
 ) => {
-  // Check if there is a connected sub-panel circuit that has reflection mode enabled
-  const activeReflectionCircuit = c.find(
-    (cir) =>
-      (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) &&
-      cir.linkedSubPanelId &&
-      (cir.subPanelReflectionMode === "phase_loads" || cir.subPanelReflectionMode === "max_demand")
-  );
-
-  const subPanelsList = options?.availableSubPanels || getGlobalSubPanels();
-  const sp = activeReflectionCircuit && subPanelsList?.find((s) => s.id === activeReflectionCircuit.linkedSubPanelId);
-
-  if (sp) {
-    const filteredSubPanelsList = subPanelsList.filter((s) => s.id !== options?.panelId);
-    return computePanelScheduleValues(sp.panel, sp.circuits, {
-      ...options,
-      panelId: sp.id,
-      availableSubPanels: filteredSubPanelsList,
-    });
-  }
-
   const systemVoltage = getSystemVoltage(p.system);
   const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
 

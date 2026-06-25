@@ -20,6 +20,7 @@ import {
   exportEgcToPdf, 
   exportEgcToDxf 
 } from "../utils/exportEgcExports";
+import { STANDARD_CB_RATINGS } from "../constants";
 
 export default function EgcSizingCalculator() {
   const [ocpdRating, setOcpdRating] = useState<number>(100);
@@ -27,13 +28,6 @@ export default function EgcSizingCalculator() {
   const [customOcpdText, setCustomOcpdText] = useState<string>("100");
   const [material, setMaterial] = useState<"Copper" | "Aluminum" | "Copper-Clad Aluminum">("Copper");
   const [searchQuery, setSearchQuery] = useState<string>("");
-
-  // Standard ratings for dropdown
-  const STANDARD_RATINGS = [
-    15, 20, 30, 40, 60, 100, 200, 300, 400, 500, 
-    600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 
-    4000, 5000, 6000
-  ];
 
   // Derive the active OCPD value
   const activeOcpd = useMemo(() => {
@@ -190,7 +184,7 @@ export default function EgcSizingCalculator() {
                 onChange={handleRatingSelect}
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 dark:border-slate-650 bg-white dark:bg-slate-750 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
               >
-                {STANDARD_RATINGS.map(val => (
+                {STANDARD_CB_RATINGS.map(val => (
                   <option key={val} value={val}>
                     {val} Amperes (A)
                   </option>
