@@ -239,18 +239,30 @@ class DxfBuilder {
     wrapWidth: number = 0.0
   ) {
     if (text === null || text === undefined) return;
-    const textStr = String(text);
-    if (textStr.trim() === "") return;
+    const textStr = String(text).trim();
+    if (textStr === "") return;
+
+    let adjustedHeight = height;
+    if (wrapWidth > 0.0) {
+      // Average character width factor for Arial is approx 0.55 of height
+      const charWidthFactor = 0.55;
+      const estimatedWidth = textStr.length * height * charWidthFactor;
+      if (estimatedWidth > wrapWidth) {
+        // Try to scale down height to fit, but keep a minimum height of 1.1 for legibility
+        const idealHeight = wrapWidth / (textStr.length * charWidthFactor);
+        adjustedHeight = Math.max(1.1, Math.min(height, idealHeight));
+      }
+    }
 
     const cleanedText = sanitizeStringForDxf(textStr).slice(0, 250);
     this.drawing.setActiveLayer(layer);
 
     // Compute the visual middle to compensate for old baseline-calibrated Y coordinates
-    const adjustedY = y + height / 2.0;
+    const adjustedY = y + adjustedHeight / 2.0;
 
     // Instantiate and add our custom MText entity directly to the active layer shapes list
     let vAlign = "middle";
-    const mtext = new MText(x, adjustedY, height, rotation, cleanedText, align, vAlign, wrapWidth);
+    const mtext = new MText(x, adjustedY, adjustedHeight, rotation, cleanedText, align, vAlign, wrapWidth);
     this.drawing.activeLayer!.addShape(mtext as any);
   }
 
@@ -486,7 +498,7 @@ const drawCadPanelSLD = (
     `BUS RATING: ${panel.mainBreakerAF || "225"}A | ${voltage}V | ${phaseText}`,
     xBase,
     boxTop - 11.5,
-    1.4,
+    1.8,
     0,
     "TEXT_HEADER",
     "center",
@@ -544,7 +556,7 @@ const drawCadPanelSLD = (
           `${row.left.mcbAT}AT`,
           xBase - 12,
           yRow + 2.5,
-          1.3,
+          1.8,
           0,
           "TEXT_HEADER",
           "center",
@@ -558,7 +570,7 @@ const drawCadPanelSLD = (
         row.left.circuitNo.toString(),
         xBase - 23,
         yRow - 0.9,
-        1.3,
+        1.8,
         0,
         "TEXT_DATA",
         "center",
@@ -577,7 +589,7 @@ const drawCadPanelSLD = (
         desc.slice(0, 18),
         xBase - 38,
         yRow + 1.5,
-        1.4,
+        1.8,
         0,
         "TEXT_DATA",
         "right",
@@ -605,7 +617,7 @@ const drawCadPanelSLD = (
           `${row.right.mcbAT}AT`,
           xBase + 12,
           yRow + 2.5,
-          1.3,
+          1.8,
           0,
           "TEXT_HEADER",
           "center",
@@ -619,7 +631,7 @@ const drawCadPanelSLD = (
         row.right.circuitNo.toString(),
         xBase + 23,
         yRow - 0.9,
-        1.3,
+        1.8,
         0,
         "TEXT_DATA",
         "center",
@@ -638,7 +650,7 @@ const drawCadPanelSLD = (
         desc2.slice(0, 18),
         xBase + 38,
         yRow + 1.5,
-        1.4,
+        1.8,
         0,
         "TEXT_DATA",
         "left",
@@ -1048,21 +1060,97 @@ const drawSystemSLD = (
   }
 };
 
+interface PanelLayoutMetrics {
+  rowH: number;
+  dataFontSize: number;
+  headerRowH: number;
+  headerFontSize: number;
+  splitHeaderFontSize: number;
+  titleFontSize: number;
+  subtitleFontSize: number;
+  summaryRowH: number;
+  summaryFontSize: number;
+  mainFeederBoxH: number;
+  mainFeederFontSize: number;
+  calcBoxH: number;
+  calcTitleFontSize: number;
+  calcTextFontSize: number;
+}
+
+const getPanelLayoutMetrics = (panel: PanelConfig, circuits: Circuit[]): PanelLayoutMetrics => {
+  const N = circuits.length;
+  const is3Phase = panel.system.includes("3PH");
+  
+  if (N <= 12) {
+    return {
+      rowH: 11.0,
+      dataFontSize: 2.5,
+      headerRowH: is3Phase ? 16.0 : 12.0,
+      headerFontSize: 3.0,
+      splitHeaderFontSize: 2.4,
+      titleFontSize: 5.0,
+      subtitleFontSize: 2.5,
+      summaryRowH: 11.0,
+      summaryFontSize: 2.5,
+      mainFeederBoxH: 22.0,
+      mainFeederFontSize: 2.4,
+      calcBoxH: 130.0,
+      calcTitleFontSize: 5.0,
+      calcTextFontSize: 2.2,
+    };
+  } else if (N <= 20) {
+    return {
+      rowH: 9.0,
+      dataFontSize: 2.1,
+      headerRowH: is3Phase ? 14.0 : 10.0,
+      headerFontSize: 2.5,
+      splitHeaderFontSize: 2.1,
+      titleFontSize: 4.0,
+      subtitleFontSize: 2.2,
+      summaryRowH: 9.0,
+      summaryFontSize: 2.1,
+      mainFeederBoxH: 18.0,
+      mainFeederFontSize: 2.0,
+      calcBoxH: 115.0,
+      calcTitleFontSize: 4.0,
+      calcTextFontSize: 1.8,
+    };
+  } else {
+    // High density
+    return {
+      rowH: 7.5,
+      dataFontSize: 1.8,
+      headerRowH: is3Phase ? 12.0 : 8.0,
+      headerFontSize: 2.2,
+      splitHeaderFontSize: 1.8,
+      titleFontSize: 3.5,
+      subtitleFontSize: 2.0,
+      summaryRowH: 8.0,
+      summaryFontSize: 1.8,
+      mainFeederBoxH: 16.0,
+      mainFeederFontSize: 1.8,
+      calcBoxH: 95.0,
+      calcTitleFontSize: 3.5,
+      calcTextFontSize: 1.6,
+    };
+  }
+};
+
 // Main Export function accommodating Load Schedule AND Short Circuit results on a professional drawing
 // Helper to calculate the exact bottom Y coordinate of a panel schedule table
 const getPanelTableBottomY = (
   panelConfig: PanelConfig,
   panelCircuits: Circuit[],
 ) => {
-  const isPanel3Phase = panelConfig.system.includes("3PH");
+  const metrics = getPanelLayoutMetrics(panelConfig, panelCircuits);
   const N = panelCircuits.length;
   let currentY = 574;
   currentY -= 22; // Header block
-  currentY -= isPanel3Phase ? 14.0 : 9.0; // Column headers
-  currentY -= N * 7.5; // Circuit rows
-  currentY -= 8.0; // Summary footer row
-  currentY -= 16.0; // Main feeder details box under table
-  currentY -= 134.0; // Calculations and Formulas block (24 + 110)
+  currentY -= metrics.headerRowH; // Column headers
+  currentY -= N * metrics.rowH; // Circuit rows
+  currentY -= metrics.summaryRowH; // Summary footer row
+  currentY -= metrics.mainFeederBoxH; // Main feeder details box under table
+  currentY -= (24 + metrics.calcBoxH); // Calculations and Formulas block (24 + calcBoxH)
   return currentY;
 };
 
@@ -1619,14 +1707,27 @@ export const exportToCAD = (
       w: baseW,
       xOffset: sheetIndex * 900,
     };
-    const xOffset = sConf.xOffset + localXOffset;
-    let ty = 574;
     const isPanel3Phase = currentPanel.system.includes("3PH");
+    const targetTableWidth = 345;
+
+    let activeXOffset = localXOffset;
+    if (localXOffset === 0) {
+      // Usable width on the drawing sheet is between left margin (10) and title block (w - 130)
+      const usableWidth = sConf.w - 130 - 10; // 701
+      const centerX = 10 + Math.floor((usableWidth - targetTableWidth) / 2); // Center the table in usable area
+      activeXOffset = centerX - 20; // Adjust for the 20mm margin inset of the table starting point
+    }
+
+    const xOffset = sConf.xOffset + activeXOffset;
+    let ty = 574;
+
+    const metrics = getPanelLayoutMetrics(currentPanel, currentCircuits);
 
     // Columns Width Allocations matching the HTML table structure and order
     let cols: { name: string; w: number }[] = [];
+
     if (!isPanel3Phase) {
-      cols = [
+      const baseColWidths = [
         { name: "NO.", w: 12 },
         { name: "LOAD DESCRIPTION", w: 60 },
         { name: "W", w: 14 },
@@ -1641,15 +1742,21 @@ export const exportToCAD = (
         { name: "TYPE", w: 22 },
         { name: "WIRE / CONDUIT SIZING", w: 90 },
       ];
+      const sumBase = baseColWidths.reduce((sum, col) => sum + col.w, 0); // 308
+      cols = baseColWidths.map((col, idx) => {
+        let colW = Math.floor((col.w / sumBase) * targetTableWidth);
+        if (idx === baseColWidths.length - 1) {
+          const sumSoFar = baseColWidths.slice(0, -1).map(c => Math.floor((c.w / sumBase) * targetTableWidth)).reduce((a, b) => a + b, 0);
+          colW = targetTableWidth - sumSoFar;
+        }
+        return { name: col.name, w: colW };
+      });
     } else {
-      const label1 =
-        currentPanel.connectionType === "Line-to-Neutral" ? "AN" : "AB";
-      const label2 =
-        currentPanel.connectionType === "Line-to-Neutral" ? "BN" : "BC";
-      const label3 =
-        currentPanel.connectionType === "Line-to-Neutral" ? "CN" : "CA";
+      const label1 = currentPanel.connectionType === "Line-to-Neutral" ? "AN" : "AB";
+      const label2 = currentPanel.connectionType === "Line-to-Neutral" ? "BN" : "BC";
+      const label3 = currentPanel.connectionType === "Line-to-Neutral" ? "CN" : "CA";
 
-      cols = [
+      const baseColWidths = [
         { name: "NO.", w: 12 },
         { name: "LOAD DESCRIPTION", w: 58 },
         { name: "W", w: 14 },
@@ -1667,6 +1774,15 @@ export const exportToCAD = (
         { name: "TYPE", w: 22 },
         { name: "WIRE / CONDUIT SIZING", w: 89 },
       ];
+      const sumBase = baseColWidths.reduce((sum, col) => sum + col.w, 0); // 345
+      cols = baseColWidths.map((col, idx) => {
+        let colW = Math.floor((col.w / sumBase) * targetTableWidth);
+        if (idx === baseColWidths.length - 1) {
+          const sumSoFar = baseColWidths.slice(0, -1).map(c => Math.floor((c.w / sumBase) * targetTableWidth)).reduce((a, b) => a + b, 0);
+          colW = targetTableWidth - sumSoFar;
+        }
+        return { name: col.name, w: colW };
+      });
     }
 
     const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
@@ -1680,7 +1796,7 @@ export const exportToCAD = (
       `PANELBOARD BOARD SCHEDULE — ${currentPanel.designation || "BOARD"}`,
       xOffset + 20 + tableWidth / 2,
       ty - 11,
-      4.0,
+      metrics.titleFontSize,
       0,
       "TEXT_TITLE",
       "center",
@@ -1689,7 +1805,7 @@ export const exportToCAD = (
       `SYSTEM RATING: ${currentPanel.system} | ENCLOSURE: ${currentPanel.enclosure} | MOUNTING: ${currentPanel.mounting} | VOLTAGE: ${currentPanel.voltage}V`,
       xOffset + 20 + tableWidth / 2,
       ty - 18,
-      2.0,
+      metrics.subtitleFontSize,
       0,
       "TEXT_DATA",
       "center",
@@ -1708,7 +1824,7 @@ export const exportToCAD = (
     colPositions.push(tableRight); // end cap
 
     // Draw Header Row (supporting double-header tier for Three-Phase AMPS split)
-    const headerRowH = isPanel3Phase ? 14.0 : 9.0;
+    const headerRowH = metrics.headerRowH;
     b.addRect(xOffset + 20, ty - headerRowH, tableRight, ty, "BORDER");
 
     if (!isPanel3Phase) {
@@ -1727,8 +1843,8 @@ export const exportToCAD = (
         b.addText(
           cols[i].name,
           cx,
-          ty - 5.5,
-          2.0,
+          ty - headerRowH / 2 - metrics.headerFontSize / 2,
+          metrics.headerFontSize,
           0,
           "TEXT_HEADER",
           "center",
@@ -1756,8 +1872,8 @@ export const exportToCAD = (
           b.addText(
             cols[i].name,
             cx,
-            ty - 8.0,
-            2.0,
+            ty - headerRowH / 2 - metrics.headerFontSize / 2,
+            metrics.headerFontSize,
             0,
             "TEXT_HEADER",
             "center",
@@ -1769,12 +1885,13 @@ export const exportToCAD = (
       // Split tier for AMPS
       const ampsStartX = colPositions[6];
       const ampsEndX = colPositions[10];
-      b.addLine(ampsStartX, ty - 7.0, ampsEndX, ty - 7.0, "TABLE_GRID");
+      const splitTierY = ty - headerRowH / 2;
+      b.addLine(ampsStartX, splitTierY, ampsEndX, splitTierY, "TABLE_GRID");
       b.addText(
         "AMPS",
         (ampsStartX + ampsEndX) / 2,
-        ty - 4.5,
-        2.0,
+        ty - (headerRowH / 2) / 2 - metrics.headerFontSize / 2,
+        metrics.headerFontSize,
         0,
         "TEXT_HEADER",
         "center",
@@ -1785,7 +1902,7 @@ export const exportToCAD = (
           colPositions[i],
           ty - headerRowH,
           colPositions[i],
-          ty - 7.0,
+          splitTierY,
           "TABLE_GRID",
         );
       }
@@ -1794,8 +1911,8 @@ export const exportToCAD = (
         b.addText(
           cols[i].name,
           cx,
-          ty - 11.4,
-          1.8,
+          splitTierY - (headerRowH / 2) / 2 - metrics.splitHeaderFontSize / 2,
+          metrics.splitHeaderFontSize,
           0,
           "TEXT_HEADER",
           "center",
@@ -1807,7 +1924,7 @@ export const exportToCAD = (
     ty -= headerRowH;
 
     // Print circuit rows
-    const rowH = 7.5;
+    const rowH = metrics.rowH;
     currentCircuits.forEach((cir) => {
       // Draw bottom horizontal line
       b.addLine(xOffset + 20, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
@@ -1834,23 +1951,26 @@ export const exportToCAD = (
         (cir.description && cir.description.toUpperCase() === "SPARE") ||
         cir.loadType === LoadType.SPARE;
 
+      const yText = ty - rowH / 2 - metrics.dataFontSize / 2;
+
       // Col 1: NO.
       b.addText(
         cir.circuitNo.toString(),
         colPositions[0] + cols[0].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[0].w - 2
       );
 
       // Col 2: DESCRIPTION
       b.addText(
         cir.description,
         colPositions[1] + 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "left",
@@ -1861,33 +1981,36 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : cir.wattage.toString(),
         colPositions[2] + cols[2].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[2].w - 2
       );
 
       // Col 4: QTY
       b.addText(
         isSpace || isSpare ? "-" : cir.quantity.toString(),
         colPositions[3] + cols[3].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[3].w - 2
       );
 
       // Col 5: VA
       b.addText(
         isSpace || isSpare ? "-" : cir.loadVA.toString(),
         colPositions[4] + cols[4].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[4].w - 2
       );
 
       // Col 6: PHASE
@@ -1902,11 +2025,12 @@ export const exportToCAD = (
       b.addText(
         phaseStr,
         colPositions[5] + cols[5].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[5].w - 2
       );
 
       // Col 7: AMPS
@@ -1914,11 +2038,12 @@ export const exportToCAD = (
         b.addText(
           isSpace || isSpare ? "-" : `${cir.loadA.toFixed(2)}A`,
           colPositions[6] + cols[6].w / 2,
-          ty - 4.65,
-          1.8,
+          yText,
+          metrics.dataFontSize,
           0,
           "TEXT_DATA",
           "center",
+          cols[6].w - 2
         );
       } else {
         const phRVal =
@@ -1950,41 +2075,47 @@ export const exportToCAD = (
             ? `${cir.loadA.toFixed(2)}A`
             : "-";
 
+        const yTextSplit = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
+
         b.addText(
           phRVal,
           colPositions[6] + cols[6].w / 2,
-          ty - 4.55,
-          1.6,
+          yTextSplit,
+          metrics.splitHeaderFontSize,
           0,
           "TEXT_DATA",
           "center",
+          cols[6].w - 2
         );
         b.addText(
           phYVal,
           colPositions[7] + cols[7].w / 2,
-          ty - 4.55,
-          1.6,
+          yTextSplit,
+          metrics.splitHeaderFontSize,
           0,
           "TEXT_DATA",
           "center",
+          cols[7].w - 2
         );
         b.addText(
           phBVal,
           colPositions[8] + cols[8].w / 2,
-          ty - 4.55,
-          1.6,
+          yTextSplit,
+          metrics.splitHeaderFontSize,
           0,
           "TEXT_DATA",
           "center",
+          cols[8].w - 2
         );
         b.addText(
           ph3PVal,
           colPositions[9] + cols[9].w / 2,
-          ty - 4.55,
-          1.6,
+          yTextSplit,
+          metrics.splitHeaderFontSize,
           0,
           "TEXT_DATA",
           "center",
+          cols[9].w - 2
         );
       }
 
@@ -1994,55 +2125,60 @@ export const exportToCAD = (
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbAT} AT`,
         colPositions[baseIdx] + cols[baseIdx].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[baseIdx].w - 2
       );
 
       // Col 9: AF
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbAF} AF`,
         colPositions[baseIdx + 1] + cols[baseIdx + 1].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[baseIdx + 1].w - 2
       );
 
       // Col 10: P
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbP}P`,
         colPositions[baseIdx + 2] + cols[baseIdx + 2].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[baseIdx + 2].w - 2
       );
 
       // Col 11: KAIC
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbKAIC}`,
         colPositions[baseIdx + 3] + cols[baseIdx + 3].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[baseIdx + 3].w - 2
       );
 
       // Col 12: TYPE
       b.addText(
         isSpace || isSpare ? "-" : `${cir.mcbType}`,
         colPositions[baseIdx + 4] + cols[baseIdx + 4].w / 2,
-        ty - 4.65,
-        1.8,
+        yText,
+        metrics.dataFontSize,
         0,
         "TEXT_DATA",
         "center",
+        cols[baseIdx + 4].w - 2
       );
 
       // Col 13: WIRE / CONDUIT SIZING
@@ -2051,11 +2187,13 @@ export const exportToCAD = (
         : isSpare
           ? "SPARE"
           : `${cir.wireSize} mm² THHN / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
+      
+      const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
       b.addText(
         sizeStr,
         colPositions[baseIdx + 5] + 3,
-        ty - 4.55,
-        1.6,
+        yTextWire,
+        metrics.splitHeaderFontSize,
         0,
         "TEXT_DATA",
         "left",
@@ -2066,18 +2204,21 @@ export const exportToCAD = (
     });
 
     // DRAW TABULAR SUMMARY FOOTER (Aligned exactly with HTML table arrangement)
-    const sumRowH = 8.0;
+    const sumRowH = metrics.summaryRowH;
     b.addRect(xOffset + 20, ty - sumRowH, tableRight, ty, "BORDER");
+
+    const ySumText = ty - sumRowH / 2 - metrics.summaryFontSize / 2;
 
     // Merged block for Cols 1-4
     b.addText(
       "TOTAL CONNECTED LOAD / SUMMARY:",
       xOffset + 23,
-      ty - sumRowH + 3.1,
-      1.8,
+      ySumText,
+      metrics.summaryFontSize,
       0,
       "TEXT_HEADER",
       "left",
+      colPositions[4] - (xOffset + 23) - 2
     );
 
     // Draw dividers only for configured summary boundaries
@@ -2087,11 +2228,12 @@ export const exportToCAD = (
     b.addText(
       `${currentCalcData.totalVA.toFixed(0)} VA`,
       colPositions[4] + cols[4].w / 2,
-      ty - sumRowH + 3.1,
-      1.8,
+      ySumText,
+      metrics.summaryFontSize,
       0,
       "TEXT_HEADER",
       "center",
+      cols[4].w - 2
     );
 
     // Divider at start of PHASE / kVA column
@@ -2100,11 +2242,12 @@ export const exportToCAD = (
     b.addText(
       `(${(currentCalcData.totalVA / 1000).toFixed(2)} kVA)`,
       colPositions[5] + cols[5].w / 2,
-      ty - sumRowH + 3.1,
-      1.8,
+      ySumText,
+      metrics.summaryFontSize,
       0,
       "TEXT_HEADER",
       "center",
+      cols[5].w - 2
     );
 
     // Divider at start of AMPS column(s)
@@ -2115,11 +2258,12 @@ export const exportToCAD = (
       b.addText(
         `${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
         colPositions[6] + cols[6].w / 2,
-        ty - sumRowH + 3.1,
-        1.8,
+        ySumText,
+        metrics.summaryFontSize,
         0,
         "TEXT_HEADER",
         "center",
+        cols[6].w - 2
       );
       b.addLine(
         colPositions[7],
@@ -2140,32 +2284,38 @@ export const exportToCAD = (
           "TABLE_GRID",
         );
       }
+      
+      const ySumTextSplit = ty - sumRowH / 2 - metrics.splitHeaderFontSize / 2;
+
       b.addText(
         `${currentCalcData.phaseAmps.R.toFixed(2)} A`,
         colPositions[6] + cols[6].w / 2,
-        ty - sumRowH + 3.2,
-        1.6,
+        ySumTextSplit,
+        metrics.splitHeaderFontSize,
         0,
         "TEXT_HEADER",
         "center",
+        cols[6].w - 2
       );
       b.addText(
         `${currentCalcData.phaseAmps.Y.toFixed(2)} A`,
         colPositions[7] + cols[7].w / 2,
-        ty - sumRowH + 3.2,
-        1.6,
+        ySumTextSplit,
+        metrics.splitHeaderFontSize,
         0,
         "TEXT_HEADER",
         "center",
+        cols[7].w - 2
       );
       b.addText(
         `${currentCalcData.phaseAmps.B.toFixed(2)} A`,
         colPositions[8] + cols[8].w / 2,
-        ty - sumRowH + 3.2,
-        1.6,
+        ySumTextSplit,
+        metrics.splitHeaderFontSize,
         0,
         "TEXT_HEADER",
         "center",
+        cols[8].w - 2
       );
       const ph3PVal =
         currentCalcData.phaseAmps.threePhase > 0
@@ -2174,72 +2324,82 @@ export const exportToCAD = (
       b.addText(
         ph3PVal,
         colPositions[9] + cols[9].w / 2,
-        ty - sumRowH + 3.2,
-        1.6,
+        ySumTextSplit,
+        metrics.splitHeaderFontSize,
         0,
         "TEXT_HEADER",
         "center",
+        cols[9].w - 2
       );
       ampsEndIdx = 10;
     }
 
     // Merged block for Cols 8-13 (Summary specifications)
     const summarySpecStr = `FEEDER: ${currentCalcData.mainFeeder.wire.runs}x${currentCalcData.mainFeeder.wire.size}mm² THHN + ${currentCalcData.mainFeeder.groundSize}mm² GND | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
+    
+    const ySumTextSpec = ty - sumRowH / 2 - metrics.splitHeaderFontSize / 2;
+
     b.addText(
       summarySpecStr,
       colPositions[ampsEndIdx] + 3,
-      ty - sumRowH + 3.25,
-      1.5,
+      ySumTextSpec,
+      metrics.splitHeaderFontSize,
       0,
       "TEXT_DATA",
       "left",
+      tableRight - colPositions[ampsEndIdx] - 6
     );
 
     ty -= sumRowH; // ty is now table bottom
 
     // Main feeder layout details (Box with specifications under the table)
-    b.addRect(xOffset + 20, ty - 16, tableRight, ty, "BORDER");
+    b.addRect(xOffset + 20, ty - metrics.mainFeederBoxH, tableRight, ty, "BORDER");
     b.addText(
       `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² THHN + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} ${currentCalcData.mainFeeder.conduitType || "PVC"}.`,
       xOffset + 23,
-      ty - 8,
-      1.8,
+      ty - metrics.mainFeederBoxH / 2 + 1.5,
+      metrics.mainFeederFontSize,
       0,
       "TEXT_DATA",
       "left",
+      (tableRight - (xOffset + 23)) - 140
     );
     b.addText(
       `MAIN RATED OVERCURRENT BREAKER: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P, ${currentCalcData.mainFeeder.kaic} kAIC, ${currentCalcData.mainFeeder.type}.`,
       xOffset + 23,
-      ty - 13,
-      1.8,
+      ty - metrics.mainFeederBoxH / 2 - 3.5,
+      metrics.mainFeederFontSize,
       0,
       "TEXT_DATA",
       "left",
+      (tableRight - (xOffset + 23)) - 140
     );
     b.addText(
       `${isPanel3Phase ? `PHASE DISBALANCE RATIO: ${currentCalcData.phaseImbalance.toFixed(2)}% | ` : ""}RATED MAX DEMAND CURRENT: ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
       tableRight - 5,
-      ty - 10,
-      1.8,
+      ty - metrics.mainFeederBoxH / 2 - 1.0,
+      metrics.mainFeederFontSize,
       0,
       "TEXT_HEADER",
       "right",
+      135
     );
 
     // CALCULATIONS & FORMULAS MODULE
-    const calcY = ty - 24; // Start right below the main feeder details
-    const calcBoxHeight = 110;
+    const calcY = ty - metrics.mainFeederBoxH - 8; // Start right below the main feeder details
+    const calcBoxHeight = metrics.calcBoxH;
+    const col2X = xOffset + Math.floor((tableRight - xOffset) / 2) + 20;
     b.addRect(xOffset + 20, calcY - calcBoxHeight, tableRight, calcY, "BORDER");
     b.addRect(xOffset + 20, calcY - 12, tableRight, calcY, "BORDER"); // Header bar
     b.addText(
       "CALCULATIONS & FORMULAS",
       (xOffset + 20 + tableRight) / 2,
       calcY - 8,
-      4.0,
+      metrics.calcTitleFontSize,
       0,
       "TEXT_TITLE",
       "center",
+      tableRight - (xOffset + 20) - 10
     );
 
     const writeCalcLine = (
@@ -2247,7 +2407,8 @@ export const exportToCAD = (
       cy: number,
       textType: string = "TEXT_DATA",
     ) => {
-      b.addText(text, xOffset + 25, cy, 1.6, 0, textType, "left");
+      const wWidth = col2X - (xOffset + 25) - 5;
+      b.addText(text, xOffset + 25, cy, metrics.calcTextFontSize, 0, textType, "left", wWidth);
     };
 
     let cy = calcY - 20;
@@ -2390,13 +2551,13 @@ export const exportToCAD = (
 
     // Split into second column if space permits, but for simplicity let's shift X for column 2
     const cyRightStart = calcY - 20;
-    const col2X = xOffset + Math.floor((tableRight - xOffset) / 2) + 20;
     const writeCalcLineCol2 = (
       text: string,
       cy: number,
       textType: string = "TEXT_DATA",
     ) => {
-      b.addText(text, col2X, cy, 1.6, 0, textType, "left");
+      const wWidth = tableRight - col2X - 10;
+      b.addText(text, col2X, cy, metrics.calcTextFontSize, 0, textType, "left", wWidth);
     };
 
     let cy2 = cyRightStart;
@@ -2531,7 +2692,7 @@ export const exportToCAD = (
       );
 
       // Render schematic Single Line Diagram representing connection path from Main Panel to Sub Board
-      const tableW = sp.panel.system.includes("3PH") ? 345 : 308;
+      const tableW = 345;
       const subMidX = sheetContentOffset + tableW / 2;
 
       b.addRect(
@@ -3755,16 +3916,16 @@ export const exportToCAD = (
 
       b.addText(sourceLabel, colPositions[0] + 3, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "left", cols[0].w - 4);
       b.addText(calc.name, colPositions[1] + 3, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
-      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
-      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
-      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
-      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
-      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
-      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
-      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center");
+      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[2].w - 4);
+      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[3].w - 4);
+      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
+      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[5].w - 4);
+      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[6].w - 4);
+      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[7].w - 4);
+      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH * 0.6125, dataFontSize, 0, "TEXT_DATA", "center", cols[8].w - 4);
       
       const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
-      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH * 0.6125, dataFontSize, 0, statLayer, "center");
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH * 0.6125, dataFontSize, 0, statLayer, "center", cols[9].w - 4);
 
       ty -= rowH;
     });
@@ -3965,8 +4126,8 @@ export const exportToCAD = (
         b.addText(row.label, colPositions[0] + 5, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "left", cols[0].w - 10);
         
         const valStr = row.val !== undefined ? row.val.toString() : "-";
-        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center");
-        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center");
+        b.addText(valStr, colPositions[1] + cols[1].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center", cols[1].w - 10);
+        b.addText(row.unit, colPositions[2] + cols[2].w / 2, ty - rowH * 0.6125, 3.2, 0, "TEXT_DATA", "center", cols[2].w - 10);
 
         ty -= rowH;
       }
@@ -4067,20 +4228,20 @@ export const exportToCAD = (
       const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
 
       b.addText(room.roomName, colPositions[0] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[0].w - 4);
-      b.addText(room.targetLux.toString(), colPositions[1] + cols[1].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(room.area.toFixed(2), colPositions[2] + cols[2].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(room.targetLux.toString(), colPositions[1] + cols[1].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[1].w - 4);
+      b.addText(room.area.toFixed(2), colPositions[2] + cols[2].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[2].w - 4);
       
       const fixType = room.fixtureLightType || "Custom";
       b.addText(fixType, colPositions[3] + 3, ty - 4.9, 1.8, 0, "TEXT_DATA", "left", cols[3].w - 4);
-      b.addText(room.fixturesCount.toString(), colPositions[4] + cols[4].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(room.totalLumens.toString(), colPositions[5] + cols[5].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(room.totalWattage.toString(), colPositions[6] + cols[6].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(Number(roomLPD.toFixed(2)).toString(), colPositions[7] + cols[7].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
-      b.addText(limitLPD.toString(), colPositions[8] + cols[8].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(room.fixturesCount.toString(), colPositions[4] + cols[4].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[4].w - 4);
+      b.addText(room.totalLumens.toString(), colPositions[5] + cols[5].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[5].w - 4);
+      b.addText(room.totalWattage.toString(), colPositions[6] + cols[6].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[6].w - 4);
+      b.addText(Number(roomLPD.toFixed(2)).toString(), colPositions[7] + cols[7].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[7].w - 4);
+      b.addText(limitLPD.toString(), colPositions[8] + cols[8].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[8].w - 4);
       
       const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
-      b.addText(status, colPositions[9] + cols[9].w / 2, ty - 4.9, 1.8, 0, statLayer, "center");
-      b.addText(room.circuitNo ? room.circuitNo.toString() : "-", colPositions[10] + cols[10].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center");
+      b.addText(status, colPositions[9] + cols[9].w / 2, ty - 4.9, 1.8, 0, statLayer, "center", cols[9].w - 4);
+      b.addText(room.circuitNo ? room.circuitNo.toString() : "-", colPositions[10] + cols[10].w / 2, ty - 4.9, 1.8, 0, "TEXT_DATA", "center", cols[10].w - 4);
 
       ty -= rowH;
     });
