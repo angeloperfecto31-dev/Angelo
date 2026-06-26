@@ -661,6 +661,7 @@ export default function App() {
               "mcbKAIC",
               "mcbType",
               "voltage",
+              "kaicOverride",
             ];
             fieldsToCheck.forEach((field) => {
               if (nextC[field] !== prevC[field]) {
@@ -774,6 +775,7 @@ export default function App() {
               "mcbKAIC",
               "mcbType",
               "voltage",
+              "kaicOverride",
             ];
             fieldsToCheck.forEach((field) => {
               if (nextC[field] !== prevC[field]) {

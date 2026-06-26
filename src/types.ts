@@ -46,6 +46,8 @@ export interface Circuit {
   mcbAF: number;
   mcbP: number;
   mcbKAIC: number;
+  kaicOverride?: number;
+  mcbKAICCalculated?: number;
   mcbType: MCBType;
   wireSize: string; // mm²
   wireType: string;

@@ -18,7 +18,8 @@ import {
   ArrowDown,
   GripVertical,
   MoveVertical,
-  Search
+  Search,
+  RotateCcw
 } from "lucide-react";
 import {
   DndContext,
@@ -496,6 +497,8 @@ export default function LoadSchedule({
   parentMdpConnection,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
+  const [customKaicCircuitIds, setCustomKaicCircuitIds] = useState<string[]>([]);
+  const standardKAICRatings = useMemo(() => [5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100], []);
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
   const [showRearrangeModal, setShowRearrangeModal] = useState<boolean>(false);
   const [selectedPresets, setSelectedPresets] = useState<any[]>([]);
@@ -1161,13 +1164,22 @@ export default function LoadSchedule({
     
     let changed = false;
     const nextCircuits = circuits.map((c) => {
-      // Spaces/spares skip check
+      // Spaces/spares/idle skip check
       if (isIdleSpareOrSpace(c)) return c;
       
-      const currentKaic = c.mcbKAIC || 10;
-      if (currentKaic < targetKaic) {
+      const mcbAT = c.mcbAT || 15;
+      const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
+      const autoCalculated = Math.max(baseCalculated, targetKaic);
+      
+      const desiredKaic = c.kaicOverride !== undefined ? c.kaicOverride : autoCalculated;
+      
+      if (c.mcbKAIC !== desiredKaic || c.mcbKAICCalculated !== autoCalculated) {
         changed = true;
-        return { ...c, mcbKAIC: targetKaic };
+        return {
+          ...c,
+          mcbKAIC: desiredKaic,
+          mcbKAICCalculated: autoCalculated
+        };
       }
       return c;
     });
@@ -3052,8 +3064,91 @@ export default function LoadSchedule({
                         </select>
                       )}
                     </td>
-                    <td className="px-1 py-3 text-center text-slate-400 dark:text-slate-500 font-bold truncate">
-                      {isSpace ? "-" : c.mcbKAIC}
+                    <td className="px-1 py-3 text-center">
+                      {isSpace ? (
+                        "-"
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          {customKaicCircuitIds.includes(c.id) || (c.kaicOverride !== undefined && !standardKAICRatings.includes(c.kaicOverride)) ? (
+                            <div className="flex items-center gap-1 justify-center">
+                              <input
+                                type="number"
+                                value={c.kaicOverride ?? ""}
+                                placeholder={String(c.mcbKAICCalculated ?? 10)}
+                                onChange={(e) => {
+                                  const val = e.target.value ? Number(e.target.value) : undefined;
+                                  updateCircuit(c.id, { kaicOverride: val });
+                                }}
+                                className="w-14 bg-white dark:bg-slate-800 text-center text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                style={{ fontSize: tableFontSize - 2 }}
+                              />
+                              <span className="text-xxs text-slate-500 dark:text-slate-400 shrink-0">kA</span>
+                              <button
+                                onClick={() => {
+                                  updateCircuit(c.id, { kaicOverride: undefined });
+                                  setCustomKaicCircuitIds(prev => prev.filter(id => id !== c.id));
+                                }}
+                                className="text-slate-400 hover:text-indigo-600 p-0.5 transition-colors no-print shrink-0"
+                                title="Reset to calculated"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 justify-center">
+                              <select
+                                value={c.kaicOverride === undefined ? "auto" : String(c.kaicOverride)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === "auto") {
+                                    updateCircuit(c.id, { kaicOverride: undefined });
+                                  } else if (val === "custom") {
+                                    setCustomKaicCircuitIds(prev => [...prev, c.id]);
+                                    updateCircuit(c.id, { kaicOverride: c.mcbKAICCalculated ?? 10 });
+                                  } else {
+                                    updateCircuit(c.id, { kaicOverride: Number(val) });
+                                  }
+                                }}
+                                className={`bg-transparent text-center font-bold appearance-none cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-800 rounded px-1 py-0.5 dark:bg-slate-900 ${
+                                  c.kaicOverride !== undefined 
+                                    ? "text-amber-600 dark:text-amber-400 font-extrabold bg-amber-50 dark:bg-amber-950/20 px-1.5 rounded border-amber-200 dark:border-amber-900/40" 
+                                    : "text-slate-500 dark:text-slate-400"
+                                }`}
+                                style={{ fontSize: tableFontSize - 1 }}
+                              >
+                                <option value="auto" className="dark:bg-slate-900 dark:text-slate-100 font-normal">
+                                  {c.mcbKAICCalculated ?? c.mcbKAIC ?? 10} (Auto)
+                                </option>
+                                {standardKAICRatings.map((rating) => (
+                                  <option
+                                    key={rating}
+                                    value={String(rating)}
+                                    className="dark:bg-slate-900 dark:text-slate-100"
+                                  >
+                                    {rating} kA
+                                  </option>
+                                ))}
+                                <option value="custom" className="dark:bg-slate-900 dark:text-slate-100 italic">
+                                  Custom...
+                                </option>
+                              </select>
+                              
+                              {c.kaicOverride !== undefined && (
+                                <button
+                                  onClick={() => {
+                                    updateCircuit(c.id, { kaicOverride: undefined });
+                                    setCustomKaicCircuitIds(prev => prev.filter(id => id !== c.id));
+                                  }}
+                                  className="text-amber-500 hover:text-indigo-600 p-0.5 ml-0.5 no-print shrink-0"
+                                  title="Manually Overridden. Click to Reset to Calculated"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-1 py-3 text-center">
                       {isSpace ? (
@@ -3214,10 +3309,62 @@ export default function LoadSchedule({
                       {mainFeeder.conduitType || "PVC"}
                       {panel.mainOverrides?.isOverrideEnabled && panel.mainOverrides.wireSize ? " (Manual)" : ""}
                     </span>
-                    <span>
-                      Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF,{" "}
-                      {mainFeeder.poles}P, {mainFeeder.kaic} kAIC,{" "}
-                      {mainFeeder.type}
+                    <span className="flex items-center gap-1 flex-wrap justify-end">
+                      <span>Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF, {mainFeeder.poles}P, </span>
+                      <span className="inline-flex items-center gap-0.5">
+                        <select
+                          value={panel.mainOverrides?.kaic === undefined ? "auto" : String(panel.mainOverrides.kaic)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPanel((prev) => ({
+                              ...prev,
+                              mainOverrides: {
+                                isOverrideEnabled: prev.mainOverrides?.isOverrideEnabled ?? true,
+                                ...(prev.mainOverrides || {}),
+                                kaic: val === "auto" ? undefined : Number(val),
+                              }
+                            }));
+                          }}
+                          className={`bg-slate-100 dark:bg-slate-800 font-bold border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded px-1.5 py-0.5 text-xs cursor-pointer select-none ${
+                            panel.mainOverrides?.kaic !== undefined
+                              ? "text-amber-600 dark:text-amber-400 font-extrabold bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40"
+                              : "text-slate-800 dark:text-slate-200"
+                          }`}
+                          style={{ fontSize: tableFontSize - 2 }}
+                        >
+                          <option value="auto">
+                            {mainFeeder.raw.kaic} (Auto)
+                          </option>
+                          {standardKAICRatings.map((rating) => (
+                            <option
+                              key={rating}
+                              value={String(rating)}
+                              className="dark:bg-slate-900 dark:text-slate-100"
+                            >
+                              {rating} kA
+                            </option>
+                          ))}
+                        </select>
+                        {panel.mainOverrides?.kaic !== undefined && (
+                          <button
+                            onClick={() => {
+                              setPanel((prev) => ({
+                                ...prev,
+                                mainOverrides: {
+                                  isOverrideEnabled: prev.mainOverrides?.isOverrideEnabled ?? false,
+                                  ...(prev.mainOverrides || {}),
+                                  kaic: undefined
+                                }
+                              }));
+                            }}
+                            className="text-amber-500 hover:text-indigo-500 p-0.5 no-print shrink-0"
+                            title="Reset Main kAIC to Calculated"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </button>
+                        )}
+                      </span>
+                      <span> kAIC, {mainFeeder.type}</span>
                       {panel.mainOverrides?.isOverrideEnabled && (panel.mainOverrides.breakerAT || panel.mainOverrides.kaic || panel.mainOverrides.breakerType) ? " (Manual)" : ""}
                     </span>
                     {panel.system.includes("3PH") && (

@@ -631,8 +631,9 @@ export const calculateCircuitValues = (
             : 400;
 
   const computedMcbKAIC = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
-  const mcbKAIC =
-    isSubPanelLink && c.mcbKAIC
+  const mcbKAIC = c.kaicOverride !== undefined
+    ? c.kaicOverride
+    : isSubPanelLink && c.mcbKAIC
       ? c.mcbKAIC
       : c.mcbKAIC && c.mcbKAIC > computedMcbKAIC
         ? c.mcbKAIC
@@ -705,6 +706,8 @@ export const calculateCircuitValues = (
     mcbAF: mcbAF,
     mcbP: mcbP,
     mcbKAIC: mcbKAIC,
+    mcbKAICCalculated: computedMcbKAIC,
+    kaicOverride: c.kaicOverride,
     mcbType: c.mcbType || ("Bolt-on" as any),
     wireSize: finalWireSize,
     groundSize: finalGroundSize,
