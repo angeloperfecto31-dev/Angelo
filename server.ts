@@ -172,6 +172,73 @@ Your response MUST be an array of JSON objects following this structure. Provide
   }
 });
 
+// Advanced AI-Assisted Lighting Consultant / Advisor endpoint
+app.post("/api/illumination/advisor", async (req, res) => {
+  try {
+    const { 
+      roomType, 
+      width, 
+      length, 
+      height, 
+      targetLux, 
+      activeFixtures, 
+      modelName, 
+      userId 
+    } = req.body;
+
+    // Enforce Module Access Control
+    const access = await checkModuleAccess("lighting", undefined, userId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.error });
+    }
+
+    const selectedModel = modelName || "gemini-3.5-flash";
+
+    const prompt = `You are a Senior Architectural & Professional Electrical Lighting Engineer consulting on a lighting design.
+    Analyze the following room and design specifications:
+    - Room Classification: ${roomType}
+    - Room Dimensions: ${width}m width x ${length}m length x ${height}m ceiling height
+    - Target Average Illuminance: ${targetLux} lx (lumens per square meter)
+    - Active Fixtures Selected: ${JSON.stringify(activeFixtures || [])}
+
+    Please provide a comprehensive professional-grade report including:
+    1. A detailed engineering critique of the current lighting parameters.
+    2. Recommendations for fixture arrangement, spacing (in meters), and optimum layout rows/columns.
+    3. Conformity notes according to the Philippine Electrical Code (PEC), Philippine Green Building Standards, and International Standards (CIE/EN 12464-1).
+    4. Practical energy-efficiency advice (e.g. optimizing LPD, introducing daylight harvesting, sensor controls).
+    
+    Structure your response as a valid JSON object with the following schema:
+    {
+      "recommendationText": "Detailed report content with paragraphs and bullet points in Markdown.",
+      "suggestedSpacing": "E.g., 2.2m apart in a 3x3 grid.",
+      "optimalFixtureCount": 9,
+      "estimatedUniformity": "E.g., 0.65",
+      "energySavingTip": "Short specific tip for saving power."
+    }
+    
+    Return raw JSON only. Do not wrap in markdown or prose.`;
+
+    const response = await ai.models.generateContent({
+      model: selectedModel,
+      contents: prompt,
+      config: {
+        systemInstruction: "You are an expert AI lighting engineering consultant. You always output raw JSON adhering to the requested schema. Never return anything except valid JSON.",
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
+    });
+
+    const text = response.text || "";
+    const cleanJson = cleanJsonResponse(text);
+    const parsed = JSON.parse(cleanJson);
+
+    return res.json(parsed);
+  } catch (err: any) {
+    console.error("AI Advisor API failed:", err);
+    return res.status(500).json({ error: "Failed to generate professional AI recommendation: " + (err.message || "Internal Error") });
+  }
+});
+
 // Secure endpoint for AutoCAD DXF/DWG file download with backend verification of subscription plan
 app.post("/api/download-cad", async (req, res) => {
   try {

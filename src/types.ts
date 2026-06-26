@@ -156,6 +156,8 @@ export interface LightFixture {
   manufacturerReference?: string;
   isCustom?: boolean; // dynamic user fixtures
   isFavorite?: boolean; // favorited status
+  inputVoltage?: string; // e.g., '220-240V AC'
+  mountingHeight?: number; // default mounting height
 }
 
 export interface SavedLightingDetail {

@@ -551,7 +551,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
   const [editingFormFixtureId, setEditingFormFixtureId] = useState<string | null>(null);
   const [fixtureForm, setFixtureForm] = useState({
     lightType: '',
-    category: 'Recessed Downlights',
+    category: 'LED Panel Lights',
     wattage: 15,
     lumens: 1500,
     efficacy: 100,
@@ -562,7 +562,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
     utilizationFactor: 0.65,
     brands: 'Custom Spec',
     description: '',
-    manufacturerReference: ''
+    manufacturerReference: '',
+    inputVoltage: '220-240V AC',
+    mountingHeight: 2.7
   });
 
   useEffect(() => {
@@ -744,7 +746,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
       manufacturerReference: fixtureForm.manufacturerReference || 'N/A',
       wattageRange: `${fixtureForm.wattage}W`,
       lumensRange: `${fixtureForm.lumens} lm`,
-      isCustom: true
+      isCustom: true,
+      inputVoltage: fixtureForm.inputVoltage || '220-240V AC',
+      mountingHeight: Number(fixtureForm.mountingHeight) || 2.7
     };
 
     if (user) {
@@ -781,7 +785,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
     setEditingFormFixtureId(null);
     setFixtureForm({
       lightType: '',
-      category: 'Recessed Downlights',
+      category: 'LED Panel Lights',
       wattage: 15,
       lumens: 1500,
       efficacy: 100,
@@ -792,7 +796,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
       utilizationFactor: 0.65,
       brands: 'Custom Spec',
       description: '',
-      manufacturerReference: ''
+      manufacturerReference: '',
+      inputVoltage: '220-240V AC',
+      mountingHeight: 2.7
     });
   };
 
@@ -801,7 +807,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
     setEditingFormFixtureId(fixture.id);
     setFixtureForm({
       lightType: fixture.lightType || '',
-      category: fixture.category || 'Recessed Downlights',
+      category: fixture.category || 'LED Panel Lights',
       wattage: fixture.wattage || 15,
       lumens: fixture.lumens || 1500,
       efficacy: fixture.efficacy || Math.round((fixture.lumens || 1500) / (fixture.wattage || 15)),
@@ -812,7 +818,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
       utilizationFactor: fixture.utilizationFactor || 0.65,
       brands: fixture.brands || 'Custom Spec',
       description: fixture.description || '',
-      manufacturerReference: fixture.manufacturerReference || ''
+      manufacturerReference: fixture.manufacturerReference || '',
+      inputVoltage: fixture.inputVoltage || '220-240V AC',
+      mountingHeight: fixture.mountingHeight || 2.7
     });
     setShowCreateForm(true);
   };
@@ -1089,7 +1097,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
     { id: 'door-1', type: 'door', x1: 0.2, z1: 4.8, x2: 1.0, z2: 4.9, label: 'Main Entrance' },
   ]);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
-  const [activeTool, setActiveTool] = useState<'select' | 'wall' | 'door' | 'window' | 'partition' | 'column' | 'structural' | 'pan'>('select');
+  const [activeTool, setActiveTool] = useState<'select' | 'wall' | 'door' | 'window' | 'partition' | 'column' | 'structural' | 'pan' | 'room' | 'rectangle'>('select');
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoomScale, setZoomScale] = useState(1.0);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -1098,6 +1106,52 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
   const [history, setHistory] = useState<any[]>([]);
   const [redoHistory, setRedoHistory] = useState<any[]>([]);
   const [heatmapMode, setHeatmapMode] = useState<'heatmap' | 'fixtures' | 'combined'>('combined');
+
+  // AI-Assisted Lighting Consultant States
+  const [modelName, setModelName] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview'>('gemini-3.5-flash');
+  const [aiConsultantResult, setAiConsultantResult] = useState<{
+    recommendationText: string;
+    suggestedSpacing: string;
+    optimalFixtureCount: number;
+    estimatedUniformity: string;
+    energySavingTip: string;
+  } | null>(null);
+  const [isConsultantLoading, setIsConsultantLoading] = useState(false);
+  const [consultantError, setConsultantError] = useState<string | null>(null);
+
+  const handleRunConsultant = async () => {
+    setIsConsultantLoading(true);
+    setConsultantError(null);
+    try {
+      const response = await fetch('/api/illumination/advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomType: params.targetRoomName || 'Office',
+          width: params.roomWidth,
+          length: params.roomLength,
+          height: params.mountingHeight || 2.7,
+          targetLux: params.targetLux,
+          activeFixtures: params.activeFixtures || [],
+          modelName,
+          userId: auth.currentUser?.uid
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to generate AI advice.');
+      }
+
+      const data = await response.json();
+      setAiConsultantResult(data);
+    } catch (err: any) {
+      console.error(err);
+      setConsultantError(err.message || 'An unexpected error occurred while consulting the AI.');
+    } finally {
+      setIsConsultantLoading(false);
+    }
+  };
 
   // Professional Reporting System States
   const [reportPreparedFor, setReportPreparedFor] = useState('Confidential Client');
@@ -1649,6 +1703,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
       } else if (activeTool === 'window') {
         x2 = x1 + 1.2;
         z2 = z1 + 0.15;
+      } else if (activeTool === 'room' || activeTool === 'rectangle') {
+        x2 = x1 + 3.0;
+        z2 = z1 + 2.0;
       } else {
         x2 = x1 + 1.0;
         z2 = z1 + 0.1;
@@ -2785,6 +2842,22 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                             >
                               <Sun className="w-3.5 h-3.5" />
                             </button>
+                            <button
+                              type="button"
+                              title="Draw Room Area (Polygon)"
+                              onClick={() => { setActiveTool('room'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'room' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <PenBox className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Draw Rectangle Footprint"
+                              onClick={() => { setActiveTool('rectangle'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'rectangle' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Square className="w-3.5 h-3.5 opacity-60" />
+                            </button>
                           </div>
 
                           {/* Zoom & Canvas Actions */}
@@ -3043,6 +3116,31 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                                         <line x1={rx} y1={rz} x2={rx + rw} y2={rz + rh} stroke={strokeColor} strokeWidth="1" opacity="0.4" />
                                         <line x1={rx} y1={rz + rh} x2={rx + rw} y2={rz} stroke={strokeColor} strokeWidth="1" opacity="0.4" />
                                         <text x={rx + rw/2} y={rz + rh/2 + 3} fill="#94a3b8" fontSize="7" fontWeight="bold" textAnchor="middle">{obj.label || 'Column'}</text>
+                                      </g>
+                                    );
+                                  }
+
+                                  if (obj.type === 'rectangle' || obj.type === 'room') {
+                                    const rx = Math.min(px1, px2);
+                                    const rz = Math.min(pz1, pz2);
+                                    const rw = Math.max(10, Math.abs(px2 - px1));
+                                    const rh = Math.max(10, Math.abs(pz2 - pz1));
+                                    return (
+                                      <g key={obj.id} className="pointer-events-auto cursor-pointer font-sans" onClick={(e) => { e.stopPropagation(); setSelectedObjectId(obj.id); }}>
+                                        <rect
+                                          x={rx}
+                                          y={rz}
+                                          width={rw}
+                                          height={rh}
+                                          fill={obj.type === 'room' ? 'rgba(56, 189, 248, 0.04)' : 'rgba(148, 163, 184, 0.08)'}
+                                          stroke={strokeColor}
+                                          strokeWidth="2.5"
+                                          strokeDasharray={obj.type === 'room' ? '5 5' : undefined}
+                                        />
+                                        <text x={rx + rw/2} y={rz + rh/2 - 2} fill="#38bdf8" fontSize="8" fontWeight="bold" textAnchor="middle">{obj.label || 'Room Area'}</text>
+                                        <text x={rx + rw/2} y={rz + rh/2 + 8} fill="#94a3b8" fontSize="7" textAnchor="middle">
+                                          {Math.abs(obj.x2 - obj.x1).toFixed(1)}m × {Math.abs(obj.z2 - obj.z1).toFixed(1)}m
+                                        </text>
                                       </g>
                                     );
                                   }
@@ -3693,6 +3791,149 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                            U₁ = E_min / E_max. Ratio between deepest shadows and peak bright spots to control eye adaption.
                         </p>
                      </div>
+                   </div>
+
+                   {/* Premium AI Assisted Lighting Consultant */}
+                   <div className="space-y-3.5 mt-6 pt-6 border-t border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-indigo-500" />
+                          AI-Assisted Lighting Consultant
+                        </h5>
+                        <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          Premium Feature
+                        </span>
+                      </div>
+
+                      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-slate-100 p-5 rounded-2xl border border-indigo-900 shadow-xl space-y-4">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <h6 className="text-sm font-black text-white flex items-center gap-1.5">
+                              Interactive Design Advice
+                            </h6>
+                            <p className="text-xs text-slate-400">
+                              Select an AI reasoning engine to analyze your layout & standards.
+                            </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <select
+                              value={modelName}
+                              onChange={(e) => setModelName(e.target.value as any)}
+                              className="bg-slate-800 text-slate-100 text-xs font-bold px-3 py-2 rounded-lg border border-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              <option value="gemini-3.5-flash">Fast AI Assistant (3.5 Flash)</option>
+                              <option value="gemini-3.1-pro-preview">Pro Engineer Reasoning (3.1 Pro)</option>
+                            </select>
+                            
+                            <button
+                              type="button"
+                              onClick={handleRunConsultant}
+                              disabled={isConsultantLoading}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs px-4 py-2 rounded-lg transition-all flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                            >
+                              {isConsultantLoading ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  Analyzing...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  Run Consultation
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        {consultantError && (
+                          <div className="bg-rose-900/40 text-rose-200 p-3 rounded-lg border border-rose-850 text-xs font-bold">
+                            {consultantError}
+                          </div>
+                        )}
+
+                        {aiConsultantResult ? (
+                          <div className="space-y-4 pt-2 border-t border-indigo-900/60">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="bg-indigo-950/40 border border-indigo-900 p-3 rounded-xl">
+                                <span className="block text-[9px] uppercase font-bold text-indigo-400 tracking-wider">Suggested Layout</span>
+                                <strong className="text-sm text-white block mt-1">{aiConsultantResult.suggestedSpacing || 'N/A'}</strong>
+                              </div>
+                              <div className="bg-indigo-950/40 border border-indigo-900 p-3 rounded-xl">
+                                <span className="block text-[9px] uppercase font-bold text-indigo-400 tracking-wider">Optimal Fixtures</span>
+                                <strong className="text-sm text-white block mt-1">{aiConsultantResult.optimalFixtureCount || 'N/A'} Units</strong>
+                              </div>
+                              <div className="bg-indigo-950/40 border border-indigo-900 p-3 rounded-xl">
+                                <span className="block text-[9px] uppercase font-bold text-indigo-400 tracking-wider">Est. Uniformity</span>
+                                <strong className="text-sm text-white block mt-1">{aiConsultantResult.estimatedUniformity || 'N/A'} U₀</strong>
+                              </div>
+                            </div>
+
+                            <div className="bg-slate-850/60 border border-slate-800 p-3.5 rounded-xl space-y-1">
+                              <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest flex items-center gap-1">
+                                <Activity className="w-3 h-3 text-amber-400" />
+                                Green Energy Efficiency Tip
+                              </span>
+                              <p className="text-xs text-slate-300 font-medium">
+                                {aiConsultantResult.energySavingTip}
+                              </p>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <span className="block text-[10px] uppercase font-bold text-indigo-400 tracking-wider">Detailed Consultation Report</span>
+                              <div className="bg-indigo-950/20 border border-indigo-900/40 p-4 rounded-xl text-xs text-slate-350 leading-relaxed overflow-y-auto max-h-60 space-y-2">
+                                {aiConsultantResult.recommendationText.split('\n').map((line, idx) => {
+                                  if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+                                    return (
+                                      <li key={idx} className="ml-4 list-disc text-slate-300">
+                                        {line.replace(/^[\*\-]\s*/, '')}
+                                      </li>
+                                    );
+                                  }
+                                  if (line.trim().match(/^\d+\.\s/)) {
+                                    return (
+                                      <li key={idx} className="ml-4 list-decimal text-slate-300">
+                                        {line.replace(/^\d+\.\s*/, '')}
+                                      </li>
+                                    );
+                                  }
+                                  if (line.trim().startsWith('###')) {
+                                    return (
+                                      <h5 key={idx} className="text-sm font-black text-white mt-3 mb-1">
+                                        {line.replace(/^###\s*/, '')}
+                                      </h5>
+                                    );
+                                  }
+                                  if (line.trim().startsWith('##')) {
+                                    return (
+                                      <h4 key={idx} className="text-base font-black text-indigo-300 mt-4 mb-2">
+                                        {line.replace(/^##\s*/, '')}
+                                      </h4>
+                                    );
+                                  }
+                                  return line.trim() ? (
+                                    <p key={idx} className="text-slate-300">
+                                      {line}
+                                    </p>
+                                  ) : (
+                                    <div key={idx} className="h-2" />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-6 text-center space-y-2">
+                            <div className="w-10 h-10 rounded-full bg-indigo-950/80 flex items-center justify-center text-indigo-400">
+                              <Sparkles className="w-5 h-5 animate-pulse" />
+                            </div>
+                            <p className="text-xs text-slate-400 max-w-sm">
+                              Click <strong>Run Consultation</strong> above to generate an engineering review of your lighting configurations.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                    </div>
                 </div>
               </div>
@@ -4695,7 +4936,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                         if (!showCreateForm) {
                           setFixtureForm({
                             lightType: '',
-                            category: 'Recessed Downlights',
+                            category: 'LED Panel Lights',
                             wattage: 15,
                             lumens: 1500,
                             efficacy: 100,
@@ -4706,7 +4947,9 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                             utilizationFactor: 0.65,
                             brands: 'Custom Spec',
                             description: '',
-                            manufacturerReference: ''
+                            manufacturerReference: '',
+                            inputVoltage: '220-240V AC',
+                            mountingHeight: 2.7
                           });
                         }
                       }}
@@ -5037,6 +5280,35 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                       value={fixtureForm.manufacturerReference}
                       onChange={(e) => setFixtureForm({ ...fixtureForm, manufacturerReference: e.target.value })}
                       placeholder="e.g. MODEL-LED-S302"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Input Voltage */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Input Voltage *</label>
+                    <input
+                      type="text"
+                      required
+                      value={fixtureForm.inputVoltage}
+                      onChange={(e) => setFixtureForm({ ...fixtureForm, inputVoltage: e.target.value })}
+                      placeholder="e.g. 220-240V AC"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Mounting Height (m) */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Mounting Height (m) *</label>
+                    <input
+                      type="number"
+                      required
+                      min="0.5"
+                      max="15.0"
+                      step="0.1"
+                      value={fixtureForm.mountingHeight}
+                      onChange={(e) => setFixtureForm({ ...fixtureForm, mountingHeight: parseFloat(e.target.value) || 2.7 })}
+                      placeholder="e.g. 2.7"
                       className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
