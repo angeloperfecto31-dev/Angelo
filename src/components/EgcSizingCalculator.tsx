@@ -156,11 +156,40 @@ export default function EgcSizingCalculator({ isPremium = false, onRequestUpgrad
 
           <button
             id="btn-export-dxf"
-            onClick={() => exportEgcToDxf(activeOcpd, material, egcResult)}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:hover:bg-violet-950/60 dark:text-violet-400 border border-violet-200/40 dark:border-violet-900/30 transition-all cursor-pointer shadow-sm"
+            onClick={async () => {
+              if (isPremium) {
+                if (user?.uid) {
+                  try {
+                    const response = await fetch("/api/verify-cad-export", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ userId: user.uid, module: "egc" })
+                    });
+                    if (!response.ok) {
+                      const data = await response.json();
+                      alert(data.error || "CAD export verification failed.");
+                      if (onRequestUpgrade) onRequestUpgrade();
+                      return;
+                    }
+                  } catch (err) {
+                    console.warn("Backend CAD validation failed, proceeding with client verification:", err);
+                  }
+                }
+                exportEgcToDxf(activeOcpd, material, egcResult);
+              } else {
+                alert("AutoCAD export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full CAD export functionality.");
+                if (onRequestUpgrade) onRequestUpgrade();
+              }
+            }}
+            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer shadow-sm ${
+              isPremium
+                ? "bg-violet-50 hover:bg-violet-100 text-violet-600 dark:bg-violet-950/40 dark:hover:bg-violet-950/60 dark:text-violet-400 border-violet-200/40 dark:border-violet-900/30"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/60"
+            }`}
           >
             <Sliders className="w-3.5 h-3.5" />
-            AutoCAD DXF
+            <span>AutoCAD DXF</span>
+            {!isPremium && <Lock className="w-3 h-3 text-amber-500 ml-0.5" />}
           </button>
         </div>
       </div>
