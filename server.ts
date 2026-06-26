@@ -54,10 +54,60 @@ function cleanJsonResponse(text: string): string {
   return cleaned;
 }
 
+// Helper to verify module status and availability
+async function checkModuleAccess(moduleId: string, userEmail?: string, userId?: string): Promise<{ allowed: boolean; error?: string }> {
+  if (!db) return { allowed: true }; // Fallback if Firestore is not initialized yet
+
+  let finalEmail = userEmail?.trim().toLowerCase();
+  if (!finalEmail && userId) {
+    try {
+      const userSnap = await db.collection("users").doc(userId).get();
+      if (userSnap.exists) {
+        finalEmail = userSnap.data()?.email?.trim().toLowerCase();
+      }
+    } catch (err) {
+      console.error(`Error resolving user email for UID ${userId}:`, err);
+    }
+  }
+
+  const isAdmin = finalEmail === "angeloperfecto31@gmail.com";
+  if (isAdmin) {
+    return { allowed: true };
+  }
+
+  try {
+    const modSnap = await db.collection("modules").doc(moduleId).get();
+    if (modSnap.exists) {
+      const modData = modSnap.data();
+      const status = modData?.status || "active";
+      if (status === "hidden") {
+        return { allowed: false, error: `The '${modData?.name || moduleId}' module is currently hidden from this environment.` };
+      }
+      if (status === "disabled") {
+        return { allowed: false, error: `The '${modData?.name || moduleId}' module is disabled by the administrator.` };
+      }
+      if (status === "maintenance") {
+        return { allowed: false, error: modData?.maintenanceMessage || `The '${modData?.name || moduleId}' module is currently under maintenance. Please try again later.` };
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to verify module status for '${moduleId}':`, err);
+  }
+  
+  return { allowed: true };
+}
+
 // Advanced Internet-based Fixture search with Google Search Grounding & Gemini
 app.post("/api/fixtures/search", async (req, res) => {
   try {
-    const { q } = req.body;
+    const { q, userId } = req.body;
+    
+    // Enforce Module Access Control
+    const access = await checkModuleAccess("lighting", undefined, userId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.error });
+    }
+
     if (!q || !q.trim()) {
       return res.json({ fixtures: [] });
     }
@@ -177,6 +227,13 @@ app.post("/api/verify-excel-export", async (req, res) => {
     }
 
     const userData = userSnap.data();
+    
+    // Enforce Module Access Control
+    const access = await checkModuleAccess(module, userData?.email, userId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.error });
+    }
+
     const isAdmin = userData?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
     const isActive = userData?.isActive === true;
     const isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
@@ -214,6 +271,13 @@ app.post("/api/verify-cad-export", async (req, res) => {
     }
 
     const userData = userSnap.data();
+
+    // Enforce Module Access Control
+    const access = await checkModuleAccess(module, userData?.email, userId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.error });
+    }
+
     const isAdmin = userData?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
     const isActive = userData?.isActive === true;
     const isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
@@ -249,6 +313,13 @@ app.post("/api/verify-doc-export", async (req, res) => {
     }
 
     const userData = userSnap.data();
+
+    // Enforce Module Access Control
+    const access = await checkModuleAccess(module, userData?.email, userId);
+    if (!access.allowed) {
+      return res.status(403).json({ error: access.error });
+    }
+
     const isAdmin = userData?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
     const isActive = userData?.isActive === true;
     const isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";

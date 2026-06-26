@@ -59,6 +59,7 @@ export interface IlluminationCalcProps {
   setParams: React.Dispatch<React.SetStateAction<IlluminationParams>>;
   onSnapshotCapture?: (circuitId: string, image: string, roomName: string) => void;
   snapshots?: Record<string, string>;
+  userId?: string;
 }
 
 function calcSinglePointLux(
@@ -512,7 +513,7 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 
-export default function IlluminationCalc({ panel, circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots }: IlluminationCalcProps) {
+export default function IlluminationCalc({ panel, circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
   // Synchronized custom imported fixtures state
   const [importedFixtures, setImportedFixtures] = useState<any[]>([]);
 
@@ -938,7 +939,7 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ q: searchQuery })
+          body: JSON.stringify({ q: searchQuery, userId })
         });
         const data = await response.json();
         

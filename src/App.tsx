@@ -232,13 +232,20 @@ export default function App() {
   const activeModuleStatus = systemModules.find(m => m.id === activeTab);
   const isMaintenanceMode = activeModuleStatus?.status === "maintenance" && !isAdmin;
   const isDisabledMode = activeModuleStatus?.status === "disabled" && !isAdmin;
+  const isHiddenMode = activeModuleStatus?.status === "hidden" && !isAdmin;
 
-  // If a tab becomes disabled while a non-admin is on it, kick them to dashboard
+  const getModuleStatus = (moduleId: string) => {
+    if (isAdmin) return "active";
+    const mod = systemModules.find(m => m.id === moduleId);
+    return mod?.status || "active";
+  };
+
+  // If a tab becomes disabled or hidden while a non-admin is on it, kick them to dashboard
   useEffect(() => {
-    if (isDisabledMode) {
+    if (isDisabledMode || isHiddenMode) {
       setActiveTab("dashboard");
     }
-  }, [isDisabledMode]);
+  }, [isDisabledMode, isHiddenMode]);
 
   const [activeScheduleTab, setActiveScheduleTab] = useState<string>("mdp");
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -2916,18 +2923,36 @@ export default function App() {
                   if (isAdmin) return true;
                   const mod = systemModules.find(m => m.id === item.id);
                   if (!mod) return true;
-                  return mod.status === "active" || mod.status === "maintenance";
+                  return mod.status !== "hidden";
                 }).map((item) => {
                   const isActive = activeTab === item.id;
                   const IconComponent = item.icon;
+                  const mod = systemModules.find(m => m.id === item.id);
+                  const isMaintenance = !isAdmin && mod?.status === "maintenance";
+                  const isDisabled = !isAdmin && mod?.status === "disabled";
+
+                  const handleClick = () => {
+                    if (isDisabled) {
+                      alert(`Module Disabled\n\nThe ${mod?.name || item.label} module has been disabled by the administrator.`);
+                      return;
+                    }
+                    if (isMaintenance) {
+                      alert(`Module Under Maintenance\n\nThe ${mod?.name || item.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`);
+                      return;
+                    }
+                    setActiveTab(item.id as any);
+                  };
+
                   return (
                     <div key={item.id} className="relative group">
                       <button
-                        onClick={() => setActiveTab(item.id as any)}
+                        onClick={handleClick}
                         className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
                           isActive
                             ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner"
-                            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
+                            : (isMaintenance || isDisabled)
+                              ? "text-slate-500 cursor-not-allowed opacity-50"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
                         }`}
                       >
                         {/* Active vertical left bar */}
@@ -2935,13 +2960,19 @@ export default function App() {
                           <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-emerald-500 rounded-r" />
                         )}
                         <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-500 group-hover:text-slate-300"}`} />
-                        {!isSidebarCollapsed && <span className="ml-3 truncate">{item.label}</span>}
+                        {!isSidebarCollapsed && (
+                          <span className="ml-3 truncate flex items-center justify-between w-full">
+                            <span>{item.label}</span>
+                            {isMaintenance && <span className="text-[8px] font-black bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">MAINT</span>}
+                            {isDisabled && <span className="text-[8px] font-black bg-rose-500/10 text-rose-500 border border-rose-500/20 px-1 py-0.2 rounded shrink-0">LOCK</span>}
+                          </span>
+                        )}
                       </button>
 
                       {/* Tooltip for Collapsed Sidebar */}
                       {isSidebarCollapsed && (
                         <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
-                          {item.label}
+                          {item.label} {isMaintenance && "(Maintenance)"} {isDisabled && "(Disabled)"}
                         </div>
                       )}
                     </div>
@@ -3309,20 +3340,40 @@ export default function App() {
             if (isAdmin) return true;
             const mod = systemModules.find(m => m.id === tab.id);
             if (!mod) return true;
-            return mod.status === "active" || mod.status === "maintenance";
-          }).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                activeTab === tab.id
-                  ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
-                  : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+            return mod.status !== "hidden";
+          }).map((tab) => {
+            const mod = systemModules.find(m => m.id === tab.id);
+            const isMaintenance = !isAdmin && mod?.status === "maintenance";
+            const isDisabled = !isAdmin && mod?.status === "disabled";
+
+            const handleClick = () => {
+              if (isDisabled) {
+                alert(`Module Disabled\n\nThe ${mod?.name || tab.label} module has been disabled by the administrator.`);
+                return;
+              }
+              if (isMaintenance) {
+                alert(`Module Under Maintenance\n\nThe ${mod?.name || tab.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`);
+                return;
+              }
+              setActiveTab(tab.id as any);
+            };
+
+            return (
+              <button
+                key={tab.id}
+                onClick={handleClick}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  activeTab === tab.id
+                    ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
+                    : (isMaintenance || isDisabled)
+                      ? "bg-slate-100 dark:bg-slate-800 text-slate-400 opacity-50 cursor-not-allowed border border-slate-200/20"
+                      : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
+                }`}
+              >
+                {tab.label} {isMaintenance && "⚠"} {isDisabled && "🔒"}
+              </button>
+            );
+          })}
         </div>
 
         {/* Scrollable Content Area */}
@@ -3428,42 +3479,55 @@ export default function App() {
                   {/* Bento Grid: Summary Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                     {/* Connected Load Schedule Telemetry */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                            CONNECTED CAPACITY
-                          </span>
-                          <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                            {(
-                              circuits.reduce(
-                                (sum, c) => sum + (c.loadVA || 0),
-                                0,
-                              ) / 1000
-                            ).toFixed(2)}{" "}
-                            kVA
-                          </h3>
+                    {getModuleStatus("schedule") !== "hidden" && (
+                      <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                        getModuleStatus("schedule") !== "active" ? "opacity-60" : ""
+                      }`}>
+                        {getModuleStatus("schedule") !== "active" && (
+                          <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                            <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                              {getModuleStatus("schedule") === "disabled" ? (
+                                <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
+                              ) : (
+                                <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                              CONNECTED CAPACITY
+                            </span>
+                            <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                              {getModuleStatus("schedule") === "active" ? (
+                                `${(circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) / 1000).toFixed(2)} kVA`
+                              ) : "---"}
+                            </h3>
+                          </div>
+                          <div className="p-3 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
+                            <Layout className="w-5 h-5" />
+                          </div>
                         </div>
-                        <div className="p-3 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
-                          <Layout className="w-5 h-5" />
-                        </div>
-                      </div>
 
-                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                        <span className="font-bold text-slate-700 dark:text-slate-300">
-                          {circuits.length} Registered Loops
-                        </span>
-                        <button
-                          onClick={() => setActiveTab("schedule")}
-                          className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
-                        >
-                          Configure <ArrowUpRight className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                            {getModuleStatus("schedule") === "active" ? `${circuits.length} Registered Loops` : "No Active Telemetry"}
+                          </span>
+                          {getModuleStatus("schedule") === "active" && (
+                            <button
+                              onClick={() => setActiveTab("schedule")}
+                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                            >
+                              Configure <ArrowUpRight className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Short Circuit Fault Adequacy */}
-                    {(() => {
+                    {getModuleStatus("isc") !== "hidden" && (() => {
                       const baseKVA = iscParams.transformerKVA || 500;
                       const baseKV = (iscParams.transformerVoltage || 230) / 1000;
                       
@@ -3501,14 +3565,27 @@ export default function App() {
                       const scStatus = iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
 
                       return (
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                          getModuleStatus("isc") !== "active" ? "opacity-60" : ""
+                        }`}>
+                          {getModuleStatus("isc") !== "active" && (
+                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                {getModuleStatus("isc") === "disabled" ? (
+                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
+                                ) : (
+                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
                               <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                                 CALCULATED ISC
                               </span>
                               <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {iscKAIC.toFixed(2)} kA
+                                {getModuleStatus("isc") === "active" ? `${iscKAIC.toFixed(2)} kA` : "---"}
                               </h3>
                             </div>
                             <div
@@ -3533,21 +3610,23 @@ export default function App() {
                               <span
                                 className={`w-2 h-2 rounded-full ${scStatus === "COMPLIANT" ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`}
                               />
-                              {scStatus} Limit ({panelLimitKAIC}kA pf)
+                              {getModuleStatus("isc") === "active" ? `${scStatus} Limit (${panelLimitKAIC}kA pf)` : "No Active Audit"}
                             </span>
-                            <button
-                              onClick={() => setActiveTab("isc")}
-                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
-                            >
-                              Audit <ArrowUpRight className="w-3.5 h-3.5" />
-                            </button>
+                            {getModuleStatus("isc") === "active" && (
+                              <button
+                                onClick={() => setActiveTab("isc")}
+                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                              >
+                                Audit <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
                     })()}
 
                     {/* Voltage Drop Audit */}
-                    {(() => {
+                    {getModuleStatus("vd") !== "hidden" && (() => {
                       let maxVDPercent = 0;
                       let vdCompliant = true;
 
@@ -3578,14 +3657,27 @@ export default function App() {
                       }
 
                       return (
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                          getModuleStatus("vd") !== "active" ? "opacity-60" : ""
+                        }`}>
+                          {getModuleStatus("vd") !== "active" && (
+                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                {getModuleStatus("vd") === "disabled" ? (
+                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
+                                ) : (
+                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
                               <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                                 MAX VOLTAGE DROP
                               </span>
                               <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {maxVDPercent.toFixed(2)}%
+                                {getModuleStatus("vd") === "active" ? `${maxVDPercent.toFixed(2)}%` : "---"}
                               </h3>
                             </div>
                             <div
@@ -3610,23 +3702,25 @@ export default function App() {
                               <span
                                 className={`w-2 h-2 rounded-full ${vdCompliant ? "bg-green-500" : "bg-amber-500 animate-pulse"}`}
                               />
-                              {vdCompliant
-                                ? "PEC Compliant"
-                                : "Exceeds PEC Limit"}
+                              {getModuleStatus("vd") === "active" ? (
+                                vdCompliant ? "PEC Compliant" : "Exceeds PEC Limit"
+                              ) : "No Active Evaluation"}
                             </span>
-                            <button
-                              onClick={() => setActiveTab("vd")}
-                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
-                            >
-                              Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
-                            </button>
+                            {getModuleStatus("vd") === "active" && (
+                              <button
+                                onClick={() => setActiveTab("vd")}
+                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                              >
+                                Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
                     })()}
 
                     {/* Recommended Transformer Capacity Card */}
-                    {(() => {
+                    {getModuleStatus("transformer") !== "hidden" && (() => {
                       const totalVA = circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0);
                       const totalKVA = totalVA / 1000;
                       const demandKVA = totalKVA * transformerDemandFactor;
@@ -3638,14 +3732,27 @@ export default function App() {
                       const isLoadedCompliant = actualLoadingPct <= transformerLoadingFactor * 100;
 
                       return (
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                          getModuleStatus("transformer") !== "active" ? "opacity-60" : ""
+                        }`}>
+                          {getModuleStatus("transformer") !== "active" && (
+                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                {getModuleStatus("transformer") === "disabled" ? (
+                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
+                                ) : (
+                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
                               <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                                 RECOMMENDED TRANSFORMER
                               </span>
                               <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {recommendedRating.toFixed(1)} kVA
+                                {getModuleStatus("transformer") === "active" ? `${recommendedRating.toFixed(1)} kVA` : "---"}
                               </h3>
                             </div>
                             <div className="p-3 bg-teal-50 dark:bg-teal-950/35 text-teal-600 dark:text-teal-400 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
@@ -3655,21 +3762,23 @@ export default function App() {
 
                           <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                             <span className="font-bold text-slate-700 dark:text-slate-300">
-                              {actualLoadingPct.toFixed(1)}% Loading Factor
+                              {getModuleStatus("transformer") === "active" ? `${actualLoadingPct.toFixed(1)}% Loading Factor` : "No Active Sizing"}
                             </span>
-                            <button
-                              onClick={() => setActiveTab("transformer")}
-                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
-                            >
-                              Sizing <ArrowUpRight className="w-3.5 h-3.5" />
-                            </button>
+                            {getModuleStatus("transformer") === "active" && (
+                              <button
+                                onClick={() => setActiveTab("transformer")}
+                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                              >
+                                Sizing <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
                     })()}
 
                     {/* Illumination target status */}
-                    {(() => {
+                    {getModuleStatus("lighting") !== "hidden" && (() => {
                       const illumArea =
                         illumParams.inputMode === "area"
                           ? illumParams.userArea
@@ -3684,14 +3793,27 @@ export default function App() {
                         calculatedLux >= illumParams.targetLux;
 
                       return (
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
+                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                          getModuleStatus("lighting") !== "active" ? "opacity-60" : ""
+                        }`}>
+                          {getModuleStatus("lighting") !== "active" && (
+                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                {getModuleStatus("lighting") === "disabled" ? (
+                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
+                                ) : (
+                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="flex items-start justify-between">
                             <div className="space-y-1">
                               <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
                                 EST. ILLUMINATION
                               </span>
                               <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {calculatedLux || 0} Lux
+                                {getModuleStatus("lighting") === "active" ? `${calculatedLux || 0} Lux` : "---"}
                               </h3>
                             </div>
                             <div
@@ -3716,16 +3838,18 @@ export default function App() {
                               <span
                                 className={`w-2 h-2 rounded-full ${isLCompliance ? "bg-emerald-500" : "bg-orange-500 animate-pulse"}`}
                               />
-                              {isLCompliance
-                                ? "Target Met"
-                                : "Low Illum"}
+                              {getModuleStatus("lighting") === "active" ? (
+                                isLCompliance ? "Target Met" : "Low Illum"
+                              ) : "No Active Simulation"}
                             </span>
-                            <button
-                              onClick={() => setActiveTab("lighting")}
-                              className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1"
-                            >
-                              Simulate <ArrowUpRight className="w-3.5 h-3.5" />
-                            </button>
+                            {getModuleStatus("lighting") === "active" && (
+                              <button
+                                onClick={() => setActiveTab("lighting")}
+                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                              >
+                                Simulate <ArrowUpRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -4013,41 +4137,45 @@ export default function App() {
                       Jump-switch to Active Calculation Terminals:
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
-                      <button
-                        onClick={() => setActiveTab("schedule")}
-                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
-                      >
-                        <Layout className="w-5 h-5 text-indigo-500" />
-                        Load Schedule
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("isc")}
-                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
-                      >
-                        <ShieldAlert className="w-5 h-5 text-rose-500" />
-                        Short Circuit
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("vd")}
-                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
-                      >
-                        <Ruler className="w-5 h-5 text-emerald-500" />
-                        Voltage Drop
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("lighting")}
-                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
-                      >
-                        <Lightbulb className="w-5 h-5 text-yellow-500" />
-                        Illumination
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("floor-plan")}
-                        className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-sm col-span-2 sm:col-span-1 text-center font-bold text-xs text-slate-800 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all flex flex-col items-center gap-2 cursor-pointer"
-                      >
-                        <Map className="w-5 h-5 text-cyan-500" />
-                        Blueprint Preview
-                      </button>
+                      {[
+                        { id: "schedule", label: "Load Schedule", icon: <Layout className="w-5 h-5 text-indigo-500" /> },
+                        { id: "isc", label: "Short Circuit", icon: <ShieldAlert className="w-5 h-5 text-rose-500" /> },
+                        { id: "vd", label: "Voltage Drop", icon: <Ruler className="w-5 h-5 text-emerald-500" /> },
+                        { id: "lighting", label: "Illumination", icon: <Lightbulb className="w-5 h-5 text-yellow-500" /> },
+                        { id: "floor-plan", label: "Blueprint Preview", icon: <Map className="w-5 h-5 text-cyan-500" /> },
+                      ]
+                        .filter(btn => getModuleStatus(btn.id) !== "hidden")
+                        .map(btn => {
+                          const status = getModuleStatus(btn.id);
+                          const isActive = status === "active";
+                          const isMaint = status === "maintenance";
+                          const isDis = status === "disabled";
+
+                          return (
+                            <button
+                              key={btn.id}
+                              disabled={!isActive}
+                              onClick={() => {
+                                if (isActive) setActiveTab(btn.id as any);
+                              }}
+                              className={`bg-white dark:bg-slate-800 border p-4 rounded-2xl shadow-sm text-center font-bold text-xs transition-all flex flex-col items-center gap-2 relative ${
+                                isActive 
+                                  ? "hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 border-slate-200/80 dark:border-slate-800 cursor-pointer text-slate-800 dark:text-slate-200" 
+                                  : "opacity-55 border-slate-100 dark:border-slate-900 cursor-not-allowed text-slate-400 dark:text-slate-600"
+                              }`}
+                            >
+                              {btn.icon}
+                              <span>{btn.label}</span>
+                              {!isActive && (
+                                <span className={`absolute top-1.5 right-1.5 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-wider text-white ${
+                                  isDis ? "bg-rose-500" : "bg-amber-500 animate-pulse"
+                                }`}>
+                                  {isDis ? "LOCKED" : "MAINT"}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 </motion.div>
@@ -4502,6 +4630,7 @@ export default function App() {
                     setParams={setIllumParams}
                     onSnapshotCapture={handleAddIllumSnapshot}
                     snapshots={illumSnapshots}
+                    userId={user?.uid}
                   />
                 </motion.div>
               </div>
