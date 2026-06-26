@@ -31,7 +31,6 @@ interface ReportExportModuleProps {
   panel: PanelConfig;
   circuits: Circuit[];
   subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
-  subSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
   iscParams: ShortCircuitParams;
   vdCalculations: VoltageDropCalculation[];
   loadFlowResults: Record<string, any>;
@@ -53,7 +52,6 @@ export default function ReportExportModule({
   panel,
   circuits,
   subPanels,
-  subSubPanels,
   iscParams,
   vdCalculations,
   loadFlowResults,

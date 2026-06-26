@@ -79,6 +79,7 @@ import {
 import { ProjectData } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
+import { syncHierarchyData } from "./utils/hierarchyEngine";
 import {
   computePanelScheduleValues,
   calculateCircuitValues,
@@ -267,9 +268,7 @@ export default function App() {
   const [subPanels, setSubPanels] = useState<
     { id: string; panel: PanelConfig; circuits: Circuit[] }[]
   >([]);
-  const [subSubPanels, setSubSubPanels] = useState<
-    { id: string; panel: PanelConfig; circuits: Circuit[] }[]
-  >([]);
+  
 
   const uniqueSubPanels = useMemo(() => {
     const seen = new Set<string>();
@@ -281,19 +280,11 @@ export default function App() {
     });
   }, [subPanels]);
 
-  const uniqueSubSubPanels = useMemo(() => {
-    const seen = new Set<string>();
-    return subSubPanels.filter((ssp) => {
-      if (!ssp || !ssp.id) return false;
-      if (seen.has(ssp.id)) return false;
-      seen.add(ssp.id);
-      return true;
-    });
-  }, [subSubPanels]);
+  
 
   useEffect(() => {
-    setGlobalSubPanels([...uniqueSubPanels, ...uniqueSubSubPanels]);
-  }, [uniqueSubPanels, uniqueSubSubPanels]);
+    setGlobalSubPanels(uniqueSubPanels);
+  }, [uniqueSubPanels]);
 
   // State for calculators to prevent reset on tab change
   const [iscParams, setIscParams] = useState<ShortCircuitParams>(
@@ -469,7 +460,7 @@ export default function App() {
       });
 
       // 3. Maintain Sub-Panel Feeders & their branch circuits
-      const allSubPanels = [...subPanels, ...subSubPanels];
+      const allSubPanels = [...subPanels, ...subPanels];
       const seen = new Set();
       const uniqueAllSubPanels = allSubPanels.filter((sp) => {
         if (!sp || !sp.id) return false;
@@ -533,7 +524,7 @@ export default function App() {
 
       return changed ? updatedCalcs : prev;
     });
-  }, [circuits, panel, subPanels, subSubPanels]);
+  }, [circuits, panel, subPanels, subPanels]);
 
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
@@ -559,17 +550,13 @@ export default function App() {
 
             if (
               c.quantity !== matchingRoom.fixturesCount ||
-              c.wattage !== estimatedWattage ||
-              c.loadVA !== totalVA ||
-              Math.abs(c.loadA - totalVA / c.voltage) > 0.01
+              c.wattage !== estimatedWattage
             ) {
               circuitsChanged = true;
               return {
                 ...c,
                 quantity: matchingRoom.fixturesCount,
                 wattage: estimatedWattage,
-                loadVA: totalVA,
-                loadA: Number((totalVA / c.voltage).toFixed(2)),
               };
             }
           }
@@ -747,7 +734,7 @@ export default function App() {
     spId: string,
     newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[])
   ) => {
-    let subSubPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
+    let subPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
 
     setSubPanels((prevSubPanels) => {
       const currentSp = prevSubPanels.find(p => p.id === spId);
@@ -822,7 +809,7 @@ export default function App() {
                 if ("mcbKAIC" in changedFields) panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
               }
               
-              subSubPanelsToUpdate.push({ id: nextC.linkedSubPanelId, panel: panelUpdates });
+              subPanelsToUpdate.push({ id: nextC.linkedSubPanelId, panel: panelUpdates });
             }
           }
         }
@@ -833,10 +820,10 @@ export default function App() {
       );
     });
 
-    if (subSubPanelsToUpdate.length > 0) {
-      setSubSubPanels((prev) => 
+    if (subPanelsToUpdate.length > 0) {
+      setSubPanels((prev) => 
         prev.map((ssp) => {
-          const update = subSubPanelsToUpdate.find(u => u.id === ssp.id);
+          const update = subPanelsToUpdate.find(u => u.id === ssp.id);
           if (update) {
             const newOverrides = update.panel.mainOverrides 
               ? { ...(ssp.panel.mainOverrides || {}), ...update.panel.mainOverrides }
@@ -857,357 +844,20 @@ export default function App() {
     }
   };
 
-  // Synchronize Sub-Sub-Panels recalculations back to Sub-Panels circuits
+  // Centralized N-Level Hierarchy Synchronization
   useEffect(() => {
-    setSubPanels((prevSubPanels) => {
-      if (!prevSubPanels || prevSubPanels.length === 0) return prevSubPanels;
-      let anyPanelChanged = false;
-      const nextSubPanels = prevSubPanels.map((sp) => {
-        let changed = false;
-        const nextCircuits = sp.circuits.map((c) => {
-          if (c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId) {
-            const ssp = subSubPanels.find((s) => s.id === c.linkedSubPanelId);
-            if (ssp) {
-              const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent, explicitPhaseVAs: subExplicitPhaseVAs, phaseAmps: subPhaseAmps } = computePanelScheduleValues(ssp.panel, ssp.circuits, { vdCalculations, panelId: ssp.id });
+    const { updatedMdpCircuits, updatedSubPanels, hasChanges } = syncHierarchyData(
+      panel,
+      circuits,
+      subPanels,
+      vdCalculations
+    );
 
-              const subTotalWattage = ssp.circuits.reduce(
-                (sum, cc) =>
-                  sum +
-                  (isIdleSpareOrSpace(cc)
-                    ? 0
-                    : (cc.wattage || 0) * (cc.quantity || 1)),
-                0,
-              );
-
-              const subPoles = subMainFeeder.poles;
-              const subCB = subMainFeeder.cb;
-              const subAF = subMainFeeder.af;
-              const subKAIC = subMainFeeder.kaic;
-              const subType = subMainFeeder.type as MCBType;
-              const subWireSize = formatWireSizeLocal(subMainFeeder.wire.size);
-              const subGroundSize = subMainFeeder.groundSize;
-              const subConduitSize = subMainFeeder.conduitSize;
-
-              const subVoltage = ssp.panel.voltage;
-              const designation = ssp.panel.designation || "Sub-Sub Panel";
-
-              const is3PhaseMain = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
-              const cirV = c.voltage || subVoltage || 230;
-              const loadI = subMainCurrent.baseAmp;
-              const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
-
-              let expectedLoadVA = subTotalVA; // ALWAYS reflect the exact connected load
-              let expectedLoadA = Number(loadI.toFixed(2));
-              let expectedReflectedDemandVA = demandVA;
-              let expectedReflectedDemandAmps = expectedLoadA;
-              let expectedReflectedPhaseLoads = undefined;
-              let expectedReflectedPhaseAmps = undefined;
-
-              if (c.subPanelReflectionMode === "phase_loads") {
-                expectedReflectedPhaseLoads = {
-                  R: subExplicitPhaseVAs.R,
-                  Y: subExplicitPhaseVAs.Y,
-                  B: subExplicitPhaseVAs.B,
-                  ThreePhase: subExplicitPhaseVAs.threePhase,
-                };
-                expectedReflectedPhaseAmps = {
-                  R: subPhaseAmps.R,
-                  Y: subPhaseAmps.Y,
-                  B: subPhaseAmps.B,
-                  ThreePhase: subPhaseAmps.threePhase,
-                };
-              }
-
-              if (
-                c.loadVA !== expectedLoadVA ||
-                c.wattage !== subTotalWattage ||
-                c.mcbP !== subPoles ||
-                c.mcbAT !== subCB ||
-                c.mcbAF !== subAF ||
-                c.mcbKAIC !== subKAIC ||
-                c.mcbType !== subType ||
-                c.wireSize !== subWireSize ||
-                c.groundSize !== subGroundSize ||
-                c.conduitSize !== subConduitSize ||
-                c.voltage !== subVoltage ||
-                c.description !== designation ||
-                Math.abs((c.loadA || 0) - expectedLoadA) > 0.01 ||
-                c.reflectedDemandVA !== expectedReflectedDemandVA ||
-                c.reflectedDemandAmps !== expectedReflectedDemandAmps ||
-                JSON.stringify(c.reflectedPhaseLoads) !== JSON.stringify(expectedReflectedPhaseLoads) ||
-                JSON.stringify(c.reflectedPhaseAmps) !== JSON.stringify(expectedReflectedPhaseAmps)
-              ) {
-                changed = true;
-                return {
-                  ...c,
-                  wattage: subTotalWattage,
-                  loadVA: expectedLoadVA,
-                  loadA: expectedLoadA,
-                  quantity: 1,
-                  mcbP: subPoles,
-                  mcbAT: subCB,
-                  mcbAF: subAF,
-                  mcbKAIC: subKAIC,
-                  mcbType: subType,
-                  wireSize: subWireSize,
-                  groundSize: subGroundSize,
-                  conduitSize: subConduitSize,
-                  voltage: subVoltage,
-                  description: designation,
-                  reflectedDemandVA: expectedReflectedDemandVA,
-                  reflectedDemandAmps: expectedReflectedDemandAmps,
-                  reflectedPhaseLoads: expectedReflectedPhaseLoads,
-                  reflectedPhaseAmps: expectedReflectedPhaseAmps,
-                };
-              }
-            }
-          }
-          return c;
-        });
-
-        if (changed) {
-          anyPanelChanged = true;
-          return { ...sp, circuits: nextCircuits };
-        }
-        return sp;
-      });
-
-      if (anyPanelChanged) return nextSubPanels;
-      return prevSubPanels;
-    });
-  }, [subSubPanels, computePanelScheduleValues, vdCalculations]);
-
-  // Synchronize Sub-Panels recalculations back to Main Panel circuits and update the Main Panel in real-time
-  useEffect(() => {
-    setCircuits((prevCircuits) => {
-      if (!prevCircuits) return prevCircuits;
-      let changed = false;
-      const nextCircuits = prevCircuits.map((c) => {
-        if (c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId) {
-          const sp = subPanels.find((s) => s.id === c.linkedSubPanelId);
-          if (sp) {
-            // Compute sub-panel actual values
-            const { totalVA: subTotalVA, mainFeeder: subMainFeeder, mainCurrent: subMainCurrent, explicitPhaseVAs: subExplicitPhaseVAs, phaseAmps: subPhaseAmps } = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
-
-            const subTotalWattage = sp.circuits.reduce(
-              (sum, cc) =>
-                sum +
-                (isIdleSpareOrSpace(cc)
-                  ? 0
-                  : (cc.wattage || 0) * (cc.quantity || 1)),
-              0,
-            );
-
-            const subPoles = subMainFeeder.poles;
-            const subCB = subMainFeeder.cb;
-            const subAF = subMainFeeder.af;
-            const subKAIC = subMainFeeder.kaic;
-            const subType = subMainFeeder.type as MCBType;
-            const subWireSize = formatWireSizeLocal(subMainFeeder.wire.size);
-            const subGroundSize = subMainFeeder.groundSize;
-            const subConduitSize = subMainFeeder.conduitSize;
-
-            const subVoltage = sp.panel.voltage;
-            const designation = sp.panel.designation || "Sub-Panel";
-
-            // Calculate loadA for this sub-panel circuit in the main panel
-            // Since it's connected to the main panel, using the main panel's system/poles for current calculation:
-            const is3PhaseMain = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
-            const cirV = c.voltage || subVoltage || 230;
-            const loadI = subMainCurrent.baseAmp;
-            const demandVA = is3PhaseMain ? Math.round(loadI * cirV * 1.732) : Math.round(loadI * cirV);
-
-            let expectedLoadVA = subTotalVA; // ALWAYS reflect exact connected load
-            let expectedLoadA = Number(loadI.toFixed(2));
-            let expectedReflectedDemandVA = demandVA;
-            let expectedReflectedDemandAmps = expectedLoadA;
-            let expectedReflectedPhaseLoads = undefined;
-            let expectedReflectedPhaseAmps = undefined;
-
-            if (c.subPanelReflectionMode === "phase_loads") {
-              expectedReflectedPhaseLoads = {
-                R: subExplicitPhaseVAs.R,
-                Y: subExplicitPhaseVAs.Y,
-                B: subExplicitPhaseVAs.B,
-                ThreePhase: subExplicitPhaseVAs.threePhase,
-              };
-              expectedReflectedPhaseAmps = {
-                R: subPhaseAmps.R,
-                Y: subPhaseAmps.Y,
-                B: subPhaseAmps.B,
-                ThreePhase: subPhaseAmps.threePhase,
-              };
-            }
-
-            if (
-              c.loadVA !== expectedLoadVA ||
-              c.wattage !== subTotalWattage ||
-              c.mcbP !== subPoles ||
-              c.mcbAT !== subCB ||
-              c.mcbAF !== subAF ||
-              c.mcbKAIC !== subKAIC ||
-              c.mcbType !== subType ||
-              c.wireSize !== subWireSize ||
-              c.groundSize !== subGroundSize ||
-              c.conduitSize !== subConduitSize ||
-              c.voltage !== subVoltage ||
-              c.description !== designation ||
-              Math.abs((c.loadA || 0) - expectedLoadA) > 0.01 ||
-              c.reflectedDemandVA !== expectedReflectedDemandVA ||
-              c.reflectedDemandAmps !== expectedReflectedDemandAmps ||
-              JSON.stringify(c.reflectedPhaseLoads) !== JSON.stringify(expectedReflectedPhaseLoads) ||
-              JSON.stringify(c.reflectedPhaseAmps) !== JSON.stringify(expectedReflectedPhaseAmps)
-            ) {
-              changed = true;
-              return {
-                ...c,
-                wattage: subTotalWattage,
-                loadVA: expectedLoadVA,
-                loadA: expectedLoadA,
-                quantity: 1,
-                mcbP: subPoles,
-                mcbAT: subCB,
-                mcbAF: subAF,
-                mcbKAIC: subKAIC,
-                mcbType: subType,
-                wireSize: subWireSize,
-                groundSize: subGroundSize,
-                conduitSize: subConduitSize,
-                voltage: subVoltage,
-                description: designation,
-                reflectedDemandVA: expectedReflectedDemandVA,
-                reflectedDemandAmps: expectedReflectedDemandAmps,
-                reflectedPhaseLoads: expectedReflectedPhaseLoads,
-                reflectedPhaseAmps: expectedReflectedPhaseAmps,
-              };
-            }
-          }
-        }
-        return c;
-      });
-
-      return changed ? nextCircuits : prevCircuits;
-    });
-  }, [subPanels, setCircuits, vdCalculations]);
-
-  // Automatically recalculate Main Panel circuits when Main Panel configuration changes
-  useEffect(() => {
-    setCircuits((prevCircuits) => {
-      if (!prevCircuits || prevCircuits.length === 0) return prevCircuits;
-      let changed = false;
-      const nextCircuits = prevCircuits.map((c) => {
-        const updated = calculateCircuitValues(c, panel, subPanels, vdCalculations);
-        if (
-          updated.wireSize !== c.wireSize ||
-          updated.groundSize !== c.groundSize ||
-          updated.conduitSize !== c.conduitSize ||
-          updated.loadVA !== c.loadVA ||
-          updated.loadA !== c.loadA ||
-          updated.mcbAT !== c.mcbAT ||
-          updated.mcbAF !== c.mcbAF ||
-          updated.mcbKAIC !== c.mcbKAIC ||
-          updated.voltage !== c.voltage ||
-          updated.mcbP !== c.mcbP
-        ) {
-          changed = true;
-          return { ...c, ...updated };
-        }
-        return c;
-      });
-      return changed ? nextCircuits : prevCircuits;
-    });
-  }, [
-    panel.system,
-    panel.connectionType,
-    panel.conductorMaterial,
-    panel.insulationType,
-    panel.temperatureRating,
-    subPanels,
-    vdCalculations,
-  ]);
-
-  // Automatically recalculate subPanels circuits when subPanel configuration changes
-  useEffect(() => {
-    setSubPanels((prevSubPanels) => {
-      if (!prevSubPanels || prevSubPanels.length === 0) return prevSubPanels;
-      let anyChanged = false;
-      const nextSubPanels = prevSubPanels.map((sp) => {
-        let spChanged = false;
-        const nextCircuits = sp.circuits.map((c) => {
-          const updated = calculateCircuitValues(c, sp.panel, subSubPanels, vdCalculations);
-          if (
-            updated.wireSize !== c.wireSize ||
-            updated.groundSize !== c.groundSize ||
-            updated.conduitSize !== c.conduitSize ||
-            updated.loadVA !== c.loadVA ||
-            updated.loadA !== c.loadA ||
-            updated.mcbAT !== c.mcbAT ||
-            updated.mcbAF !== c.mcbAF ||
-            updated.mcbKAIC !== c.mcbKAIC ||
-            updated.voltage !== c.voltage ||
-            updated.mcbP !== c.mcbP
-          ) {
-            spChanged = true;
-            return { ...c, ...updated };
-          }
-          return c;
-        });
-
-        if (spChanged) {
-          anyChanged = true;
-          return { ...sp, circuits: nextCircuits };
-        }
-        return sp;
-      });
-
-      return anyChanged ? nextSubPanels : prevSubPanels;
-    });
-  }, [
-    subPanels.map(sp => `${sp.panel.system}-${sp.panel.connectionType}-${sp.panel.conductorMaterial}-${sp.panel.insulationType}-${sp.panel.temperatureRating}`).join("|"),
-    subSubPanels,
-    vdCalculations,
-  ]);
-
-  // Automatically recalculate subSubPanels circuits when subSubPanel configuration changes
-  useEffect(() => {
-    setSubSubPanels((prevSubSubPanels) => {
-      if (!prevSubSubPanels || prevSubSubPanels.length === 0) return prevSubSubPanels;
-      let anyChanged = false;
-      const nextSubSubPanels = prevSubSubPanels.map((ssp) => {
-        let sspChanged = false;
-        const nextCircuits = ssp.circuits.map((c) => {
-          const updated = calculateCircuitValues(c, ssp.panel, [], vdCalculations);
-          if (
-            updated.wireSize !== c.wireSize ||
-            updated.groundSize !== c.groundSize ||
-            updated.conduitSize !== c.conduitSize ||
-            updated.loadVA !== c.loadVA ||
-            updated.loadA !== c.loadA ||
-            updated.mcbAT !== c.mcbAT ||
-            updated.mcbAF !== c.mcbAF ||
-            updated.mcbKAIC !== c.mcbKAIC ||
-            updated.voltage !== c.voltage ||
-            updated.mcbP !== c.mcbP
-          ) {
-            sspChanged = true;
-            return { ...c, ...updated };
-          }
-          return c;
-        });
-
-        if (sspChanged) {
-          anyChanged = true;
-          return { ...ssp, circuits: nextCircuits };
-        }
-        return ssp;
-      });
-
-      return anyChanged ? nextSubSubPanels : prevSubSubPanels;
-    });
-  }, [
-    subSubPanels.map(ssp => `${ssp.panel.system}-${ssp.panel.connectionType}-${ssp.panel.conductorMaterial}-${ssp.panel.insulationType}-${ssp.panel.temperatureRating}`).join("|"),
-    vdCalculations,
-  ]);
+    if (hasChanges) {
+      setCircuits(updatedMdpCircuits);
+      setSubPanels(updatedSubPanels);
+    }
+  }, [panel, circuits, subPanels, vdCalculations]);
 
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
     {},
@@ -1237,7 +887,7 @@ export default function App() {
     if (!panelToDuplicate) return;
     const targetId = panelToDuplicate.id;
     const originalSp = subPanels.find((sp) => sp.id === targetId);
-    const originalSsp = subSubPanels.find((ssp) => ssp.id === targetId);
+    const originalSsp = subPanels.find((ssp) => ssp.id === targetId);
     const original = originalSp || originalSsp;
     
     if (!original) {
@@ -1278,7 +928,7 @@ export default function App() {
         return [...prev, cloned];
       });
     } else if (originalSsp) {
-      setSubSubPanels((prev) => {
+      setSubPanels((prev) => {
         const idx = prev.findIndex((sp) => sp.id === targetId);
         if (idx !== -1) {
           const next = [...prev];
@@ -1329,7 +979,7 @@ export default function App() {
     // Ensure accurate sizing by passing older circuits through the current compute engine.
     const seenCircuitIds = new Set<string>();
 
-    const migratedSubSubPanels = (data.subSubPanels || []).map((sp) => {
+    const migratedSubSubPanels = (data.subPanels || []).map((sp) => {
       const updatedCircuits = sp.circuits.map((c) => {
         let uniqueId = c.id;
         if (seenCircuitIds.has(uniqueId)) {
@@ -1418,7 +1068,7 @@ export default function App() {
 
     setCircuits(migratedCircuits);
     setSubPanels(migratedSubPanels);
-    setSubSubPanels(migratedSubSubPanels);
+    setSubPanels(migratedSubSubPanels);
 
     // MIGRATION: Update Voltage Drop tracking values
     const newVdCalculations = (data.vdCalculations || []).map((vd) => {
@@ -1462,7 +1112,7 @@ export default function App() {
     panel,
     circuits,
     subPanels,
-    subSubPanels,
+    
     iscParams,
     iscSource,
     vdCalculations,
@@ -1480,7 +1130,7 @@ export default function App() {
     setPanel(INITIAL_PANEL);
     setCircuits(getFreshInitialCircuits());
     setSubPanels([]);
-    setSubSubPanels([]);
+    setSubPanels([]);
     setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
     setIscSource("auto");
     setVdCalculations(INITIAL_VOLTAGE_DROP_CALCULATIONS);
@@ -1658,7 +1308,7 @@ export default function App() {
           circuits: sp.circuits,
           type: "Sub Panel"
         })),
-        ...(subSubPanels || []).map((ssp) => ({
+        ...(subPanels || []).map((ssp) => ({
           id: ssp.id,
           panel: ssp.panel,
           circuits: ssp.circuits,
@@ -1751,24 +1401,32 @@ export default function App() {
           ];
 
           if (is3Phase) {
-            if (isSpace) {
+            if (isSpace || cir.loadType === LoadType.SPARE) {
               row.push("-", "-", "-", "-");
-            } else {
+            } else if (cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps) {
               row.push(
-                cir.phases.includes("R") && cir.phases.length < 3
+                cir.reflectedPhaseAmps.R > 0 ? cir.reflectedPhaseAmps.R.toFixed(2) : "-",
+                cir.reflectedPhaseAmps.Y > 0 ? cir.reflectedPhaseAmps.Y.toFixed(2) : "-",
+                cir.reflectedPhaseAmps.B > 0 ? cir.reflectedPhaseAmps.B.toFixed(2) : "-",
+                cir.reflectedPhaseAmps.ThreePhase > 0 ? cir.reflectedPhaseAmps.ThreePhase.toFixed(2) : "-"
+              );
+            } else {
+              const phases = cir.phases || [];
+              row.push(
+                phases.includes("R") && phases.length < 3
                   ? cir.loadA.toFixed(2)
                   : "-",
-                cir.phases.includes("Y") && cir.phases.length < 3
+                phases.includes("Y") && phases.length < 3
                   ? cir.loadA.toFixed(2)
                   : "-",
-                cir.phases.includes("B") && cir.phases.length < 3
+                phases.includes("B") && phases.length < 3
                   ? cir.loadA.toFixed(2)
                   : "-",
-                cir.phases.length === 3 ? cir.loadA.toFixed(2) : "-",
+                phases.length === 3 ? cir.loadA.toFixed(2) : "-",
               );
             }
           } else {
-            row.push(isSpace ? "-" : cir.loadA.toFixed(2));
+            row.push(isSpace || cir.loadType === LoadType.SPARE ? "-" : cir.loadA.toFixed(2));
           }
 
           row.push(
@@ -2808,7 +2466,7 @@ export default function App() {
         illumParams,
         images,
         iscParams,
-        subSubPanels,
+        
         {
           primaryVoltage: transformerPrimaryVoltage,
           powerFactor: transformerPowerFactor,
@@ -3152,7 +2810,7 @@ export default function App() {
                 icon: Layers, 
                 onClick: () => {
                   if (userPlan === "premium" || isAdmin) {
-                    exportToCAD(panel, circuits, subPanels, iscParams, "ALL", vdCalculations, illumParams, subSubPanels);
+                    exportToCAD(panel, circuits, subPanels, iscParams, "ALL", vdCalculations, illumParams);
                   } else {
                     setShowUpgrade(true);
                   }
@@ -3644,7 +3302,7 @@ export default function App() {
                         }
 
                         const isMainFeeder = vd.source === "main";
-                        const isSubPanelFeeder = uniqueSubPanels.some(sp => sp.id === vd.source) || uniqueSubSubPanels.some(ssp => ssp.id === vd.source);
+                        const isSubPanelFeeder = uniqueSubPanels.some(sp => sp.id === vd.source) || uniqueSubPanels.some(ssp => ssp.id === vd.source);
                         const isFeeder = isMainFeeder || isSubPanelFeeder || vd.name.toLowerCase().includes("feeder");
                         const limit = isFeeder ? 5.0 : 3.0;
                         if (!Number.isNaN(pct) && pct > limit) {
@@ -4232,22 +3890,6 @@ export default function App() {
                           </button>
                         ))}
 
-                        {/* Sub-Sub Panels Tags */}
-                        {uniqueSubSubPanels.map((ssp) => (
-                          <button
-                            key={ssp.id}
-                            onClick={() => setActiveScheduleTab(ssp.id)}
-                            className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer border border-dashed border-cyan-200 dark:border-cyan-800 ${
-                              activeScheduleTab === ssp.id
-                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10 dark:shadow-none translate-y-[-1px] border-none"
-                                : "text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800/60"
-                            }`}
-                          >
-                            <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                            <span>{ssp.panel.designation || "Sub-Sub Panel"}</span>
-                          </button>
-                        ))}
-
                         {/* Plus Quick Tab Action */}
                         <div className="flex items-center gap-2 ml-auto">
                           <button
@@ -4270,27 +3912,6 @@ export default function App() {
                           >
                             <Plus className="w-3.5 h-3.5" />
                             Add Sub-Panel
-                          </button>
-                          <button
-                            onClick={() => {
-                              const newId = crypto.randomUUID();
-                              setSubSubPanels((prev) => [
-                                ...prev,
-                                {
-                                  id: newId,
-                                  panel: {
-                                    ...INITIAL_PANEL,
-                                    designation: `Sub-Sub Panel ${prev.length + 1}`,
-                                  },
-                                  circuits: getFreshInitialCircuits(),
-                                },
-                              ]);
-                              setActiveScheduleTab(newId);
-                            }}
-                            className="px-3 py-1.5 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 bg-cyan-50 dark:bg-cyan-950/20 hover:bg-cyan-100 dark:hover:bg-cyan-950/40 border border-dashed border-cyan-300 dark:border-cyan-805/30 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add Sub-Sub Panel
                           </button>
                         </div>
                       </div>
@@ -4318,9 +3939,26 @@ export default function App() {
                         isExporting || activeScheduleTab === sp.id;
                       if (!isVisible) return null;
 
-                      const parentMdpConn = circuits.find(
-                        (c) => c.loadType === LoadType.SUB_PANEL && c.linkedSubPanelId === sp.id
+                      let parentConn: Circuit | undefined = undefined;
+                      let parentName = "";
+                      
+                      // Check MDP first
+                      parentConn = circuits.find(
+                        (c) => c.linkedSubPanelId === sp.id
                       );
+                      if (parentConn) {
+                        parentName = panel.designation || "MDP";
+                      } else {
+                        // Check other subpanels
+                        for (const otherSp of uniqueSubPanels) {
+                          const conn = otherSp.circuits.find(c => c.linkedSubPanelId === sp.id);
+                          if (conn) {
+                            parentConn = conn;
+                            parentName = otherSp.panel.designation || "Sub-Panel";
+                            break;
+                          }
+                        }
+                      }
 
                       return (
                         <React.Fragment key={sp.id}>
@@ -4345,7 +3983,7 @@ export default function App() {
                             circuits={sp.circuits}
                             setCircuits={(newCircuits) => handleSetSubPanelCircuits(index, sp.id, newCircuits)}
                             isSubPanel={true}
-                            availableSubPanels={uniqueSubSubPanels}
+                            availableSubPanels={uniqueSubPanels}
                             onRemoveSubPanel={() => {
                               setSubPanels((prev) =>
                                 prev.filter((p) => p.id !== sp.id),
@@ -4373,13 +4011,13 @@ export default function App() {
                             isPremium={userPlan === "premium" || isAdmin}
                             onRequestUpgrade={() => setShowUpgrade(true)}
                             isAdmin={isAdmin}
-                            parentMdpConnection={parentMdpConn ? {
-                              circuitNo: parentMdpConn.circuitNo,
-                              description: parentMdpConn.description,
-                              mdpDesignation: panel.designation || "MDP",
-                              circuitId: parentMdpConn.id,
-                              feederSize: parentMdpConn.wireSize,
-                              feederRuns: parentMdpConn.quantity || 1
+                            parentMdpConnection={parentConn ? {
+                              circuitNo: parentConn.circuitNo,
+                              description: parentConn.description,
+                              mdpDesignation: parentName,
+                              circuitId: parentConn.id,
+                              feederSize: parentConn.wireSize,
+                              feederRuns: parentConn.quantity || 1
                             } : undefined}
                             vdCalculations={vdCalculations}
                           />
@@ -4388,13 +4026,13 @@ export default function App() {
                             <button
                               onClick={() => {
                                 const newId = crypto.randomUUID();
-                                setSubSubPanels((prev) => [
+                                setSubPanels((prev) => [
                                   ...prev,
                                   {
                                     id: newId,
                                     panel: {
                                       ...INITIAL_PANEL,
-                                      designation: `Sub-Sub Panel ${prev.length + 1}`,
+                                      designation: `Child Panel ${prev.length + 1}`,
                                     },
                                     circuits: getFreshInitialCircuits(),
                                   },
@@ -4404,111 +4042,14 @@ export default function App() {
                               className="w-full mt-6 py-6 border-2 border-dashed border-cyan-300 dark:border-cyan-800 rounded-2xl flex items-center justify-center gap-2 text-cyan-600 dark:text-cyan-500 font-bold hover:text-cyan-700 dark:hover:text-cyan-400 hover:border-cyan-400 hover:bg-cyan-50/50 dark:hover:bg-cyan-950/20 transition-all no-print cursor-pointer shadow-sm"
                             >
                               <Layers className="w-5 h-5 animate-pulse" />
-                              Create New Sub-Sub Panel Board
+                              Create Nested Child Panel
                             </button>
                           )}
                         </React.Fragment>
                       );
                     })}
 
-                    {/* 3. Sub-Sub-Panels Schedules */}
-                    {uniqueSubSubPanels.map((ssp, index) => {
-                      const isVisible =
-                        isExporting || activeScheduleTab === ssp.id;
-                      if (!isVisible) return null;
 
-                      let parentSpConn: any;
-                      let parentSpName = "";
-                      for (const sp of uniqueSubPanels) {
-                        const conn = sp.circuits.find(
-                          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id
-                        );
-                        if (conn) {
-                          parentSpConn = conn;
-                          parentSpName = sp.panel.designation || "Sub-Panel";
-                          break;
-                        }
-                      }
-
-                      return (
-                        <React.Fragment key={ssp.id}>
-                          <LoadSchedule
-                            panel={ssp.panel}
-                            setPanel={(newPanel) => {
-                              setSubSubPanels((prev) => {
-                                const currentPanel = prev[index]?.panel;
-                                if (!currentPanel) return prev;
-                                const updatedPanel =
-                                  typeof newPanel === "function"
-                                    ? newPanel(currentPanel)
-                                    : newPanel;
-                                if (currentPanel === updatedPanel) return prev;
-                                return prev.map((p, i) =>
-                                  i === index
-                                    ? { ...p, panel: updatedPanel }
-                                    : p,
-                                );
-                              });
-                            }}
-                            circuits={ssp.circuits}
-                            setCircuits={(newCircuits) => {
-                              setSubSubPanels((prev) => {
-                                const currentCircuits = prev[index]?.circuits;
-                                if (!currentCircuits) return prev;
-                                const updatedCircuits =
-                                  typeof newCircuits === "function"
-                                    ? newCircuits(currentCircuits)
-                                    : newCircuits;
-                                if (currentCircuits === updatedCircuits)
-                                  return prev;
-                                return prev.map((p, i) =>
-                                  i === index
-                                    ? { ...p, circuits: updatedCircuits }
-                                    : p,
-                                );
-                              });
-                            }}
-                            isSubPanel={true}
-                            isSubSubPanel={true}
-                            onRemoveSubPanel={() => {
-                              setSubSubPanels((prev) =>
-                                prev.filter((p) => p.id !== ssp.id),
-                              );
-                              // Disconnect sub-sub panel reference from sub panels circuits
-                              setSubPanels((prevSubPanels) =>
-                                prevSubPanels.map((sp) => ({
-                                  ...sp,
-                                  circuits: sp.circuits.map((c) =>
-                                    c.linkedSubPanelId === ssp.id
-                                      ? {
-                                          ...c,
-                                          linkedSubPanelId: undefined,
-                                          loadType: LoadType.SPARE,
-                                          description: `${c.description || "Sub-Sub Panel"} (Disconnected)`,
-                                        }
-                                      : c
-                                  ),
-                                }))
-                              );
-                              setActiveScheduleTab(subPanels[0]?.id || "mdp");
-                            }}
-                            iscParams={iscParams}
-                            isPremium={userPlan === "premium" || isAdmin}
-                            onRequestUpgrade={() => setShowUpgrade(true)}
-                            isAdmin={isAdmin}
-                            parentMdpConnection={parentSpConn ? {
-                              circuitNo: parentSpConn.circuitNo,
-                              description: parentSpConn.description,
-                              mdpDesignation: parentSpName,
-                              circuitId: parentSpConn.id,
-                              feederSize: parentSpConn.wireSize,
-                              feederRuns: parentSpConn.quantity || 1
-                            } : undefined}
-                            vdCalculations={vdCalculations}
-                          />
-                        </React.Fragment>
-                      );
-                    })}
 
                     {/* Fallback Large "Add Subpanel" helper at the bottom ONLY if mdp is visible on screen */}
                     {!isExporting && activeScheduleTab === "mdp" && (
@@ -4560,7 +4101,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    subSubPanels={subSubPanels}
+                    
                     params={iscParams}
                     setParams={setIscParams}
                     source={iscSource}
@@ -4593,7 +4134,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    subSubPanels={subSubPanels}
+                    
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
                     isPremium={userPlan === "premium" || isAdmin}
@@ -4623,6 +4164,8 @@ export default function App() {
                   <IlluminationCalc
                     panel={panel}
                     circuits={circuits}
+                    subPanels={subPanels}
+                    vdCalculations={vdCalculations}
                     setCircuits={setCircuits}
                     setActiveTab={setActiveTab}
                     activeTab={activeTab}
@@ -4657,7 +4200,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    subSubPanels={subSubPanels}
+                    
                     iscParams={iscParams}
                     isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -4688,7 +4231,7 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    subSubPanels={subSubPanels}
+                    
                     iscParams={iscParams}
                     setIscParams={setIscParams}
                     vdCalculations={vdCalculations}

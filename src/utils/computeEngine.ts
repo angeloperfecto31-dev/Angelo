@@ -429,7 +429,7 @@ export const calculateCircuitValues = (
       c.voltage = subVoltage;
       c.mcbAT = subMainFeeder.cb;
       c.mcbAF = subMainFeeder.af;
-      c.mcbKAIC = subMainFeeder.kaic;
+      // c.mcbKAIC = subMainFeeder.kaic; // Removed to prevent infinite update loop with MDP targetKaic
       c.mcbType = subMainFeeder.type as any;
       c.wireSize = formatWireSizeLocal(subMainFeeder.wire.size);
       c.groundSize = subMainFeeder.groundSize;
@@ -629,14 +629,13 @@ export const calculateCircuitValues = (
             ? 225
             : 400;
 
+  const computedMcbKAIC = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
   const mcbKAIC =
     isSubPanelLink && c.mcbKAIC
       ? c.mcbKAIC
-      : mcbAT <= 50
-        ? 10
-        : mcbAT <= 100
-          ? 18
-          : 25;
+      : c.mcbKAIC && c.mcbKAIC > computedMcbKAIC
+        ? c.mcbKAIC
+        : computedMcbKAIC;
 
   const wire = getWireForBreakerLocal(
     mcbAT,
@@ -1024,6 +1023,8 @@ export const computePanelScheduleValues = (
   let maxDesignAmp = 0;
 
   let subPanelDemandAmps = 0;
+  let internalDemandCurrent = 0;
+  let globalHML = 0;
 
   if (p.system.includes("3PH")) {
     const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
@@ -1078,13 +1079,14 @@ export const computePanelScheduleValues = (
         HML = loadI;
       }
     });
+    globalHML = HML;
 
     const totalAmpere = Math.max(
       localPhaseAmps.R,
       localPhaseAmps.Y,
       localPhaseAmps.B,
     );
-    const internalDemandCurrent =
+    internalDemandCurrent =
       (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) *
       1.25;
 
@@ -1112,7 +1114,8 @@ export const computePanelScheduleValues = (
         HML = loadI;
       }
     });
-    const internalDemandCurrent =
+    globalHML = HML;
+    internalDemandCurrent =
       ((internalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
     maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
@@ -1296,6 +1299,22 @@ export const computePanelScheduleValues = (
     }
   });
 
+  const maxDemandDetails = {
+    is3PH: p.system.includes("3PH"),
+    systemVoltage,
+    phaseR: phaseAmps.R,
+    phaseY: phaseAmps.Y,
+    phaseB: phaseAmps.B,
+    total3Phase: phaseAmps.threePhase,
+    totalAmpere: Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B),
+    totalConnectedVA: totalVA,
+    HML: globalHML,
+    baseAmp: maxBaseAmp,
+    connectionType: p.connectionType || "Line-to-Line",
+    internalDemandCurrent,
+    subPanelDemandAmps
+  };
+
   return {
     totalVA,
     phaseLoads,
@@ -1304,6 +1323,7 @@ export const computePanelScheduleValues = (
     phaseImbalance,
     phaseAmps,
     mainCurrent,
+    maxDemandDetails,
     lightingReceptacleDemand,
     totalMotorDemandVA:
       motorVAs.reduce((a, b) => a + b, 0) + largestMotor * 0.25,

@@ -310,7 +310,7 @@ export default function VoltageDropCalc({
                 exportToCAD(
                   panel!,
                   circuits || [],
-                  [],
+                  allSubPanels,
                   {} as any,
                   "VOLTAGE_DROP",
                   calculations,

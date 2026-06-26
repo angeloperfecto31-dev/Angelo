@@ -16,7 +16,6 @@ interface SystemSLDProps {
   panel: PanelConfig;
   circuits: Circuit[];
   subPanels: SubPanelData[];
-  subSubPanels?: SubPanelData[];
   iscParams?: any;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
@@ -45,7 +44,6 @@ export default function SystemSLD({
   panel,
   circuits,
   subPanels,
-  subSubPanels,
   iscParams,
   isPremium = true,
   onRequestUpgrade,
@@ -166,7 +164,7 @@ export default function SystemSLD({
   const mdpHeight = 320 + mdpRows.length * 60 + 100;
 
   const spLayouts = useMemo(() => {
-    const rawAllSubPanels = [...subPanels, ...(subSubPanels || [])];
+    const rawAllSubPanels = [...subPanels];
     const seen = new Set();
     const allSubPanels = rawAllSubPanels.filter((sp) => {
       if (!sp || !sp.id) return false;
@@ -251,18 +249,21 @@ export default function SystemSLD({
         idx,
       };
     });
-  }, [subPanels, subSubPanels, circuits, mdpRows, vdCalculations]);
+  }, [subPanels, circuits, mdpRows, vdCalculations]);
 
   const resolvedLayouts = useMemo(() => {
     const layoutMap = new Map(spLayouts.map((l) => [l.sp.id, l]));
 
-    const resolveIsLeft = (id: string): boolean => {
+    const resolveIsLeft = (id: string, seen: Set<string> = new Set()): boolean => {
+      if (seen.has(id)) return true;
+      seen.add(id);
+      
       const layout = layoutMap.get(id);
       if (!layout) return true;
       if (layout.parentId === "mdp") {
         return layout.tempIsLeft;
       }
-      return resolveIsLeft(layout.parentId);
+      return resolveIsLeft(layout.parentId, seen);
     };
 
     return spLayouts.map((layout) => {
@@ -274,115 +275,120 @@ export default function SystemSLD({
     });
   }, [spLayouts]);
 
-  // Separate Sub-Panels (Level 2) vs Sub-Sub Panels (Level 3)
-  const level2Layouts = useMemo(() => {
-    return resolvedLayouts.filter(
-      (l) => l.parentId === "mdp" || !resolvedLayouts.some((other) => other.sp.id === l.parentId)
-    );
-  }, [resolvedLayouts]);
-
-  const level3Layouts = useMemo(() => {
-    return resolvedLayouts.filter(
-      (l) => l.parentId !== "mdp" && resolvedLayouts.some((other) => other.sp.id === l.parentId)
-    );
-  }, [resolvedLayouts]);
-
-  const leftLevel2 = useMemo(() => level2Layouts.filter((l) => l.isLeft), [level2Layouts]);
-  const rightLevel2 = useMemo(() => level2Layouts.filter((l) => !l.isLeft), [level2Layouts]);
-
   // Width of a panel's horizontal slot space to avoid overlaps
   const W_COLUMN = 950;
   const borderSpace = 50;
 
-  const leftPositions = useMemo(() => {
-    const positions = new Map<string, { x: number; childrenX: Map<string, number> }>();
-    let currentLeftX = 50;
+  // 1. Compute depths, required widths, and vertical offsets
+  const { depths, widths, maxDepth, yOffsets, depthMaxHeights } = useMemo(() => {
+    const dMap = new Map<string, number>();
+    const wMap = new Map<string, number>();
+    const getChildren = (pid: string) => resolvedLayouts.filter((l) => l.parentId === pid);
 
-    leftLevel2.forEach((l2) => {
-      const children = level3Layouts.filter((l3) => l3.parentId === l2.sp.id);
-      const numChildren = children.length;
-      const colWidth = Math.max(1, numChildren) * W_COLUMN;
+    const getDepth = (id: string, seen: Set<string> = new Set()): number => {
+      if (seen.has(id)) return 2;
+      seen.add(id);
+      const layout = resolvedLayouts.find((l) => l.sp.id === id);
+      if (!layout) return 2;
+      if (layout.parentId === "mdp") return 2;
+      return getDepth(layout.parentId, seen) + 1;
+    };
 
-      // Center the Level 2 panel in its allocated column range
-      const l2X = currentLeftX + colWidth / 2 - 400;
-
-      const childMap = new Map<string, number>();
-      children.forEach((l3, childIdx) => {
-        const l3X = currentLeftX + childIdx * W_COLUMN + W_COLUMN / 2 - 400;
-        childMap.set(l3.sp.id, l3X);
-      });
-
-      positions.set(l2.sp.id, { x: l2X, childrenX: childMap });
-      currentLeftX += colWidth + borderSpace;
+    resolvedLayouts.forEach((l) => {
+      dMap.set(l.sp.id, getDepth(l.sp.id));
     });
 
-    return {
-      positions,
-      endX: currentLeftX,
-    };
-  }, [leftLevel2, level3Layouts]);
-
-  const MdpXOffset = useMemo(() => {
-    return leftPositions.endX + 100;
-  }, [leftPositions]);
-
-  const rightPositions = useMemo(() => {
-    const positions = new Map<string, { x: number; childrenX: Map<string, number> }>();
-    let currentRightX = MdpXOffset + 800 + 100;
-
-    rightLevel2.forEach((l2) => {
-      const children = level3Layouts.filter((l3) => l3.parentId === l2.sp.id);
-      const numChildren = children.length;
-      const colWidth = Math.max(1, numChildren) * W_COLUMN;
-
-      // Center the Level 2 panel in its allocated column range
-      const l2X = currentRightX + colWidth / 2 - 400;
-
-      const childMap = new Map<string, number>();
-      children.forEach((l3, childIdx) => {
-        const l3X = currentRightX + childIdx * W_COLUMN + W_COLUMN / 2 - 400;
-        childMap.set(l3.sp.id, l3X);
-      });
-
-      positions.set(l2.sp.id, { x: l2X, childrenX: childMap });
-      currentRightX += colWidth + borderSpace;
+    let md = 1;
+    dMap.forEach((d) => {
+      if (d > md) md = d;
     });
 
-    return {
-      positions,
-      endX: currentRightX,
+    const getWidth = (id: string, seen: Set<string> = new Set()): number => {
+      if (seen.has(id)) return W_COLUMN;
+      seen.add(id);
+      const children = getChildren(id);
+      if (children.length === 0) return W_COLUMN;
+      return children.reduce((sum, c) => sum + getWidth(c.sp.id, seen), 0);
     };
-  }, [rightLevel2, level3Layouts, MdpXOffset]);
 
-  const svgWidth = useMemo(() => {
-    if (leftLevel2.length === 0 && rightLevel2.length === 0) {
-      return 1200;
+    resolvedLayouts.forEach((l) => {
+      wMap.set(l.sp.id, getWidth(l.sp.id));
+    });
+
+    // Y Offsets per depth
+    const dMH = new Map<number, number>();
+    dMH.set(1, mdpHeight);
+    for (let d = 2; d <= md; d++) {
+      const layouts = resolvedLayouts.filter((l) => dMap.get(l.sp.id) === d);
+      dMH.set(
+        d,
+        layouts.length > 0
+          ? Math.max(...layouts.map((l) => l.spHeight))
+          : 0,
+      );
     }
-    return rightPositions.endX + 50;
-  }, [leftLevel2, rightLevel2, rightPositions]);
 
-  const maxLevel2Height = useMemo(() => {
-    return level2Layouts.length > 0 ? Math.max(...level2Layouts.map((l) => l.spHeight)) : 0;
-  }, [level2Layouts]);
+    const yOff = new Map<number, number>();
+    yOff.set(1, 50); // mdp is at 50
+    let currY = 50 + mdpHeight + 200;
+    for (let d = 2; d <= md; d++) {
+      yOff.set(d, currY);
+      currY += (dMH.get(d) || 0) + 200;
+    }
 
-  const maxLevel3Height = useMemo(() => {
-    return level3Layouts.length > 0 ? Math.max(...level3Layouts.map((l) => l.spHeight)) : 0;
-  }, [level3Layouts]);
+    return { depths: dMap, widths: wMap, maxDepth: md, yOffsets: yOff, depthMaxHeights: dMH };
+  }, [resolvedLayouts, mdpHeight]);
 
-  // SpYOffset is where Level 2 Sub-Panels start vertically
-  const SpYOffset = mdpHeight + 200;
-  // SspYOffset is where Level 3 Sub-Sub Panels start vertically
-  const SspYOffset = SpYOffset + maxLevel2Height + 200;
+  // 2. Compute horizontal positions (recursive tree placement)
+  const { layoutPositions, svgWidth, MdpXOffset } = useMemo(() => {
+    const positions = new Map<string, { x: number }>();
+    const getChildren = (pid: string) => resolvedLayouts.filter((l) => l.parentId === pid);
+
+    const placeChildren = (parentId: string, startX: number) => {
+      let currentX = startX;
+      const children = getChildren(parentId);
+      children.forEach((c) => {
+        const w = widths.get(c.sp.id) || W_COLUMN;
+        const cx = currentX + w / 2 - 400; // Center 800px width inside W
+        positions.set(c.sp.id, { x: cx });
+        placeChildren(c.sp.id, currentX);
+        currentX += w;
+      });
+    };
+
+    // Left side roots
+    const leftRoots = resolvedLayouts.filter((l) => l.parentId === "mdp" && l.isLeft);
+    const rightRoots = resolvedLayouts.filter((l) => l.parentId === "mdp" && !l.isLeft);
+
+    let currentLeftX = 50;
+    leftRoots.forEach((r) => {
+      const w = widths.get(r.sp.id) || W_COLUMN;
+      const x = currentLeftX + w / 2 - 400;
+      positions.set(r.sp.id, { x });
+      placeChildren(r.sp.id, currentLeftX);
+      currentLeftX += w + borderSpace;
+    });
+
+    const endLeftX = currentLeftX;
+    const mdpX = leftRoots.length > 0 ? endLeftX + 100 : 50;
+
+    let currentRightX = mdpX + 800 + 100;
+    rightRoots.forEach((r) => {
+      const w = widths.get(r.sp.id) || W_COLUMN;
+      const x = currentRightX + w / 2 - 400;
+      positions.set(r.sp.id, { x });
+      placeChildren(r.sp.id, currentRightX);
+      currentRightX += w + borderSpace;
+    });
+
+    const endRightX = currentRightX;
+
+    return { layoutPositions: positions, svgWidth: Math.max(1200, endRightX + 50), MdpXOffset: mdpX };
+  }, [resolvedLayouts, widths]);
 
   const svgHeight = useMemo(() => {
-    if (level3Layouts.length > 0) {
-      return SspYOffset + maxLevel3Height + 100;
-    }
-    if (level2Layouts.length > 0) {
-      return SpYOffset + maxLevel2Height + 100;
-    }
-    return mdpHeight + 100;
-  }, [level2Layouts, level3Layouts, mdpHeight, maxLevel2Height, maxLevel3Height, SpYOffset, SspYOffset]);
+    return (yOffsets.get(maxDepth) || 0) + (depthMaxHeights.get(maxDepth) || 0) + 100;
+  }, [maxDepth, yOffsets, depthMaxHeights]);
 
   const handlePrint = () => {
     const isIframe = window.self !== window.top;
@@ -489,8 +495,7 @@ export default function SystemSLD({
                 },
                 "ALL",
                 [],                 // vdCalculations empty fallback
-                undefined,          // illumParams empty fallback
-                subSubPanels || []  // Sub-Sub Panels properly loaded!
+                undefined           // illumParams empty fallback
               );
             }}
             disabled={isExporting}
@@ -605,48 +610,62 @@ export default function SystemSLD({
             />
           </g>
 
-          {/* LEVEL 2: SUB PANELS & ROUTING LINES */}
-          {level2Layouts.map((layout, i) => {
+          {/* ALL SUB PANELS & ROUTING LINES */}
+          {resolvedLayouts.map((layout, i) => {
             const isLeft = layout.isLeft;
             const id = layout.sp.id;
-            
-            // Resolve custom bento visual xOffset to avoid any overlaps
-            const pos = isLeft
-              ? leftPositions.positions.get(id)
-              : rightPositions.positions.get(id);
+            const parentId = layout.parentId;
+
+            const depth = depths.get(id) || 2;
+            const yOffset = yOffsets.get(depth) || 0;
+            const pos = layoutPositions.get(id);
             const spXOffset = pos ? pos.x : 0;
 
-            const y1 = 50 + 320 + layout.rowIndex * 60; // relative to MDP yOffset = 50
-            const x1 = MdpXOffset + (isLeft ? 190 : 610);
+            let parentXOffset = MdpXOffset;
+            let parentYOffset = 50; // MDP yOffset
+            let isLeftBranchInParent = isLeft;
 
-            // Staggered non-overlapping vertical drop gutter
-            let dropX = 0;
-            if (isLeft) {
-              dropX = MdpXOffset + 150 - (i + 1) * 20;
+            if (parentId !== "mdp") {
+              const pPos = layoutPositions.get(parentId);
+              parentXOffset = pPos ? pPos.x : MdpXOffset;
+              const pDepth = depths.get(parentId) || 2;
+              parentYOffset = yOffsets.get(pDepth) || 50;
+              const pLayout = resolvedLayouts.find((l) => l.sp.id === parentId);
+              if (pLayout) {
+                isLeftBranchInParent =
+                  pLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
+              }
             } else {
-              dropX = MdpXOffset + 650 + (i + 1) * 20;
+              isLeftBranchInParent = layout.tempIsLeft;
             }
 
-            // Staggered horizontal channels to prevent overlap
-            const yChannel = SpYOffset - 75 + i * 12;
-            const spFeedX = spXOffset + 270;
-            const spFeedY = SpYOffset + 150;
+            const y1 = parentYOffset + 320 + layout.rowIndex * 60;
+            const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
 
-            // Beautiful clean orthogonal layout line paths
+            // Staggered drop column
+            let dropX = 0;
+            if (isLeftBranchInParent) {
+              dropX = parentXOffset + 150 - ((i % 10) + 1) * 20;
+            } else {
+              dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
+            }
+
+            // Staggered horizontal channels
+            const yChannel = yOffset - 75 + (i % 10) * 12;
+            const spFeedX = spXOffset + 270;
+            const spFeedY = yOffset + 150;
+
             const pathY = y1 + 25;
-            let path = `M ${x1},${y1}`;
-            path += ` L ${x1},${pathY}`;
-            path += ` L ${dropX},${pathY}`;
-            path += ` L ${dropX},${yChannel}`;
-            path += ` L ${spFeedX},${yChannel}`;
-            path += ` L ${spFeedX},${spFeedY}`;
+            let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
+
+            const label = depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
 
             return (
-              <g key={`page-l2-${id}`}>
-                {/* Routing Line connects MDP branch to SP feed */}
+              <g key={`page-l${depth}-${id}`}>
+                {/* Routing Line connects branch to feed */}
                 <path d={path} className="sld-thick" />
 
-                {/* Sub Panel Feeder Details Text Box overlaid on routing line */}
+                {/* Feeder Details Text Box overlaid on routing line */}
                 <rect
                   x={spFeedX - 62.5}
                   y={spFeedY - 90}
@@ -663,18 +682,23 @@ export default function SystemSLD({
                   textAnchor="middle"
                   className="sld-label-blue"
                 >
-                  FEED TO {layout.sp.panel.designation || `SP-${i + 1}`}
+                  FEED TO {layout.sp.panel.designation || `${label}-${i + 1}`}
                 </text>
 
                 {/* Sub Panel Fully Expanded Rendering */}
                 <text
                   x={spXOffset + 400}
-                  y={SpYOffset + 30}
+                  y={yOffset + 30}
                   textAnchor="middle"
                   className="sld-text"
                   style={{ fontSize: "18px" }}
                 >
-                  SUB-PANEL: {layout.sp.panel.designation || `SP-${i + 1}`}
+                  {depth === 2
+                    ? "SUB-PANEL"
+                    : depth === 3
+                    ? "SUB-SUB PANEL"
+                    : `LEVEL ${depth} PANEL`}
+                  : {layout.sp.panel.designation || `${label}-${i + 1}`}
                 </text>
                 <SingleLineDiagramContent
                   panel={layout.sp.panel}
@@ -683,99 +707,7 @@ export default function SystemSLD({
                   formatWireSize={formatWireSize}
                   isSubPanel={true}
                   xOffset={spXOffset}
-                  yOffset={SpYOffset + 50}
-                />
-              </g>
-            );
-          })}
-
-          {/* LEVEL 3: SUB-SUB PANELS & ROUTING LINES */}
-          {level3Layouts.map((layout, i) => {
-            const isLeft = layout.isLeft;
-            const id = layout.sp.id;
-            const parentId = layout.parentId;
-
-            // Find parent panel details
-            const parentLayout = level2Layouts.find((l) => l.sp.id === parentId);
-            if (!parentLayout) return null;
-
-            const parentPos = isLeft
-              ? leftPositions.positions.get(parentId)
-              : rightPositions.positions.get(parentId);
-            if (!parentPos) return null;
-
-            // Align child SSP directly underneath the parent SP's column space
-            const sspXOffset = parentPos.childrenX.get(id) || 0;
-            const parentXOffset = parentPos.x;
-
-            const y1 = SpYOffset + 50 + 320 + layout.rowIndex * 60; // relative to parent yOffset = SpYOffset + 50
-            const isLeftBranchInParent = parentLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
-            const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
-
-            // Staggered drop column for Sub-Sub Panels
-            let dropX = 0;
-            if (isLeftBranchInParent) {
-              dropX = parentXOffset + 150 - (i + 1) * 20;
-            } else {
-              dropX = parentXOffset + 650 + (i + 1) * 20;
-            }
-
-            // Staggered horizontal channels
-            const yChannel = SspYOffset - 75 + i * 12;
-            const sspFeedX = sspXOffset + 270;
-            const sspFeedY = SspYOffset + 150;
-
-            const pathY = y1 + 25;
-            let path = `M ${x1},${y1}`;
-            path += ` L ${x1},${pathY}`;
-            path += ` L ${dropX},${pathY}`;
-            path += ` L ${dropX},${yChannel}`;
-            path += ` L ${sspFeedX},${yChannel}`;
-            path += ` L ${sspFeedX},${sspFeedY}`;
-
-            return (
-              <g key={`page-l3-${id}`}>
-                {/* Routing Line connects SP branch to SSP feed */}
-                <path d={path} className="sld-thick" />
-
-                {/* Sub-Sub Panel Feeder Details Text Box overlaid on routing line */}
-                <rect
-                  x={sspFeedX - 62.5}
-                  y={sspFeedY - 90}
-                  width="125"
-                  height="20"
-                  fill="white"
-                  stroke="#0284c7"
-                  strokeWidth="0.5"
-                  rx="3"
-                />
-                <text
-                  x={sspFeedX}
-                  y={sspFeedY - 76}
-                  textAnchor="middle"
-                  className="sld-label-blue"
-                >
-                  FEED TO {layout.sp.panel.designation || `SSP-${i + 1}`}
-                </text>
-
-                {/* Sub-Sub Panel Fully Expanded Rendering */}
-                <text
-                  x={sspXOffset + 400}
-                  y={SspYOffset + 30}
-                  textAnchor="middle"
-                  className="sld-text"
-                  style={{ fontSize: "18px" }}
-                >
-                  SUB-SUB PANEL: {layout.sp.panel.designation || `SSP-${i + 1}`}
-                </text>
-                <SingleLineDiagramContent
-                  panel={layout.sp.panel}
-                  mainFeeder={layout.spData.mainFeeder}
-                  panelRows={layout.spRows}
-                  formatWireSize={formatWireSize}
-                  isSubPanel={true}
-                  xOffset={sspXOffset}
-                  yOffset={SspYOffset + 50}
+                  yOffset={yOffset + 50}
                 />
               </g>
             );
@@ -832,8 +764,7 @@ export default function SystemSLD({
                     },
                     "ALL",
                     [],
-                    undefined,
-                    subSubPanels || []
+                    undefined
                   );
                 }}
                 disabled={isExporting}
@@ -966,41 +897,62 @@ export default function SystemSLD({
                   />
                 </g>
       
-                {/* LEVEL 2: SUB PANELS & ROUTING LINES */}
-                {level2Layouts.map((layout, i) => {
+                {/* ALL SUB PANELS & ROUTING LINES */}
+                {resolvedLayouts.map((layout, i) => {
                   const isLeft = layout.isLeft;
                   const id = layout.sp.id;
-                  
-                  const pos = isLeft
-                    ? leftPositions.positions.get(id)
-                    : rightPositions.positions.get(id);
+                  const parentId = layout.parentId;
+      
+                  const depth = depths.get(id) || 2;
+                  const yOffset = yOffsets.get(depth) || 0;
+                  const pos = layoutPositions.get(id);
                   const spXOffset = pos ? pos.x : 0;
       
-                  const y1 = 50 + 320 + layout.rowIndex * 60;
-                  const x1 = MdpXOffset + (isLeft ? 190 : 610);
+                  let parentXOffset = MdpXOffset;
+                  let parentYOffset = 50; // MDP yOffset
+                  let isLeftBranchInParent = isLeft;
       
-                  let dropX = 0;
-                  if (isLeft) {
-                    dropX = MdpXOffset + 150 - (i + 1) * 20;
+                  if (parentId !== "mdp") {
+                    const pPos = layoutPositions.get(parentId);
+                    parentXOffset = pPos ? pPos.x : MdpXOffset;
+                    const pDepth = depths.get(parentId) || 2;
+                    parentYOffset = yOffsets.get(pDepth) || 50;
+                    const pLayout = resolvedLayouts.find((l) => l.sp.id === parentId);
+                    if (pLayout) {
+                      isLeftBranchInParent =
+                        pLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
+                    }
                   } else {
-                    dropX = MdpXOffset + 650 + (i + 1) * 20;
+                    isLeftBranchInParent = layout.tempIsLeft;
                   }
       
-                  const yChannel = SpYOffset - 75 + i * 12;
+                  const y1 = parentYOffset + 320 + layout.rowIndex * 60;
+                  const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
+      
+                  // Staggered drop column
+                  let dropX = 0;
+                  if (isLeftBranchInParent) {
+                    dropX = parentXOffset + 150 - ((i % 10) + 1) * 20;
+                  } else {
+                    dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
+                  }
+      
+                  // Staggered horizontal channels
+                  const yChannel = yOffset - 75 + (i % 10) * 12;
                   const spFeedX = spXOffset + 270;
-                  const spFeedY = SpYOffset + 150;
+                  const spFeedY = yOffset + 150;
       
                   const pathY = y1 + 25;
-                  let path = `M ${x1},${y1}`;
-                  path += ` L ${x1},${pathY}`;
-                  path += ` L ${dropX},${pathY}`;
-                  path += ` L ${dropX},${yChannel}`;
-                  path += ` L ${spFeedX},${yChannel}`;
-                  path += ` L ${spFeedX},${spFeedY}`;
+                  let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
+      
+                  const label = depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
       
                   return (
-                    <g key={`max-l2-${id}`}>
+                    <g key={`max-l${depth}-${id}`}>
+                      {/* Routing Line connects branch to feed */}
                       <path d={path} className="sld-thick" />
+      
+                      {/* Feeder Details Text Box overlaid on routing line */}
                       <rect
                         x={spFeedX - 62.5}
                         y={spFeedY - 90}
@@ -1017,17 +969,23 @@ export default function SystemSLD({
                         textAnchor="middle"
                         className="sld-label-blue"
                       >
-                        FEED TO {layout.sp.panel.designation || `SP-${i + 1}`}
+                        FEED TO {layout.sp.panel.designation || `${label}-${i + 1}`}
                       </text>
       
+                      {/* Sub Panel Fully Expanded Rendering */}
                       <text
                         x={spXOffset + 400}
-                        y={SpYOffset + 30}
+                        y={yOffset + 30}
                         textAnchor="middle"
                         className="sld-text"
                         style={{ fontSize: "18px" }}
                       >
-                        SUB-PANEL: {layout.sp.panel.designation || `SP-${i + 1}`}
+                        {depth === 2
+                          ? "SUB-PANEL"
+                          : depth === 3
+                          ? "SUB-SUB PANEL"
+                          : `LEVEL ${depth} PANEL`}
+                        : {layout.sp.panel.designation || `${label}-${i + 1}`}
                       </text>
                       <SingleLineDiagramContent
                         panel={layout.sp.panel}
@@ -1036,91 +994,7 @@ export default function SystemSLD({
                         formatWireSize={formatWireSize}
                         isSubPanel={true}
                         xOffset={spXOffset}
-                        yOffset={SpYOffset + 50}
-                      />
-                    </g>
-                  );
-                })}
-      
-                {/* LEVEL 3: SUB-SUB PANELS & ROUTING LINES */}
-                {level3Layouts.map((layout, i) => {
-                  const isLeft = layout.isLeft;
-                  const id = layout.sp.id;
-                  const parentId = layout.parentId;
-      
-                  const parentLayout = level2Layouts.find((l) => l.sp.id === parentId);
-                  if (!parentLayout) return null;
-      
-                  const parentPos = isLeft
-                    ? leftPositions.positions.get(parentId)
-                    : rightPositions.positions.get(parentId);
-                  if (!parentPos) return null;
-      
-                  const sspXOffset = parentPos.childrenX.get(id) || 0;
-                  const parentXOffset = parentPos.x;
-      
-                  const y1 = SpYOffset + 50 + 320 + layout.rowIndex * 60;
-                  const isLeftBranchInParent = parentLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
-                  const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
-      
-                  let dropX = 0;
-                  if (isLeftBranchInParent) {
-                    dropX = parentXOffset + 150 - (i + 1) * 20;
-                  } else {
-                    dropX = parentXOffset + 650 + (i + 1) * 20;
-                  }
-      
-                  const yChannel = SspYOffset - 75 + i * 12;
-                  const sspFeedX = sspXOffset + 270;
-                  const sspFeedY = SspYOffset + 150;
-      
-                  const pathY = y1 + 25;
-                  let path = `M ${x1},${y1}`;
-                  path += ` L ${x1},${pathY}`;
-                  path += ` L ${dropX},${pathY}`;
-                  path += ` L ${dropX},${yChannel}`;
-                  path += ` L ${sspFeedX},${yChannel}`;
-                  path += ` L ${sspFeedX},${sspFeedY}`;
-      
-                  return (
-                    <g key={`max-l3-${id}`}>
-                      <path d={path} className="sld-thick" />
-                      <rect
-                        x={sspFeedX - 62.5}
-                        y={sspFeedY - 90}
-                        width="125"
-                        height="20"
-                        fill="white"
-                        stroke="#0284c7"
-                        strokeWidth="0.5"
-                        rx="3"
-                      />
-                      <text
-                        x={sspFeedX}
-                        y={sspFeedY - 76}
-                        textAnchor="middle"
-                        className="sld-label-blue"
-                      >
-                        FEED TO {layout.sp.panel.designation || `SSP-${i + 1}`}
-                      </text>
-      
-                      <text
-                        x={sspXOffset + 400}
-                        y={SspYOffset + 30}
-                        textAnchor="middle"
-                        className="sld-text"
-                        style={{ fontSize: "18px" }}
-                      >
-                        SUB-SUB PANEL: {layout.sp.panel.designation || `SSP-${i + 1}`}
-                      </text>
-                      <SingleLineDiagramContent
-                        panel={layout.sp.panel}
-                        mainFeeder={layout.spData.mainFeeder}
-                        panelRows={layout.spRows}
-                        formatWireSize={formatWireSize}
-                        isSubPanel={true}
-                        xOffset={sspXOffset}
-                        yOffset={SspYOffset + 50}
+                        yOffset={yOffset + 50}
                       />
                     </g>
                   );

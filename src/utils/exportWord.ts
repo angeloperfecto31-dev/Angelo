@@ -259,7 +259,6 @@ export const exportToWord = async (
   illumParams: import('../types').IlluminationParams,
   images?: any,
   iscParams?: any,
-  subSubPanels: { id: string, panel: PanelConfig, circuits: Circuit[] }[] = [],
   transformerConfig?: any
 ) => {
   const docChildren: any[] = [];
@@ -649,8 +648,7 @@ export const exportToWord = async (
   
   const panelNames = [
     panel?.designation || 'Main Panel', 
-    ...subPanels.map(sp => sp.panel?.designation || 'Sub Panel'),
-    ...subSubPanels.map(ssp => ssp.panel?.designation || 'Sub-Sub Panel')
+    ...subPanels.map(sp => sp.panel?.designation || 'Sub Panel')
   ].join(', ');
   addTOCEntry("2.0", `Electrical Load Schedules & Feeder Sizing Calculations`, `Individual schedules, main feeder calculations, system balancing indices, and PEC standard safety map for panels: ${panelNames}.`, "Page 4", true);
   
@@ -702,8 +700,7 @@ export const exportToWord = async (
 
   const allPanelsToExport = [
     { panel, circuits }, 
-    ...subPanels.map(sp => ({ panel: sp.panel, circuits: sp.circuits })),
-    ...subSubPanels.map(ssp => ({ panel: ssp.panel, circuits: ssp.circuits }))
+    ...subPanels.map(sp => ({ panel: sp.panel, circuits: sp.circuits }))
   ];
 
   for (const { panel: p, circuits: c } of allPanelsToExport) {
@@ -719,7 +716,8 @@ export const exportToWord = async (
       mainCurrent: { baseAmp: maxBaseAmp, designAmp },
       mainFeeder: { wire, groundSize, cb, conduitSize, conduitType },
       phaseAmps,
-      phaseImbalance
+      phaseImbalance,
+      maxDemandDetails
     } = calcValues;
     const groundSizeString = groundSize.toString();
     const conduitSizeString = conduitSize;
@@ -730,62 +728,22 @@ export const exportToWord = async (
     let formulaText = "";
 
     if (is3PH) {
-      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-      c.forEach((cir) => {
-        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE) return;
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-        if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
-          cirV = cir.voltage || cirV;
-        }
-        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
-        if (is3Phase) {
-          localPhaseAmps.threePhase += loadI;
-        } else {
-          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
-        }
-      });
-
-      const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
-      let HML = 0;
-      motorCircuits.forEach((cir) => {
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-        const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
-        if (loadI > HML) {
-          HML = loadI;
-        }
-      });
-
-      const totalAmpere = Math.max(localPhaseAmps.R, localPhaseAmps.Y, localPhaseAmps.B);
       const connectionLabel = p.connectionType === "Line-to-Line" ? "Line-to-Line (AB, BC, CA)" : "Line-to-Neutral (AN, BN, CN)";
 
       stepDescription = `The system is Three-Phase (${p.system}) with ${connectionLabel} single-phase loading.
-- Highest Line Current (I_line) = ${totalAmpere.toFixed(2)} A
-- Total 3-Phase loads current (I_3ph) = ${localPhaseAmps.threePhase.toFixed(2)} A
-- Highest Motor Load (HML) = ${HML.toFixed(2)} A
+- Highest Line Current (I_line) = ${(maxDemandDetails.totalAmpere || 0).toFixed(2)} A
+- Total 3-Phase loads current (I_3ph) = ${(maxDemandDetails.total3Phase || 0).toFixed(2)} A
+- Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `\n- Sub-Panel Reflections (I_subpanels) = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}
 Using Philippine Electrical Code (PEC) demand rules with a system-wide 1.25 safety factor, the Maximum Demand Current is computed as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 = \\left[ (${totalAmpere.toFixed(2)} \\times 1.732) \\times 0.80 + ${localPhaseAmps.threePhase.toFixed(2)} + 0.25 \\times ${HML.toFixed(2)} \\right] \\times 1.25 = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     } else {
-      const totalConnectedVA = c.reduce((sum, curr) => curr.loadType === LoadType.SPACE || curr.loadType === LoadType.SPARE ? sum : sum + curr.loadVA, 0);
-      const motorCircuits = c.filter(cir => cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON);
-      let HML = 0;
-      motorCircuits.forEach(cir => {
-        const loadI = cir.loadA || (cir.loadVA / (cir.voltage || 230));
-        if (loadI > HML) {
-          HML = loadI;
-        }
-      });
-
       stepDescription = `The system is Single-Phase (${p.system}).
-- Total Connected Load = ${totalConnectedVA.toFixed(1)} VA
-- Highest Motor Load (HML) = ${HML.toFixed(2)} A
+- Total Connected Load = ${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)} VA
+- Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `\n- Sub-Panel Reflections (I_subpanels) = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}
 Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Current is calculated as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \times 1.25 = \\left[ \\left( \\frac{${totalConnectedVA.toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${HML.toFixed(2)} \\right] \\times 1.25 = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     }
 
     docChildren.push(
@@ -835,29 +793,57 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
     // Circuit Schedules Table
     const tableHeaderCells = [
-      "Cir No", "Description / Load Name", "Load Type", "Volts", "VA", "Ampere", "CB Rating", "Conductors", "Conduit"
-    ].map(t => new TableCell({ 
-      children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 16, color: "FFFFFF" })], alignment: AlignmentType.CENTER })], 
-      shading: { fill: "1B365D" },
-      verticalAlign: VerticalAlign.CENTER,
-      margins: { top: 80, bottom: 80, left: 80, right: 80 }
-    }));
+      "Cir No", "Description / Load Name", "Load Type", "Volts", "VA", is3PH ? "Ampere\n(R, Y, B, 3Ø)" : "Ampere", "CB Rating", "Conductors", "Conduit"
+    ].map(t => {
+      const texts = t.split("\n");
+      return new TableCell({ 
+        children: texts.map(tx => new Paragraph({ children: [new TextRun({ text: tx, bold: true, font: "Segoe UI", size: 14, color: "FFFFFF" })], alignment: AlignmentType.CENTER })), 
+        shading: { fill: "1B365D" },
+        verticalAlign: VerticalAlign.CENTER,
+        margins: { top: 80, bottom: 80, left: 80, right: 80 }
+      });
+    });
 
     const tableRows = [new TableRow({ children: tableHeaderCells, tableHeader: true })];
 
     c.forEach((cir, idx) => {
       const isEven = idx % 2 === 0;
       const rowShading = isEven ? "F8FAFC" : "FFFFFF";
-      const createCell = (text: string, align: typeof AlignmentType.CENTER | typeof AlignmentType.LEFT = AlignmentType.CENTER) => {
+      const createCell = (text: string | string[], align: typeof AlignmentType.CENTER | typeof AlignmentType.LEFT = AlignmentType.CENTER) => {
+         const texts = Array.isArray(text) ? text : [text];
          return new TableCell({ 
-           children: [new Paragraph({ children: [new TextRun({ text, font: "Segoe UI", size: 17, color: "334155" })], alignment: align })],
+           children: texts.map(tx => new Paragraph({ children: [new TextRun({ text: tx, font: "Segoe UI", size: 15, color: "334155" })], alignment: align })),
            shading: { fill: rowShading },
            verticalAlign: VerticalAlign.CENTER,
            margins: { top: 60, bottom: 60, left: 80, right: 80 }
          });
       };
 
-      const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE;
+      const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE;
+
+      let ampsContent: string | string[];
+      if (isSpace) {
+        ampsContent = "-";
+      } else if (is3PH) {
+        if (cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps) {
+          ampsContent = [
+            `R: ${cir.reflectedPhaseAmps.R > 0 ? cir.reflectedPhaseAmps.R.toFixed(2) + 'A' : '-'}`,
+            `Y: ${cir.reflectedPhaseAmps.Y > 0 ? cir.reflectedPhaseAmps.Y.toFixed(2) + 'A' : '-'}`,
+            `B: ${cir.reflectedPhaseAmps.B > 0 ? cir.reflectedPhaseAmps.B.toFixed(2) + 'A' : '-'}`,
+            `3Ø: ${cir.reflectedPhaseAmps.ThreePhase > 0 ? cir.reflectedPhaseAmps.ThreePhase.toFixed(2) + 'A' : '-'}`
+          ];
+        } else {
+          const phases = cir.phases || [];
+          ampsContent = [
+            `R: ${phases.includes("R") && phases.length < 3 ? cir.loadA.toFixed(2) + 'A' : '-'}`,
+            `Y: ${phases.includes("Y") && phases.length < 3 ? cir.loadA.toFixed(2) + 'A' : '-'}`,
+            `B: ${phases.includes("B") && phases.length < 3 ? cir.loadA.toFixed(2) + 'A' : '-'}`,
+            `3Ø: ${phases.length === 3 ? cir.loadA.toFixed(2) + 'A' : '-'}`
+          ];
+        }
+      } else {
+        ampsContent = cir.loadA.toFixed(2) + "A";
+      }
 
       tableRows.push(new TableRow({
         children: [
@@ -866,10 +852,10 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           createCell((cir.loadType || "GENERAL").toUpperCase()),
           createCell(cir.voltage?.toString() || "230"),
           createCell(cir.loadVA?.toString() || "0"),
-          createCell(cir.loadA?.toFixed(2) || "0.00"),
+          createCell(ampsContent),
           createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${cir.mcbP || 2}P`),
-          createCell(`${cir.wireSize || '3.5'} mm² THHN`),
-          createCell(`${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
+          createCell(isSpace ? "-" : `${cir.wireSize || '3.5'} mm² THHN`),
+          createCell(isSpace ? "-" : `${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
         ]
       }));
     });

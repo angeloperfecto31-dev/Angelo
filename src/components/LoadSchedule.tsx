@@ -997,238 +997,9 @@ export default function LoadSchedule({
     return amps;
   }, [circuits]);
 
-  const maxDemandDetails = useMemo(() => {
-    const is3PH = panel.system.includes("3PH");
-    const systemVoltage = panel.voltage || 230;
-
-    if (is3PH) {
-      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-      circuits.forEach((cir) => {
-        if (isIdleSpareOrSpace(cir))
-          return;
-
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV =
-          cir.voltage ||
-          getPanelSystemVoltageFallback(
-            panel.system,
-            is3Phase,
-            panel.connectionType,
-          );
-        if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
-          cirV = cir.voltage || cirV;
-        }
-
-        if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
-          localPhaseAmps.R += cir.reflectedPhaseAmps.R;
-          localPhaseAmps.Y += cir.reflectedPhaseAmps.Y;
-          localPhaseAmps.B += cir.reflectedPhaseAmps.B;
-          localPhaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
-        } else {
-          const loadI = is3Phase
-            ? cir.loadVA / (cirV * 1.732)
-            : cir.loadVA / cirV;
-
-          if (is3Phase) {
-            localPhaseAmps.threePhase += loadI;
-          } else {
-            if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-            if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-            if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
-          }
-        }
-      });
-
-      const motorCircuits = circuits.filter(
-        (cir) =>
-          cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-      );
-      let HML = 0;
-      motorCircuits.forEach((cir) => {
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV =
-          cir.voltage ||
-          getPanelSystemVoltageFallback(
-            panel.system,
-            is3Phase,
-            panel.connectionType,
-          );
-        const loadI = is3Phase
-          ? cir.loadVA / (cirV * 1.732)
-          : cir.loadVA / cirV;
-        if (loadI > HML) {
-          HML = loadI;
-        }
-      });
-
-      const totalAmpere = Math.max(
-        localPhaseAmps.R,
-        localPhaseAmps.Y,
-        localPhaseAmps.B,
-      );
-      const baseAmp =
-        (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
-
-      const totalConnectedVA = circuits.reduce(
-        (sum, curr) =>
-          isIdleSpareOrSpace(curr)
-            ? sum
-            : sum + curr.loadVA,
-        0,
-      );
-
-      return {
-        is3PH,
-        systemVoltage,
-        phaseR: localPhaseAmps.R,
-        phaseY: localPhaseAmps.Y,
-        phaseB: localPhaseAmps.B,
-        total3Phase: localPhaseAmps.threePhase,
-        totalAmpere,
-        totalConnectedVA,
-        HML,
-        baseAmp,
-        connectionType: panel.connectionType || "Line-to-Line",
-      };
-    } else {
-      const totalConnectedVA = circuits.reduce(
-        (sum, curr) =>
-          isIdleSpareOrSpace(curr)
-            ? sum
-            : sum + curr.loadVA,
-        0,
-      );
-      const motorCircuits = circuits.filter(
-        (cir) =>
-          cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-      );
-      let HML = 0;
-      motorCircuits.forEach((cir) => {
-        const loadI = cir.loadA || cir.loadVA / (cir.voltage || 230);
-        if (loadI > HML) {
-          HML = loadI;
-        }
-      });
-      const baseAmp = ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
-
-      return {
-        is3PH,
-        systemVoltage,
-        totalConnectedVA,
-        HML,
-        baseAmp,
-      };
-    }
-  }, [circuits, panel]);
-
-  const mainCurrent = useMemo(() => {
-    let maxBaseAmp = 0;
-    let maxDesignAmp = 0;
-
-    if (panel.system.includes("3PH")) {
-      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-      circuits.forEach((cir) => {
-        if (isIdleSpareOrSpace(cir))
-          return;
-
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV =
-          cir.voltage ||
-          getPanelSystemVoltageFallback(
-            panel.system,
-            is3Phase,
-            panel.connectionType,
-          );
-        if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
-          cirV = cir.voltage || cirV;
-        }
-
-        if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
-          localPhaseAmps.R += cir.reflectedPhaseAmps.R;
-          localPhaseAmps.Y += cir.reflectedPhaseAmps.Y;
-          localPhaseAmps.B += cir.reflectedPhaseAmps.B;
-          localPhaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
-        } else {
-          const loadI = is3Phase
-            ? cir.loadVA / (cirV * 1.732)
-            : cir.loadVA / cirV;
-
-          if (is3Phase) {
-            localPhaseAmps.threePhase += loadI;
-          } else {
-            if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-            if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-            if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
-          }
-        }
-      });
-
-      const motorCircuits = circuits.filter(
-        (cir) =>
-          cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-      );
-      let HML = 0;
-      motorCircuits.forEach((cir) => {
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        let cirV =
-          cir.voltage ||
-          getPanelSystemVoltageFallback(
-            panel.system,
-            is3Phase,
-            panel.connectionType,
-          );
-        const loadI = is3Phase
-          ? cir.loadVA / (cirV * 1.732)
-          : cir.loadVA / cirV;
-        if (loadI > HML) {
-          HML = loadI;
-        }
-      });
-
-      const totalAmpere = Math.max(
-        localPhaseAmps.R,
-        localPhaseAmps.Y,
-        localPhaseAmps.B,
-      );
-      const maxDemandCurrent =
-        (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) * 1.25;
-      const totalConnectedVA = circuits.reduce(
-        (sum, curr) =>
-          isIdleSpareOrSpace(curr)
-            ? sum
-            : sum + curr.loadVA,
-        0,
-      );
-
-      maxBaseAmp = maxDemandCurrent;
-      maxDesignAmp = maxDemandCurrent;
-    } else {
-      const totalConnectedVA = circuits.reduce(
-        (sum, curr) =>
-          isIdleSpareOrSpace(curr)
-            ? sum
-            : sum + curr.loadVA,
-        0,
-      );
-      const motorCircuits = circuits.filter(
-        (cir) =>
-          cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-      );
-      let HML = 0;
-      motorCircuits.forEach((cir) => {
-        const loadI = cir.loadA || cir.loadVA / (cir.voltage || 230);
-        if (loadI > HML) {
-          HML = loadI;
-        }
-      });
-      const maxDemandCurrent = ((totalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
-
-      maxBaseAmp = maxDemandCurrent;
-      maxDesignAmp = maxDemandCurrent;
-    }
-
-    return { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
-  }, [circuits, panel]);
+  const { maxDemandDetails, mainCurrent } = useMemo(() => {
+    return computePanelScheduleValues(panel, circuits, { vdCalculations, panelId: panel.designation || "main" });
+  }, [circuits, panel, vdCalculations]);
 
   const mainFeeder = useMemo(() => {
     // The design ampacity correctly incorporates Continuous (125%) + Non-Continuous (100%) + Largest Motor (25%)
@@ -2682,15 +2453,8 @@ export default function LoadSchedule({
                         >
                           {Object.keys(DESCRIPTION_CODES)
                             .filter((code) => {
-                              // Sub-Sub Panels cannot connect anything further down (no SUBSUB)
-                              if (isSubSubPanel) {
-                                return code !== "SUB" && code !== "SUBSUB";
-                              }
-                              // Sub-Panels can only connect to Sub-Sub Panels
-                              if (isSubPanel) {
-                                return code !== "SUB";
-                              }
-                              // MDP can only connect to Sub-Panels
+                              // Any panel can connect to a child panel (SUB). We don't restrict depth anymore.
+                              // But we'll hide "SUBSUB" type since "SUB" covers all child panels now.
                               return code !== "SUBSUB";
                             })
                             .map((code) => (
@@ -3514,10 +3278,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
-  &= \\left[ \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
-  &= \\left[ ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
-  &= ${((((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 \\\\
+  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} \\\\
+  &= \\left[ \\left( ${((maxDemandDetails.totalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  &= \\left[ ${(((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  &= ${((((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
   &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -3530,7 +3295,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
@@ -3547,7 +3312,7 @@ export default function LoadSchedule({
                     Mathematical Formula (3-Phase LaTeX)
                   </h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex="\text{Max Demand Current (3}\Phi\text{)} = \left[ (I_{\text{line}} \times 1.732) \times 0.80 + I_{3\Phi} + 0.25 \times \text{HML} \right] \times 1.25" />
+                    <LatexRenderer tex={`\\text{Max Demand Current (3}\\Phi\\text{)} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''}`} />
                   </div>
                 </div>
 
@@ -3601,6 +3366,17 @@ export default function LoadSchedule({
                         {(maxDemandDetails.HML || 0).toFixed(2)} A
                       </span>
                     </p>
+                    {maxDemandDetails.subPanelDemandAmps ? (
+                      <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
+                        <span>
+                          Sub-Panel Reflections (
+                          <span className="font-mono">I_subpanels</span>):
+                        </span>
+                        <span className="font-bold text-slate-800 dark:text-white">
+                          {(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A
+                        </span>
+                      </p>
+                    ) : null}
                   </div>
                 </div>
 
@@ -3612,10 +3388,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
-  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
-  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
-  &= ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8) + (maxDemandDetails.total3Phase || 0) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 \\\\
+  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} \\\\
+  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  &= ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8) + (maxDemandDetails.total3Phase || 0) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
   &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -3625,6 +3402,7 @@ export default function LoadSchedule({
                     <span className="text-[10px] text-zinc-500">
                       Includes 80% demand factor on line currents + separate
                       3-phase and 25% HML, adjusted by a 1.25 system-wide safety factor.
+
                     </span>
                     <button
                       onClick={() => {

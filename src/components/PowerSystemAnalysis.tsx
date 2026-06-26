@@ -25,7 +25,6 @@ interface PowerSystemAnalysisProps {
   panel: PanelConfig;
   circuits: Circuit[];
   subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
-  subSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
   iscParams: ShortCircuitParams;
   setIscParams: React.Dispatch<React.SetStateAction<ShortCircuitParams>>;
   vdCalculations: VoltageDropCalculation[];
@@ -42,7 +41,6 @@ export default function PowerSystemAnalysis({
   panel,
   circuits,
   subPanels,
-  subSubPanels,
   iscParams,
   setIscParams,
   vdCalculations,
@@ -157,60 +155,49 @@ export default function PowerSystemAnalysis({
         spDemandVA += va * getDemandFactor(c);
       });
 
+      // Find parent and calculate true depth level
+      let parentId = "mdp";
+      let level = 2;
+      
+      const getDepth = (childId: string, currentDepth: number): number => {
+        if (currentDepth > 10) return currentDepth; // prevent infinite loops
+        for (const candidate of subPanels) {
+          if (candidate.circuits.some(c => c.linkedSubPanelId === childId)) {
+             return getDepth(candidate.id, currentDepth + 1);
+          }
+        }
+        return currentDepth; // reached MDP
+      };
+
+      for (const parentCandidate of subPanels) {
+        if (parentCandidate.circuits.some(c => c.linkedSubPanelId === sp.id)) {
+          parentId = parentCandidate.id;
+          level = getDepth(sp.id, 2); 
+          break;
+        }
+      }
+
       // Find if there's any voltage drop calculation mapped to this subpanel
       const vdCalc = vdCalculations.find(v => v.id === sp.id || v.name.toLowerCase().includes(sp.panel.designation?.toLowerCase() || ""));
 
       nodes.push({
         id: sp.id,
         name: sp.panel.designation || `Sub-Panel Board (${sp.id})`,
-        type: "subpanel",
+        type: parentId === "mdp" ? "subpanel" : "subsubpanel",
         voltage: sp.panel.voltage || systemVoltage,
         connectedVA: spConnectedVA,
         demandVA: spDemandVA,
         powerFactor: 0.85,
-        level: 2,
-        parentId: "mdp",
+        level: level,
+        parentId: parentId,
         feederLength: vdCalc?.length || 20,
         feederSize: vdCalc?.wireSize || "14",
         feederRuns: 1,
       });
     });
 
-    // Sub-sub-panels
-    subSubPanels.forEach(ssp => {
-      let sspConnectedVA = 0;
-      let sspDemandVA = 0;
-      ssp.circuits.forEach(c => {
-        const va = Number(c.loadVA) || 0;
-        sspConnectedVA += va;
-        sspDemandVA += va * getDemandFactor(c);
-      });
-
-      const parentSubPanel = subPanels.find(sp => {
-        // Find if any circuit in the subpanel links to this subsubpanel
-        return sp.circuits.some(c => c.linkedSubPanelId === ssp.id);
-      }) || subPanels[0] || mdpNode;
-
-      const vdCalc = vdCalculations.find(v => v.id === ssp.id || v.name.toLowerCase().includes(ssp.panel.designation?.toLowerCase() || ""));
-
-      nodes.push({
-        id: ssp.id,
-        name: ssp.panel.designation || `Sub-Sub Panel (${ssp.id})`,
-        type: "subsubpanel",
-        voltage: ssp.panel.voltage || systemVoltage,
-        connectedVA: sspConnectedVA,
-        demandVA: sspDemandVA,
-        powerFactor: 0.85,
-        level: 3,
-        parentId: parentSubPanel.id,
-        feederLength: vdCalc?.length || 15,
-        feederSize: vdCalc?.wireSize || "8.0",
-        feederRuns: 1,
-      });
-    });
-
     return nodes;
-  }, [panel, circuits, subPanels, subSubPanels, iscParams, vdCalculations, systemVoltage, useCustomVoltage, customVoltageOverride]);
+  }, [panel, circuits, subPanels, iscParams, vdCalculations, systemVoltage, useCustomVoltage, customVoltageOverride]);
 
   // Load Flow Calculation Engine
   const loadFlowResults = useMemo(() => {
@@ -1463,7 +1450,6 @@ export default function PowerSystemAnalysis({
               panel={panel}
               circuits={circuits}
               subPanels={subPanels}
-              subSubPanels={subSubPanels}
               iscParams={iscParams}
               vdCalculations={vdCalculations}
               loadFlowResults={loadFlowResults}

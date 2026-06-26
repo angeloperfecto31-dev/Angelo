@@ -52,6 +52,8 @@ import Illumination3DModel from './Illumination3DModel';
 export interface IlluminationCalcProps {
   panel?: PanelConfig;
   circuits?: Circuit[];
+  subPanels?: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
+  vdCalculations?: any[];
   setCircuits?: React.Dispatch<React.SetStateAction<Circuit[]>>;
   setActiveTab?: (tab: 'schedule' | 'isc' | 'vd' | 'lighting') => void;
   activeTab?: string;
@@ -513,7 +515,7 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 
-export default function IlluminationCalc({ panel, circuits, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
+export default function IlluminationCalc({ panel, circuits, subPanels, vdCalculations, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
   // Synchronized custom imported fixtures state
   const [importedFixtures, setImportedFixtures] = useState<any[]>([]);
 
@@ -4394,10 +4396,10 @@ export default function IlluminationCalc({ panel, circuits, setCircuits, setActi
                            exportToCAD(
                              panel || dummyPanel,
                              circuits || [],
-                             [],
+                             subPanels || [],
                              defaultIscParams,
                              'ALL',
-                             [],
+                             vdCalculations || [],
                              illumData
                            );
                          }}

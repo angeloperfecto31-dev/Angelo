@@ -684,388 +684,229 @@ const drawSystemSLD = (
   mdpCalcData: any,
   subPanelsData: { id: string; panel: PanelConfig; circuits: Circuit[] }[],
   sheetWidth: number = 841,
-  sheetOffsetX: number = -1,
-  subSubPanelsData: { id: string; panel: PanelConfig; circuits: Circuit[] }[] = [],
+  sheetOffsetX: number = -1
 ) => {
   const previousMode = b.isSLDMode;
   b.isSLDMode = true;
   const xOffset = sheetOffsetX !== -1 ? sheetOffsetX : sheetIndex * 900;
 
-  const hasSubPanels = subPanelsData && subPanelsData.length > 0;
-  const hasSubSubPanels = subSubPanelsData && subSubPanelsData.length > 0;
+  // 1. Resolve layouts and parent-child relationships
+  interface SpLayout {
+    sp: { id: string; panel: PanelConfig; circuits: Circuit[] };
+    parentId: string;
+    isLeft: boolean;
+    tempIsLeft: boolean;
+    feedingCircuit: Circuit | null;
+  }
 
-  // Available layout space is between left margin and title block boundary
-  const layoutAreaW = sheetWidth - 140; // Title block is 130 + 10 margin
+  const spLayouts: SpLayout[] = [];
+
+  subPanelsData.forEach((sp) => {
+    let parentId = "mdp";
+    let feedingCircuit: Circuit | null = null;
+    let tempIsLeft = true;
+
+    for (const parent of subPanelsData) {
+      const match = parent.circuits.find(
+        (c) => c.linkedSubPanelId === sp.id || (sp.panel.designation && c.description === sp.panel.designation)
+      );
+      if (match) {
+        parentId = parent.id;
+        feedingCircuit = match;
+        break;
+      }
+    }
+
+    if (parentId === "mdp") {
+      const match = mdpCircuits.find(
+        (c) => c.linkedSubPanelId === sp.id || (sp.panel.designation && c.description === sp.panel.designation)
+      );
+      if (match) {
+        feedingCircuit = match;
+      } else {
+        const mdpSubCircuits = mdpCircuits.filter(
+          (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL
+        );
+        const idx = subPanelsData.findIndex(s => s.id === sp.id);
+        if (mdpSubCircuits.length > idx) {
+          feedingCircuit = mdpSubCircuits[idx];
+        }
+      }
+    }
+
+    spLayouts.push({ sp, parentId, isLeft: true, tempIsLeft, feedingCircuit });
+  });
+
+  const getChildren = (pid: string) => spLayouts.filter((l) => l.parentId === pid);
+
+  const getDepth = (id: string, seen: Set<string> = new Set()): number => {
+    if (seen.has(id)) return 2;
+    seen.add(id);
+    const layout = spLayouts.find((l) => l.sp.id === id);
+    if (!layout) return 2;
+    if (layout.parentId === "mdp") return 2;
+    return getDepth(layout.parentId, seen) + 1;
+  };
+
+  const depths = new Map<string, number>();
+  spLayouts.forEach((l) => {
+    depths.set(l.sp.id, getDepth(l.sp.id));
+  });
+
+  let maxDepth = 1;
+  depths.forEach((d) => {
+    if (d > maxDepth) maxDepth = d;
+  });
+
+  const getWidth = (id: string, seen: Set<string> = new Set()): number => {
+    if (seen.has(id)) return 110;
+    seen.add(id);
+    const children = getChildren(id);
+    if (children.length === 0) return 110;
+    return children.reduce((sum, c) => sum + getWidth(c.sp.id, seen), 0);
+  };
+
+  const widths = new Map<string, number>();
+  spLayouts.forEach((l) => {
+    widths.set(l.sp.id, getWidth(l.sp.id));
+  });
+
+  const layoutAreaW = sheetWidth - 140;
   let xBase_MDP = xOffset + layoutAreaW / 2;
-
-  // For standard sheets without subpanels, place around standard center
-  if (!hasSubPanels && sheetWidth === 841) {
+  if (spLayouts.length === 0 && sheetWidth === 841) {
     xBase_MDP = xOffset + 355;
   }
 
-  const yBase_MDP = hasSubPanels ? 520 : 400;
-
+  const yBase_MDP = 120 + (maxDepth - 1) * 200;
   const mdpCircuitCoords = drawCadPanelSLD(
-    b,
-    mdpPanel,
-    mdpCircuits,
-    mdpCalcData.mainFeeder,
-    xBase_MDP,
-    yBase_MDP,
-    false,
+    b, mdpPanel, mdpCircuits, mdpCalcData.mainFeeder, xBase_MDP, yBase_MDP, false
   );
 
-  const yBase_SP = hasSubSubPanels ? 320 : 220;
-  const yBase_SSP = 120;
+  const leftRoots: SpLayout[] = [];
+  const rightRoots: SpLayout[] = [];
 
-  if (hasSubPanels) {
-    const leftSPs: { sp: any; idx: number; coord?: any; xBase_SP?: number }[] = [];
-    const rightSPs: { sp: any; idx: number; coord?: any; xBase_SP?: number }[] = [];
-
-    // 1. Categorize Sub-Panels based on exactly where their Main Circuit Breaker is drawn
-    subPanelsData.forEach((sp, spIdx) => {
-      let mdpFeederIndex = mdpCircuits.findIndex(
-        (c) =>
-          c.linkedSubPanelId === sp.id ||
-          (sp.panel.designation && c.description === sp.panel.designation),
-      );
-
-      if (mdpFeederIndex < 0) {
-        const mdpSubCircuits = mdpCircuits.filter(
-          (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL,
-        );
-        if (mdpSubCircuits.length > spIdx) {
-          const matchingCircuit = mdpSubCircuits[spIdx];
-          mdpFeederIndex = mdpCircuits.findIndex(
-            (c) => c.id === matchingCircuit.id,
-          );
-        }
+  spLayouts.forEach((l) => {
+    if (l.parentId === "mdp") {
+      let isL = true;
+      if (l.feedingCircuit) {
+        const coord = mdpCircuitCoords.get(l.feedingCircuit.circuitNo);
+        if (coord) isL = coord.isLeft;
       }
+      l.tempIsLeft = isL;
+      if (isL) leftRoots.push(l);
+      else rightRoots.push(l);
+    }
+  });
 
-      let isLeft = true;
-      let coord = undefined;
-      const feedingCircuit =
-        mdpFeederIndex >= 0 ? mdpCircuits[mdpFeederIndex] : null;
-      if (feedingCircuit) {
-        coord = mdpCircuitCoords.get(feedingCircuit.circuitNo);
-        if (coord) {
-          isLeft = coord.isLeft;
-        }
-      }
+  const resolveIsLeft = (id: string, seen: Set<string> = new Set()): boolean => {
+    if (seen.has(id)) return true;
+    seen.add(id);
+    const layout = spLayouts.find(l => l.sp.id === id);
+    if (!layout) return true;
+    if (layout.parentId === "mdp") return layout.tempIsLeft;
+    return resolveIsLeft(layout.parentId, seen);
+  };
 
-      if (isLeft) {
-        leftSPs.push({ sp, idx: spIdx, coord });
-      } else {
-        rightSPs.push({ sp, idx: spIdx, coord });
-      }
+  spLayouts.forEach((l) => {
+    l.isLeft = resolveIsLeft(l.sp.id);
+  });
+
+  const positions = new Map<string, number>();
+  const placeChildren = (parentId: string, startX: number) => {
+    let currentX = startX;
+    const children = getChildren(parentId);
+    children.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
+    
+    children.forEach((c) => {
+      const w = widths.get(c.sp.id) || 110;
+      const cx = currentX + w / 2;
+      positions.set(c.sp.id, cx);
+      placeChildren(c.sp.id, currentX);
+      currentX += w;
     });
+  };
 
-    const drawnSspIds = new Set<string>();
+  const leftTotalWidth = leftRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 110), 0);
+  const leftSpan = xBase_MDP - 100 - (xOffset + 60);
+  const leftS = leftSpan - leftTotalWidth;
+  const leftGap = leftRoots.length > 0 ? leftS / (leftRoots.length + 1) : 0;
 
-    // Helper to calculate required width of a sub-panel layout group based on its child subsub panels
-    const getRequiredWidth = (sp: { id: string; panel: PanelConfig; circuits: Circuit[] }) => {
-      const children = subSubPanelsData.filter((ssp) =>
-        sp.circuits.some(
-          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id,
-        ),
-      );
-      if (children.length === 0) return 90; // basic compact sub-panel width plus margins
-      return children.length * 110; // width of all children spaced at 110
-    };
+  let currentLeftX = xOffset + 60;
+  leftRoots.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
+  leftRoots.forEach((r) => {
+    const w = widths.get(r.sp.id) || 110;
+    const cx = currentLeftX + leftGap + w / 2;
+    positions.set(r.sp.id, cx);
+    placeChildren(r.sp.id, currentLeftX + leftGap);
+    currentLeftX += w + leftGap;
+  });
 
-    // Calculate proportional positions for left subpanels to avoid horizontal overlaps
-    const leftTotalWidth = leftSPs.reduce((acc, item) => acc + getRequiredWidth(item.sp), 0);
-    const leftSpan = xBase_MDP - 100 - (xOffset + 60);
-    const leftS = leftSpan - leftTotalWidth;
-    const leftGap = leftSPs.length > 0 ? leftS / (leftSPs.length + 1) : 0;
+  const rightTotalWidth = rightRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 110), 0);
+  const rightSpan = (xOffset + layoutAreaW - 60) - (xBase_MDP + 100);
+  const rightS = rightSpan - rightTotalWidth;
+  const rightGap = rightRoots.length > 0 ? rightS / (rightRoots.length + 1) : 0;
 
-    let currentLeftX = xOffset + 60;
-    leftSPs.forEach((item, idx) => {
-      const w = getRequiredWidth(item.sp);
-      const centerSP = currentLeftX + leftGap + w / 2;
-      item.xBase_SP = centerSP;
-      currentLeftX = centerSP + w / 2;
-    });
+  let currentRightX = xBase_MDP + 100;
+  rightRoots.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
+  rightRoots.forEach((r) => {
+    const w = widths.get(r.sp.id) || 110;
+    const cx = currentRightX + rightGap + w / 2;
+    positions.set(r.sp.id, cx);
+    placeChildren(r.sp.id, currentRightX + rightGap);
+    currentRightX += w + rightGap;
+  });
 
-    // Calculate proportional positions for right subpanels to avoid horizontal overlaps
-    const rightTotalWidth = rightSPs.reduce((acc, item) => acc + getRequiredWidth(item.sp), 0);
-    const rightSpan = (xOffset + layoutAreaW - 60) - (xBase_MDP + 100);
-    const rightS = rightSpan - rightTotalWidth;
-    const rightGap = rightSPs.length > 0 ? rightS / (rightSPs.length + 1) : 0;
+  const drawnCoords = new Map<string, Map<number, { arrowX: number, arrowY: number, isLeft: boolean }>>();
+  drawnCoords.set("mdp", mdpCircuitCoords);
 
-    let currentRightX = xBase_MDP + 100;
-    rightSPs.forEach((item, idx) => {
-      const w = getRequiredWidth(item.sp);
-      const centerSP = currentRightX + rightGap + w / 2;
-      item.xBase_SP = centerSP;
-      currentRightX = centerSP + w / 2;
-    });
-
-    const drawSubPanel = (
-      item: { sp: any; idx: number; coord?: any; xBase_SP?: number },
-      spIndex: number,
-      totalInSide: number,
-      isLeftPanel: boolean,
-    ) => {
-      const sp = item.sp;
-      const coord = item.coord;
-      const xBase_SP = item.xBase_SP || (isLeftPanel ? xOffset + 180 : xOffset + 530);
-
+  for (let d = 2; d <= maxDepth; d++) {
+    const layoutsAtDepth = spLayouts.filter(l => depths.get(l.sp.id) === d);
+    const yBase = 120 + (maxDepth - d) * 200;
+    
+    layoutsAtDepth.forEach((layout, index) => {
+      const sp = layout.sp;
+      const xBase = positions.get(sp.id) || xOffset + 355;
+      
       const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits);
-      const spCircuitCoords = drawCadPanelSLD(
-        b,
-        sp.panel,
-        sp.circuits,
-        spCalcData.mainFeeder,
-        xBase_SP,
-        yBase_SP,
-        true,
-        `FED FROM ${mdpPanel.designation || "MDP"}`
+      const parentLabel = layout.parentId === "mdp" ? `FED FROM ${mdpPanel.designation || "MDP"}` : `FED FROM SUB-PANEL`;
+      
+      const coords = drawCadPanelSLD(
+        b, sp.panel, sp.circuits, spCalcData.mainFeeder, xBase, yBase, true, parentLabel
       );
-
-      if (coord) {
-        const xStart = coord.arrowX;
-        const yStart = coord.arrowY;
-        const isLeft = coord.isLeft;
-
-        // Route gutter strictly at ±80 to bypass MDP completely but not hit inner subpanels
-        const xGutter = xBase_MDP + (isLeft ? -80 : 80);
-        const yChannel = (hasSubSubPanels ? 370 : 270) + spIndex * 6; // stagger to prevent overlapping lines
-
-        b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
-        b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
-        b.addLine(xGutter, yChannel, xBase_SP, yChannel, "SLD_FEEDER");
-        b.addLine(xBase_SP, yChannel, xBase_SP, yBase_SP, "SLD_FEEDER");
-
-        b.addRect(
-          xBase_SP - 26,
-          yBase_SP + 10,
-          xBase_SP + 26,
-          yBase_SP + 18,
-          "BORDER",
-        );
-        b.addText(
-          `FEED TO ${sp.panel.designation || "SUB-PANEL"}`,
-          xBase_SP,
-          yBase_SP + 12.5,
-          1.3,
-          0,
-          "TEXT_HEADER",
-          "center",
-        );
+      drawnCoords.set(sp.id, coords);
+      
+      const parentCoords = drawnCoords.get(layout.parentId);
+      if (parentCoords && layout.feedingCircuit) {
+        const coord = parentCoords.get(layout.feedingCircuit.circuitNo);
+        if (coord) {
+          const xStart = coord.arrowX;
+          const yStart = coord.arrowY;
+          
+          let pXBase = xBase_MDP;
+          if (layout.parentId !== "mdp") {
+            pXBase = positions.get(layout.parentId) || xBase_MDP;
+          }
+          
+          const isLeft = coord.isLeft;
+          const xGutter = pXBase + (isLeft ? -75 : 75) + (isLeft ? -(index % 5) * 6 : (index % 5) * 6);
+          const yChannel = yBase + 60 + (index % 10) * 8;
+          
+          b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
+          b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
+          b.addLine(xGutter, yChannel, xBase, yChannel, "SLD_FEEDER");
+          b.addLine(xBase, yChannel, xBase, yBase, "SLD_FEEDER");
+        } else {
+          b.addLine(xBase, yBase + 100, xBase, yBase, "SLD_FEEDER");
+        }
+      } else {
+        b.addLine(xBase, yBase + 100, xBase, yBase, "SLD_FEEDER");
       }
-
-      // Draw children Sub-Sub Panels
-      const myChildren = subSubPanelsData.filter((ssp) =>
-        sp.circuits.some(
-          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id,
-        ),
-      );
-
-      // Separate into left and right sub-sub-panels based on feeding circuit breaker
-      const leftSSPs: { ssp: any; coord: any; feedingCircuit: any }[] = [];
-      const rightSSPs: { ssp: any; coord: any; feedingCircuit: any }[] = [];
-
-      myChildren.forEach((ssp) => {
-        const feedingCircuit = sp.circuits.find(
-          (c) => c.loadType === LoadType.SUB_SUB_PANEL && c.linkedSubPanelId === ssp.id,
-        );
-        const sspCoord = feedingCircuit
-          ? spCircuitCoords.get(feedingCircuit.circuitNo)
-          : null;
-        
-        const isLeft = sspCoord ? sspCoord.isLeft : true;
-        if (isLeft) {
-          leftSSPs.push({ ssp, coord: sspCoord, feedingCircuit });
-        } else {
-          rightSSPs.push({ ssp, coord: sspCoord, feedingCircuit });
-        }
-      });
-
-      // Sort both left and right lists by circuitNo ascending for cleaner parallel layouts
-      leftSSPs.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
-      rightSSPs.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
-
-      const numLeft = leftSSPs.length;
-      const numRight = rightSSPs.length;
-      const totalSSPs = numLeft + numRight;
-
-      const numRows_SP = Math.max(...sp.circuits.map((c) => c.circuitNo), 0);
-      const rowsCount_SP = Math.ceil(numRows_SP / 2);
-      const boxBottom_SP = (yBase_SP - 55) - 18 - (rowsCount_SP - 1) * 16 - 8;
-
-      // Spacing between panels
-      const sspSpacing = 110;
-
-      // Render Left SSPs
-      leftSSPs.forEach((item, lIdx) => {
-        const ssp = item.ssp;
-        drawnSspIds.add(ssp.id);
-
-        let xBase_SSP = xBase_SP;
-        if (totalSSPs === 1) {
-          xBase_SSP = xBase_SP;
-        } else {
-          xBase_SSP = xBase_SP - 65 - (numLeft - 1 - lIdx) * sspSpacing;
-        }
-
-        const sspCalcData = computePanelScheduleValues(ssp.panel, ssp.circuits);
-        drawCadPanelSLD(
-          b,
-          ssp.panel,
-          ssp.circuits,
-          sspCalcData.mainFeeder,
-          xBase_SSP,
-          yBase_SSP,
-          true,
-          `FED FROM ${sp.panel.designation || "SUB-PANEL"}`
-        );
-
-        // Path routing
-        const gIndex = lIdx; // global index for staggered horizontal channels
-        const yChannel = boxBottom_SP - 26 - gIndex * 8;
-
-        if (item.coord) {
-          const xStart = item.coord.arrowX;
-          const yStart = item.coord.arrowY;
-
-          // Staggered xGutter to prevent vertical line overlaps
-          const xGutter = xBase_SP - 50 - lIdx * 6;
-
-          b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
-          b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
-          b.addLine(xGutter, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
-          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
-        } else {
-          const xStart = xBase_SP;
-          const yStart = boxBottom_SP;
-          b.addLine(xStart, yStart, xStart, yChannel, "SLD_FEEDER");
-          b.addLine(xStart, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
-          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
-        }
-
-        b.addRect(
-          xBase_SSP - 26,
-          yBase_SSP + 10,
-          xBase_SSP + 26,
-          yBase_SSP + 18,
-          "BORDER",
-        );
-        b.addText(
-          `FEED TO ${ssp.panel.designation || "SUB-SUB PANEL"}`,
-          xBase_SSP,
-          yBase_SSP + 12.5,
-          1.3,
-          0,
-          "TEXT_HEADER",
-          "center",
-        );
-      });
-
-      // Render Right SSPs
-      rightSSPs.forEach((item, rIdx) => {
-        const ssp = item.ssp;
-        drawnSspIds.add(ssp.id);
-
-        let xBase_SSP = xBase_SP;
-        if (totalSSPs === 1) {
-          xBase_SSP = xBase_SP;
-        } else {
-          xBase_SSP = xBase_SP + 65 + rIdx * sspSpacing;
-        }
-
-        const sspCalcData = computePanelScheduleValues(ssp.panel, ssp.circuits);
-        drawCadPanelSLD(
-          b,
-          ssp.panel,
-          ssp.circuits,
-          sspCalcData.mainFeeder,
-          xBase_SSP,
-          yBase_SSP,
-          true,
-          `FED FROM ${sp.panel.designation || "SUB-PANEL"}`
-        );
-
-        // Path routing
-        const gIndex = numLeft + rIdx; // global index for staggered horizontal channels
-        const yChannel = boxBottom_SP - 26 - gIndex * 8;
-
-        if (item.coord) {
-          const xStart = item.coord.arrowX;
-          const yStart = item.coord.arrowY;
-
-          // Staggered xGutter to prevent vertical line overlaps
-          const xGutter = xBase_SP + 50 + rIdx * 6;
-
-          b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
-          b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
-          b.addLine(xGutter, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
-          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
-        } else {
-          const xStart = xBase_SP;
-          const yStart = boxBottom_SP;
-          b.addLine(xStart, yStart, xStart, yChannel, "SLD_FEEDER");
-          b.addLine(xStart, yChannel, xBase_SSP, yChannel, "SLD_FEEDER");
-          b.addLine(xBase_SSP, yChannel, xBase_SSP, yBase_SSP, "SLD_FEEDER");
-        }
-
-        b.addRect(
-          xBase_SSP - 26,
-          yBase_SSP + 10,
-          xBase_SSP + 26,
-          yBase_SSP + 18,
-          "BORDER",
-        );
-        b.addText(
-          `FEED TO ${ssp.panel.designation || "SUB-SUB PANEL"}`,
-          xBase_SSP,
-          yBase_SSP + 12.5,
-          1.3,
-          0,
-          "TEXT_HEADER",
-          "center",
-        );
-      });
-    };
-
-    leftSPs.forEach((item, index) =>
-      drawSubPanel(item, index, leftSPs.length, true),
-    );
-    rightSPs.forEach((item, index) =>
-      drawSubPanel(item, index, rightSPs.length, false),
-    );
-
-    // Orphans fallback
-    const orphans = subSubPanelsData.filter((ssp) => !drawnSspIds.has(ssp.id));
-    orphans.forEach((ssp, oIdx) => {
-      const xBase_SSP = xOffset + 355 + (oIdx * 110);
-      const sspCalcData = computePanelScheduleValues(ssp.panel, ssp.circuits);
-      drawCadPanelSLD(
-        b,
-        ssp.panel,
-        ssp.circuits,
-        sspCalcData.mainFeeder,
-        xBase_SSP,
-        yBase_SSP,
-        true,
-        "FED FROM SUB-PANEL"
-      );
-
-      b.addRect(
-        xBase_SSP - 26,
-        yBase_SSP + 10,
-        xBase_SSP + 26,
-        yBase_SSP + 18,
-        "BORDER",
-      );
+      
+      b.addRect(xBase - 26, yBase + 10, xBase + 26, yBase + 18, "BORDER");
+      const labelText = d === 2 ? "SUB-PANEL" : d === 3 ? "SUB-SUB PANEL" : `LEVEL ${d} PANEL`;
       b.addText(
-        `FEED TO ${ssp.panel.designation || "SUB-SUB PANEL"}`,
-        xBase_SSP,
-        yBase_SSP + 12.5,
-        1.3,
-        0,
-        "TEXT_HEADER",
-        "center",
+        `FEED TO ${sp.panel.designation || labelText}`,
+        xBase, yBase + 12.5, 1.3, 0, "TEXT_HEADER", "center"
       );
     });
   }
@@ -1179,8 +1020,7 @@ export const exportToCAD = (
     | "SHORT_CIRCUIT"
     | "VOLTAGE_DROP" = "ALL",
   vdCalculations: VoltageDropCalculation[] = [],
-  illumParams?: any,
-  subSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[] = [],
+  illumParams?: any
 ) => {
   const b = new DxfBuilder();
 
@@ -1373,7 +1213,7 @@ export const exportToCAD = (
   const includeSLDSheet =
     exportMode === "ALL" || exportMode === "LOAD_SCHEDULE";
   const hasIllumination = !!(illumParams?.savedRooms && illumParams.savedRooms.length > 0);
-  const allSubPanels = [...subPanels, ...subSubPanels];
+  const allSubPanels = subPanels;
   let totalSheets = 4;
   if (exportMode === "ALL") {
     let baseSheets = 4 + Math.ceil(allSubPanels.length / 2);
@@ -2029,10 +1869,11 @@ export const exportToCAD = (
       // Col 6: PHASE
       let phaseStr = "-";
       if (!isSpace && !isSpare) {
-        if (cir.phases.length === 3) {
+        const phases = cir.phases || [];
+        if (phases.length === 3) {
           phaseStr = "3P";
-        } else if (cir.phases.length > 0) {
-          phaseStr = cir.phases.join(",");
+        } else if (phases.length > 0) {
+          phaseStr = phases.join(",");
         }
       }
       b.addText(
@@ -2059,32 +1900,48 @@ export const exportToCAD = (
           cols[6].w - 2
         );
       } else {
+        const phases = cir.phases || [];
         const phRVal =
-          !isSpace &&
-          !isSpare &&
-          cir.phases.includes("R") &&
-          cir.phases.length < 3
+          isSpace || isSpare
+            ? "-"
+            : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
+            ? cir.reflectedPhaseAmps.R > 0
+              ? `${cir.reflectedPhaseAmps.R.toFixed(2)}A`
+              : "-"
+            : phases.includes("R") && phases.length < 3
             ? `${cir.loadA.toFixed(2)}A`
             : "-";
+            
         const phYVal =
-          !isSpace &&
-          !isSpare &&
-          cir.phases.includes("Y") &&
-          cir.phases.length < 3
+          isSpace || isSpare
+            ? "-"
+            : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
+            ? cir.reflectedPhaseAmps.Y > 0
+              ? `${cir.reflectedPhaseAmps.Y.toFixed(2)}A`
+              : "-"
+            : phases.includes("Y") && phases.length < 3
             ? `${cir.loadA.toFixed(2)}A`
             : "-";
+            
         const phBVal =
-          !isSpace &&
-          !isSpare &&
-          cir.phases.includes("B") &&
-          cir.phases.length < 3
+          isSpace || isSpare
+            ? "-"
+            : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
+            ? cir.reflectedPhaseAmps.B > 0
+              ? `${cir.reflectedPhaseAmps.B.toFixed(2)}A`
+              : "-"
+            : phases.includes("B") && phases.length < 3
             ? `${cir.loadA.toFixed(2)}A`
             : "-";
+            
         const ph3PVal =
-          !isSpace &&
-          !isSpare &&
-          cir.phases.includes("B") &&
-          cir.phases.length === 3
+          isSpace || isSpare
+            ? "-"
+            : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
+            ? cir.reflectedPhaseAmps.ThreePhase > 0
+              ? `${cir.reflectedPhaseAmps.ThreePhase.toFixed(2)}A`
+              : "-"
+            : phases.length === 3
             ? `${cir.loadA.toFixed(2)}A`
             : "-";
 
@@ -2444,97 +2301,40 @@ export const exportToCAD = (
     // Local Helper delegation for System Voltage Fallback
     const getSystemVoltageLFallback = getPanelSystemVoltageFallback;
 
-    // Calculate Highest Motor Load (HML) in Amperes
-    const motorCircuitsList = currentCircuits.filter(
-      (cir) =>
-        cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-    );
-    let hmlCurrent = 0;
-    motorCircuitsList.forEach((cir) => {
-      const is3Phase = cir.phases && cir.phases.length === 3;
-      const cirV =
-        cir.voltage ||
-        getSystemVoltageLFallback(
-          currentPanel.system,
-          is3Phase,
-          currentPanel.connectionType,
-        );
-      const loadI = is3Phase
-        ? cir.loadVA / (cirV * 1.732)
-        : cir.loadA || cir.loadVA / cirV;
-      if (loadI > hmlCurrent) {
-        hmlCurrent = loadI;
-      }
-    });
-
     // 2. Base Demand Current (I_demand) Calculation
+    const maxDemandDetails = currentCalcData.maxDemandDetails;
     writeCalcLine("2. TOTAL BASE DEMAND CURRENT (I_demand)", cy, "TEXT_HEADER");
     cy -= 6;
     if (isPanel3Phase) {
-      let totalAmpere = 0;
-      let total3Phase = 0;
-      const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-
-      currentCircuits.forEach((cir) => {
-        if (cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE)
-          return;
-
-        const is3Phase = cir.phases && cir.phases.length === 3;
-        const cirV =
-          cir.voltage ||
-          getSystemVoltageLFallback(
-            currentPanel.system,
-            is3Phase,
-            currentPanel.connectionType,
-          );
-        const loadI = is3Phase
-          ? cir.loadVA / (cirV * 1.732)
-          : cir.loadVA / cirV;
-
-        if (is3Phase) {
-          localPhaseAmps.threePhase += loadI;
-        } else {
-          if (cir.phases.includes("R")) localPhaseAmps.R += loadI;
-          if (cir.phases.includes("Y")) localPhaseAmps.Y += loadI;
-          if (cir.phases.includes("B")) localPhaseAmps.B += loadI;
-        }
-      });
-      total3Phase = localPhaseAmps.threePhase;
-      totalAmpere = Math.max(
-        localPhaseAmps.R,
-        localPhaseAmps.Y,
-        localPhaseAmps.B,
-      );
-
       writeCalcLine(
-        `Formula: I_demand = ((I_line * 1.732) * 0.80 + I_3ph + 0.25 * HML) * 1.25`,
+        `Formula: I_demand = ((I_line * 1.732) * 0.80 + I_3ph + 0.25 * HML) * 1.25${maxDemandDetails.subPanelDemandAmps ? ' + I_subpanels' : ''}`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Values: I_line = ${totalAmpere.toFixed(2)} A, I_3ph = ${total3Phase.toFixed(2)} A, HML = ${hmlCurrent.toFixed(2)} A`,
+        `Values: I_line = ${(maxDemandDetails.totalAmpere || 0).toFixed(2)} A, I_3ph = ${(maxDemandDetails.total3Phase || 0).toFixed(2)} A, HML = ${(maxDemandDetails.HML || 0).toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `, I_subpanels = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Math: ((${totalAmpere.toFixed(2)} * 1.732) * 0.80 + ${total3Phase.toFixed(2)} + 0.25 * ${hmlCurrent.toFixed(2)}) * 1.25 = ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+        `Math: (((${maxDemandDetails.totalAmpere.toFixed(2)} * 1.732) * 0.80) + ${maxDemandDetails.total3Phase.toFixed(2)} + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25${maxDemandDetails.subPanelDemandAmps ? ` + ${maxDemandDetails.subPanelDemandAmps.toFixed(2)}` : ''} = ${maxDemandDetails.baseAmp.toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );
       cy -= 12;
     } else {
       writeCalcLine(
-        `Formula: I_demand = ((Total VA / 230) * 0.80 + 0.25 * HML) * 1.25`,
+        `Formula: I_demand = ((Total VA / 230) * 0.80 + 0.25 * HML) * 1.25${maxDemandDetails.subPanelDemandAmps ? ' + I_subpanels' : ''}`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Values: totalVA = ${currentCalcData.totalVA.toFixed(1)} VA, HML = ${hmlCurrent.toFixed(2)} A`,
+        `Values: totalVA = ${maxDemandDetails.totalConnectedVA.toFixed(1)} VA, HML = ${maxDemandDetails.HML.toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `, I_subpanels = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Math: ((${(currentCalcData.totalVA / 230).toFixed(2)}) * 0.80 + 0.25 * ${hmlCurrent.toFixed(2)}) * 1.25 = ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+        `Math: (((${maxDemandDetails.totalConnectedVA.toFixed(1)} / 230) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25${maxDemandDetails.subPanelDemandAmps ? ` + ${maxDemandDetails.subPanelDemandAmps.toFixed(2)}` : ''} = ${maxDemandDetails.baseAmp.toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );
@@ -2655,8 +2455,7 @@ export const exportToCAD = (
       calcData,
       subPanels,
       sConfig.w,
-      sConfig.xOffset,
-      subSubPanels,
+      sConfig.xOffset
     );
   }
 
@@ -3929,6 +3728,9 @@ export const exportToCAD = (
           sourceLabel = `${foundPanel.panel.system} / ${foundPanel.panel.designation || (foundPanel.id === "main" ? "MDP" : "Sub Panel")}`;
         } else {
           sourceLabel = calc.source || "Local Distribution";
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceLabel)) {
+            sourceLabel = "Local Distribution";
+          }
         }
       }
 
