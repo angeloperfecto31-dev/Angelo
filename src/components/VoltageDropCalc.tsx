@@ -9,6 +9,8 @@ import {
   Trash2,
   CheckCircle2,
   Layers,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import {
   VoltageDropCalculation,
@@ -47,8 +49,9 @@ export default function VoltageDropCalc({
   isPremium = true,
   onRequestUpgrade,
 }: VoltageDropCalcProps) {
-  const [source, setSource] = useState<string>("custom");
-  const [newLength, setNewLength] = useState<number>(30);
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({ main: true });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const allSubPanels = useMemo(() => {
     const rawAllSubPanels = [...(subPanels || []), ...(subSubPanels || [])];
@@ -61,14 +64,103 @@ export default function VoltageDropCalc({
     });
   }, [subPanels, subSubPanels]);
 
+  // Auto-sync calculations with the hierarchy
+  useEffect(() => {
+    const newCalcs: VoltageDropCalculation[] = [];
+    
+    const getLength = (sourceId: string) => {
+      const existing = calculations.find(c => c.source === sourceId);
+      return existing ? existing.length : 30; // default 30m
+    };
 
+    if (panel && circuits) {
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits, { availableSubPanels: allSubPanels });
+      const is3PH = panel.system.includes("3PH");
+      newCalcs.push({
+        id: calculations.find(c => c.source === "main")?.id || crypto.randomUUID(),
+        source: "main",
+        name: "Main Feeder",
+        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+        length: getLength("main"),
+        wireSize: mainFeeder.wire.size.toString(),
+        wireSets: mainFeeder.wire.runs,
+        voltage: panel.voltage,
+        systemType: is3PH ? "3PH" : "1PH",
+      });
+      
+      circuits.forEach(c => {
+         if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+         newCalcs.push({
+            id: calculations.find(x => x.source === c.id)?.id || crypto.randomUUID(),
+            source: c.id,
+            name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
+            loadA: c.loadA,
+            length: getLength(c.id),
+            wireSize: c.wireSize,
+            wireSets: c.wireSets,
+            voltage: c.voltage,
+            systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
+         });
+      });
+    }
+
+    allSubPanels.forEach(sp => {
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: allSubPanels });
+      const is3PH = sp.panel.system.includes("3PH");
+      newCalcs.push({
+        id: calculations.find(c => c.source === sp.id)?.id || crypto.randomUUID(),
+        source: sp.id,
+        name: `${sp.panel.designation || "Sub-Panel"} Feeder`,
+        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+        length: getLength(sp.id),
+        wireSize: mainFeeder.wire.size.toString(),
+        wireSets: mainFeeder.wire.runs,
+        voltage: sp.panel.voltage,
+        systemType: is3PH ? "3PH" : "1PH",
+      });
+
+      sp.circuits.forEach(c => {
+         if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+         newCalcs.push({
+            id: calculations.find(x => x.source === c.id)?.id || crypto.randomUUID(),
+            source: c.id,
+            name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
+            loadA: c.loadA,
+            length: getLength(c.id),
+            wireSize: c.wireSize,
+            wireSets: c.wireSets,
+            voltage: c.voltage,
+            systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
+         });
+      });
+    });
+
+    // Check for changes
+    let changed = false;
+    if (newCalcs.length !== calculations.length) {
+      changed = true;
+    } else {
+       for(let i=0; i<newCalcs.length; i++) {
+          if (newCalcs[i].source !== calculations[i].source ||
+              newCalcs[i].loadA !== calculations[i].loadA ||
+              newCalcs[i].wireSize !== calculations[i].wireSize ||
+              newCalcs[i].length !== calculations[i].length ||
+              newCalcs[i].name !== calculations[i].name) {
+             changed = true; break;
+          }
+       }
+    }
+    
+    if (changed) {
+       setCalculations(newCalcs);
+    }
+  }, [panel, circuits, allSubPanels]);
 
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data =
       WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-    let R = data.r;
+    let R = data ? data.r : 5.76;
     
-    // Multiple cable sets in parallel reduce the effective resistance
     const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
     R = R / sets;
 
@@ -85,6 +177,7 @@ export default function VoltageDropCalc({
       vd: vd.toFixed(2),
       vdPercentage: vdPercentage.toFixed(2),
       isCompliant: vdPercentage <= limit,
+      isWarning: vdPercentage > limit * 0.9 && vdPercentage <= limit,
       limit: limit,
     };
   };
@@ -96,84 +189,6 @@ export default function VoltageDropCalc({
     }));
   }, [calculations]);
 
-  const handleAddCalculation = () => {
-    if (source === "custom") {
-      const newCalc: VoltageDropCalculation = {
-        id: crypto.randomUUID(),
-        source: "custom",
-        name: "Custom Circuit " + (calculations.length + 1),
-        loadA: 20,
-        length: newLength,
-        wireSize: "3.5",
-        voltage: 230,
-        systemType: "1PH",
-      };
-      setCalculations([...calculations, newCalc]);
-    } else if (source === "main" && panel && circuits) {
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits);
-      const is3PH = panel.system.includes("3PH");
-
-      const newCalc: VoltageDropCalculation = {
-        id: crypto.randomUUID(),
-        source: "main",
-        name: "Main Feeder",
-        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
-        length: newLength,
-        wireSize: mainFeeder.wire.size.toString(),
-        voltage: panel.voltage,
-        systemType: is3PH ? "3PH" : "1PH",
-      };
-      setCalculations([...calculations, newCalc]);
-    } else if (allSubPanels.some(sp => sp.id === source)) {
-      const sp = allSubPanels.find(sp => sp.id === source)!;
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
-      const is3PH = sp.panel.system.includes("3PH");
-
-      const newCalc: VoltageDropCalculation = {
-        id: crypto.randomUUID(),
-        source: sp.id,
-        name: `${sp.panel.designation || "Sub-Panel"} Feeder`,
-        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
-        length: newLength,
-        wireSize: mainFeeder.wire.size.toString(),
-        voltage: sp.panel.voltage,
-        systemType: is3PH ? "3PH" : "1PH",
-      };
-      setCalculations([...calculations, newCalc]);
-    } else {
-      let foundCircuit = circuits?.find((c) => c.id === source);
-      let parentPanel: PanelConfig | undefined = panel;
-      
-      if (!foundCircuit && allSubPanels.length > 0) {
-        for (const sp of allSubPanels) {
-          const fc = sp.circuits.find(c => c.id === source);
-          if (fc) {
-            foundCircuit = fc;
-            parentPanel = sp.panel;
-            break;
-          }
-        }
-      }
-
-      if (foundCircuit && parentPanel) {
-        const c = foundCircuit;
-        const newCalc: VoltageDropCalculation = {
-          id: crypto.randomUUID(),
-          source: c.id,
-          name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
-          loadA: c.loadA,
-          length: newLength,
-          wireSize: c.wireSize,
-          voltage: c.voltage,
-          systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
-        };
-        setCalculations([...calculations, newCalc]);
-      }
-    }
-    setSource("custom");
-    setNewLength(30);
-  };
-
   const handleUpdateCalculation = (
     id: string,
     updates: Partial<VoltageDropCalculation>,
@@ -183,129 +198,198 @@ export default function VoltageDropCalc({
     );
   };
 
-  const handleRemoveCalculation = (id: string) => {
-    setCalculations(calculations.filter((c) => c.id !== id));
+  const togglePanel = (panelId: string) => {
+    setExpandedPanels(prev => ({ ...prev, [panelId]: !prev[panelId] }));
   };
 
-  const worstCase = useMemo(() => {
-    if (activeCalculations.length === 0) return null;
-    return activeCalculations.reduce((prev, current) => {
-      return parseFloat(current.result.vdPercentage) >
-        parseFloat(prev.result.vdPercentage)
-        ? current
-        : prev;
+  // Group calculations by panel
+  const panelGroups = useMemo(() => {
+    const groups: {
+      id: string;
+      name: string;
+      parentName?: string;
+      type: string;
+      feederCalc?: typeof activeCalculations[0];
+      circuitCalcs: typeof activeCalculations;
+      totalLoadA: number;
+      totalLoadKVA: number;
+    }[] = [];
+
+    if (panel && circuits) {
+      const { mainCurrent, totalVA } = computePanelScheduleValues(panel, circuits, { availableSubPanels: allSubPanels });
+      const mainFeederCalc = activeCalculations.find(c => c.source === "main");
+      const mainCircuits = activeCalculations.filter(c => circuits.some(circuit => circuit.id === c.source));
+      
+      groups.push({
+        id: "main",
+        name: panel.designation || "Main Distribution Panel",
+        parentName: panel.utilityProvider || "Utility",
+        type: panel.type || "MDP",
+        feederCalc: mainFeederCalc,
+        circuitCalcs: mainCircuits,
+        totalLoadA: mainCurrent.baseAmp,
+        totalLoadKVA: totalVA / 1000,
+      });
+    }
+
+    allSubPanels.forEach(sp => {
+      const { mainCurrent, totalVA } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: allSubPanels });
+      const feederCalc = activeCalculations.find(c => c.source === sp.id);
+      const circuitCalcs = activeCalculations.filter(c => sp.circuits.some(circuit => circuit.id === c.source));
+      
+      // Find parent by checking if any circuit in MDP or other subpanels links to this
+      let parentName = panel?.designation || "MDP";
+      if (circuits) {
+         const linkingCircuit = circuits.find(c => c.linkedSubPanelId === sp.id);
+         if (!linkingCircuit) {
+            for (const otherSp of allSubPanels) {
+               if (otherSp.circuits.some(c => c.linkedSubPanelId === sp.id)) {
+                  parentName = otherSp.panel.designation || "Sub-Panel";
+                  break;
+               }
+            }
+         }
+      }
+
+      groups.push({
+        id: sp.id,
+        name: sp.panel.designation || "Sub-Panel",
+        parentName,
+        type: sp.panel.type || "DP",
+        feederCalc,
+        circuitCalcs,
+        totalLoadA: mainCurrent.baseAmp,
+        totalLoadKVA: totalVA / 1000,
+      });
     });
-  }, [activeCalculations]);
+
+    return groups;
+  }, [panel, circuits, allSubPanels, activeCalculations]);
+
+  const filteredGroups = useMemo(() => {
+    return panelGroups.map(group => {
+      const filterMatch = (calc: typeof activeCalculations[0]) => {
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          if (!calc.name.toLowerCase().includes(query) && !group.name.toLowerCase().includes(query)) {
+            return false;
+          }
+        }
+        if (statusFilter === "compliant" && !calc.result.isCompliant) return false;
+        if (statusFilter === "critical" && calc.result.isCompliant) return false;
+        if (statusFilter === "warning" && !calc.result.isWarning) return false;
+        return true;
+      };
+
+      const matchedFeeder = group.feederCalc && filterMatch(group.feederCalc) ? group.feederCalc : undefined;
+      const matchedCircuits = group.circuitCalcs.filter(filterMatch);
+
+      return {
+        ...group,
+        feederCalc: matchedFeeder,
+        circuitCalcs: matchedCircuits,
+        visible: !!matchedFeeder || matchedCircuits.length > 0 || group.name.toLowerCase().includes(searchQuery.toLowerCase())
+      };
+    }).filter(g => g.visible);
+  }, [panelGroups, searchQuery, statusFilter]);
+
+  const getStatusColor = (isCompliant: boolean, isWarning?: boolean) => {
+    if (!isCompliant) return "text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-900/50";
+    if (isWarning) return "text-yellow-600 bg-yellow-50 border-yellow-200 dark:text-yellow-400 dark:bg-yellow-950/30 dark:border-yellow-900/50";
+    return "text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-900/50";
+  };
+
+  const getStatusIcon = (isCompliant: boolean, isWarning?: boolean) => {
+    if (!isCompliant) return <AlertTriangle className="w-3.5 h-3.5" />;
+    if (isWarning) return <AlertTriangle className="w-3.5 h-3.5" />;
+    return <Zap className="w-3.5 h-3.5" />;
+  };
+
+  const getStatusText = (isCompliant: boolean, isWarning?: boolean) => {
+    if (!isCompliant) return "Critical";
+    if (isWarning) return "Warning";
+    return "Compliant";
+  };
+
+  const renderCalculationRow = (c: typeof activeCalculations[0], isFeeder = false) => (
+    <tr
+      key={c.id}
+      className={`border-b border-slate-100 dark:border-slate-800 transition-colors last:border-0 font-medium ${isFeeder ? "bg-indigo-50/30 dark:bg-indigo-900/10 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+    >
+      <td className="p-3 text-slate-900 dark:text-slate-100 border-r border-slate-50 dark:border-slate-800 flex items-center gap-2">
+        {isFeeder && <Layers className="w-4 h-4 text-indigo-500" />}
+        <span className={isFeeder ? "font-bold text-indigo-900 dark:text-indigo-200" : ""}>{c.name}</span>
+      </td>
+      <td className="p-3 border-r border-slate-50 dark:border-slate-800">
+        <input
+          type="number"
+          value={c.length}
+          onChange={(e) => handleUpdateCalculation(c.id, { length: parseFloat(e.target.value) || 0 })}
+          className="w-full bg-transparent outline-none font-bold text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-950 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded focus:border-indigo-500"
+        />
+      </td>
+      <td className="p-3 text-slate-700 dark:text-slate-300">
+        {c.loadA}
+      </td>
+      <td className="p-3 text-slate-700 dark:text-slate-300">
+        {c.wireSets && c.wireSets > 1 ? `${c.wireSets}x ` : ""}{c.wireSize}
+      </td>
+      <td className="p-3 text-slate-700 dark:text-slate-300">
+        {c.systemType}
+      </td>
+      <td className="p-3 text-slate-600 dark:text-slate-400">
+        {c.result.vd}V
+      </td>
+      <td
+        className={`p-3 font-bold ${!c.result.isCompliant ? "text-red-600 dark:text-red-400" : (c.result.isWarning ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400")}`}
+      >
+        {c.result.vdPercentage}%
+      </td>
+      <td className="p-3 text-center font-bold text-slate-500 dark:text-slate-400">
+        {c.result.limit}%
+      </td>
+      <td className="p-3 text-center">
+        <span className="inline-flex justify-center">
+          <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${getStatusColor(c.result.isCompliant, c.result.isWarning)}`}>
+            {getStatusIcon(c.result.isCompliant, c.result.isWarning)} {getStatusText(c.result.isCompliant, c.result.isWarning)}
+          </span>
+        </span>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="w-full max-w-full space-y-6">
-      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 no-print">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Ruler className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-              Add Circuit for Voltage Drop
-            </h2>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-6 lg:flex-row items-end">
-          {circuits && circuits.length > 0 && (
-            <div className="flex-1 space-y-1.5 p-4 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-900/35">
-              <label className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-1">
-                <Link className="w-3 h-3" /> Connect to Load Schedule
-              </label>
-              <select
-                value={source}
-                onChange={(e) => setSource(e.target.value)}
-                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-900 rounded-lg text-sm text-indigo-900 dark:text-indigo-200 font-medium font-sans mt-2 shadow-sm focus:outline-none"
-              >
-                <option
-                  value="custom"
-                  className="dark:bg-slate-900 dark:text-slate-100"
-                >
-                  Custom Circuit
-                </option>
-                <option
-                  value="main"
-                  className="dark:bg-slate-900 dark:text-slate-100"
-                >
-                  Main Feeder
-                </option>
-                <optgroup
-                  label="MDP Branch Circuits"
-                  className="dark:bg-slate-900 dark:text-slate-100"
-                >
-                  {circuits.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      Circuit {c.circuitNo}: {c.description}
-                    </option>
-                  ))}
-                </optgroup>
-                {allSubPanels.map((sp) => (
-                  <React.Fragment key={sp.id}>
-                    <option
-                      value={sp.id}
-                      className="dark:bg-slate-900 dark:text-slate-100 font-semibold"
-                    >
-                      {sp.panel.designation || "Sub-Panel"} Feeder
-                    </option>
-                    {sp.circuits && sp.circuits.length > 0 && (
-                      <optgroup
-                        label={`${sp.panel.designation || "Sub-Panel"} Branch Circuits`}
-                        className="dark:bg-slate-900 dark:text-slate-100"
-                      >
-                        {sp.circuits.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            Circuit {c.circuitNo}: {c.description}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </React.Fragment>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="flex-1 space-y-1.5 p-4">
-            <label className="text-xs font-bold text-slate-400 uppercase">
-              Length (m)
-            </label>
-            <input
-              type="number"
-              value={newLength}
-              onChange={(e) => setNewLength(parseFloat(e.target.value))}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 shadow-sm shadow-slate-100 dark:shadow-none rounded-lg text-sm font-bold text-slate-900 dark:text-slate-100 focus:outline-none"
-            />
-          </div>
-
-          <div className="flex-none p-4">
-            <button
-              onClick={handleAddCalculation}
-              className="flex items-center gap-2 px-6 py-2 bg-indigo-600 dark:bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition shadow-lg shadow-indigo-200/50 dark:shadow-none"
-            >
-              <Plus className="w-4 h-4" /> Add to List
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="voltage-drop-diagram"
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-8 panel-container"
-      >
-        <div className="w-full border-b-2 border-slate-100 dark:border-slate-800 pb-6 mb-8 flex justify-between items-end">
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-8 panel-container">
+        <div className="w-full border-b-2 border-slate-100 dark:border-slate-800 pb-6 mb-8 flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
           <div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tighter">
               Voltage Drop Analysis
             </h3>
             <p className="text-[10px] text-slate-400 font-bold uppercase">
-              Engineering Verification
+              Categorized by Panel Hierarchy
             </p>
           </div>
-          <div className="flex items-center gap-4">
-            <p className="text-xs text-slate-400 font-mono">Ver: 1.0.3</p>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full lg:w-auto">
+            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Search panels or circuits..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="px-3 py-1.5 bg-transparent border-none outline-none text-sm w-full sm:w-48 text-slate-700 dark:text-slate-200"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 w-full sm:w-auto"
+            >
+              <option value="all">All Status</option>
+              <option value="compliant">Compliant</option>
+              <option value="warning">Warning</option>
+              <option value="critical">Critical</option>
+            </select>
             <button
               onClick={() => {
                 if (!isPremium) {
@@ -321,304 +405,107 @@ export default function VoltageDropCalc({
                   calculations,
                 );
               }}
-              className={`flex items-center gap-2 px-4 py-2 font-bold rounded-lg text-xs transition border ${
+              className={`flex items-center justify-center gap-2 px-4 py-2 font-bold rounded-lg text-xs transition border w-full sm:w-auto ${
                 isPremium
                   ? "bg-slate-800 text-white hover:bg-slate-700 hover:text-white border-slate-700/50 cursor-pointer"
                   : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 cursor-pointer"
               }`}
-              title={
-                isPremium
-                  ? "Download editable DWG/DXF AutoCAD drawing block compliant with professional engineering standards"
-                  : "Export AutoCAD is available on the Premium Plan"
-              }
             >
               <Layers className="w-4 h-4" />
-              <span>
-                {isPremium ? "Export AutoCAD Drawing" : "Export AutoCAD (Premium)"}
-              </span>
+              <span>{isPremium ? "Export AutoCAD Drawing" : "Export AutoCAD (Premium)"}</span>
             </button>
           </div>
         </div>
 
-        {worstCase && (
-          <div
-            className={`mb-8 p-6 rounded-2xl border-2 flex flex-col md:flex-row items-center justify-between transition-colors ${worstCase.result.isCompliant ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/40 text-green-800 dark:text-green-300" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-800 dark:text-red-300"}`}
-          >
-            <div className="flex flex-col mb-4 md:mb-0">
-              <span
-                className={`text-[10px] font-black uppercase mb-1 ${worstCase.result.isCompliant ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-              >
-                Worst Case Scenario
-              </span>
-              <h4 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                {worstCase.name}
-              </h4>
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
-                Length: {worstCase.length}m | Load: {worstCase.loadA}A | Wire:{" "}
-                {worstCase.wireSize}mm²
-              </p>
+        <div className="space-y-6">
+          {filteredGroups.length === 0 ? (
+            <div className="text-center py-12 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+              No matching calculations found.
             </div>
-            <div className="flex items-center gap-6">
-              <div className="text-center">
-                <p className="text-xs text-slate-400 uppercase font-black">
-                  Actual VD
-                </p>
-                <p className="text-2xl font-bold text-slate-700 dark:text-slate-200">
-                  {worstCase.result.vd} Volts
-                </p>
-              </div>
-              <div
-                className={`text-center ${worstCase.result.isCompliant ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}
-              >
-                <span className="text-[10px] font-black uppercase mb-1">
-                  VD (%)
-                </span>
-                <p className="text-5xl font-black">
-                  {worstCase.result.vdPercentage}%
-                </p>
-              </div>
-              <div className="mt-2 flex items-center gap-2 font-bold text-sm">
-                {worstCase.result.isCompliant ? (
-                  <CheckCircle2 className="w-8 h-8 text-green-500" />
-                ) : (
-                  <AlertTriangle className="w-8 h-8 text-red-500" />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+          ) : (
+            filteredGroups.map(group => {
+              const allGroupCalcs = [...(group.feederCalc ? [group.feederCalc] : []), ...group.circuitCalcs];
+              const maxVd = allGroupCalcs.length > 0 ? Math.max(...allGroupCalcs.map(c => parseFloat(c.result.vdPercentage))) : 0;
+              const hasCritical = allGroupCalcs.some(c => !c.result.isCompliant);
+              const hasWarning = allGroupCalcs.some(c => c.result.isWarning);
+              const isExpanded = expandedPanels[group.id];
 
-        <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead>
-              <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold">
-                <th className="p-3">Circuit / Designation</th>
-                <th className="p-3 w-24">Length (m)</th>
-                <th className="p-3 w-20">Load (A)</th>
-                <th className="p-3 w-24">Wire (mm²)</th>
-                <th className="p-3 w-20">System</th>
-                <th className="p-3 w-20">VD (V)</th>
-                <th className="p-3 w-20">VD (%)</th>
-                <th className="p-3 w-20 text-center">Limit (%)</th>
-                <th className="p-3 w-24 text-center">Status</th>
-                <th className="p-3 w-10 no-print"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeCalculations.map((c) => (
-                <tr
-                  key={c.id}
-                  className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors last:border-0 font-medium"
-                >
-                  <td className="p-3 text-slate-900 dark:text-slate-100 border-r border-slate-50 dark:border-slate-800">
-                    <input
-                      value={c.name}
-                      onChange={(e) =>
-                        handleUpdateCalculation(c.id, { name: e.target.value })
-                      }
-                      className="w-full bg-transparent outline-none border-b border-transparent focus:border-slate-300 text-slate-900 dark:text-slate-100 font-medium"
-                    />
-                  </td>
-                  <td className="p-3 border-r border-slate-50 dark:border-slate-800">
-                    <input
-                      type="number"
-                      value={c.length}
-                      onChange={(e) =>
-                        handleUpdateCalculation(c.id, {
-                          length: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full bg-transparent outline-none font-bold text-indigo-700 dark:text-indigo-400 bg-indigo-50/30 dark:bg-indigo-950/20 px-2 py-1 rounded"
-                    />
-                  </td>
-                  <td className="p-3">
-                    <input
-                      type="number"
-                      readOnly={c.source !== "custom"}
-                      value={c.loadA}
-                      onChange={(e) =>
-                        handleUpdateCalculation(c.id, {
-                          loadA: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      className={`w-full bg-transparent outline-none px-2 py-1 rounded text-slate-900 dark:text-slate-100 ${c.source === "custom" ? "focus:bg-slate-200 hover:bg-slate-200 dark:focus:bg-slate-800 dark:hover:bg-slate-800" : ""}`}
-                    />
-                  </td>
-                  <td className="p-3">
-                    {c.source === "custom" ? (
-                      <select
-                        value={c.wireSize}
-                        onChange={(e) =>
-                          handleUpdateCalculation(c.id, {
-                            wireSize: e.target.value,
-                          })
-                        }
-                        className="bg-transparent outline-none max-w-full text-slate-900 dark:text-slate-100 dark:bg-slate-900"
-                      >
-                        {Object.keys(WIRE_IMPEDANCE_TABLE).map((s) => (
-                          <option
-                            key={s}
-                            value={s}
-                            className="dark:bg-slate-900 dark:text-slate-100"
-                          >
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-slate-900 dark:text-slate-100">
-                        {c.wireSize}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    {c.source === "custom" ? (
-                      <select
-                        value={c.systemType}
-                        onChange={(e) =>
-                          handleUpdateCalculation(c.id, {
-                            systemType: e.target.value as any,
-                          })
-                        }
-                        className="bg-transparent outline-none text-slate-900 dark:text-slate-100 dark:bg-slate-900"
-                      >
-                        <option
-                          value="1PH"
-                          className="dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          1Ф
-                        </option>
-                        <option
-                          value="3PH"
-                          className="dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          3Ф
-                        </option>
-                      </select>
-                    ) : (
-                      <span className="text-slate-900 dark:text-slate-100">
-                        {c.systemType}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3 text-slate-600 dark:text-slate-400">
-                    {c.result.vd}V
-                  </td>
-                  <td
-                    className={`p-3 font-bold ${c.result.isCompliant ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+              return (
+                <div key={group.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
+                  {/* Panel Header (Collapsible) */}
+                  <div 
+                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/80 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    onClick={() => togglePanel(group.id)}
                   >
-                    {c.result.vdPercentage}%
-                  </td>
-                  <td className="p-3 text-center font-bold text-slate-500 dark:text-slate-400">
-                    {c.result.limit}%
-                  </td>
-                  <td className="p-3 text-center">
-                    <span className="inline-flex justify-center">
-                      {c.result.isCompliant ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 bg-green-50 dark:bg-green-950/30 px-2.5 py-1 rounded-full border border-green-200 dark:border-green-900/50">
-                          <Zap className="w-3.5 h-3.5 text-green-500" /> Compliant
+                    <div className="flex items-center gap-3">
+                      <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                        {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                      </button>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-slate-900 dark:text-slate-100 text-lg uppercase tracking-tight">{group.name}</h4>
+                          <span className="text-xs px-2 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded font-semibold">{group.type}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Fed from: <span className="text-slate-700 dark:text-slate-300">{group.parentName}</span></p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-6 mt-3 sm:mt-0 ml-8 sm:ml-0">
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Total Load</p>
+                        <p className="font-mono font-bold text-slate-700 dark:text-slate-200">{group.totalLoadA.toFixed(1)} A</p>
+                      </div>
+                      <div className="text-right hidden md:block">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Connected</p>
+                        <p className="font-mono font-bold text-slate-700 dark:text-slate-200">{group.totalLoadKVA.toFixed(2)} kVA</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase font-bold text-slate-400">Max VD</p>
+                        <p className={`font-mono font-bold ${hasCritical ? "text-red-600 dark:text-red-400" : (hasWarning ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400")}`}>{maxVd.toFixed(2)}%</p>
+                      </div>
+                      <div className="min-w-[100px] text-right">
+                        <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${getStatusColor(!hasCritical, hasWarning)}`}>
+                          {getStatusIcon(!hasCritical, hasWarning)} {getStatusText(!hasCritical, hasWarning)}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-900/50">
-                          <AlertTriangle className="w-3.5 h-3.5 text-red-500" /> Exceeded
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                  <td className="p-3 no-print">
-                    <button
-                      onClick={() => handleRemoveCalculation(c.id)}
-                      className="p-1 hover:bg-red-100 dark:hover:bg-red-950/60 text-slate-400 hover:text-red-600 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {activeCalculations.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={10}
-                    className="p-8 text-center text-slate-400 font-medium italic"
-                  >
-                    No circuits added to the calculation list. Select a source
-                    and click "Add to List".
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-200 dark:border-slate-700 overflow-x-auto">
+                      <table className="w-full text-left text-sm whitespace-nowrap">
+                        <thead>
+                          <tr className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider">
+                            <th className="p-3">Circuit / Designation</th>
+                            <th className="p-3 w-24">Length (m)</th>
+                            <th className="p-3 w-20">Load (A)</th>
+                            <th className="p-3 w-24">Wire (mm²)</th>
+                            <th className="p-3 w-20">System</th>
+                            <th className="p-3 w-20">VD (V)</th>
+                            <th className="p-3 w-20">VD (%)</th>
+                            <th className="p-3 w-20 text-center">Limit (%)</th>
+                            <th className="p-3 w-24 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.feederCalc && renderCalculationRow(group.feederCalc, true)}
+                          {group.circuitCalcs.map(c => renderCalculationRow(c, false))}
+                          {!group.feederCalc && group.circuitCalcs.length === 0 && (
+                            <tr>
+                              <td colSpan={9} className="p-6 text-center text-slate-400 italic font-medium">No circuits to display for this panel.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </section>
-
-      {/* Render SLDs for each calculation outside of the main table section so we can grab them individually if needed */}
-      <div className="space-y-6">
-        {activeCalculations.map((calc) => (
-          <section
-            key={calc.id}
-            id={`vd-diagram-${calc.id}`}
-            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-8 panel-container"
-          >
-            <h4 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-10 text-center uppercase tracking-wider">
-              {calc.name}
-            </h4>
-
-            <div className="flex items-center justify-between mx-auto max-w-3xl relative mt-4 mb-4">
-              {/* Source */}
-              <div className="flex flex-col items-center z-10 w-32">
-                <div className="w-16 h-16 rounded-full border-[5px] border-indigo-600 flex items-center justify-center bg-white dark:bg-slate-800 z-10 shadow-[0_0_15px_rgba(79,70,229,0.3)]">
-                  <Zap className="w-8 h-8 text-indigo-600" />
-                </div>
-                <div className="text-center mt-4">
-                  <span className="font-black text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
-                    Source
-                  </span>
-                  <span className="text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded inline-block mt-1">
-                    {calc.voltage}V {calc.systemType}
-                  </span>
-                </div>
-              </div>
-
-              {/* Feeder/Wire */}
-              <div className="flex-1 h-3 bg-indigo-100 dark:bg-indigo-950/40 relative flex items-center justify-center -mx-4 z-0">
-                <div className="absolute -top-14 text-center w-full flex flex-col items-center gap-1">
-                  <span className="font-bold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
-                    L = {calc.length} m
-                  </span>
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    {calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ""}
-                    {calc.wireSize} mm² THHN/THWN
-                  </span>
-                  <div
-                    className={`text-xs font-black px-2 py-0.5 rounded ${calc.result.isCompliant ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"}`}
-                  >
-                    VD: {calc.result.vd}V ({calc.result.vdPercentage}%)
-                  </div>
-                </div>
-                {/* Triangle arrow representing current flow */}
-                <div className="w-4 h-4 border-t-[8px] border-t-transparent border-l-[12px] border-l-indigo-300 border-b-[8px] border-b-transparent"></div>
-              </div>
-
-              {/* Load */}
-              <div className="flex flex-col items-center z-10 w-32">
-                <div className="w-16 h-16 border-[5px] border-slate-700 dark:border-slate-600 flex items-center justify-center bg-white dark:bg-slate-800 z-10 shadow-[0_0_15px_rgba(51,65,85,0.2)]">
-                  <span className="font-black text-slate-700 dark:text-slate-300 text-sm tracking-widest">
-                    LOAD
-                  </span>
-                </div>
-                <div className="text-center mt-4">
-                  <span className="font-black text-slate-900 dark:text-slate-100 block uppercase tracking-wider">
-                    Current
-                  </span>
-                  <span className="text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded inline-block mt-1">
-                    {calc.loadA} A
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-        ))}
-      </div>
 
       {/* Calculations & Formulas Section */}
       <section className="hidden print-show mt-12 bg-white rounded-2xl border-2 border-slate-800 p-8">
@@ -631,14 +518,9 @@ export default function VoltageDropCalc({
 
         <div className="space-y-6 text-sm text-slate-700">
           <div>
-            <h3 className="font-bold text-slate-900 mb-2">
-              1. Resistance of Wire (R)
-            </h3>
+            <h3 className="font-bold text-slate-900 mb-2">1. Resistance of Wire (R)</h3>
             <p className="mb-2">
-              The resistance depends on the conductor material (Copper = 1.724 ×
-              10^-8 Ω·m) and length, converted for standard NEC/PEC calculations
-              using specific resistance K (K = 3.56 for Copper in ohms per
-              km/mm²).
+              The resistance depends on the conductor material (Copper = 1.724 × 10^-8 Ω·m) and length, converted for standard NEC/PEC calculations using specific resistance K (K = 3.56 for Copper in ohms per km/mm²).
             </p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200">
               R = K / Area (mm²)
@@ -646,12 +528,9 @@ export default function VoltageDropCalc({
           </div>
 
           <div>
-            <h3 className="font-bold text-slate-900 mb-2">
-              2. Single-Phase vs Three-Phase Voltage Drop
-            </h3>
+            <h3 className="font-bold text-slate-900 mb-2">2. Single-Phase vs Three-Phase Voltage Drop</h3>
             <p className="mb-2">
-              The voltage drop equation compensates for single-phase (2 wires)
-              or three-phase (√3) system parameters in accordance with PEC.
+              The voltage drop equation compensates for single-phase (2 wires) or three-phase (√3) system parameters in accordance with PEC.
             </p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
               <span>{`VD (1-Phase) = (2 × K × I × L) / Area`}</span>
@@ -660,14 +539,9 @@ export default function VoltageDropCalc({
           </div>
 
           <div>
-            <h3 className="font-bold text-slate-900 mb-2">
-              3. Voltage Drop Percentage
-            </h3>
+            <h3 className="font-bold text-slate-900 mb-2">3. Voltage Drop Percentage</h3>
             <p className="mb-2">
-              Article 2.10.2.1(A) FPN No. 4 of the Philippine Electrical Code
-              (PEC) 2017 recommends that the maximum voltage drop for branch
-              circuits does not exceed 3%, and the total voltage drop for
-              feeders and branch circuits does not exceed 5%.
+              Article 2.10.2.1(A) FPN No. 4 of the Philippine Electrical Code (PEC) 2017 recommends that the maximum voltage drop for branch circuits does not exceed 3%, and the total voltage drop for feeders and branch circuits does not exceed 5%.
             </p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
               <span>{`VD (%) = (Actual Voltage Drop / Source Voltage) × 100`}</span>

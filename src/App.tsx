@@ -1721,61 +1721,123 @@ export default function App() {
           "",
         ]);
         vdData.push([]);
-        vdData.push([
-          "SYSTEM / SOURCE",
-          "LINE NAME",
-          "CURRENT (A)",
-          "LENGTH (m)",
-          "WIRE SIZE (mm²)",
-          "VOLTAGE",
-          "SYSTEM TYPE",
-          "VD (V)",
-          "VD (%)",
-          "STATUS",
-        ]);
 
-        vdCalculations.forEach((vd) => {
-          const factor = vd.systemType === "3PH" ? 1.732 : 2;
-          const cLength = vd.length || 0;
-          const cLoad = vd.loadA || 0;
-          const cVoltage = vd.voltage || 230;
-          const dataStr = vd.wireSize;
-          const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
-            WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
-          const R = impedanceInfo.r;
+        const panelsForVd = [
+          { id: "main", type: "MDP", panel: panel, circuits: circuits },
+          ...(subPanels || [])
+        ].filter(p => p && p.panel);
+        
+        const allSpIds = new Set([...(subPanels || [])].map(sp => sp.id));
 
-          const VD_v = (factor * cLength * cLoad * R) / 1000;
-          const VD_percent = (VD_v / cVoltage) * 100;
-          const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
+        panelsForVd.forEach((group) => {
+          const groupCalcs = vdCalculations.filter(c => 
+            c.source === group.id || 
+            (group.circuits && group.circuits.some(circuit => circuit.id === c.source))
+          );
 
-          let sourceLabel = vd.source;
-          if (vd.source === "custom") {
-            sourceLabel = "Custom";
-          } else {
-            let matchingPanel = allPanelsToExport.find((p) => p.id === vd.source);
-            if (!matchingPanel) {
-              matchingPanel = allPanelsToExport.find((p) =>
-                p.circuits.some((c) => c.id === vd.source),
-              );
-            }
-            if (matchingPanel) {
-              sourceLabel = `${matchingPanel.panel.system} / ${matchingPanel.panel.designation || matchingPanel.type}`;
-            }
+          if (groupCalcs.length > 0) {
+            vdData.push([`PANEL: ${group.panel.designation || ("type" in group ? (group as any).type : "Sub Panel")}`]);
+            vdData.push([
+              "LINE NAME",
+              "CURRENT (A)",
+              "LENGTH (m)",
+              "WIRE SIZE (mm²)",
+              "VOLTAGE",
+              "SYSTEM TYPE",
+              "VD (V)",
+              "VD (%)",
+              "LIMIT (%)",
+              "STATUS",
+            ]);
+
+            groupCalcs.forEach((vd) => {
+              const factor = vd.systemType === "3PH" ? 1.732 : 2;
+              const cLength = vd.length || 0;
+              const cLoad = vd.loadA || 0;
+              const cVoltage = vd.voltage || 230;
+              const dataStr = vd.wireSize;
+              const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] || WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+              
+              const sets = vd.wireSets && vd.wireSets > 1 ? vd.wireSets : 1;
+              const R = impedanceInfo.r / sets;
+
+              const VD_v = (factor * cLength * cLoad * R) / 1000;
+              const VD_percent = (VD_v / cVoltage) * 100;
+              
+              const isFeeder = vd.source === "main" || allSpIds.has(vd.source) || vd.name.toLowerCase().includes("feeder");
+              const limit = isFeeder ? 5.0 : 3.0;
+              const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
+              const isCompliant = VD_percent <= limit;
+              const status = !isCompliant ? "CRITICAL" : (isWarning ? "WARNING" : "COMPLIANT");
+
+              vdData.push([
+                vd.name,
+                vd.loadA,
+                vd.length,
+                vd.wireSets && vd.wireSets > 1 ? `${vd.wireSets}x ${vd.wireSize}` : vd.wireSize,
+                vd.voltage,
+                vd.systemType,
+                VD_v.toFixed(2),
+                VD_percent.toFixed(2) + "%",
+                limit.toFixed(1) + "%",
+                status,
+              ]);
+            });
+            vdData.push([]);
           }
-
-          vdData.push([
-            sourceLabel,
-            vd.name,
-            vd.loadA,
-            vd.length,
-            vd.wireSize,
-            vd.voltage,
-            vd.systemType,
-            VD_v.toFixed(2),
-            VD_percent.toFixed(2) + "%",
-            status,
-          ]);
         });
+
+        // Add custom calculations not belonging to any panel
+        const customCalcs = vdCalculations.filter(c => c.source === "custom");
+        if (customCalcs.length > 0) {
+            vdData.push([`CUSTOM CIRCUITS`]);
+            vdData.push([
+              "LINE NAME",
+              "CURRENT (A)",
+              "LENGTH (m)",
+              "WIRE SIZE (mm²)",
+              "VOLTAGE",
+              "SYSTEM TYPE",
+              "VD (V)",
+              "VD (%)",
+              "LIMIT (%)",
+              "STATUS",
+            ]);
+
+            customCalcs.forEach((vd) => {
+              const factor = vd.systemType === "3PH" ? 1.732 : 2;
+              const cLength = vd.length || 0;
+              const cLoad = vd.loadA || 0;
+              const cVoltage = vd.voltage || 230;
+              const dataStr = vd.wireSize;
+              const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] || WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+              
+              const sets = vd.wireSets && vd.wireSets > 1 ? vd.wireSets : 1;
+              const R = impedanceInfo.r / sets;
+
+              const VD_v = (factor * cLength * cLoad * R) / 1000;
+              const VD_percent = (VD_v / cVoltage) * 100;
+              
+              const limit = 3.0;
+              const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
+              const isCompliant = VD_percent <= limit;
+              const status = !isCompliant ? "CRITICAL" : (isWarning ? "WARNING" : "COMPLIANT");
+
+              vdData.push([
+                vd.name,
+                vd.loadA,
+                vd.length,
+                vd.wireSets && vd.wireSets > 1 ? `${vd.wireSets}x ${vd.wireSize}` : vd.wireSize,
+                vd.voltage,
+                vd.systemType,
+                VD_v.toFixed(2),
+                VD_percent.toFixed(2) + "%",
+                limit.toFixed(1) + "%",
+                status,
+              ]);
+            });
+            vdData.push([]);
+        }
 
         const wsVd = XLSX.utils.aoa_to_sheet(vdData);
 

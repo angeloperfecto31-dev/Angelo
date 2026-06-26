@@ -1214,6 +1214,39 @@ export const exportToCAD = (
     exportMode === "ALL" || exportMode === "LOAD_SCHEDULE";
   const hasIllumination = !!(illumParams?.savedRooms && illumParams.savedRooms.length > 0);
   const allSubPanels = subPanels;
+  // Calculate dynamic Voltage Drop equation pages
+  let vdPages: VoltageDropCalculation[][] = [];
+  if (
+    (exportMode === "ALL" || exportMode === "VOLTAGE_DROP") &&
+    vdCalculations &&
+    vdCalculations.length > 0
+  ) {
+    const pages: VoltageDropCalculation[][] = [];
+    let currentPageCalcs: VoltageDropCalculation[] = [];
+    let currentY = 580;
+    
+    // Page 1 has formula reference
+    currentY -= (5 * 7.5 + 4.0); // 41.5
+    
+    vdCalculations.forEach((calc) => {
+      const blockHeight = 41.5;
+      if (currentY - blockHeight < 60) {
+        pages.push(currentPageCalcs);
+        currentPageCalcs = [calc];
+        currentY = 580 - blockHeight;
+      } else {
+        currentPageCalcs.push(calc);
+        currentY -= blockHeight;
+      }
+    });
+    if (currentPageCalcs.length > 0) {
+      pages.push(currentPageCalcs);
+    }
+    vdPages = pages;
+  }
+  
+  const extraVdSheets = vdPages.length > 1 ? vdPages.length - 1 : 0;
+
   let totalSheets = 4;
   if (exportMode === "ALL") {
     let baseSheets = 4 + Math.ceil(allSubPanels.length / 2);
@@ -1221,13 +1254,13 @@ export const exportToCAD = (
     if (hasIllumination) {
       extra += 1; // plus Illumination table
     }
-    totalSheets = baseSheets + extra;
+    totalSheets = baseSheets + extra + extraVdSheets;
   } else if (exportMode === "LOAD_SCHEDULE") {
     totalSheets = 2 + Math.ceil(allSubPanels.length / 2);
   } else if (exportMode === "SHORT_CIRCUIT") {
     totalSheets = 3; // Calculations Summary, SLD, and Dedicated SC Table
   } else if (exportMode === "VOLTAGE_DROP") {
-    totalSheets = 2; // Calculations Summary and Dedicated VD Table
+    totalSheets = 2 + extraVdSheets; // Calculations Summary and Dedicated VD Table
   }
 
   // Pre-calculate variable sheet widths and their xOffsets
@@ -2727,44 +2760,163 @@ export const exportToCAD = (
 
     if (
       (exportMode === "ALL" || exportMode === "VOLTAGE_DROP") &&
-      vdCalculations &&
-      vdCalculations.length > 0
+      vdPages &&
+      vdPages.length > 0
     ) {
-      writeEqVD([
-        "\\textbf{Analytical Engineering Formula Reference:}",
-        "\\text{Single Phase System: } VD_{1\\phi} = \\frac{2 \\times R_{ohms} \\times L \\times I}{1000} \\text{ Volts}",
-        "\\text{Three Phase System: } VD_{3\\phi} = \\frac{\\sqrt{3} \\times R_{ohms} \\times L \\times I}{1000} \\text{ Volts}",
-        "\\text{Percentage Definition: } VD_{\\%} = \\left(\\frac{VD}{V_{nominal}}\\right) \\times 100\\%",
-        "\\text{Where } R_{ohms} = \\text{Wire AC Resistance per km}",
-      ]);
+      vdPages.forEach((pageCalcs, pageIdx) => {
+        let activeSheetIdx = calcSheetIndex;
+        if (pageIdx > 0) {
+          activeSheetIdx = globalSheetCursor++;
+          drawSheetTemplate(
+            activeSheetIdx,
+            panel,
+            "SYSTEM ENGINEERING CALCULATIONS",
+            `DETAILED ENGINEERING ANALYSIS (PAGE ${pageIdx + 1})`,
+          );
+          
+          const sConf = sheetConfigs[activeSheetIdx] || { w: baseW, xOffset: activeSheetIdx * 900 };
+          const xb = sConf.xOffset + 20;
+          b.addRect(xb, by, xb + boundingW, by + contentH, "BORDER");
+          b.addLine(xb + colW, by, xb + colW, by + contentH, "BORDER");
 
-      vdCalculations.forEach((calc, idx) => {
-        if (currentYVD < 60) return; // Cutoff for page capacity
+          // Draw left header
+          b.addRect(xb, by + contentH - 12, xb + colW, by + contentH, "BORDER");
+          b.addText(
+            "MATHEMATICAL FORMULATION AND STEP-BY-STEP EVALUATION",
+            xb + colW / 2,
+            by + contentH - 8,
+            3.0,
+            0,
+            "TEXT_TITLE",
+            "center",
+          );
 
-        const is3Phase = calc.systemType === "3PH";
-        const factorRaw = is3Phase ? 1.732 : 2.0;
-        const factorMath = is3Phase ? "\\sqrt{3}" : "2";
+          // Draw right header
+          b.addRect(
+            xb + colW,
+            by + contentH - 12,
+            xb + boundingW,
+            by + contentH,
+            "BORDER",
+          );
+          b.addText(
+            "VOLTAGE DROP MATHEMATICAL EVALUATION AND FORMULA APPLICATION",
+            xb + colW + colW / 2,
+            by + contentH - 8,
+            2.5,
+            0,
+            "TEXT_TITLE",
+            "center",
+          );
+          
+          // Draw a nice note on the left side
+          b.addText(
+            "Short circuit calculations and symmetrical fault current study",
+            xb + 25,
+            by + contentH - 40,
+            3.5,
+            0,
+            "TEXT_HEADER",
+            "left"
+          );
+          b.addText(
+            "are completely detailed on Sheet E-3 / Page 1.",
+            xb + 25,
+            by + contentH - 55,
+            3.5,
+            0,
+            "TEXT_HEADER",
+            "left"
+          );
+          b.addText(
+            "Refer to the single line diagram and study tables",
+            xb + 25,
+            by + contentH - 75,
+            3.0,
+            0,
+            "TEXT_DATA",
+            "left"
+          );
+          b.addText(
+            "for complete system protection coordination.",
+            xb + 25,
+            by + contentH - 90,
+            3.0,
+            0,
+            "TEXT_DATA",
+            "left"
+          );
+        }
 
-        const data =
-          WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-        let R = data.r;
-        const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
-        R = R / sets;
-        const vd = (factorRaw * calc.length * calc.loadA * R) / 1000;
-        const vdPerc = (vd / calc.voltage) * 100;
+        const sConf = sheetConfigs[activeSheetIdx] || { w: baseW, xOffset: activeSheetIdx * 900 };
+        const xb = sConf.xOffset + 20;
+        let currentYVD = by + contentH - 22;
 
-        writeEqVD([
-          `\\textbf{Computation \\#${idx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
-          `R_{ohms} = ${R} \\ \\Omega\\text{/km}`,
-          `VD = \\frac{${factorMath} \\times ${R} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
-          `VD_{\\%} = \\left(\\frac{${vd.toFixed(2)}}{${calc.voltage}}\\right) \\times 100\\% = ${vdPerc.toFixed(2)} \\%`,
-          `\\text{Compliance Check: } ${vdPerc <= 3.0 ? "\\text{VERIFIED ACCEPTABLE} (\\le 3.0\\%)" : "\\text{WARNING EXCEEDS 3.0\\% LIMIT}"}`,
-        ]);
+        const writeEqVD = (texts: string[]) => {
+          texts.forEach((t) => {
+            b.addText(
+              formatLatexForCAD(t),
+              xb + colW + 25,
+              currentYVD,
+              2.5,
+              0,
+              "TEXT_DATA",
+              "left",
+              colW - 50
+            );
+            currentYVD -= 7.5;
+          });
+          currentYVD -= 4.0;
+        };
+
+        if (pageIdx === 0) {
+          writeEqVD([
+            "\\textbf{Analytical Engineering Formula Reference:}",
+            "\\text{Single Phase System: } VD_{1\\phi} = \\frac{2 \\times R_{ohms} \\times L \\times I}{1000} \\text{ Volts}",
+            "\\text{Three Phase System: } VD_{3\\phi} = \\frac{\\sqrt{3} \\times R_{ohms} \\times L \\times I}{1000} \\text{ Volts}",
+            "\\text{Percentage Definition: } VD_{\\%} = \\left(\\frac{VD}{V_{nominal}}\\right) \\times 100\\%",
+            "\\text{Where } R_{ohms} = \\text{Wire AC Resistance per km}",
+          ]);
+        }
+
+        pageCalcs.forEach((calc) => {
+          const globalIdx = vdCalculations.indexOf(calc);
+          const is3Phase = calc.systemType === "3PH";
+          const factorRaw = is3Phase ? 1.732 : 2.0;
+          const factorMath = is3Phase ? "\\sqrt{3}" : "2";
+
+          const data =
+            WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
+          let R = data.r;
+          const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+          R = R / sets;
+          const vd = (factorRaw * calc.length * calc.loadA * R) / 1000;
+          const vdPerc = (vd / calc.voltage) * 100;
+
+          const isFeeder = calc.source === "main" || allSubPanels.some(sp => sp.id === calc.source) || calc.name.toLowerCase().includes("feeder");
+          const limit = isFeeder ? 5.0 : 3.0;
+
+          writeEqVD([
+            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
+            `R_{ohms} = ${R} \\ \\Omega\\text{/km}`,
+            `VD = \\frac{${factorMath} \\times ${R} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
+            `VD_{\\%} = \\left(\\frac{${vd.toFixed(2)}}{${calc.voltage}}\\right) \\times 100\\% = ${vdPerc.toFixed(2)} \\%`,
+            `\\text{Compliance Check: } ${vdPerc <= limit ? `\\text{VERIFIED ACCEPTABLE} (\\le ${limit}\\%)` : `\\text{WARNING EXCEEDS ${limit}\\% LIMIT}`}`,
+          ]);
+        });
       });
     } else {
-      writeEqVD([
-        `\\text{(Voltage Drop Computations omitted relative to partial export scope)}`,
-      ]);
+      let currentYVD = by + contentH - 22;
+      b.addText(
+        "(Voltage Drop Computations omitted relative to partial export scope)",
+        xBase + colW + 25,
+        currentYVD,
+        2.5,
+        0,
+        "TEXT_DATA",
+        "left",
+        colW - 50
+      );
     }
   }
 
@@ -3640,7 +3792,21 @@ export const exportToCAD = (
     const tableRight = tableLeft + tableWidth;
 
     const calculationsToRender = vdCalculations && vdCalculations.length > 0 ? vdCalculations : [];
-    const numRows = calculationsToRender.length || 1;
+    
+    const panelsForVdHeader = [
+      { id: "main", type: "MDP", panel: panel, circuits: circuits },
+      ...(subPanels || [])
+    ].filter(p => p && p.panel);
+
+    let groupHeaderCount = 0;
+    panelsForVdHeader.forEach(group => {
+      if (calculationsToRender.some(c => c.source === group.id || (group.circuits && group.circuits.some(circuit => circuit.id === c.source)))) {
+         groupHeaderCount++;
+      }
+    });
+    if (calculationsToRender.some(c => c.source === "custom")) groupHeaderCount++;
+    
+    const numRows = (calculationsToRender.length + groupHeaderCount) || 1;
     
     // Automatically adjust row height based on content density (budget roughly 350 units)
     const rowH = Math.min(18.0, Math.max(14.0, Math.floor(350 / numRows)));
@@ -3690,79 +3856,119 @@ export const exportToCAD = (
 
     ty -= labelH;
 
-    // Data Row rendering
-    calculationsToRender.forEach((calc) => {
-      // Draw bottom horizontal line
-      b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
-      // Draw left outer vertical line
-      b.addLine(tableLeft, ty - rowH, tableLeft, ty, "BORDER");
-      // Draw right outer vertical line
-      b.addLine(tableRight, ty - rowH, tableRight, ty, "BORDER");
-
-      // Draw inner vertical divider lines
-      for (let i = 1; i < colPositions.length - 1; i++) {
-        b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
+    // Grouping for AutoCAD Export
+    const panelsForVd = [
+      { id: "main", type: "MDP", panel: panel, circuits: circuits },
+      ...(subPanels || [])
+    ].filter(p => p && p.panel);
+    
+    const allSpIds = new Set([...(subPanels || [])].map(sp => sp.id));
+    
+    let renderGroups: { panelName: string, calcs: VoltageDropCalculation[] }[] = [];
+    panelsForVd.forEach((group) => {
+      const groupCalcs = calculationsToRender.filter(c => 
+        c.source === group.id || 
+        (group.circuits && group.circuits.some(circuit => circuit.id === c.source))
+      );
+      if (groupCalcs.length > 0) {
+        renderGroups.push({
+          panelName: `PANEL: ${group.panel.designation || ("type" in group ? (group as any).type : "Sub Panel")}`,
+          calcs: groupCalcs
+        });
       }
+    });
 
-      // Compute details consistent with Excel export
-      const factor = calc.systemType === "3PH" ? 1.732 : 2.0;
-      const cLength = calc.length || 0;
-      const cLoad = calc.loadA || 0;
-      const cVoltage = calc.voltage || 230;
-      const dataStr = calc.wireSize;
-      const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
-        WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
-      let R_val = impedanceInfo.r;
-      const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
-      R_val = R_val / sets;
+    const customCalcs = calculationsToRender.filter(c => c.source === "custom");
+    if (customCalcs.length > 0) {
+       renderGroups.push({ panelName: "CUSTOM CIRCUITS", calcs: customCalcs });
+    }
 
-      const VD_v = (factor * cLength * cLoad * R_val) / 1000;
-      const VD_percent = (VD_v / cVoltage) * 100;
-      const status = VD_percent <= 3.0 ? "PASSED" : "FAILED";
+    // Data Row rendering
+    renderGroups.forEach((group) => {
+      // Draw Panel Group Header
+      b.addRect(tableLeft, ty - rowH, tableRight, ty, "BORDER");
+      
+      b.addText(group.panelName, tableLeft + 5, ty - rowH / 2 - dataFontSize / 2, dataFontSize * 1.1, 0, "TEXT_HEADER", "left", tableWidth - 10);
+      ty -= rowH;
 
-      let sourceLabel = calc.source;
-      if (calc.source === "custom") {
-        sourceLabel = "Custom";
-      } else {
-        let foundPanel: any = null;
-        if (calc.source === "main" || calc.source === "MDP" || (panel && panel.designation === calc.source)) {
-          foundPanel = { id: "main", panel: panel };
+      group.calcs.forEach((calc) => {
+        // Draw bottom horizontal line
+        b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
+        // Draw left outer vertical line
+        b.addLine(tableLeft, ty - rowH, tableLeft, ty, "BORDER");
+        // Draw right outer vertical line
+        b.addLine(tableRight, ty - rowH, tableRight, ty, "BORDER");
+
+        // Draw inner vertical divider lines
+        for (let i = 1; i < colPositions.length - 1; i++) {
+          b.addLine(colPositions[i], ty - rowH, colPositions[i], ty, "TABLE_GRID");
+        }
+
+        // Compute details consistent with Excel export
+        const factor = calc.systemType === "3PH" ? 1.732 : 2.0;
+        const cLength = calc.length || 0;
+        const cLoad = calc.loadA || 0;
+        const cVoltage = calc.voltage || 230;
+        const dataStr = calc.wireSize;
+        const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
+          WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+        let R_val = impedanceInfo.r;
+        const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+        R_val = R_val / sets;
+
+        const VD_v = (factor * cLength * cLoad * R_val) / 1000;
+        const VD_percent = (VD_v / cVoltage) * 100;
+        
+        const isFeeder = calc.source === "main" || allSpIds.has(calc.source) || calc.name.toLowerCase().includes("feeder");
+        const limit = isFeeder ? 5.0 : 3.0;
+        const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
+        const isCompliant = VD_percent <= limit;
+        const status = !isCompliant ? "CRITICAL" : (isWarning ? "WARNING" : "COMPLIANT");
+
+        let sourceLabel = calc.source;
+        if (calc.source === "custom") {
+          sourceLabel = "Custom";
         } else {
-          foundPanel = allSubPanels.find((sp) => sp.id === calc.source || sp.panel.designation === calc.source);
-          if (!foundPanel) {
-            if (circuits.some((c) => c.id === calc.source)) {
-              foundPanel = { id: "main", panel: panel };
-            } else {
-              const matchedSp = allSubPanels.find((sp) => sp.circuits.some((c) => c.id === calc.source));
-              if (matchedSp) foundPanel = matchedSp;
+          let foundPanel: any = null;
+          if (calc.source === "main" || calc.source === "MDP" || (panel && panel.designation === calc.source)) {
+            foundPanel = { id: "main", panel: panel };
+          } else {
+            foundPanel = allSubPanels.find((sp) => sp.id === calc.source || sp.panel.designation === calc.source);
+            if (!foundPanel) {
+              if (circuits.some((c) => c.id === calc.source)) {
+                foundPanel = { id: "main", panel: panel };
+              } else {
+                const matchedSp = allSubPanels.find((sp) => sp.circuits.some((c) => c.id === calc.source));
+                if (matchedSp) foundPanel = matchedSp;
+              }
+            }
+          }
+
+          if (foundPanel) {
+            sourceLabel = `${foundPanel.panel.system} / ${foundPanel.panel.designation || (foundPanel.id === "main" ? "MDP" : "Sub Panel")}`;
+          } else {
+            sourceLabel = calc.source || "Local Distribution";
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceLabel)) {
+              sourceLabel = "Local Distribution";
             }
           }
         }
 
-        if (foundPanel) {
-          sourceLabel = `${foundPanel.panel.system} / ${foundPanel.panel.designation || (foundPanel.id === "main" ? "MDP" : "Sub Panel")}`;
-        } else {
-          sourceLabel = calc.source || "Local Distribution";
-          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceLabel)) {
-            sourceLabel = "Local Distribution";
-          }
-        }
-      }
+        b.addText(sourceLabel, colPositions[0] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[0].w - 4);
+        b.addText(calc.name, colPositions[1] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
+        b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[2].w - 4);
+        b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[3].w - 4);
+        b.addText((sets > 1 ? `${sets} Sets of ` : '') + calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
+        b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[5].w - 4);
+        b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[6].w - 4);
+        b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[7].w - 4);
+        b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[8].w - 4);
+        
+        const statLayer = status === "CRITICAL" ? "SLD_FAULT" : "TEXT_DATA";
+        b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, statLayer, "center", cols[9].w - 4);
 
-      b.addText(sourceLabel, colPositions[0] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[0].w - 4);
-      b.addText(calc.name, colPositions[1] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
-      b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[2].w - 4);
-      b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[3].w - 4);
-      b.addText((sets > 1 ? `${sets} Sets of ` : '') + calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
-      b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[5].w - 4);
-      b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[6].w - 4);
-      b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[7].w - 4);
-      b.addText(VD_percent.toFixed(2) + "%", colPositions[8] + cols[8].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[8].w - 4);
-      
-      const statLayer = status === "PASSED" ? "TEXT_DATA" : "SLD_FAULT";
-      b.addText(status, colPositions[9] + cols[9].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, statLayer, "center", cols[9].w - 4);
-
-      ty -= rowH;
+        ty -= rowH;
+      });
     });
 
     if (calculationsToRender.length > 0) {
