@@ -10,7 +10,8 @@ import {
   Sliders,
   Sparkles,
   HelpCircle,
-  FileDown
+  FileDown,
+  Lock
 } from "lucide-react";
 import { 
   PEC_EGC_TABLE_2017, 
@@ -22,7 +23,13 @@ import {
 } from "../utils/exportEgcExports";
 import { STANDARD_CB_RATINGS } from "../constants";
 
-export default function EgcSizingCalculator() {
+interface EgcSizingCalculatorProps {
+  isPremium?: boolean;
+  onRequestUpgrade?: () => void;
+  user?: any;
+}
+
+export default function EgcSizingCalculator({ isPremium = false, onRequestUpgrade, user }: EgcSizingCalculatorProps) {
   const [ocpdRating, setOcpdRating] = useState<number>(100);
   const [isCustomStyle, setIsCustomStyle] = useState<boolean>(false);
   const [customOcpdText, setCustomOcpdText] = useState<string>("100");
@@ -111,11 +118,40 @@ export default function EgcSizingCalculator() {
 
           <button
             id="btn-export-xlsx"
-            onClick={() => exportEgcToExcel(activeOcpd, material, egcResult)}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200/40 dark:border-emerald-900/30 transition-all cursor-pointer shadow-sm"
+            onClick={async () => {
+              if (isPremium) {
+                if (user?.uid) {
+                  try {
+                    const response = await fetch("/api/verify-excel-export", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ userId: user.uid, module: "egc" })
+                    });
+                    if (!response.ok) {
+                      const data = await response.json();
+                      alert(data.error || "Excel export verification failed.");
+                      if (onRequestUpgrade) onRequestUpgrade();
+                      return;
+                    }
+                  } catch (err) {
+                    console.warn("Backend validation failed, proceeding with client verification:", err);
+                  }
+                }
+                exportEgcToExcel(activeOcpd, material, egcResult);
+              } else {
+                alert("Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.");
+                if (onRequestUpgrade) onRequestUpgrade();
+              }
+            }}
+            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer shadow-sm ${
+              isPremium
+                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/60 dark:text-emerald-400 border-emerald-200/40 dark:border-emerald-900/30"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700/60"
+            }`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            Excel Sheet
+            <span>Excel Sheet</span>
+            {!isPremium && <Lock className="w-3 h-3 text-amber-500 ml-0.5" />}
           </button>
 
           <button

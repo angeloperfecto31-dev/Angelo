@@ -406,10 +406,29 @@ export default function TransformerCalc({
     }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!isPremium) {
+      alert("Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.");
       if (onRequestUpgrade) onRequestUpgrade();
       return;
+    }
+
+    if (user?.uid) {
+      try {
+        const response = await fetch("/api/verify-excel-export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.uid, module: "transformer" })
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          alert(data.error || "Excel export verification failed.");
+          if (onRequestUpgrade) onRequestUpgrade();
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend validation failed, proceeding with client verification:", err);
+      }
     }
 
     try {

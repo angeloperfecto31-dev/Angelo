@@ -1630,6 +1630,7 @@ export default function App() {
 
   const exportToExcel = () => {
     try {
+      const isPremiumUser = userPlan === "premium" || isAdmin;
       const wb = XLSX.utils.book_new();
 
       const sanitizeSheetName = (name: string): string => {
@@ -2011,7 +2012,7 @@ export default function App() {
       // -----------------------------------------------------
       // Voltage Drop Export
       // -----------------------------------------------------
-      if (vdCalculations && vdCalculations.length > 0) {
+      if (isPremiumUser && vdCalculations && vdCalculations.length > 0) {
         const vdData: any[][] = [];
         vdData.push([
           "VOLTAGE DROP ANALYSIS",
@@ -2196,18 +2197,19 @@ export default function App() {
       // -----------------------------------------------------
       // Short Circuit Export
       // -----------------------------------------------------
-      const scParams = iscParams || {
-        transformerKVA: 100,
-        transformerZ: 5,
-        transformerVoltage: panel?.voltage || 230,
-        primaryVoltage: 34500,
-        transformerConnection: "Delta-Wye (Δ-Y)",
-        utilityShortCircuitMVA: 500,
-        feederLength: 10,
-        feederSize: "30",
-        feederRuns: getRunsBySystem(panel?.system),
-        conductorType: "Copper",
-      };
+      if (isPremiumUser) {
+        const scParams = iscParams || {
+          transformerKVA: 100,
+          transformerZ: 5,
+          transformerVoltage: panel?.voltage || 230,
+          primaryVoltage: 34500,
+          transformerConnection: "Delta-Wye (Δ-Y)",
+          utilityShortCircuitMVA: 500,
+          feederLength: 10,
+          feederSize: "30",
+          feederRuns: getRunsBySystem(panel?.system),
+          conductorType: "Copper",
+        };
 
       const scBaseKVA = scParams.transformerKVA;
       const scBaseKV = scParams.transformerVoltage / 1000;
@@ -2489,11 +2491,13 @@ export default function App() {
         }
       }
       XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
+      }
 
       // -----------------------------------------------------
       // Illumination Export
       // -----------------------------------------------------
       if (
+        isPremiumUser &&
         illumParams &&
         illumParams.savedRooms &&
         illumParams.savedRooms.length > 0
@@ -3047,7 +3051,38 @@ export default function App() {
                 priority: "primary", 
                 title: userPlan !== "premium" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary"
               },
-              { label: "Export to Excel", icon: FileSpreadsheet, onClick: exportToExcel, priority: "secondary" },
+              { 
+                label: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
+                icon: FileSpreadsheet,
+                onClick: async () => {
+                  if (userPlan === "premium" || isAdmin || activeTab === "schedule") {
+                    if (user?.uid) {
+                      try {
+                        const response = await fetch("/api/verify-excel-export", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ userId: user.uid, module: activeTab })
+                        });
+                        if (!response.ok) {
+                          const data = await response.json();
+                          alert(data.error || "Excel export verification failed.");
+                          setShowUpgrade(true);
+                          return;
+                        }
+                      } catch (err) {
+                        console.warn("Backend excel validation failed, proceeding with client verification:", err);
+                      }
+                    }
+                    exportToExcel();
+                  } else {
+                    alert("Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.");
+                    setShowUpgrade(true);
+                  }
+                },
+                priority: "secondary",
+                title: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Available on Premium Plan" : "Export current module details to Excel",
+                isLocked: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule")
+              },
               { 
                 label: userPlan !== "premium" && !isAdmin ? "CAD Export (Premium)" : "Export AutoCAD Drawing", 
                 icon: Layers, 
@@ -3059,10 +3094,12 @@ export default function App() {
                   }
                 }, 
                 priority: "secondary",
-                title: "Complete Load Schedule and calculations directly to AutoCAD schema blocks"
+                title: "Complete Load Schedule and calculations directly to AutoCAD schema blocks",
+                isLocked: userPlan !== "premium" && !isAdmin
               }
             ].map((btn, index) => {
               const isPri = btn.priority === "primary";
+              const isLck = (btn as any).isLocked;
               return (
                 <div key={index} className="relative group">
                   <button
@@ -3071,11 +3108,14 @@ export default function App() {
                     className={`w-full flex items-center justify-center gap-2 h-9 rounded-lg font-extrabold text-[10px] uppercase tracking-wider transition-all duration-200 active:scale-98 border ${
                       isPri 
                         ? "bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/10 text-white border-indigo-500/40" 
-                        : "bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/60"
+                        : isLck
+                          ? "bg-slate-900/40 text-slate-500 hover:text-slate-400 border-slate-800/80 cursor-pointer"
+                          : "bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/60"
                     } ${isSidebarCollapsed ? "p-0" : "px-3"}`}
                   >
-                    <btn.icon className={`w-3.5 h-3.5 shrink-0 ${isPri ? "text-indigo-200" : "text-slate-400 group-hover:text-slate-200"}`} />
+                    <btn.icon className={`w-3.5 h-3.5 shrink-0 ${isPri ? "text-indigo-200" : isLck ? "text-slate-600" : "text-slate-400 group-hover:text-slate-200"}`} />
                     {!isSidebarCollapsed && <span className="truncate">{btn.label}</span>}
+                    {isLck && <Lock className="w-3 h-3 text-amber-500 shrink-0 ml-0.5" />}
                   </button>
                   {isSidebarCollapsed && (
                     <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
@@ -4558,7 +4598,11 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full"
                 >
-                  <EgcSizingCalculator />
+                  <EgcSizingCalculator
+                    isPremium={userPlan === "premium" || isAdmin}
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                    user={user}
+                  />
                 </motion.div>
               </div>
 
