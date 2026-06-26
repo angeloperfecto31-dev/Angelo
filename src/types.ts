@@ -38,6 +38,7 @@ export interface Circuit {
   description: string;
   loadVA: number; // Changed from loadKVA to loadVA
   voltage: number;
+  wireSets?: number; // Optional number of cable sets
   phases: Phase[];
   is3PhaseMarker?: boolean;
   loadA: number;
@@ -131,6 +132,7 @@ export interface VoltageDropCalculation {
   loadA: number;
   length: number; // meters
   wireSize: string; // mm²
+  wireSets?: number;
   voltage: number;
   systemType: '1PH' | '3PH';
 }

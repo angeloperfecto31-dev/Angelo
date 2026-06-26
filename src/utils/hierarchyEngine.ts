@@ -1,5 +1,6 @@
 import { Circuit, PanelConfig, LoadType, VoltageDropCalculation, MCBType } from "../types";
 import { computePanelScheduleValues, calculateCircuitValues, formatWireSizeLocal, isIdleSpareOrSpace } from "./computeEngine";
+import { isEqual } from "lodash";
 
 export interface PanelNode {
   id: string;
@@ -136,14 +137,14 @@ export function syncHierarchyData(
   currentMdpCircuits = currentMdpCircuits.map((c, i) => {
     const updated = calculateCircuitValues(c, mdpPanel, Array.from(updatedNodes.values()), vdCalculations);
     const newCircuit = { ...c, ...updated };
-    if (JSON.stringify(c) !== JSON.stringify(newCircuit)) {
+    if (!isEqual(c, newCircuit)) {
       hasChanges = true;
     }
     return newCircuit;
   });
 
   const finalSubPanels = Array.from(updatedNodes.values());
-  if (JSON.stringify(subPanels) !== JSON.stringify(finalSubPanels)) {
+  if (!isEqual(subPanels, finalSubPanels)) {
     hasChanges = true;
   }
 

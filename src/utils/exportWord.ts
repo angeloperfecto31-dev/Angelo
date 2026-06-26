@@ -854,7 +854,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           createCell(cir.loadVA?.toString() || "0"),
           createCell(ampsContent),
           createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${cir.mcbP || 2}P`),
-          createCell(isSpace ? "-" : `${cir.wireSize || '3.5'} mm² THHN`),
+          createCell(isSpace ? "-" : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize || '3.5'} mm² THHN`),
           createCell(isSpace ? "-" : `${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
         ]
       }));
@@ -880,7 +880,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       is3PH 
         ? `Phase balancing is maintained at highly optimal levels with an imbalance deviation of $f_{\\text{imbalance}} = ${phaseImbalance.toFixed(2)}\\%$ (under the standard $15\\\%$ maximum phase discrepancy limit).`
         : `Single Phase circuits display solid protective OCPD coordination matching PEC requirements.`,
-      `Verified Conductor Ampacity: Sized feeder of $A_{\\text{wire}} = ${wire.size}\\text{ mm}^2$ Cu conductor boasts a maximum thermic ampacity threshold matching PEC tables comfortably exceeding OCPD rating. Conformance status: OK.`
+      `Verified Conductor Ampacity: Sized feeder of $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ Cu conductor boasts a maximum thermic ampacity threshold matching PEC tables comfortably exceeding OCPD rating. Conformance status: OK.`
     ];
     docChildren.push(new Paragraph({ spacing: { before: 200 } }));
     docChildren.push(createCallout("🔍 LOAD SCHEDULE KEY FINDINGS & CONFORMANCE SAFETY AUDIT", findingsLines));
@@ -1200,7 +1200,9 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       };
 
       const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
-      const R = data.r;
+      let R = data.r;
+      const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+      R = R / sets;
       const factor = calc.systemType === '3PH' ? 1.732 : 2;
       const cLength = calc.length || 0;
       const cLoad = calc.loadA || 0;
@@ -1218,7 +1220,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       vdTableRows.push(new TableRow({
         children: [
           createCell(calc.name || "", AlignmentType.LEFT),
-          createCell(calc.wireSize || "3.5"),
+          createCell((calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : '') + (calc.wireSize || "3.5")),
           createCell(calc.systemType || "1PH"),
           createCell(cVoltage.toString()),
           createCell(cLength.toString()),
@@ -1270,7 +1272,9 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
            await addImageToDoc(images.vdDiagrams[calc.id]);
 
            const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
-           const R = data.r;
+           let R = data.r;
+           const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+           R = R / sets;
            const is3Phase = calc.systemType === '3PH';
            const factor = is3Phase ? 1.732 : 2;
            const cLength = calc.length || 0;
@@ -1286,7 +1290,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
            docChildren.push(createParagraph(`   • System Type = ${calc.systemType}`));
            docChildren.push(createParagraph(`   • Load Current ($I$) = ${cLoad.toFixed(2)} A`));
            docChildren.push(createParagraph(`   • Feeder Length ($L$) = ${cLength.toFixed(2)} m`));
-           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSize} mm²`));
+           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ''}${calc.wireSize} mm²`));
            docChildren.push(createParagraph(`   • AC Resistance ($R_{\\text{ohms}}$) = ${R} \\Omega/km`));
            docChildren.push(createParagraph(`   • Nominal Voltage ($V_{\\text{nominal}}$) = ${cVoltage} V`));
            

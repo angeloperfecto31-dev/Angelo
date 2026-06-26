@@ -373,6 +373,7 @@ export default function App() {
 
       const mainLoadA = Number(mainCurrent.baseAmp.toFixed(2));
       const mainWireSize = mainFeeder.wire.size.toString();
+      const mainWireSets = mainFeeder.wire.runs || 1;
       const mainVoltage = panel.voltage;
       const mainSystemType: "1PH" | "3PH" = is3PH ? "3PH" : "1PH";
 
@@ -381,6 +382,7 @@ export default function App() {
         const hasMainChanged =
           existingMain.loadA !== mainLoadA ||
           existingMain.wireSize !== mainWireSize ||
+          existingMain.wireSets !== mainWireSets ||
           existingMain.voltage !== mainVoltage ||
           existingMain.systemType !== mainSystemType;
         if (hasMainChanged) {
@@ -390,6 +392,7 @@ export default function App() {
           ...existingMain,
           loadA: mainLoadA,
           wireSize: mainWireSize,
+          wireSets: mainWireSets,
           voltage: mainVoltage,
           systemType: mainSystemType,
         });
@@ -402,6 +405,7 @@ export default function App() {
           loadA: mainLoadA,
           length: 30,
           wireSize: mainWireSize,
+          wireSets: mainWireSets,
           voltage: mainVoltage,
           systemType: mainSystemType,
         });
@@ -431,6 +435,7 @@ export default function App() {
             existingBranch.name !== branchName ||
             isLoadADiff ||
             existingBranch.wireSize !== c.wireSize ||
+            existingBranch.wireSets !== c.wireSets ||
             isVoltageDiff ||
             existingBranch.systemType !== branchSystemType;
           if (hasBranchChanged) {
@@ -441,6 +446,7 @@ export default function App() {
             name: branchName,
             loadA: c.loadA,
             wireSize: c.wireSize,
+            wireSets: c.wireSets,
             voltage: c.voltage,
             systemType: branchSystemType,
           });
@@ -453,6 +459,7 @@ export default function App() {
             loadA: c.loadA,
             length: 30, // Default to 30 meters
             wireSize: c.wireSize,
+            wireSets: c.wireSets,
             voltage: c.voltage,
             systemType: branchSystemType,
           });
@@ -476,6 +483,7 @@ export default function App() {
 
           const spLoadA = Number(spMainCurrent.baseAmp.toFixed(2));
           const spWireSize = spMainFeeder.wire.size.toString();
+          const spWireSets = spMainFeeder.wire.runs || 1;
           const spVoltage = sp.panel.voltage;
           const spSystemType: "1PH" | "3PH" = spIs3PH ? "3PH" : "1PH";
           const spName = `${sp.panel.designation || "Sub-Panel"} Feeder`;
@@ -486,6 +494,7 @@ export default function App() {
               existingSp.name !== spName ||
               existingSp.loadA !== spLoadA ||
               existingSp.wireSize !== spWireSize ||
+              existingSp.wireSets !== spWireSets ||
               existingSp.voltage !== spVoltage ||
               existingSp.systemType !== spSystemType;
             if (hasSpChanged) {
@@ -496,6 +505,7 @@ export default function App() {
               name: spName,
               loadA: spLoadA,
               wireSize: spWireSize,
+              wireSets: spWireSets,
               voltage: spVoltage,
               systemType: spSystemType,
             });
@@ -508,6 +518,7 @@ export default function App() {
               loadA: spLoadA,
               length: 30,
               wireSize: spWireSize,
+              wireSets: spWireSets,
               voltage: spVoltage,
               systemType: spSystemType,
             });
@@ -1082,6 +1093,7 @@ export default function App() {
           ...vd,
           loadA: Number(mainCurrent.baseAmp.toFixed(2)),
           wireSize: mainFeeder.wire.size.toString(),
+          wireSets: mainFeeder.wire.runs || 1,
           voltage: data.panel.voltage,
           systemType: (data.panel.system.includes("3PH") ? "3PH" : "1PH") as "1PH" | "3PH",
         };
@@ -1097,6 +1109,7 @@ export default function App() {
             ...vd,
             loadA: Number(mainCurrent.baseAmp.toFixed(2)),
             wireSize: mainFeeder.wire.size.toString(),
+            wireSets: mainFeeder.wire.runs || 1,
             voltage: sp.panel.voltage,
             systemType: (sp.panel.system.includes("3PH") ? "3PH" : "1PH") as "1PH" | "3PH",
           };
@@ -1437,7 +1450,7 @@ export default function App() {
             isSpace ? "-" : cir.mcbType,
             isSpace
               ? "-"
-              : `${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
+              : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
           );
           wsData.push(row);
         });
@@ -1497,7 +1510,7 @@ export default function App() {
         wsData.push(["SUMMARY & MAIN FEEDER"]);
         wsData.push([
           "Main Feeder:",
-          `${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
+          `${wire.runs && wire.runs > 1 ? `${wire.runs} Sets of ` : ''}${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
         ]);
         wsData.push([
           "Main Breaker:",

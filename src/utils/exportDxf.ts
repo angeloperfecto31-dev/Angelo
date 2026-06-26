@@ -2056,7 +2056,7 @@ export const exportToCAD = (
         ? "SPACE"
         : isSpare
           ? "SPARE"
-          : `${cir.wireSize} mm² THHN / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
+          : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize} mm² THHN / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
       
       const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
       b.addText(
@@ -2736,12 +2736,14 @@ export const exportToCAD = (
 
         const data =
           WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-        const R = data.r;
+        let R = data.r;
+        const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+        R = R / sets;
         const vd = (factorRaw * calc.length * calc.loadA * R) / 1000;
         const vdPerc = (vd / calc.voltage) * 100;
 
         writeEqVD([
-          `\\textbf{Computation \\#${idx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${calc.wireSize}\\text{ mm}^2\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
+          `\\textbf{Computation \\#${idx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
           `R_{ohms} = ${R} \\ \\Omega\\text{/km}`,
           `VD = \\frac{${factorMath} \\times ${R} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
           `VD_{\\%} = \\left(\\frac{${vd.toFixed(2)}}{${calc.voltage}}\\right) \\times 100\\% = ${vdPerc.toFixed(2)} \\%`,
@@ -3699,7 +3701,9 @@ export const exportToCAD = (
       const dataStr = calc.wireSize;
       const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
         WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
-      const R_val = impedanceInfo.r;
+      let R_val = impedanceInfo.r;
+      const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+      R_val = R_val / sets;
 
       const VD_v = (factor * cLength * cLoad * R_val) / 1000;
       const VD_percent = (VD_v / cVoltage) * 100;
@@ -3738,7 +3742,7 @@ export const exportToCAD = (
       b.addText(calc.name, colPositions[1] + 3, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "left", cols[1].w - 4);
       b.addText(calc.loadA.toFixed(2), colPositions[2] + cols[2].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[2].w - 4);
       b.addText(calc.length.toString(), colPositions[3] + cols[3].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[3].w - 4);
-      b.addText(calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
+      b.addText((sets > 1 ? `${sets} Sets of ` : '') + calc.wireSize, colPositions[4] + cols[4].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[4].w - 4);
       b.addText(calc.voltage.toString(), colPositions[5] + cols[5].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[5].w - 4);
       b.addText(calc.systemType, colPositions[6] + cols[6].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[6].w - 4);
       b.addText(VD_v.toFixed(2), colPositions[7] + cols[7].w / 2, ty - rowH / 2 - dataFontSize / 2, dataFontSize, 0, "TEXT_DATA", "center", cols[7].w - 4);
@@ -3750,9 +3754,11 @@ export const exportToCAD = (
       ty -= rowH;
     });
 
-    if (calculationsToRender.length === 0) {
+    if (calculationsToRender.length > 0) {
+      b.addLine(tableLeft, ty, tableRight, ty, "BORDER");
+    } else {
       // Draw bottom horizontal line
-      b.addLine(tableLeft, ty - rowH * 2, tableRight, ty - rowH * 2, "TABLE_GRID");
+      b.addLine(tableLeft, ty - rowH * 2, tableRight, ty - rowH * 2, "BORDER");
       // Draw left outer vertical line
       b.addLine(tableLeft, ty - rowH * 2, tableLeft, ty, "BORDER");
       // Draw right outer vertical line

@@ -66,7 +66,12 @@ export default function VoltageDropCalc({
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data =
       WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-    const R = data.r;
+    let R = data.r;
+    
+    // Multiple cable sets in parallel reduce the effective resistance
+    const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+    R = R / sets;
+
     const factor = calc.systemType === "3PH" ? 1.732 : 2;
     const vd = (factor * calc.length * calc.loadA * R) / 1000;
     const vdPercentage = (vd / calc.voltage) * 100;
@@ -581,6 +586,7 @@ export default function VoltageDropCalc({
                     L = {calc.length} m
                   </span>
                   <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                    {calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ""}
                     {calc.wireSize} mm² THHN/THWN
                   </span>
                   <div

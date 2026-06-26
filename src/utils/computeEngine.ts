@@ -432,6 +432,7 @@ export const calculateCircuitValues = (
       // c.mcbKAIC = subMainFeeder.kaic; // Removed to prevent infinite update loop with MDP targetKaic
       c.mcbType = subMainFeeder.type as any;
       c.wireSize = formatWireSizeLocal(subMainFeeder.wire.size);
+      c.wireSets = subMainFeeder.wire.runs;
       c.groundSize = subMainFeeder.groundSize;
       c.conduitSize = subMainFeeder.conduitSize;
       c.conduitType = subMainFeeder.conduitType || "PVC";
@@ -1240,12 +1241,6 @@ export const computePanelScheduleValues = (
 
   let finalWireSize = baseWireSize;
   let finalWireRuns = wire.runs;
-  let finalWireAmpacity =
-    getConductorAmpacity(
-      baseWireSize,
-      p.conductorMaterial || "Copper",
-      (p.temperatureRating as any) || getTemperatureForInsulation(p.insulationType || "THHN")
-    ) * finalWireRuns;
   let finalGroundSize = groundSize;
   let finalConduitSize = conduitSize;
   let finalConduitType = selectedMainConduitType;
@@ -1257,23 +1252,17 @@ export const computePanelScheduleValues = (
     if (p.mainOverrides.kaic) finalKaic = p.mainOverrides.kaic;
     if (p.mainOverrides.poles) finalPoles = p.mainOverrides.poles;
 
-    if (p.mainOverrides.wireSize) {
-      finalWireSize = Number(p.mainOverrides.wireSize);
-      const mat = p.conductorMaterial || "Copper";
-      const ins = p.insulationType || "THHN";
-      const temp =
-        (p.temperatureRating as any) || getTemperatureForInsulation(ins);
-      finalWireAmpacity =
-        getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
-    }
+    if (p.mainOverrides.wireSize) finalWireSize = Number(p.mainOverrides.wireSize);
     if (p.mainOverrides.wireRuns) finalWireRuns = p.mainOverrides.wireRuns;
-    if (p.mainOverrides.groundSize)
-      finalGroundSize = p.mainOverrides.groundSize;
-    if (p.mainOverrides.conduitSize)
-      finalConduitSize = p.mainOverrides.conduitSize;
-    if (p.mainOverrides.conduitType)
-      finalConduitType = p.mainOverrides.conduitType;
+    if (p.mainOverrides.groundSize) finalGroundSize = p.mainOverrides.groundSize;
+    if (p.mainOverrides.conduitSize) finalConduitSize = p.mainOverrides.conduitSize;
+    if (p.mainOverrides.conduitType) finalConduitType = p.mainOverrides.conduitType;
   }
+
+  const mat = p.conductorMaterial || "Copper";
+  const ins = p.insulationType || "THHN";
+  const temp = (p.temperatureRating as any) || getTemperatureForInsulation(ins);
+  let finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
 
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
   const phaseImbalance =

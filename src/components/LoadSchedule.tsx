@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { isEqual } from "lodash";
 import {
   Plus,
   Trash2,
@@ -783,7 +784,7 @@ export default function LoadSchedule({
       let changed = false;
       const recalculated = prevCircuits.map((c) => {
         const rec = { ...c, ...calculateCircuit(c) } as Circuit;
-        if (JSON.stringify(rec) !== JSON.stringify(c)) {
+        if (!isEqual(rec, c)) {
           changed = true;
           return rec;
         }
@@ -1107,7 +1108,6 @@ export default function LoadSchedule({
     
     let finalWireSize = wire.size;
     let finalWireRuns = wire.runs;
-    let finalWireAmpacity = wire.ampacity;
     let finalGroundSize = groundSize;
     let finalConduitSize = conduitSize;
     let finalConduitType = selectedMainConduitType;
@@ -1119,18 +1119,17 @@ export default function LoadSchedule({
       if (panel.mainOverrides.kaic) finalKaic = panel.mainOverrides.kaic;
       if (panel.mainOverrides.poles) finalPoles = panel.mainOverrides.poles;
 
-      if (panel.mainOverrides.wireSize) {
-        finalWireSize = Number(panel.mainOverrides.wireSize);
-        const mat = panel.conductorMaterial || "Copper";
-        const ins = panel.insulationType || "THHN";
-        const temp = (panel.temperatureRating as any) || getTemperatureForInsulation(ins);
-        finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
-      }
+      if (panel.mainOverrides.wireSize) finalWireSize = Number(panel.mainOverrides.wireSize);
       if (panel.mainOverrides.wireRuns) finalWireRuns = panel.mainOverrides.wireRuns;
       if (panel.mainOverrides.groundSize) finalGroundSize = panel.mainOverrides.groundSize;
       if (panel.mainOverrides.conduitSize) finalConduitSize = panel.mainOverrides.conduitSize;
       if (panel.mainOverrides.conduitType) finalConduitType = panel.mainOverrides.conduitType;
     }
+
+    const mat = panel.conductorMaterial || "Copper";
+    const ins = panel.insulationType || "THHN";
+    const temp = (panel.temperatureRating as any) || getTemperatureForInsulation(ins);
+    let finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
 
     return { 
       wire: { size: finalWireSize, ampacity: finalWireAmpacity, runs: finalWireRuns }, 
@@ -1986,23 +1985,42 @@ export default function LoadSchedule({
                 <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
                   Main Feeder Size (mm²)
                 </label>
-                <select
-                  value={panel.mainOverrides.wireSize || ""}
-                  onChange={(e) => setPanel(prev => ({
-                    ...prev,
-                    mainOverrides: {
-                      ...prev.mainOverrides,
-                      wireSize: e.target.value ? Number(e.target.value) : undefined,
-                      isOverrideEnabled: true
-                    }
-                  }))}
-                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
-                >
-                  <option value="">Auto ({formatWireSize(mainFeeder.raw.wireSize)})</option>
-                  {PEC_AMPACITY_TABLE.map(w => (
-                    <option key={w.size} value={w.size}>{formatWireSize(w.size)} mm²</option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select
+                    value={panel.mainOverrides.wireRuns || ""}
+                    onChange={(e) => setPanel(prev => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        wireRuns: e.target.value ? Number(e.target.value) : undefined,
+                        isOverrideEnabled: true
+                      }
+                    }))}
+                    className="w-1/3 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                  >
+                    <option value="">Auto ({mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}x` : '1x'})</option>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(r => (
+                      <option key={r} value={r}>{r}x Sets</option>
+                    ))}
+                  </select>
+                  <select
+                    value={panel.mainOverrides.wireSize || ""}
+                    onChange={(e) => setPanel(prev => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        wireSize: e.target.value ? Number(e.target.value) : undefined,
+                        isOverrideEnabled: true
+                      }
+                    }))}
+                    className="w-2/3 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                  >
+                    <option value="">Auto ({formatWireSize(mainFeeder.raw.wireSize)})</option>
+                    {PEC_AMPACITY_TABLE.map(w => (
+                      <option key={w.size} value={w.size}>{formatWireSize(w.size)} mm²</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -3025,9 +3043,21 @@ export default function LoadSchedule({
                       ) : (
                         <>
                           <div className="flex flex-col items-center gap-1">
-                            <span>
-                              {c.wireSize}mm² {c.wireType}
-                            </span>
+                            <div className="flex items-center justify-center gap-1">
+                              <select
+                                value={c.wireSets || 1}
+                                onChange={(e) => updateCircuit(c.id, { wireSets: Number(e.target.value) })}
+                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none ${(!c.wireSets || c.wireSets === 1) ? "print:hidden" : ""}`}
+                                title="Number of Cable Sets"
+                              >
+                                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                                  <option key={n} value={n}>{n > 1 ? `${n} Sets of` : ''}</option>
+                                ))}
+                              </select>
+                              <span>
+                                {c.wireSize}mm² {c.wireType}
+                              </span>
+                            </div>
                             <span className="text-slate-500 dark:text-slate-400 text-xxs flex items-center gap-1 justify-center whitespace-nowrap">
                               {c.groundSize}mm² GND in {c.conduitSize}
                               <select
