@@ -128,6 +128,7 @@ export const INITIAL_CIRCUITS: Circuit[] = [
 
 export const INITIAL_PANEL: PanelConfig = {
   project: "RESIDENTIAL BUILDING",
+  projectType: "Residential",
   location: "MAIN PANEL - GARAGE",
   designation: "MDP",
   type: "MAIN DISTRIBUTION PANEL",
@@ -1595,6 +1596,30 @@ export default function LoadSchedule({
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Project Type
+            </label>
+            <select
+              value={panel.projectType || "Residential"}
+              onChange={(e) => setPanel({ ...panel, projectType: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <option value="Residential">Residential</option>
+              <option value="Commercial">Commercial</option>
+              <option value="Industrial">Industrial</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Owner
+            </label>
+            <input
+              value={panel.owner || ""}
+              onChange={(e) => setPanel({ ...panel, owner: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Location
             </label>
             <input
@@ -2258,6 +2283,26 @@ export default function LoadSchedule({
                     {panel.project}
                   </span>
                 </div>
+                {panel.projectType && (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">
+                      PROJECT TYPE
+                    </span>
+                    <span className="text-slate-900 dark:text-slate-200 uppercase font-bold">
+                      {panel.projectType}
+                    </span>
+                  </div>
+                )}
+                {panel.owner && (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">
+                      OWNER
+                    </span>
+                    <span className="text-slate-900 dark:text-slate-200 uppercase font-bold">
+                      {panel.owner}
+                    </span>
+                  </div>
+                )}
                 <div className="flex flex-col">
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">
                     LOCATION

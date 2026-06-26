@@ -80,7 +80,14 @@ export interface Circuit {
 
 export interface PanelConfig {
   project: string;
+  projectType?: 'Residential' | 'Commercial' | 'Industrial' | string;
+  owner?: string;
   location: string;
+  voltageSystem?: string; // alias or derived for main system
+  utilityProvider?: string;
+  designStandard?: string;
+  engineer?: string;
+  date?: string;
   designation: string;
   type: string;
   system: string;

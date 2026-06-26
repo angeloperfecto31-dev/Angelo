@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
+import { syncHierarchyData } from "../utils/hierarchyEngine";
 import { motion } from "motion/react";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
@@ -288,6 +289,10 @@ export default function ReportExportModule({
       return;
     }
 
+    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+    const syncCircuits = updatedMdpCircuits;
+    const syncSubPanels = updatedSubPanels;
+
     if (user?.uid) {
       try {
         const response = await fetch("/api/verify-doc-export", {
@@ -320,7 +325,31 @@ export default function ReportExportModule({
           text: "OFFICIAL ELECTRICAL POWER SYSTEM STUDY & REPORT",
           alignment: docx.AlignmentType.CENTER,
         }),
-        new docx.Paragraph({ text: "" }),
+        new docx.Paragraph({ text: "" })
+      );
+
+      if (panel.projectType) {
+        docxChildren.push(
+          new docx.Paragraph({
+            children: [
+              new docx.TextRun({ text: "Project Classification: ", bold: true }),
+              new docx.TextRun({ text: `${panel.projectType.toUpperCase()} FACILITY` }),
+            ],
+          })
+        );
+      }
+      if (panel.owner) {
+        docxChildren.push(
+          new docx.Paragraph({
+            children: [
+              new docx.TextRun({ text: "Project Owner: ", bold: true }),
+              new docx.TextRun({ text: panel.owner }),
+            ],
+          })
+        );
+      }
+
+      docxChildren.push(
         new docx.Paragraph({
           children: [
             new docx.TextRun({ text: "Client Name: ", bold: true }),
@@ -895,6 +924,10 @@ export default function ReportExportModule({
       return;
     }
 
+    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+    const syncCircuits = updatedMdpCircuits;
+    const syncSubPanels = updatedSubPanels;
+
     if (user?.uid) {
       try {
         const response = await fetch("/api/verify-doc-export", {
@@ -963,8 +996,16 @@ export default function ReportExportModule({
 
         doc.setFont("Helvetica", "normal");
         doc.setFontSize(9.5);
+        if (panel.projectType) {
+          doc.text(`Project Classification: ${panel.projectType.toUpperCase()} FACILITY`, 15, currentY);
+          currentY += 6;
+        }
         doc.text(`Client Enterprise Name: ${clientName}`, 15, currentY);
         currentY += 6;
+        if (panel.owner) {
+          doc.text(`Project Owner: ${panel.owner}`, 15, currentY);
+          currentY += 6;
+        }
         doc.text(`Nominal System Voltage: ${systemVoltage} V (${isThreePhase ? "3-Phase" : "1-Phase"} balanced delta/wye)`, 15, currentY);
         currentY += 6;
         doc.text(`Grid Standard Frequency: ${systemFreq} Hz | Rated Power Factor: 0.85`, 15, currentY);

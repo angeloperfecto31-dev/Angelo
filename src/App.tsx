@@ -1138,11 +1138,10 @@ export default function App() {
     },
   };
 
-  const handleNewProject = () => {
+  const handleNewProject = (configOverrides?: Partial<PanelConfig>) => {
     setCurrentProjectId(null);
-    setPanel(INITIAL_PANEL);
+    setPanel({ ...INITIAL_PANEL, ...configOverrides });
     setCircuits(getFreshInitialCircuits());
-    setSubPanels([]);
     setSubPanels([]);
     setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
     setIscSource("auto");
@@ -1303,6 +1302,8 @@ export default function App() {
       const isPremiumUser = userPlan === "premium" || isAdmin;
       const wb = XLSX.utils.book_new();
 
+      const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+
       const sanitizeSheetName = (name: string): string => {
         // Excel worksheet names cannot contain: \ / ? * : [ ]
         // and cannot exceed 31 chars.
@@ -1314,18 +1315,12 @@ export default function App() {
       };
 
       const allPanelsToExport = [
-        { id: "main", panel, circuits, type: "MDP" },
-        ...subPanels.map((sp) => ({
+        { id: "main", panel, circuits: updatedMdpCircuits, type: "MDP" },
+        ...updatedSubPanels.map((sp) => ({
           id: sp.id,
           panel: sp.panel,
           circuits: sp.circuits,
           type: "Sub Panel"
-        })),
-        ...(subPanels || []).map((ssp) => ({
-          id: ssp.id,
-          panel: ssp.panel,
-          circuits: ssp.circuits,
-          type: "Sub-Sub Panel"
         }))
       ];
 
@@ -1355,17 +1350,23 @@ export default function App() {
           size <= 8 ? size.toFixed(1) : size.toString();
 
         const wsData: any[][] = [];
-        wsData.push(["PROJECT:", p.project, "", "SYSTEM:", p.system]);
+        wsData.push(["ELECTRICAL LOAD SCHEDULE", "", "", "", "", ""]);
+        wsData.push([]);
+        if (p.projectType) wsData.push(["PROJECT TYPE:", p.projectType.toUpperCase()]);
+        if (p.owner) wsData.push(["OWNER:", p.owner.toUpperCase()]);
+        wsData.push(["PROJECT:", (p.project || "").toUpperCase(), "", "SYSTEM:", (p.system || "").toUpperCase()]);
         wsData.push([
           "PANEL DESIGNATION:",
-          p.designation,
+          (p.designation || "").toUpperCase(),
           "",
           "VOLTAGE:",
           p.voltage,
         ]);
+        if (p.location) wsData.push(["LOCATION:", p.location.toUpperCase()]);
         wsData.push([]);
 
         const is3Phase = p.system.includes("3PH");
+        const headerRowIndex = wsData.length;
 
         const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
         if (is3Phase) {
@@ -1527,20 +1528,21 @@ export default function App() {
         const ws = XLSX.utils.aoa_to_sheet(wsData);
 
         const merges = [];
+        merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } });
         if (is3Phase) {
-          merges.push({ s: { r: 3, c: 0 }, e: { r: 4, c: 0 } });
-          merges.push({ s: { r: 3, c: 1 }, e: { r: 4, c: 1 } });
-          merges.push({ s: { r: 3, c: 2 }, e: { r: 4, c: 2 } });
-          merges.push({ s: { r: 3, c: 3 }, e: { r: 4, c: 3 } });
-          merges.push({ s: { r: 3, c: 4 }, e: { r: 4, c: 4 } });
-          merges.push({ s: { r: 3, c: 5 }, e: { r: 4, c: 5 } });
-          merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 9 } }); // AMPS spans cols 6, 7, 8, 9
-          merges.push({ s: { r: 3, c: 10 }, e: { r: 4, c: 10 } });
-          merges.push({ s: { r: 3, c: 11 }, e: { r: 4, c: 11 } });
-          merges.push({ s: { r: 3, c: 12 }, e: { r: 4, c: 12 } });
-          merges.push({ s: { r: 3, c: 13 }, e: { r: 4, c: 13 } });
-          merges.push({ s: { r: 3, c: 14 }, e: { r: 4, c: 14 } });
-          merges.push({ s: { r: 3, c: 15 }, e: { r: 4, c: 15 } });
+          merges.push({ s: { r: headerRowIndex, c: 0 }, e: { r: headerRowIndex + 1, c: 0 } });
+          merges.push({ s: { r: headerRowIndex, c: 1 }, e: { r: headerRowIndex + 1, c: 1 } });
+          merges.push({ s: { r: headerRowIndex, c: 2 }, e: { r: headerRowIndex + 1, c: 2 } });
+          merges.push({ s: { r: headerRowIndex, c: 3 }, e: { r: headerRowIndex + 1, c: 3 } });
+          merges.push({ s: { r: headerRowIndex, c: 4 }, e: { r: headerRowIndex + 1, c: 4 } });
+          merges.push({ s: { r: headerRowIndex, c: 5 }, e: { r: headerRowIndex + 1, c: 5 } });
+          merges.push({ s: { r: headerRowIndex, c: 6 }, e: { r: headerRowIndex, c: 9 } }); // AMPS spans cols 6, 7, 8, 9
+          merges.push({ s: { r: headerRowIndex, c: 10 }, e: { r: headerRowIndex + 1, c: 10 } });
+          merges.push({ s: { r: headerRowIndex, c: 11 }, e: { r: headerRowIndex + 1, c: 11 } });
+          merges.push({ s: { r: headerRowIndex, c: 12 }, e: { r: headerRowIndex + 1, c: 12 } });
+          merges.push({ s: { r: headerRowIndex, c: 13 }, e: { r: headerRowIndex + 1, c: 13 } });
+          merges.push({ s: { r: headerRowIndex, c: 14 }, e: { r: headerRowIndex + 1, c: 14 } });
+          merges.push({ s: { r: headerRowIndex, c: 15 }, e: { r: headerRowIndex + 1, c: 15 } });
         }
         if (merges.length > 0) {
           ws["!merges"] = merges;
@@ -1548,12 +1550,12 @@ export default function App() {
 
         // Add merges for bottom total row labels
         merges.push({
-          s: { r: 4 + headerRowOffset + c.length + 1, c: 0 },
-          e: { r: 4 + headerRowOffset + c.length + 1, c: 3 },
+          s: { r: headerRowIndex + 1 + headerRowOffset + c.length + 1, c: 0 },
+          e: { r: headerRowIndex + 1 + headerRowOffset + c.length + 1, c: 3 },
         });
         merges.push({
-          s: { r: 4 + headerRowOffset + c.length + 2, c: 0 },
-          e: { r: 4 + headerRowOffset + c.length + 2, c: 3 },
+          s: { r: headerRowIndex + 1 + headerRowOffset + c.length + 2, c: 0 },
+          e: { r: headerRowIndex + 1 + headerRowOffset + c.length + 2, c: 3 },
         });
 
         const wscols: any[] = [];
@@ -1577,9 +1579,11 @@ export default function App() {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
             
             const cellExists = !!ws[cellAddress];
-            const isHeader = (R <= 1) || (R >= 3 && R <= 3 + headerRowOffset);
-            const isTotalRow = (R === 4 + headerRowOffset + c.length + 1) || (R === 4 + headerRowOffset + c.length + 2);
-            const isSummaryRow = (R >= 4 + headerRowOffset + c.length + 4);
+            const isTopHeaderRow = R < headerRowIndex;
+            const isTableHeader = (R >= headerRowIndex && R <= headerRowIndex + headerRowOffset);
+            const isHeader = isTopHeaderRow || isTableHeader;
+            const isTotalRow = (R === headerRowIndex + 1 + headerRowOffset + c.length + 1) || (R === headerRowIndex + 1 + headerRowOffset + c.length + 2);
+            const isSummaryRow = (R >= headerRowIndex + 1 + headerRowOffset + c.length + 4);
 
             if (!cellExists && !isHeader && !isTotalRow && !isSummaryRow) {
               continue; // Optimization: skip empty elements to save memory
@@ -1599,18 +1603,30 @@ export default function App() {
               },
             };
 
-            if (R === 0 || R === 1) {
-              // Main Banner title
-              style.font = { name: "Segoe UI", sz: R === 0 ? 12 : 9.5, bold: true, color: { rgb: "FFFFFF" } };
-              style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
-              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
-              style.border = {
-                top: R === 0 ? { style: "medium", color: { rgb: "172554" } } : { style: "none" },
-                bottom: R === 1 ? { style: "medium", color: { rgb: "172554" } } : { style: "none" },
-                left: { style: "medium", color: { rgb: "172554" } },
-                right: { style: "medium", color: { rgb: "172554" } },
-              };
-            } else if (R >= 3 && R <= 3 + headerRowOffset) {
+            if (isTopHeaderRow) {
+              if (R === 0) {
+                // Main Banner title
+                style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+                style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
+                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+                style.border = {
+                  top: { style: "medium", color: { rgb: "172554" } },
+                  bottom: { style: "medium", color: { rgb: "172554" } },
+                  left: { style: "medium", color: { rgb: "172554" } },
+                  right: { style: "medium", color: { rgb: "172554" } },
+                };
+              } else if (ws[cellAddress].v && ws[cellAddress].v.toString().endsWith(":")) {
+                style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "1E293B" } }; // Slate-800
+                style.fill.fgColor.rgb = "FFFFFF";
+                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+                style.border = { top: { style: "none" }, bottom: { style: "none" }, left: { style: "none" }, right: { style: "none" } };
+              } else {
+                style.font = { name: "Segoe UI", sz: 10, bold: false, color: { rgb: "334155" } }; // Slate-700
+                style.fill.fgColor.rgb = "FFFFFF";
+                style.alignment = { horizontal: "left", vertical: "center" };
+                style.border = { top: { style: "none" }, bottom: { style: "none" }, left: { style: "none" }, right: { style: "none" } };
+              }
+            } else if (isTableHeader) {
               // Table Header row (Load schedule columns header group)
               style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
               style.fill.fgColor.rgb = "312E81"; // Indigo Navy
@@ -1622,8 +1638,8 @@ export default function App() {
                 right: { style: "thin", color: { rgb: "C7D2FE" } },
               };
             } else if (
-              R >= 4 + headerRowOffset &&
-              R < 4 + headerRowOffset + c.length
+              R >= headerRowIndex + 1 + headerRowOffset &&
+              R < headerRowIndex + 1 + headerRowOffset + c.length
             ) {
               // Table data rows
               style.border = {
@@ -1641,18 +1657,18 @@ export default function App() {
               } else {
                 style.alignment = { horizontal: "center", vertical: "center" };
               }
-            } else if (R === 4 + headerRowOffset + c.length + 1 || R === 4 + headerRowOffset + c.length + 2) {
+            } else if (isTotalRow) {
               // Total rows
               style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "1E1B4B" } };
               style.fill.fgColor.rgb = "EEF2FF"; // soft indigo background for accountant calculations
               style.alignment = { horizontal: C <= 3 ? "left" : "center", vertical: "center", indent: C <= 3 ? 1 : 0 };
               style.border = {
                 top: { style: "thin", color: { rgb: "312E81" } },
-                bottom: R === 4 + headerRowOffset + c.length + 2 ? { style: "double", color: { rgb: "312E81" } } : { style: "thin", color: { rgb: "312E81" } },
+                bottom: R === headerRowIndex + 1 + headerRowOffset + c.length + 2 ? { style: "double", color: { rgb: "312E81" } } : { style: "thin", color: { rgb: "312E81" } },
                 left: { style: "thin", color: { rgb: "C7D2FE" } },
                 right: { style: "thin", color: { rgb: "C7D2FE" } },
               };
-            } else if (R >= 4 + headerRowOffset + c.length + 4) {
+            } else if (isSummaryRow) {
               // Summaries at bottom
               style.fill.fgColor.rgb = "F8FAFC";
               style.font = { name: "Segoe UI", sz: 9.5, color: { rgb: "475569" } };
@@ -2378,6 +2394,8 @@ export default function App() {
       return;
     }
 
+    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+
     if (user?.uid) {
       try {
         const response = await fetch("/api/verify-doc-export", {
@@ -2449,7 +2467,7 @@ export default function App() {
       };
 
       const sldImages: Record<string, string | null> = {};
-      const allPanels = [panel, ...subPanels.map((sp) => sp.panel)];
+      const allPanels = [panel, ...updatedSubPanels.map((sp) => sp.panel)];
       for (const p of allPanels) {
         const id = `sld-${p?.designation || "main"}`;
         sldImages[p?.designation || ""] = await getImg(id);
@@ -2473,8 +2491,8 @@ export default function App() {
 
       await exportToWord(
         panel,
-        circuits,
-        subPanels,
+        updatedMdpCircuits,
+        updatedSubPanels,
         vdCalculations,
         illumParams,
         images,
@@ -2823,7 +2841,8 @@ export default function App() {
                 icon: Layers, 
                 onClick: () => {
                   if (userPlan === "premium" || isAdmin) {
-                    exportToCAD(panel, circuits, subPanels, iscParams, "ALL", vdCalculations, illumParams);
+                    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+                    exportToCAD(panel, updatedMdpCircuits, updatedSubPanels, iscParams, "ALL", vdCalculations, illumParams);
                   } else {
                     setShowUpgrade(true);
                   }

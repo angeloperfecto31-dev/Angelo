@@ -1369,7 +1369,7 @@ export const exportToCAD = (
     // Project metadata
     b.addText("PROJECT:", tx, 312, 1.8, 0, "TEXT_HEADER", "left");
     b.addText(
-      panel.project || "UNSPECIFIED DESIGN PROJECT",
+      (panel.projectType ? `[${panel.projectType}] ` : "") + (panel.project || "UNSPECIFIED DESIGN PROJECT"),
       tx,
       301,
       2.0,
@@ -1378,11 +1378,22 @@ export const exportToCAD = (
       "left"
     );
 
-    b.addText("LOCATION:", tx, 280, 1.8, 0, "TEXT_HEADER", "left");
+    b.addText("OWNER:", tx, 290, 1.8, 0, "TEXT_HEADER", "left");
+    b.addText(
+      panel.owner || "UNSPECIFIED OWNER",
+      tx,
+      281,
+      1.8,
+      0,
+      "TEXT_DATA",
+      "left"
+    );
+
+    b.addText("LOCATION:", tx, 271, 1.8, 0, "TEXT_HEADER", "left");
     b.addText(
       panel.location || "PHILIPPINES LOCAL SITE",
       tx,
-      269,
+      261,
       2.3,
       0,
       "TEXT_DATA",

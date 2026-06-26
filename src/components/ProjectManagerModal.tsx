@@ -10,7 +10,7 @@ interface ProjectManagerModalProps {
   onClose: () => void;
   currentProjectData: ProjectData;
   onLoadProject: (id: string, data: ProjectData) => void;
-  onNewProject: () => void;
+  onNewProject: (configOverrides?: Partial<import("../types").PanelConfig>) => void;
   currentProjectId: string | null;
   setCurrentProjectId: (id: string | null) => void;
 }
@@ -31,6 +31,24 @@ export default function ProjectManagerModal({
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showNewConfirm, setShowNewConfirm] = useState(false);
+  const [newProjectForm, setNewProjectForm] = useState<Partial<import("../types").PanelConfig>>({
+    projectType: 'Residential',
+    project: 'NEW PROJECT',
+    owner: '',
+    location: '',
+    voltageSystem: '230V, 1PH, 2W',
+    frequency: 60,
+    utilityProvider: '',
+    designStandard: 'PEC 2017',
+    engineer: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+  
+  const [filterType, setFilterType] = useState<string>("All");
+
+  const filteredProjects = projects
+    .filter(p => filterType === "All" || p.data.panel?.projectType === filterType)
+    .sort((a, b) => b.lastModified - a.lastModified);
 
   useEffect(() => {
     if (!isOpen) {
@@ -212,8 +230,12 @@ export default function ProjectManagerModal({
   };
 
   const confirmNew = () => {
+    if (!newProjectForm.project || !newProjectForm.projectType) {
+      alert("Project Name and Project Type are required.");
+      return;
+    }
     setCurrentProjectId(null);
-    onNewProject();
+    onNewProject(newProjectForm);
     onClose();
     setShowNewConfirm(false);
   };
@@ -281,21 +303,38 @@ export default function ProjectManagerModal({
 
           {/* Saved Projects List */}
           <div className="space-y-3">
-            <h3 className="text-sm font-bold tracking-wider text-slate-500 uppercase">Saved Projects</h3>
-            {projects.length === 0 ? (
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold tracking-wider text-slate-500 uppercase">Saved Projects</h3>
+              <select 
+                value={filterType}
+                onChange={e => setFilterType(e.target.value)}
+                className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs dark:text-white"
+              >
+                <option value="All">All Types</option>
+                <option value="Residential">Residential</option>
+                <option value="Commercial">Commercial</option>
+                <option value="Industrial">Industrial</option>
+              </select>
+            </div>
+            {filteredProjects.length === 0 ? (
               <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No saved projects found.</p>
             ) : (
               <div className="space-y-2">
-                {projects.sort((a, b) => b.lastModified - a.lastModified).map(p => (
+                {filteredProjects.map(p => (
                   <div 
                     key={p.id} 
                     onClick={() => handleLoad(p)}
                     className="p-3 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between hover:border-indigo-500 cursor-pointer transition-all bg-white dark:bg-slate-800/50 group"
                   >
                     <div>
-                      <h4 className={`font-bold ${currentProjectId === p.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-white'}`}>
+                      <h4 className={`font-bold flex items-center gap-2 ${currentProjectId === p.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-white'}`}>
                         {p.name}
-                        {currentProjectId === p.id && <span className="ml-2 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full">Current</span>}
+                        {p.data.panel?.projectType && (
+                          <span className="text-[9px] uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            {p.data.panel.projectType}
+                          </span>
+                        )}
+                        {currentProjectId === p.id && <span className="text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full">Current</span>}
                       </h4>
                       <div className="flex gap-4 items-center">
                          <p className="text-xs text-slate-500 mt-1">
@@ -351,16 +390,132 @@ export default function ProjectManagerModal({
 
         {/* Custom Confirmation Overlay for New Project Initialization */}
         {showNewConfirm && (
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-6">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 animate-fade-in">
-              <div className="flex items-center gap-3 text-amber-500">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-6 overflow-y-auto">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-fade-in my-auto">
+              <div className="flex items-center gap-3 text-emerald-500">
                 <FilePlus className="w-6 h-6" />
-                <h4 className="font-bold text-slate-800 dark:text-white">Create New Project?</h4>
+                <h4 className="font-bold text-slate-800 dark:text-white text-lg">Create New Project</h4>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Any unsaved manual adjustments in your current project will be replaced. Are you sure you want to initialize a new blank workspace?
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
+                Define the core attributes of your new project. The selected Project Type will automatically influence calculations, templates, and design standards.
               </p>
-              <div className="flex justify-end gap-2.5 pt-2">
+              
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Project Type *</label>
+                    <select 
+                      value={newProjectForm.projectType}
+                      onChange={e => setNewProjectForm({...newProjectForm, projectType: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                      required
+                    >
+                      <option value="Residential">Residential</option>
+                      <option value="Commercial">Commercial</option>
+                      <option value="Industrial">Industrial</option>
+                    </select>
+                  </div>
+                  
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Project Name *</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.project}
+                      onChange={e => setNewProjectForm({...newProjectForm, project: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                      required
+                      placeholder="e.g. Skyline Apartments"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Owner</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.owner}
+                      onChange={e => setNewProjectForm({...newProjectForm, owner: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                      placeholder="Owner Name"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Location</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.location}
+                      onChange={e => setNewProjectForm({...newProjectForm, location: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                      placeholder="Project Address"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Voltage System</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.voltageSystem}
+                      onChange={e => setNewProjectForm({...newProjectForm, voltageSystem: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Frequency (Hz)</label>
+                    <select 
+                      value={newProjectForm.frequency}
+                      onChange={e => setNewProjectForm({...newProjectForm, frequency: Number(e.target.value)})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                    >
+                      <option value={60}>60 Hz</option>
+                      <option value={50}>50 Hz</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Utility Provider</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.utilityProvider}
+                      onChange={e => setNewProjectForm({...newProjectForm, utilityProvider: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                      placeholder="e.g. MERALCO"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Design Standard</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.designStandard}
+                      onChange={e => setNewProjectForm({...newProjectForm, designStandard: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                    />
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Engineer</label>
+                    <input 
+                      type="text"
+                      value={newProjectForm.engineer}
+                      onChange={e => setNewProjectForm({...newProjectForm, engineer: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                    />
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Date</label>
+                    <input 
+                      type="date"
+                      value={newProjectForm.date}
+                      onChange={e => setNewProjectForm({...newProjectForm, date: e.target.value})}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   onClick={() => setShowNewConfirm(false)}
                   className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-750 dark:text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
@@ -371,7 +526,7 @@ export default function ProjectManagerModal({
                   onClick={confirmNew}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-550 text-white rounded-lg text-xs font-bold transition-colors shadow-md"
                 >
-                  Yes, New Project
+                  Create Project
                 </button>
               </div>
             </div>

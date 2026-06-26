@@ -535,6 +535,20 @@ export const exportToWord = async (
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
     }),
+    ...(panel.projectType ? [
+      new Paragraph({
+        children: [new TextRun({ text: "Facility Classification: " + panel.projectType.toUpperCase(), font: "Segoe UI", size: 20, color: "334155", bold: true })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      })
+    ] : []),
+    ...(panel.owner ? [
+      new Paragraph({
+        children: [new TextRun({ text: "Project Owner: " + panel.owner, font: "Segoe UI", size: 20, color: "334155", bold: true })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      })
+    ] : []),
     new Paragraph({
       children: [new TextRun({ text: "Compliance Standard: Philippine Electrical Code (PEC) 2017 & ASHRAE 90.1", font: "Segoe UI", size: 18, color: "475569", bold: true })],
       alignment: AlignmentType.CENTER,
