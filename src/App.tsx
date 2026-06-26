@@ -2491,6 +2491,7 @@ export default function App() {
           let width = el.scrollWidth;
           let height = el.scrollHeight;
           const isIllumination = id === "illumination-diagram";
+          const isVdCanvas = id === "voltage-drop-interactive-canvas";
 
           if (id === "short-circuit-diagram") {
             width = 1050;
@@ -2498,6 +2499,9 @@ export default function App() {
           } else if (isIllumination) {
             width = el.clientWidth || 1000;
             height = el.clientHeight || 550;
+          } else if (isVdCanvas) {
+            width = el.clientWidth || 1200;
+            height = el.clientHeight || 750;
           }
 
           return await toPng(el, {
@@ -2540,6 +2544,7 @@ export default function App() {
         sld: sldImages,
         isc: await getImg("short-circuit-diagram"),
         vdDiagrams: {} as Record<string, string | null>,
+        vdInteractiveCanvas: await getImg("voltage-drop-interactive-canvas"),
         illumination: await getImg("illumination-diagram"), // The current one
         illumSnapshots: illumSnapshots, // the recorded ones
         floorPlan: floorPlanImages,
@@ -4233,6 +4238,7 @@ export default function App() {
                     setCalculations={setVdCalculations}
                     isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
+                    isExporting={isExporting}
                   />
                 </motion.div>
               </div>

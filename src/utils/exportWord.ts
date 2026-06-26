@@ -1180,97 +1180,198 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
   );
 
   if (vdCalculations && vdCalculations.length > 0) {
+    if (images?.vdInteractiveCanvas) {
+      docChildren.push(
+        createSubHeader(`C. Interactive Electrical Distribution & Voltage Drop Diagram`),
+        new Paragraph({ spacing: { after: 100 } })
+      );
+      await addImageToDoc(images.vdInteractiveCanvas);
+      docChildren.push(new Paragraph({ spacing: { after: 150 } }));
+    }
+
     docChildren.push(
-      createSubHeader(`C. Conducted Voltage Drop Analysis Sizing Table`),
+      createSubHeader(`D. Conducted Voltage Drop Analysis Sizing Table`),
       new Paragraph({ spacing: { after: 100 } })
     );
 
-    const vdTableHeaderCells = [
-      "Designation / Line Description", "Conductor (mm²)", "System", "Volt", "Length (m)", "Load (A)", "Impedance (Ω/km)", "Drop VD (V)", "VD (%)", "PEC Status"
-    ].map(t => new TableCell({ 
-      children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 16, color: "FFFFFF" })], alignment: AlignmentType.CENTER })], 
-      shading: { fill: "1B365D" },
-      verticalAlign: VerticalAlign.CENTER,
-      margins: { top: 60, bottom: 60, left: 60, right: 60 }
-    }));
+    const localPanelGroups = (() => {
+      const groups: {
+        id: string;
+        name: string;
+        parentName?: string;
+        type: string;
+        feederCalc?: typeof vdCalculations[0];
+        circuitCalcs: typeof vdCalculations;
+        totalLoadA: number;
+        totalLoadKVA: number;
+      }[] = [];
 
-    const vdTableRows = [new TableRow({ children: vdTableHeaderCells, tableHeader: true })];
+      if (panel && circuits) {
+        const { mainCurrent, totalVA } = computePanelScheduleValues(panel, circuits, { availableSubPanels: subPanels });
+        const mainFeederCalc = vdCalculations.find(c => c.source === "main");
+        const mainCircuits = vdCalculations.filter(c => circuits.some(circuit => circuit.id === c.source));
+        
+        groups.push({
+          id: "main",
+          name: panel.designation || "Main Distribution Panel",
+          parentName: panel.utilityProvider || "Utility",
+          type: panel.type || "MDP",
+          feederCalc: mainFeederCalc,
+          circuitCalcs: mainCircuits,
+          totalLoadA: mainCurrent.baseAmp,
+          totalLoadKVA: totalVA / 1000,
+        });
+      }
+
+      subPanels.forEach(sp => {
+        const { mainCurrent, totalVA } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: subPanels });
+        const feederCalc = vdCalculations.find(c => c.source === sp.id);
+        const circuitCalcs = vdCalculations.filter(c => sp.circuits.some(circuit => circuit.id === c.source));
+        
+        let parentName = panel?.designation || "MDP";
+        if (circuits) {
+           const linkingCircuit = circuits.find(c => c.linkedSubPanelId === sp.id);
+           if (!linkingCircuit) {
+              for (const otherSp of subPanels) {
+                 if (otherSp.circuits.some(c => c.linkedSubPanelId === sp.id)) {
+                    parentName = otherSp.panel.designation || "Sub-Panel";
+                    break;
+                 }
+              }
+           }
+        }
+
+        groups.push({
+          id: sp.id,
+          name: sp.panel.designation || "Sub-Panel",
+          parentName,
+          type: sp.panel.type || "DP",
+          feederCalc,
+          circuitCalcs,
+          totalLoadA: mainCurrent.baseAmp,
+          totalLoadKVA: totalVA / 1000,
+        });
+      });
+
+      return groups;
+    })();
 
     let maxVDPercentage = 0;
     let criticalLabel = "None";
     let complianceCount = 0;
+    let totalLinesChecked = 0;
 
-    vdCalculations.forEach((calc, idx) => {
-      const isEven = idx % 2 === 0;
-      const rowShading = isEven ? "F8FAFC" : "FFFFFF";
-      
-      const createCell = (text: string, align: typeof AlignmentType.CENTER | typeof AlignmentType.LEFT = AlignmentType.CENTER, highlightColor?: string) => {
-         return new TableCell({ 
-           children: [new Paragraph({ children: [new TextRun({ text, font: "Segoe UI", size: 17, color: highlightColor || "334155", bold: !!highlightColor })], alignment: align })],
-           shading: { fill: rowShading },
-           verticalAlign: VerticalAlign.CENTER,
-           margins: { top: 50, bottom: 50, left: 60, right: 60 }
-         });
-      };
+    localPanelGroups.forEach((group, gIdx) => {
+      const allGroupCalcs = [...(group.feederCalc ? [group.feederCalc] : []), ...group.circuitCalcs];
+      if (allGroupCalcs.length === 0) return;
 
-      const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
-      let R = data.r;
-      const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
-      R = R / sets;
-      const factor = calc.systemType === '3PH' ? 1.732 : 2;
-      const cLength = calc.length || 0;
-      const cLoad = calc.loadA || 0;
-      const cVoltage = calc.voltage || 230;
-      const vd = (factor * cLength * cLoad * R) / 1000;
-      const vdPercentage = (vd / cVoltage) * 100;
-      const isCompliant = vdPercentage <= 3.0;
+      docChildren.push(
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Panel: ${group.name} `, bold: true, font: "Segoe UI", size: 17, color: "1B365D" }),
+            new TextRun({ text: `(${group.type})`, font: "Segoe UI", size: 15, color: "64748B", italics: true }),
+          ],
+          spacing: { before: 200, after: 40 }
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Fed From: `, bold: true, font: "Segoe UI", size: 15, color: "475569" }),
+            new TextRun({ text: `${group.parentName}   |   `, font: "Segoe UI", size: 15, color: "334155" }),
+            new TextRun({ text: `Connected Load: `, bold: true, font: "Segoe UI", size: 15, color: "475569" }),
+            new TextRun({ text: `${group.totalLoadA.toFixed(1)} A (${group.totalLoadKVA.toFixed(2)} kVA)`, font: "Segoe UI", size: 15, color: "334155" }),
+          ],
+          spacing: { after: 100 }
+        })
+      );
 
-      if (isCompliant) complianceCount++;
-      if (vdPercentage > maxVDPercentage) {
-        maxVDPercentage = vdPercentage;
-        criticalLabel = calc.name || `Feeder Line ${idx + 1}`;
-      }
-
-      vdTableRows.push(new TableRow({
-        children: [
-          createCell(calc.name || "", AlignmentType.LEFT),
-          createCell((calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : '') + (calc.wireSize || "3.5")),
-          createCell(calc.systemType || "1PH"),
-          createCell(cVoltage.toString()),
-          createCell(cLength.toString()),
-          createCell(cLoad.toString()),
-          createCell(R.toFixed(3)),
-          createCell(vd.toFixed(2)),
-          createCell(`${vdPercentage.toFixed(2)}%`, AlignmentType.CENTER, isCompliant ? "16A34A" : "DC2626"),
-          createCell(isCompliant ? "Passed (≤3%)" : "FAILED (>3%)", AlignmentType.CENTER, isCompliant ? "16A34A" : "DC2626"),
-        ]
+      const vdTableHeaderCells = [
+        "Designation / Line Description", "Conductor (mm²)", "System", "Volt", "Length (m)", "Load (A)", "Impedance (Ω/km)", "Drop VD (V)", "VD (%)", "PEC Status"
+      ].map(t => new TableCell({ 
+        children: [new Paragraph({ children: [new TextRun({ text: t, bold: true, font: "Segoe UI", size: 15, color: "FFFFFF" })], alignment: AlignmentType.CENTER })], 
+        shading: { fill: "1B365D" },
+        verticalAlign: VerticalAlign.CENTER,
+        margins: { top: 50, bottom: 50, left: 50, right: 50 }
       }));
+
+      const vdTableRows = [new TableRow({ children: vdTableHeaderCells, tableHeader: true })];
+
+      allGroupCalcs.forEach((calc, idx) => {
+        totalLinesChecked++;
+        const isEven = idx % 2 === 0;
+        const rowShading = isEven ? "F8FAFC" : "FFFFFF";
+        
+        const createCell = (text: string, align: typeof AlignmentType.CENTER | typeof AlignmentType.LEFT = AlignmentType.CENTER, highlightColor?: string) => {
+           return new TableCell({ 
+             children: [new Paragraph({ children: [new TextRun({ text, font: "Segoe UI", size: 15, color: highlightColor || "334155", bold: !!highlightColor })], alignment: align })],
+             shading: { fill: rowShading },
+             verticalAlign: VerticalAlign.CENTER,
+             margins: { top: 40, bottom: 40, left: 50, right: 50 }
+           });
+        };
+
+        const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
+        let R = data.r;
+        const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+        R = R / sets;
+        const factor = calc.systemType === '3PH' ? 1.732 : 2;
+        const cLength = calc.length || 0;
+        const cLoad = calc.loadA || 0;
+        const cVoltage = calc.voltage || 230;
+        const vd = (factor * cLength * cLoad * R) / 1000;
+        const vdPercentage = (vd / cVoltage) * 100;
+        
+        const isFeederLine = calc.source === "main" || subPanels.some(sp => sp.id === calc.source);
+        const limitPct = isFeederLine ? 5.0 : 3.0;
+        const isCompliant = vdPercentage <= limitPct;
+
+        if (isCompliant) complianceCount++;
+        if (vdPercentage > maxVDPercentage) {
+          maxVDPercentage = vdPercentage;
+          criticalLabel = calc.name || `Feeder Line ${totalLinesChecked}`;
+        }
+
+        const limitText = isFeederLine ? "≤5%" : "≤3%";
+
+        vdTableRows.push(new TableRow({
+          children: [
+            createCell(calc.name || "", AlignmentType.LEFT),
+            createCell((calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : '') + (calc.wireSize || "3.5")),
+            createCell(calc.systemType || "1PH"),
+            createCell(cVoltage.toString()),
+            createCell(cLength.toString()),
+            createCell(cLoad.toString()),
+            createCell(R.toFixed(3)),
+            createCell(vd.toFixed(2)),
+            createCell(`${vdPercentage.toFixed(2)}%`, AlignmentType.CENTER, isCompliant ? "16A34A" : "DC2626"),
+            createCell(isCompliant ? `Passed (${limitText})` : `FAILED (${limitText})`, AlignmentType.CENTER, isCompliant ? "16A34A" : "DC2626"),
+          ]
+        }));
+      });
+
+      const vdTable = new Table({
+        rows: vdTableRows,
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+          bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+          insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
+          insideVertical: { style: BorderStyle.NONE },
+        }
+      });
+
+      docChildren.push(vdTable);
     });
 
-    const vdTable = new Table({
-      rows: vdTableRows,
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      borders: {
-        top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
-        bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
-        insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
-        insideVertical: { style: BorderStyle.NONE },
-      }
-    });
-
-    docChildren.push(vdTable);
-    
     // Key Findings Callout for Voltage Drop
-    const totalLinesChecked = vdCalculations.length;
     const isSystemSuccess = complianceCount === totalLinesChecked;
 
     const vdFindings = [
       `A total of ${totalLinesChecked} feeder and branch circuit routes were modeled and audited.`,
-      `Safety Conformance Status: ${complianceCount} of ${totalLinesChecked} conductors satisfy the PEC recommended $3.0\\%$ maximum voltage drop limit.`,
+      `Safety Conformance Status: ${complianceCount} of ${totalLinesChecked} conductors satisfy the PEC recommended limits (5.0% for feeders, 3.0% for branch circuits).`,
       `Critical Operating Drop Node: Farthest point found at "${criticalLabel}" displaying an electric voltage drop of $V_{\\text{drop, max}} = ${maxVDPercentage.toFixed(2)}\\%$.`,
       isSystemSuccess
         ? `Feeder Voltage Drop Conformance: ALL CIRCUITS ARE COMPLIANT. Current conductors and sizing configurations are highly optimized for voltage stability and minimal thermal loss. Conformance rating: PASSED.`
-        : `Feeder Voltage Drop ALERT: Certain routes exceed the standard $3.0\\%$ limit. It is recommended to increase the conductor cross-sectional area (e.g., from $3.5\\text{ mm}^2$ to $5.5\\text{ mm}^2$ or larger) to reduce voltage drop.`
+        : `Feeder Voltage Drop ALERT: Certain routes exceed the standard recommended limits. It is recommended to increase the conductor cross-sectional area (e.g., to $5.5\\text{ mm}^2$ or larger) to reduce voltage drop.`
     ];
     docChildren.push(new Paragraph({ spacing: { before: 200 } }));
     docChildren.push(createCallout("🔍 FEEDER VOLTAGE DROP KEY FINDINGS & RECOMMENDED MITIGATIONS", vdFindings));

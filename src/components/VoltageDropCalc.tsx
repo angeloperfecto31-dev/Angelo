@@ -47,6 +47,7 @@ export interface VoltageDropCalcProps {
   >;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
+  isExporting?: boolean;
 }
 
 export default function VoltageDropCalc({
@@ -58,6 +59,7 @@ export default function VoltageDropCalc({
   setCalculations,
   isPremium = true,
   onRequestUpgrade,
+  isExporting = false,
 }: VoltageDropCalcProps) {
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({ main: true });
   const [searchQuery, setSearchQuery] = useState("");
@@ -937,10 +939,10 @@ export default function VoltageDropCalc({
           </button>
         </div>
 
-        {activeTab === "table" ? (
-          /* ========================================================
+        <div className={activeTab === "table" || isExporting ? "space-y-6 block" : "hidden"}>
+          {/* ========================================================
              1. TABULAR SUMMARY VIEW (Original table rendering)
-             ======================================================== */
+             ======================================================== */}
           <div className="space-y-6">
             {filteredGroups.length === 0 ? (
               <div className="text-center py-12 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
@@ -1029,10 +1031,12 @@ export default function VoltageDropCalc({
               })
             )}
           </div>
-        ) : (
-          /* ========================================================
+        </div>
+
+        <div className={activeTab === "diagram" || isExporting ? "block" : "hidden"}>
+          {/* ========================================================
              2. INTERACTIVE VOLTAGE DROP DIAGRAM (NEW VIEW)
-             ======================================================== */
+             ======================================================== */}
           <div className={`relative flex flex-col lg:flex-row gap-6 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-50 dark:bg-slate-950/40 p-4 transition-all ${
             isFullScreen ? "fixed inset-0 z-50 bg-white dark:bg-slate-950 !p-6" : ""
           }`}>
@@ -1678,7 +1682,7 @@ export default function VoltageDropCalc({
               </div>
             </div>
           </div>
-        )}
+        </div>
       </section>
 
       {/* Calculations & Formulas Section */}
