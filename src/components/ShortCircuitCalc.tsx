@@ -3,7 +3,7 @@ import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } 
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { exportToCAD } from '../utils/exportDxf';
-import { computePanelScheduleValues, parseSystemVoltage } from '../utils/computeEngine';
+import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace } from '../utils/computeEngine';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -239,6 +239,202 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       groundFaultFactor: groundFaultFactor.toFixed(2)
     };
   }, [params, motorLoadVA]);
+
+  const kaicValidationData = useMemo(() => {
+    const list: Array<{
+      id: string;
+      location: string;
+      type: string;
+      faultCurrentA: number;
+      selectedKAIC: number;
+      status: "PASS" | "FAIL";
+      recommendation: string;
+    }> = [];
+
+    if (!panel) return list;
+
+    const standardKAICRatings = [5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
+
+    // 1. MDP Main Breaker
+    const mdpFaultA = parseFloat(calculation.iscFault2) || 10000;
+    const mdpKAICSelected = parseFloat(panel.icRating) || 10;
+    const mdpFaultKA = mdpFaultA / 1000;
+    const mdpPass = mdpKAICSelected >= mdpFaultKA;
+    const recMdp = standardKAICRatings.find(k => k >= mdpFaultKA) || 100;
+
+    list.push({
+      id: "mdp-main",
+      location: panel.designation || "Main Distribution Panel (MDP) Main Breaker",
+      type: "Main Protective Device",
+      faultCurrentA: mdpFaultA,
+      selectedKAIC: mdpKAICSelected,
+      status: mdpPass ? "PASS" : "FAIL",
+      recommendation: mdpPass 
+        ? "Breaker is adequately sized for maximum short-circuit duty." 
+        : `INSUFFICIENT kAIC: Upgrade main breaker rating to at least ${recMdp} kAIC immediately.`,
+    });
+
+    // 2. MDP Branch Protective Devices
+    if (circuits && circuits.length > 0) {
+      circuits.forEach(c => {
+        if (isIdleSpareOrSpace(c)) return;
+        const branchFaultA = parseFloat(calculation.iscFault3) || 10000;
+        const branchFaultKA = branchFaultA / 1000;
+        const branchKAICSelected = c.mcbKAIC || 10;
+        const bPass = branchKAICSelected >= branchFaultKA;
+        const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
+
+        list.push({
+          id: `mdp-branch-${c.circuitNo}`,
+          location: `${panel.designation || "MDP"} - Circuit ${c.circuitNo} (${c.description})`,
+          type: "Branch Circuit Breaker",
+          faultCurrentA: branchFaultA,
+          selectedKAIC: branchKAICSelected,
+          status: bPass ? "PASS" : "FAIL",
+          recommendation: bPass
+            ? "Circuit breaker is adequate."
+            : `Recommend MCCB upgrade to at least ${recB} kAIC.`,
+        });
+      });
+    }
+
+    // 3. Subpanels
+    if (subPanels && subPanels.length > 0) {
+      subPanels.forEach(sp => {
+        let spFaultA = 10000;
+        let parentConn = circuits?.find(c => c.linkedSubPanelId === sp.id);
+        if (!parentConn && subPanels) {
+          parentConn = subPanels.flatMap(otherSp => otherSp.circuits).find(c => c.linkedSubPanelId === sp.id);
+        }
+
+        if (parentConn) {
+          const feederLen = params.feederLength || 10;
+          const feederSize = parentConn.wireSize || "14";
+          const feederRuns = parentConn.quantity || 1;
+          const motorVA = sp.circuits.reduce((acc, curr) => 
+            (curr.loadType as any === LoadType.MOTOR || curr.loadType as any === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
+          );
+          spFaultA = calculatePanelFault(
+            sp.panel,
+            params,
+            feederLen,
+            feederSize,
+            feederRuns,
+            motorVA
+          );
+        } else {
+          spFaultA = calculatePanelFault(sp.panel, params, undefined, undefined, undefined, 0);
+        }
+
+        const spFaultKA = spFaultA / 1000;
+        const spKAICSelected = parseFloat(sp.panel.icRating) || 10;
+        const spPass = spKAICSelected >= spFaultKA;
+        const recSp = standardKAICRatings.find(k => k >= spFaultKA) || 100;
+
+        list.push({
+          id: `sp-${sp.id}-main`,
+          location: `${sp.panel.designation || `Subpanel ${sp.id}`} Main Breaker`,
+          type: "Subpanel Main Device",
+          faultCurrentA: spFaultA,
+          selectedKAIC: spKAICSelected,
+          status: spPass ? "PASS" : "FAIL",
+          recommendation: spPass
+            ? "Main breaker is adequate for short-circuit duty."
+            : `INSUFFICIENT kAIC: Upgrade to minimum ${recSp} kAIC protection.`,
+        });
+
+        // Subpanel branch circuits
+        sp.circuits.forEach(c => {
+          if (isIdleSpareOrSpace(c)) return;
+          const branchFaultKA = spFaultKA;
+          const branchKAICSelected = c.mcbKAIC || 10;
+          const bPass = branchKAICSelected >= branchFaultKA;
+          const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
+
+          list.push({
+            id: `sp-${sp.id}-branch-${c.circuitNo}`,
+            location: `${sp.panel.designation || `Subpanel ${sp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
+            type: "Branch Circuit Breaker",
+            faultCurrentA: spFaultA,
+            selectedKAIC: branchKAICSelected,
+            status: bPass ? "PASS" : "FAIL",
+            recommendation: bPass
+              ? "Circuit breaker is adequate."
+              : `Recommend upgrade to ${recB} kAIC.`,
+          });
+        });
+      });
+    }
+
+    // 4. Sub-subpanels
+    if (subSubPanels && subSubPanels.length > 0) {
+      subSubPanels.forEach(ssp => {
+        let sspFaultA = 8000;
+        let parentConn = subPanels?.flatMap(sp => sp.circuits).find(c => c.linkedSubPanelId === ssp.id);
+        if (parentConn) {
+          const feederLen = params.feederLength || 10;
+          const feederSize = parentConn.wireSize || "14";
+          const feederRuns = parentConn.quantity || 1;
+          const motorVA = ssp.circuits.reduce((acc, curr) => 
+            (curr.loadType as any === LoadType.MOTOR || curr.loadType as any === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
+          );
+          sspFaultA = calculatePanelFault(
+            ssp.panel,
+            params,
+            feederLen,
+            feederSize,
+            feederRuns,
+            motorVA
+          );
+        } else {
+          sspFaultA = calculatePanelFault(ssp.panel, params, undefined, undefined, undefined, 0);
+        }
+
+        const sspFaultKA = sspFaultA / 1000;
+        const sspKAICSelected = parseFloat(ssp.panel.icRating) || 10;
+        const sspPass = sspKAICSelected >= sspFaultKA;
+        const recSsp = standardKAICRatings.find(k => k >= sspFaultKA) || 100;
+
+        list.push({
+          id: `ssp-${ssp.id}-main`,
+          location: `${ssp.panel.designation || `Sub-Subpanel ${ssp.id}`} Main Breaker`,
+          type: "Sub-Subpanel Main Device",
+          faultCurrentA: sspFaultA,
+          selectedKAIC: sspKAICSelected,
+          status: sspPass ? "PASS" : "FAIL",
+          recommendation: sspPass
+            ? "Main breaker is adequate."
+            : `INSUFFICIENT kAIC: Upgrade to minimum ${recSsp} kAIC.`,
+        });
+
+        ssp.circuits.forEach(c => {
+          if (isIdleSpareOrSpace(c)) return;
+          const branchFaultKA = sspFaultKA;
+          const branchKAICSelected = c.mcbKAIC || 10;
+          const bPass = branchKAICSelected >= branchFaultKA;
+          const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
+
+          list.push({
+            id: `ssp-${ssp.id}-branch-${c.circuitNo}`,
+            location: `${ssp.panel.designation || `Sub-Subpanel ${ssp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
+            type: "Branch Circuit Breaker",
+            faultCurrentA: sspFaultA,
+            selectedKAIC: branchKAICSelected,
+            status: bPass ? "PASS" : "FAIL",
+            recommendation: bPass
+              ? "Circuit breaker is adequate."
+              : `Recommend upgrade to ${recB} kAIC.`,
+          });
+        });
+      });
+    }
+
+    return list;
+  }, [panel, circuits, subPanels, subSubPanels, params, calculation]);
+
+  const totalDevicesCount = kaicValidationData.length;
+  const passedDevicesCount = kaicValidationData.filter(d => d.status === "PASS").length;
+  const failedDevicesCount = kaicValidationData.filter(d => d.status === "FAIL").length;
 
   return (
     <div className="w-full max-w-full space-y-6">
@@ -937,6 +1133,120 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
           <p className="text-[9px] text-slate-400 mt-8 italic text-center">Diagram generated per Philippine Electrical Code calculation methods.</p>
         </section>
       </div>
+
+      {/* KAIC PROTECTION VALIDATION DASHBOARD */}
+      <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 dark:border-slate-800 pb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-rose-50 dark:bg-rose-950/20 rounded-lg">
+              <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-sans">KAIC Protection Validation Dashboard</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Automatic auditing of protective devices against terminal short-circuit currents (PEC Section 1.10.1.9 Compliance)</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-xxs font-black tracking-widest uppercase px-2 py-1 rounded bg-slate-100 dark:bg-slate-850 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800">
+              PHILIPPINE ELECTRICAL CODE
+            </span>
+          </div>
+        </div>
+
+        {/* KPI COUNTERS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-800/80 rounded-xl p-4">
+            <span className="text-[10px] font-black tracking-widest text-slate-400 uppercase block mb-1">Total Devices Audited</span>
+            <span className="text-2xl font-black text-slate-800 dark:text-slate-100 font-mono">{totalDevicesCount}</span>
+            <span className="text-xxs text-slate-400 block mt-1">Main & branch circuit breakers</span>
+          </div>
+          <div className="bg-emerald-50/40 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded-xl p-4">
+            <span className="text-[10px] font-black tracking-widest text-emerald-500 uppercase block mb-1">Compliant Devices</span>
+            <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{passedDevicesCount}</span>
+            <span className="text-xxs text-emerald-500/80 block mt-1">Sufficient interrupting capability</span>
+          </div>
+          <div className={`rounded-xl p-4 border transition ${
+            failedDevicesCount > 0 
+              ? "bg-rose-50/60 dark:bg-rose-950/15 border-rose-200 dark:border-rose-900/40" 
+              : "bg-slate-50 dark:bg-slate-950/40 border-slate-150 dark:border-slate-800/80"
+          }`}>
+            <span className={`text-[10px] font-black tracking-widest uppercase block mb-1 ${failedDevicesCount > 0 ? "text-rose-500" : "text-slate-400"}`}>
+              Critical Violations
+            </span>
+            <span className={`text-2xl font-black font-mono ${failedDevicesCount > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-400"}`}>
+              {failedDevicesCount}
+            </span>
+            <span className={`text-xxs block mt-1 ${failedDevicesCount > 0 ? "text-rose-500/80 font-semibold" : "text-slate-400"}`}>
+              {failedDevicesCount > 0 ? "Upgrade required immediately" : "Zero safety risks detected"}
+            </span>
+          </div>
+        </div>
+
+        {/* VALIDATION DETAILS TABLE */}
+        <div className="overflow-x-auto border border-slate-150 dark:border-slate-800 rounded-xl">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-950/50 border-b border-slate-150 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                <th className="py-3 px-4">Protective Device Location</th>
+                <th className="py-3 px-4">Classification</th>
+                <th className="py-3 px-4 text-center">Available Symmetrical Fault</th>
+                <th className="py-3 px-4 text-center">Installed Rating</th>
+                <th className="py-3 px-4 text-center">Safety Status</th>
+                <th className="py-3 px-4 pl-6">Sizing Recommendation / Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-300">
+              {kaicValidationData.map(d => {
+                const isFail = d.status === "FAIL";
+                return (
+                  <tr key={d.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/20 transition-all duration-150">
+                    <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-100">{d.location}</td>
+                    <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{d.type}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
+                      {(d.faultCurrentA / 1000).toFixed(2)} kA <span className="text-[10px] text-slate-400 font-normal">({d.faultCurrentA.toFixed(0)} A)</span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800 dark:text-slate-200">{d.selectedKAIC} kAIC</td>
+                    <td className="py-3.5 px-4 text-center">
+                      {isFail ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-rose-50 text-rose-700 border border-rose-200/50 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/40">
+                          🔴 FAIL
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/30 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/30">
+                          🟢 PASS
+                        </span>
+                      )}
+                    </td>
+                    <td className={`py-3.5 px-4 pl-6 font-medium ${isFail ? "text-rose-600 dark:text-rose-400 font-semibold" : "text-slate-500 dark:text-slate-400"}`}>
+                      {d.recommendation}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ASSUMPTIONS BOX */}
+        <div className="mt-5 p-4 bg-slate-50 dark:bg-slate-950/30 border border-slate-150 dark:border-slate-800 rounded-xl">
+          <h4 className="text-xxs font-black tracking-widest text-slate-400 uppercase mb-2">Calculation Assumptions & Engineering References</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+            <div>
+              <p className="font-semibold text-slate-700 dark:text-slate-300 mb-0.5">Commercial kAIC Classes:</p>
+              <p>Standard molded case circuit breaker (MCCB) ratings: 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100 kAIC.</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700 dark:text-slate-300 mb-0.5">Calculation Standards:</p>
+              <p>Ohmic impedances are compiled using IEEE 141 Red Book standards at 75°C conductor temperatures with copper wire base factors.</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700 dark:text-slate-300 mb-0.5">Real-time Recalculations:</p>
+              <p>Fault current values and device protection statuses are automatically recomputed when secondary voltages, transformer impedance, parallel runs, or panel structures change.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
 
 

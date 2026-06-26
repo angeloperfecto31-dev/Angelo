@@ -613,7 +613,7 @@ export default function ReportExportModule({
                 children: [
                   new docx.TableCell({ children: [new docx.Paragraph({ text: "Upstream (Main Panel)" })] }),
                   new docx.TableCell({ children: [new docx.Paragraph({ text: `${upstreamTrip} A` })] }),
-                  new docx.TableCell({ children: [new docx.Paragraph({ text: "25 kAIC" })] }),
+                  new docx.TableCell({ children: [new docx.Paragraph({ text: faultResults["mdp"]?.breakerkAIC ? `${faultResults["mdp"].breakerkAIC} kAIC` : `${parseFloat(panel.icRating) || 10} kAIC` })] }),
                   new docx.TableCell({ children: [new docx.Paragraph({ text: `${upstreamInstMultiplier}x (${upstreamTrip * upstreamInstMultiplier} A)` })] }),
                 ],
               }),
@@ -621,7 +621,7 @@ export default function ReportExportModule({
                 children: [
                   new docx.TableCell({ children: [new docx.Paragraph({ text: "Downstream (Branch Feeders)" })] }),
                   new docx.TableCell({ children: [new docx.Paragraph({ text: `${downstreamTrip} A` })] }),
-                  new docx.TableCell({ children: [new docx.Paragraph({ text: "18 kAIC" })] }),
+                  new docx.TableCell({ children: [new docx.Paragraph({ text: (Object.values(faultResults).find((r: any) => r.id !== "utility" && r.id !== "transformer" && r.id !== "mdp") as any)?.breakerkAIC ? `${(Object.values(faultResults).find((r: any) => r.id !== "utility" && r.id !== "transformer" && r.id !== "mdp") as any).breakerkAIC} kAIC` : "18 kAIC" })] }),
                   new docx.TableCell({ children: [new docx.Paragraph({ text: `${downstreamInstMultiplier}x (${downstreamTrip * downstreamInstMultiplier} A)` })] }),
                 ],
               }),

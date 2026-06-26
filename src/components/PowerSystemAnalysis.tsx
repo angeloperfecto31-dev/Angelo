@@ -17,8 +17,8 @@ import {
   Network,
   FileText
 } from "lucide-react";
-import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation } from "../types";
-import { parseSystemVoltage } from "../utils/computeEngine";
+import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
+import { parseSystemVoltage, calculatePanelFault } from "../utils/computeEngine";
 import ReportExportModule from "./ReportExportModule";
 
 interface PowerSystemAnalysisProps {
@@ -347,53 +347,42 @@ export default function PowerSystemAnalysis({
 
     // Base properties
     const baseKVA = iscParams.transformerKVA || 500;
-    const txZ = iscParams.transformerZ || 5.0;
-    const utilityMVA = iscParams.utilityShortCircuitMVA || 500;
     const baseKV = systemVoltage / 1000;
 
-    // Approximated system impedance values in per-unit
-    const zUtilitypu = baseKVA / (utilityMVA * 1000);
-    const zTranspu = (txZ / 100);
-
     networkTopology.forEach(node => {
-      let zFeederpu = 0;
-      let length = (node as any).feederLength || 15;
-      let wireSize = (node as any).feederSize || "38";
-      let runs = (node as any).feederRuns || 1;
-
-      // Approximated R & X values per 1000m
-      let r = 0.5, x = 0.08;
-      if (wireSize === "5.5") { r = 4.0; x = 0.1; }
-      else if (wireSize === "8.0") { r = 2.5; x = 0.09; }
-      else if (wireSize === "14") { r = 1.5; x = 0.09; }
-      else if (wireSize === "22") { r = 0.9; x = 0.08; }
-      else if (wireSize === "38") { r = 0.5; x = 0.08; }
-      else if (wireSize === "50") { r = 0.4; x = 0.08; }
-      else if (wireSize === "80") { r = 0.25; x = 0.08; }
-      else if (wireSize === "100") { r = 0.2; x = 0.07; }
-      else if (wireSize === "150") { r = 0.13; x = 0.07; }
-      else if (wireSize === "200") { r = 0.1; x = 0.07; }
-
-      const feederR = (r * (length / 1000)) / runs;
-      const feederX = (x * (length / 1000)) / runs;
-      const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
-      zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
-
-      // Utility has no feeder impedance, transformer secondary has only utility + transformer impedance
-      let totalZpu = zUtilitypu;
-      if (node.id !== "utility") {
-        totalZpu += zTranspu;
+      let iSym3PH = 0; // kA
+      if (node.id === "utility") {
+        const primaryVolts = iscParams.primaryVoltage || 34500;
+        const fault1Isc = ((iscParams.utilityShortCircuitMVA || 500) * 1000000) / (1.732 * primaryVolts);
+        iSym3PH = fault1Isc / 1000;
+      } else if (node.id === "transformer" || node.id === "mdp") {
+        const faultA = calculatePanelFault(panel, iscParams, undefined, undefined, undefined, 0);
+        iSym3PH = faultA / 1000;
+      } else {
+        // This is a subpanel or subsubpanel
+        const sp = subPanels.find(x => x.id === node.id);
+        if (sp) {
+          let feederLen = (node as any).feederLength || iscParams.feederLength || 15;
+          let feederSize = (node as any).feederSize || iscParams.feederSize || "38";
+          let feederRuns = (node as any).feederRuns || iscParams.feederRuns || 1;
+          
+          let motorVA = sp.circuits.reduce((acc, curr) => 
+            (curr.loadType as any === LoadType.MOTOR || curr.loadType as any === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
+          );
+          
+          const faultA = calculatePanelFault(
+            sp.panel,
+            iscParams,
+            feederLen,
+            feederSize.toString(),
+            feederRuns,
+            motorVA
+          );
+          iSym3PH = faultA / 1000;
+        } else {
+          iSym3PH = 10.0; // fallback
+        }
       }
-      if (node.id !== "utility" && node.id !== "transformer") {
-        totalZpu += zFeederpu;
-      }
-
-      // Base currents
-      const currentBaseKV = node.id === "utility" ? (iscParams.primaryVoltage || 13800) / 1000 : baseKV;
-      const iBase = baseKVA / (Math.sqrt(3) * currentBaseKV);
-      
-      // Calculate 3-Phase Fault Current (Symmetrical)
-      const iSym3PH = totalZpu > 0 ? (iBase / totalZpu) / 1000 : 99.9; // in kA
 
       // Unsymmetrical Faults
       // LG Fault typically uses zero-sequence impedance. Approximated relative to 3PH:
@@ -413,13 +402,24 @@ export default function PowerSystemAnalysis({
       const peakFault = iAvailable * 1.6;
       // Momentary Fault current (1.2 to 1.4 multiplier for short-circuit duty)
       const momentaryFault = iAvailable * 1.3;
+      
+      // Base currents
+      const currentBaseKV = node.id === "utility" ? (iscParams.primaryVoltage || 13800) / 1000 : baseKV;
       // Fault MVA
       const faultMVA = Math.sqrt(3) * currentBaseKV * iAvailable;
 
       // Match Breaker kAIC Rating
       let breakerkAIC = 10; // MCB default
-      if (node.id === "mdp") breakerkAIC = 25; // Main breaker typically 25 or 50 kAIC
-      else if (node.type === "subpanel") breakerkAIC = 18; // Subpanels are MCCBs typically 18 kAIC
+      if (node.id === "mdp") {
+        breakerkAIC = parseFloat(panel.icRating) || 10;
+      } else if (node.type === "subpanel" || node.type === "subsubpanel" || node.id !== "utility" && node.id !== "transformer") {
+        const sp = subPanels.find(x => x.id === node.id);
+        if (sp) {
+          breakerkAIC = parseFloat(sp.panel.icRating) || 10;
+        } else {
+          breakerkAIC = 10; // default fallback
+        }
+      }
 
       let dutyPercentage = (iAvailable / breakerkAIC) * 100;
       if (node.id === "utility" || node.id === "transformer") {
@@ -429,6 +429,7 @@ export default function PowerSystemAnalysis({
 
       // Conductor thermal withstand: standard formula t = (K * A / I)^2
       // A is mm², I is Fault Current, K is constant for copper (115)
+      let wireSize = (node as any).feederSize || "38";
       const mm2Val = Number(wireSize) || 38;
       const K = 115;
       const thermalWithstandLimitTime = Math.pow((K * mm2Val) / (iAvailable * 1000), 2);
@@ -461,7 +462,7 @@ export default function PowerSystemAnalysis({
     });
 
     return results;
-  }, [networkTopology, faultType, systemVoltage, iscParams]);
+  }, [networkTopology, faultType, systemVoltage, iscParams, panel, subPanels]);
 
   // Coordinate TCC Plot Points
   const tccPlotData = useMemo(() => {
