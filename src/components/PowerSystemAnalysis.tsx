@@ -35,6 +35,7 @@ interface PowerSystemAnalysisProps {
   transformerPowerFactor?: number;
   transformerDemandFactor?: number;
   transformerLoadingFactor?: number;
+  user?: any;
 }
 
 export default function PowerSystemAnalysis({
@@ -51,6 +52,7 @@ export default function PowerSystemAnalysis({
   transformerPowerFactor,
   transformerDemandFactor,
   transformerLoadingFactor,
+  user,
 }: PowerSystemAnalysisProps) {
   // Tabs: coordination, loadflow, fault, reports
   const [activeAnalysisTab, setActiveAnalysisTab] = useState<"coordination" | "loadflow" | "fault" | "reports">("coordination");
@@ -1476,6 +1478,7 @@ export default function PowerSystemAnalysis({
               transformerPowerFactor={transformerPowerFactor}
               transformerDemandFactor={transformerDemandFactor}
               transformerLoadingFactor={transformerLoadingFactor}
+              user={user}
             />
           </div>
         )}

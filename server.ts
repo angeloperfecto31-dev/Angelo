@@ -231,6 +231,41 @@ app.post("/api/verify-cad-export", async (req, res) => {
   }
 });
 
+// Secure endpoint for Word (.docx) and PDF (.pdf) document export verification
+app.post("/api/verify-doc-export", async (req, res) => {
+  try {
+    const { userId, module, format } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: "User identity verification required." });
+    }
+
+    if (!db) {
+       return res.status(500).json({ error: "Database service unavailable." });
+    }
+
+    const userSnap = await db.collection("users").doc(userId).get();
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: "User record not found." });
+    }
+
+    const userData = userSnap.data();
+    const isAdmin = userData?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
+    const isActive = userData?.isActive === true;
+    const isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
+
+    if (!isAdmin && (!isActive || !isPremium)) {
+      return res.status(403).json({ 
+        error: "Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation." 
+      });
+    }
+
+    return res.json({ authorized: true });
+  } catch (error: any) {
+    console.error("Document export backend validation failed:", error);
+    return res.status(500).json({ error: "An error occurred during Word/PDF export verification." });
+  }
+});
+
 // Helper to calculate expected price from Firestore pricing settings
 async function calculateExpectedPrice(plan: string, isUpgrade: boolean): Promise<number> {
   let expectedAmount = 1499; // Default premiumPrice

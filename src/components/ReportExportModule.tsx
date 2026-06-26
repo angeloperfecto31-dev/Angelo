@@ -17,7 +17,8 @@ import {
   ChevronRight, 
   Sparkles, 
   ArrowRight,
-  Info
+  Info,
+  Lock
 } from "lucide-react";
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
@@ -45,6 +46,7 @@ interface ReportExportModuleProps {
   transformerPowerFactor?: number;
   transformerDemandFactor?: number;
   transformerLoadingFactor?: number;
+  user?: any;
 }
 
 export default function ReportExportModule({
@@ -66,6 +68,7 @@ export default function ReportExportModule({
   transformerPowerFactor,
   transformerDemandFactor,
   transformerLoadingFactor,
+  user,
 }: ReportExportModuleProps) {
   // Navigation Section State
   const [activeReportSection, setActiveReportSection] = useState<
@@ -282,8 +285,27 @@ export default function ReportExportModule({
   // DOCX Generation Logic
   const handleExportDOCX = async () => {
     if (!isPremium) {
+      alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
       onRequestUpgrade();
       return;
+    }
+
+    if (user?.uid) {
+      try {
+        const response = await fetch("/api/verify-doc-export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.uid, module: "power-suite", format: "word" })
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          alert(data.error || "Word document export verification failed.");
+          onRequestUpgrade();
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend validation failed, proceeding with client verification:", err);
+      }
     }
 
     try {
@@ -868,10 +890,29 @@ export default function ReportExportModule({
   };
 
   // PDF Generation Logic
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!isPremium) {
+      alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
       onRequestUpgrade();
       return;
+    }
+
+    if (user?.uid) {
+      try {
+        const response = await fetch("/api/verify-doc-export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.uid, module: "power-suite", format: "pdf" })
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          alert(data.error || "PDF export verification failed.");
+          onRequestUpgrade();
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend validation failed, proceeding with client verification:", err);
+      }
     }
 
     try {
@@ -1393,23 +1434,25 @@ export default function ReportExportModule({
               onClick={handleExportPDF}
               className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded shadow transition-all ${
                 isPremium 
-                  ? "bg-red-600 hover:bg-red-500 text-white" 
-                  : "bg-red-600/30 hover:bg-red-600/40 text-red-200 border border-red-500/30 cursor-pointer"
+                  ? "bg-red-600 hover:bg-red-500 text-white cursor-pointer" 
+                  : "bg-slate-800 text-slate-500 hover:text-slate-400 border border-slate-700/60 cursor-pointer"
               }`}
             >
               <FileDown className="w-3.5 h-3.5" />
-              Download PDF {!isPremium && "★"}
+              <span>Download PDF</span>
+              {!isPremium && <Lock className="w-3 h-3 text-amber-500 ml-0.5" />}
             </button>
             <button
               onClick={handleExportDOCX}
               className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded shadow transition-all ${
                 isPremium 
-                  ? "bg-blue-600 hover:bg-blue-500 text-white" 
-                  : "bg-blue-600/30 hover:bg-blue-600/40 text-blue-200 border border-blue-500/30 cursor-pointer"
+                  ? "bg-blue-600 hover:bg-blue-500 text-white cursor-pointer" 
+                  : "bg-slate-800 text-slate-500 hover:text-slate-400 border border-slate-700/60 cursor-pointer"
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
-              Word DOCX {!isPremium && "★"}
+              <span>Word DOCX</span>
+              {!isPremium && <Lock className="w-3 h-3 text-amber-500 ml-0.5" />}
             </button>
           </div>
         </div>

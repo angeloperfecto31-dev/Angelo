@@ -2693,6 +2693,31 @@ export default function App() {
   };
 
   const handleExportWord = async () => {
+    const isPremiumUser = userPlan === "premium" || isAdmin;
+    if (!isPremiumUser) {
+      alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
+      setShowUpgrade(true);
+      return;
+    }
+
+    if (user?.uid) {
+      try {
+        const response = await fetch("/api/verify-doc-export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.uid, module: activeTab, format: "word" })
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          alert(data.error || "Word document export verification failed.");
+          setShowUpgrade(true);
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend document validation failed, proceeding with client verification:", err);
+      }
+    }
+
     setIsExporting(true);
     // Give React time to render all components visibly
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -3047,9 +3072,17 @@ export default function App() {
               { 
                 label: userPlan !== "premium" && !isAdmin ? "Report (Premium)" : "Generate Report", 
                 icon: FileText, 
-                onClick: userPlan === "premium" || isAdmin ? handleExportWord : () => setShowUpgrade(true), 
+                onClick: () => {
+                  if (userPlan === "premium" || isAdmin) {
+                    handleExportWord();
+                  } else {
+                    alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
+                    setShowUpgrade(true);
+                  }
+                }, 
                 priority: "primary", 
-                title: userPlan !== "premium" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary"
+                title: userPlan !== "premium" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary",
+                isLocked: userPlan !== "premium" && !isAdmin
               },
               { 
                 label: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
@@ -3106,14 +3139,14 @@ export default function App() {
                     onClick={btn.onClick}
                     title={btn.title || btn.label}
                     className={`w-full flex items-center justify-center gap-2 h-9 rounded-lg font-extrabold text-[10px] uppercase tracking-wider transition-all duration-200 active:scale-98 border ${
-                      isPri 
-                        ? "bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/10 text-white border-indigo-500/40" 
-                        : isLck
-                          ? "bg-slate-900/40 text-slate-500 hover:text-slate-400 border-slate-800/80 cursor-pointer"
+                      isLck
+                        ? "bg-slate-900/40 text-slate-500 hover:text-slate-400 border-slate-800/80 cursor-pointer"
+                        : isPri 
+                          ? "bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/10 text-white border-indigo-500/40" 
                           : "bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/60"
                     } ${isSidebarCollapsed ? "p-0" : "px-3"}`}
                   >
-                    <btn.icon className={`w-3.5 h-3.5 shrink-0 ${isPri ? "text-indigo-200" : isLck ? "text-slate-600" : "text-slate-400 group-hover:text-slate-200"}`} />
+                    <btn.icon className={`w-3.5 h-3.5 shrink-0 ${isLck ? "text-slate-600" : isPri ? "text-indigo-200" : "text-slate-400 group-hover:text-slate-200"}`} />
                     {!isSidebarCollapsed && <span className="truncate">{btn.label}</span>}
                     {isLck && <Lock className="w-3 h-3 text-amber-500 shrink-0 ml-0.5" />}
                   </button>
@@ -4536,6 +4569,7 @@ export default function App() {
                     transformerPowerFactor={transformerPowerFactor}
                     transformerDemandFactor={transformerDemandFactor}
                     transformerLoadingFactor={transformerLoadingFactor}
+                    user={user}
                   />
                 </motion.div>
               </div>
