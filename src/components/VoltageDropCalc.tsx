@@ -1104,9 +1104,8 @@ export default function VoltageDropCalc({
                     <path
                       d="M 40 0 L 0 0 0 40"
                       fill="none"
-                      stroke="currentColor"
+                      stroke="#e2e8f0"
                       strokeWidth="0.5"
-                      className="text-slate-200 dark:text-slate-800/40"
                     />
                   </pattern>
                 </defs>
@@ -1135,12 +1134,10 @@ export default function VoltageDropCalc({
                     const limit = conn.isFeeder ? 5.0 : 3.0;
                     const isSelected = selectedElement?.type === "connection" && selectedElement.data.id === conn.id;
                     
-                    let pathColor = "stroke-green-500 dark:stroke-green-600";
-                    if (pct > limit) {
-                      pathColor = "stroke-red-500 dark:stroke-red-600 animate-pulse";
-                    } else if (pct > limit * 0.9) {
-                      pathColor = "stroke-amber-500 dark:stroke-amber-600";
-                    }
+                    const connColor = pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
+                    const pillBg = pct > limit ? "#FEF2F2" : pct > limit * 0.9 ? "#FFFBEB" : "#F0FDF4";
+                    const pillBorder = pct > limit ? "#FCA5A5" : pct > limit * 0.9 ? "#FCD34D" : "#86EFAC";
+                    const pillText = pct > limit ? "#DC2626" : pct > limit * 0.9 ? "#D97706" : "#16A34A";
 
                     // Calculate curve midpoint (Cubic Bezier t = 0.5)
                     const mx = 0.125 * conn.from.x + 0.375 * cx1 + 0.375 * cx2 + 0.125 * conn.to.x;
@@ -1151,7 +1148,10 @@ export default function VoltageDropCalc({
                         {/* Interactive glow backing path */}
                         <path
                           d={dPath}
-                          className="fill-none stroke-transparent stroke-[12] hover:stroke-slate-300/40 dark:hover:stroke-slate-700/30 transition-all cursor-pointer"
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth="12"
+                          className="hover:stroke-slate-300/40 dark:hover:stroke-slate-700/30 transition-all cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedElement({ type: "connection", data: conn });
@@ -1162,8 +1162,10 @@ export default function VoltageDropCalc({
                         {/* Physical rendered connector path */}
                         <path
                           d={dPath}
-                          style={{ strokeWidth: isSelected ? 4 : 2 }}
-                          className={`fill-none transition-all cursor-pointer ${pathColor}`}
+                          fill="none"
+                          stroke={connColor}
+                          strokeWidth={isSelected ? 4 : 2}
+                          className="transition-all cursor-pointer"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedElement({ type: "connection", data: conn });
@@ -1187,13 +1189,24 @@ export default function VoltageDropCalc({
                               }}
                               onMouseEnter={() => setHoveredElement(conn)}
                               onMouseLeave={() => setHoveredElement(null)}
-                              className={`rounded-full shadow-sm border px-2 py-0.5 text-[10px] font-black text-center cursor-pointer select-none transition-all hover:scale-105 active:scale-95 ${
-                                pct > limit
-                                  ? "bg-red-50 border-red-300 text-red-600 dark:bg-red-950 dark:border-red-900 dark:text-red-300"
-                                  : pct > limit * 0.9
-                                  ? "bg-amber-50 border-amber-300 text-amber-600 dark:bg-amber-950 dark:border-amber-900 dark:text-amber-300"
-                                  : "bg-green-50 border-green-300 text-green-600 dark:bg-green-950 dark:border-green-900 dark:text-green-300"
-                              }`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                width: "74px",
+                                height: "24px",
+                                borderRadius: "9999px",
+                                border: `1px solid ${pillBorder}`,
+                                backgroundColor: pillBg,
+                                color: pillText,
+                                fontSize: "10px",
+                                fontWeight: "900",
+                                textAlign: "center",
+                                cursor: "pointer",
+                                userSelect: "none",
+                                boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+                                fontFamily: "sans-serif"
+                              }}
                             >
                               {conn.vdPct}% VD
                             </div>
@@ -1226,18 +1239,53 @@ export default function VoltageDropCalc({
                               e.stopPropagation();
                               setSelectedElement({ type: "node", node });
                             }}
-                            className={`rounded-xl border-2 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-950 dark:to-slate-900 p-3 shadow-md transition-all cursor-grab active:cursor-grabbing hover:shadow-lg ${
-                              isSelected ? "border-indigo-600 ring-4 ring-indigo-500/20" : "border-slate-300 dark:border-slate-700"
-                            }`}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              height: "100%",
+                              boxSizing: "border-box",
+                              borderRadius: "12px",
+                              border: isSelected ? "2px solid #4F46E5" : "2px solid #CBD5E1",
+                              background: "linear-gradient(135deg, #EEF2FF 0%, #FFFFFF 100%)",
+                              padding: "12px",
+                              boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+                              cursor: "grab",
+                              fontFamily: "sans-serif"
+                            }}
                           >
-                            <div className="flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1 mb-1.5">
-                              <Zap className="w-4 h-4 text-indigo-500 fill-indigo-100 dark:fill-indigo-900" />
-                              <h5 className="font-extrabold text-xs text-slate-900 dark:text-slate-100 truncate uppercase tracking-tight">{node.label}</h5>
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              borderBottom: "1px solid #E2E8F0",
+                              paddingBottom: "4px",
+                              marginBottom: "6px"
+                            }}>
+                              <Zap className="w-4 h-4 text-indigo-500 fill-indigo-100" />
+                              <h5 style={{
+                                margin: 0,
+                                fontWeight: "800",
+                                fontSize: "11px",
+                                color: "#1E1B4B",
+                                textTransform: "uppercase",
+                                letterSpacing: "-0.025em",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                width: "130px"
+                              }}>{node.label}</h5>
                             </div>
-                            <div className="space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-bold">
-                              <p>Provider: <span className="text-slate-800 dark:text-slate-200">{node.data.provider}</span></p>
-                              <p>Grid Voltage: <span className="text-slate-800 dark:text-slate-200">{node.data.voltage} V</span></p>
-                              <p>Phasing: <span className="text-slate-800 dark:text-slate-200">{node.data.system}</span></p>
+                            <div style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "2px",
+                              fontSize: "10px",
+                              color: "#475569",
+                              fontWeight: "700"
+                            }}>
+                              <p style={{ margin: 0 }}>Provider: <span style={{ color: "#1E293B" }}>{node.data.provider}</span></p>
+                              <p style={{ margin: 0 }}>Grid Voltage: <span style={{ color: "#1E293B" }}>{node.data.voltage} V</span></p>
+                              <p style={{ margin: 0 }}>Phasing: <span style={{ color: "#1E293B" }}>{node.data.system}</span></p>
                             </div>
                           </div>
                         </foreignObject>
@@ -1262,18 +1310,53 @@ export default function VoltageDropCalc({
                               e.stopPropagation();
                               setSelectedElement({ type: "node", node });
                             }}
-                            className={`rounded-xl border-2 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-900 p-3 shadow-md transition-all cursor-grab active:cursor-grabbing hover:shadow-lg ${
-                              isSelected ? "border-indigo-600 ring-4 ring-indigo-500/20" : "border-slate-300 dark:border-slate-700"
-                            }`}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              height: "100%",
+                              boxSizing: "border-box",
+                              borderRadius: "12px",
+                              border: isSelected ? "2px solid #4F46E5" : "2px solid #CBD5E1",
+                              background: "linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%)",
+                              padding: "12px",
+                              boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+                              cursor: "grab",
+                              fontFamily: "sans-serif"
+                            }}
                           >
-                            <div className="flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-800 pb-1 mb-1.5">
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              borderBottom: "1px solid #E2E8F0",
+                              paddingBottom: "4px",
+                              marginBottom: "6px"
+                            }}>
                               <Sliders className="w-4 h-4 text-slate-500" />
-                              <h5 className="font-extrabold text-xs text-slate-900 dark:text-slate-100 truncate uppercase tracking-tight">{node.label}</h5>
+                              <h5 style={{
+                                margin: 0,
+                                fontWeight: "800",
+                                fontSize: "11px",
+                                color: "#0F172A",
+                                textTransform: "uppercase",
+                                letterSpacing: "-0.025em",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                width: "130px"
+                              }}>{node.label}</h5>
                             </div>
-                            <div className="space-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 font-bold">
-                              <p>Primary: <span className="text-slate-800 dark:text-slate-200">13.8 kV</span></p>
-                              <p>Secondary: <span className="text-slate-800 dark:text-slate-200">{node.data.voltage} V</span></p>
-                              <p>Impedance: <span className="text-slate-800 dark:text-slate-200">5.75% Z</span></p>
+                            <div style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "2px",
+                              fontSize: "10px",
+                              color: "#475569",
+                              fontWeight: "700"
+                            }}>
+                              <p style={{ margin: 0 }}>Primary: <span style={{ color: "#1E293B" }}>13.8 kV</span></p>
+                              <p style={{ margin: 0 }}>Secondary: <span style={{ color: "#1E293B" }}>{node.data.voltage} V</span></p>
+                              <p style={{ margin: 0 }}>Impedance: <span style={{ color: "#1E293B" }}>5.75% Z</span></p>
                             </div>
                           </div>
                         </foreignObject>
@@ -1286,20 +1369,8 @@ export default function VoltageDropCalc({
                       const pct = calc ? parseFloat(calc.result.vdPercentage) : 0;
                       const limit = 5.0; // feeder limit
 
-                      let cardBorder = "border-slate-200 dark:border-slate-800";
-                      let bgGlow = "hover:border-indigo-400";
-                      if (calc) {
-                        if (pct > limit) {
-                          cardBorder = "border-red-400 dark:border-red-900 ring-1 ring-red-500/10";
-                          bgGlow = "hover:border-red-500 shadow-red-500/5";
-                        } else if (pct > limit * 0.9) {
-                          cardBorder = "border-amber-400 dark:border-amber-900";
-                          bgGlow = "hover:border-amber-500 shadow-amber-500/5";
-                        } else {
-                          cardBorder = "border-green-400 dark:border-green-900";
-                          bgGlow = "hover:border-green-500 shadow-green-500/5";
-                        }
-                      }
+                      const pBorderColor = isSelected ? "#4F46E5" : pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
+                      const pctColor = pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
 
                       return (
                         <foreignObject
@@ -1318,38 +1389,82 @@ export default function VoltageDropCalc({
                               e.stopPropagation();
                               setSelectedElement({ type: "node", node });
                             }}
-                            className={`rounded-xl border-2 bg-white dark:bg-slate-900 p-3.5 shadow-md transition-all cursor-grab active:cursor-grabbing ${cardBorder} ${bgGlow} ${
-                              isSelected ? "!border-indigo-600 ring-4 ring-indigo-500/20" : ""
-                            }`}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              height: "100%",
+                              boxSizing: "border-box",
+                              borderRadius: "12px",
+                              border: `2px solid ${pBorderColor}`,
+                              backgroundColor: "#FFFFFF",
+                              padding: "14px",
+                              boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+                              cursor: "grab",
+                              fontFamily: "sans-serif"
+                            }}
                           >
-                            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5 mb-2">
-                              <div className="flex items-center gap-1.5 min-w-0">
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              borderBottom: "1px solid #E2E8F0",
+                              paddingBottom: "6px",
+                              marginBottom: "8px"
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0, overflow: "hidden" }}>
                                 <Layers className="w-4 h-4 text-indigo-500 shrink-0" />
-                                <h5 className="font-black text-xs text-slate-900 dark:text-slate-100 truncate uppercase tracking-tight">{node.label}</h5>
+                                <h5 style={{
+                                  margin: 0,
+                                  fontWeight: "900",
+                                  fontSize: "11px",
+                                  color: "#0F172A",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "-0.025em",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  width: "120px"
+                                }}>{node.label}</h5>
                               </div>
-                              <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 rounded font-black tracking-wider uppercase shrink-0">
+                              <span style={{
+                                fontSize: "9px",
+                                padding: "2px 6px",
+                                backgroundColor: "#EEF2FF",
+                                color: "#4338CA",
+                                borderRadius: "4px",
+                                fontWeight: "900",
+                                letterSpacing: "0.05em",
+                                textTransform: "uppercase"
+                              }}>
                                 {node.data.type}
                               </span>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-bold">
+                            <div style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr",
+                              gap: "8px 6px",
+                              fontSize: "10px",
+                              color: "#475569",
+                              fontWeight: "700"
+                            }}>
                               <div>
-                                <p className="text-[8px] uppercase tracking-wider text-slate-400">Main Bus Rating</p>
-                                <p className="text-slate-800 dark:text-slate-200">{node.data.panelConfig?.mainBreakerAT || 100}A AT</p>
+                                <p style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", margin: 0 }}>Main Bus Rating</p>
+                                <p style={{ color: "#1E293B", margin: 0 }}>{node.data.panelConfig?.mainBreakerAT || 100}A AT</p>
                               </div>
                               <div>
-                                <p className="text-[8px] uppercase tracking-wider text-slate-400">Total Loading</p>
-                                <p className="text-slate-800 dark:text-slate-200 font-mono">{node.data.totalLoadA?.toFixed(1)} A</p>
+                                <p style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", margin: 0 }}>Total Loading</p>
+                                <p style={{ color: "#1E293B", margin: 0, fontFamily: "monospace" }}>{node.data.totalLoadA?.toFixed(1)} A</p>
                               </div>
                               <div>
-                                <p className="text-[8px] uppercase tracking-wider text-slate-400">Feeder VD (%)</p>
-                                <p className={`font-mono font-black ${pct > limit ? "text-red-500" : pct > limit * 0.9 ? "text-amber-500" : "text-green-500"}`}>
+                                <p style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", margin: 0 }}>Feeder VD (%)</p>
+                                <p style={{ color: pctColor, margin: 0, fontFamily: "monospace", fontWeight: "900" }}>
                                   {pct.toFixed(2)}%
                                 </p>
                               </div>
                               <div>
-                                <p className="text-[8px] uppercase tracking-wider text-slate-400">Cumulative VD</p>
-                                <p className="text-slate-700 dark:text-slate-300 font-mono font-extrabold">{cum?.vdPercentage}%</p>
+                                <p style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8", margin: 0 }}>Cumulative VD</p>
+                                <p style={{ color: "#1E293B", margin: 0, fontFamily: "monospace", fontWeight: "800" }}>{cum?.vdPercentage}%</p>
                               </div>
                             </div>
                           </div>
@@ -1365,18 +1480,9 @@ export default function VoltageDropCalc({
                       const limit = 3.0; // branch limit
                       const isVdFailure = cumPct > 5.0 || cPct > limit;
 
-                      let borderStyle = "border-slate-200 dark:border-slate-800";
-                      let glowEffect = "hover:border-indigo-400";
-                      if (isVdFailure) {
-                        borderStyle = "border-red-400 dark:border-red-900 shadow-sm shadow-red-500/5";
-                        glowEffect = "hover:border-red-500";
-                      } else if (cPct > limit * 0.9 || cumPct > 5.0 * 0.9) {
-                        borderStyle = "border-amber-400 dark:border-amber-900";
-                        glowEffect = "hover:border-amber-500";
-                      } else {
-                        borderStyle = "border-green-400 dark:border-green-900";
-                        glowEffect = "hover:border-green-500";
-                      }
+                      const cBorderColor = isSelected ? "#4F46E5" : isVdFailure ? "#EF4444" : (cPct > limit * 0.9 || cumPct > 5.0 * 0.9) ? "#F59E0B" : "#10B981";
+                      const segmentColor = cPct > limit ? "#EF4444" : cPct > limit * 0.9 ? "#F59E0B" : "#10B981";
+                      const cumulativeColor = cumPct > 5.0 ? "#EF4444" : cumPct > 4.5 ? "#F59E0B" : "#10B981";
 
                       return (
                         <foreignObject
@@ -1395,29 +1501,66 @@ export default function VoltageDropCalc({
                               e.stopPropagation();
                               setSelectedElement({ type: "node", node });
                             }}
-                            className={`rounded-xl border-2 bg-slate-50/90 dark:bg-slate-900/90 p-3.5 shadow-sm transition-all cursor-grab active:cursor-grabbing ${borderStyle} ${glowEffect} ${
-                              isSelected ? "!border-indigo-600 ring-4 ring-indigo-500/20" : ""
-                            }`}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              height: "100%",
+                              boxSizing: "border-box",
+                              borderRadius: "12px",
+                              border: `2px solid ${cBorderColor}`,
+                              backgroundColor: "#F8FAFC",
+                              padding: "12px",
+                              boxShadow: "0 1px 3px 0 rgba(0,0,0,0.1)",
+                              cursor: "grab",
+                              fontFamily: "sans-serif"
+                            }}
                           >
-                            <div className="border-b border-slate-200/50 dark:border-slate-800/50 pb-1 mb-1.5 flex justify-between items-center">
-                              <h5 className="font-extrabold text-[10px] text-slate-900 dark:text-slate-100 truncate w-2/3 uppercase tracking-tight">{node.label}</h5>
-                              <span className="text-[8px] font-black text-slate-400">NO. {node.data?.circuit?.circuitNo}</span>
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              borderBottom: "1px solid #E2E8F0",
+                              paddingBottom: "4px",
+                              marginBottom: "6px"
+                            }}>
+                              <h5 style={{
+                                margin: 0,
+                                fontWeight: "800",
+                                fontSize: "10px",
+                                color: "#0F172A",
+                                textTransform: "uppercase",
+                                letterSpacing: "-0.025em",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                width: "95px"
+                              }}>{node.label}</h5>
+                              <span style={{ fontSize: "8px", fontWeight: "900", color: "#94A3B8" }}>
+                                NO. {node.data?.circuit?.circuitNo}
+                              </span>
                             </div>
 
-                            <div className="space-y-1 text-[9px] text-slate-500 dark:text-slate-400 font-bold">
-                              <div className="flex justify-between">
+                            <div style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "4px",
+                              fontSize: "9px",
+                              color: "#475569",
+                              fontWeight: "700"
+                            }}>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span>Load Amp:</span>
-                                <span className="text-slate-800 dark:text-slate-200 font-mono">{node.data?.circuit?.loadA} A</span>
+                                <span style={{ color: "#1E293B", fontFamily: "monospace" }}>{node.data?.circuit?.loadA} A</span>
                               </div>
-                              <div className="flex justify-between">
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span>Segment VD:</span>
-                                <span className={cPct > limit ? "text-red-500" : cPct > limit * 0.9 ? "text-amber-500" : "text-green-500"}>
+                                <span style={{ color: segmentColor, fontFamily: "monospace" }}>
                                   {cPct.toFixed(2)}%
                                 </span>
                               </div>
-                              <div className="flex justify-between border-t border-slate-200/20 pt-1">
+                              <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #E2E8F0", paddingTop: "3px" }}>
                                 <span>Cumulative:</span>
-                                <span className={`font-black ${cumPct > 5.0 ? "text-red-500" : cumPct > 4.5 ? "text-amber-500" : "text-green-600"}`}>
+                                <span style={{ color: cumulativeColor, fontWeight: "900", fontFamily: "monospace" }}>
                                   {cumPct.toFixed(2)}%
                                 </span>
                               </div>
