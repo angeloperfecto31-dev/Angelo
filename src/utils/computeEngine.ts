@@ -630,14 +630,15 @@ export const calculateCircuitValues = (
             ? 225
             : 400;
 
-  const computedMcbKAIC = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
+  const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
+  const panelKaic = panel.icRating ? (parseFloat(panel.icRating) || 10) : 10;
+  const computedMcbKAIC = Math.max(baseCalculated, panelKaic);
+  
   const mcbKAIC = c.kaicOverride !== undefined
     ? c.kaicOverride
     : isSubPanelLink && c.mcbKAIC
       ? c.mcbKAIC
-      : c.mcbKAIC && c.mcbKAIC > computedMcbKAIC
-        ? c.mcbKAIC
-        : computedMcbKAIC;
+      : computedMcbKAIC;
 
   const wire = getWireForBreakerLocal(
     mcbAT,
