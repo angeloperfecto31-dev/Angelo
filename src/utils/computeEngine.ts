@@ -1046,17 +1046,6 @@ export const computePanelScheduleValues = (
         cirV = cir.voltage || cirV;
       }
 
-      if (isSubPanel) {
-        if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
-          // Add maximum phase plus 3-phase to total demand amp
-          const maxPhaseAmp = Math.max(cir.reflectedPhaseAmps.R, cir.reflectedPhaseAmps.Y, cir.reflectedPhaseAmps.B);
-          subPanelDemandAmps += (maxPhaseAmp * 1.732) + cir.reflectedPhaseAmps.ThreePhase;
-        } else {
-          subPanelDemandAmps += cir.reflectedDemandAmps !== undefined ? cir.reflectedDemandAmps : (is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV);
-        }
-        return; // Exclude from local phase calculations to prevent double-applying multipliers
-      }
-
       const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
 
       if (is3Phase) {
@@ -1095,17 +1084,13 @@ export const computePanelScheduleValues = (
       (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) *
       1.25;
 
-    maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
+    maxBaseAmp = internalDemandCurrent;
     maxDesignAmp = maxBaseAmp;
   } else {
     let internalConnectedVA = 0;
     c.forEach((cir) => {
       if (isIdleSpareOrSpace(cir)) return;
-      if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
-        subPanelDemandAmps += cir.reflectedDemandAmps !== undefined ? cir.reflectedDemandAmps : cir.loadA || cir.loadVA / (cir.voltage || 230);
-      } else {
-        internalConnectedVA += cir.loadVA;
-      }
+      internalConnectedVA += cir.loadVA;
     });
 
     const motorCircuits = c.filter(
@@ -1123,7 +1108,7 @@ export const computePanelScheduleValues = (
     internalDemandCurrent =
       ((internalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
-    maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
+    maxBaseAmp = internalDemandCurrent;
     maxDesignAmp = maxBaseAmp;
   }
 
