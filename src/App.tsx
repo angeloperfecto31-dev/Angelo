@@ -110,7 +110,8 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
-  const [userPlan, setUserPlan] = useState<"basic" | "premium" | null>(null);
+  const [userPlan, setUserPlan] = useState<string | null>(null);
+  const [subscriptionExpiry, setSubscriptionExpiry] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -150,16 +151,45 @@ export default function App() {
       
       unsubscribe = onSnapshot(
         doc(db, "users", user.uid),
-        (docSnap) => {
+        async (docSnap) => {
           if (docSnap.exists() && docSnap.data().isActive === true) {
             const data = docSnap.data();
-            setUserPlan(data.plan || "premium");
-            setIsActive(true);
-            isActiveRef.current = true;
+            
+            // Client-side expiry check
+            let isCurrentlyActive = true;
+            if (data.subscriptionExpiry) {
+              const expiryDate = new Date(data.subscriptionExpiry);
+              if (new Date() > expiryDate) {
+                isCurrentlyActive = false;
+                
+                // If it's a free trial that expired, we log the user out
+                if (data.plan === "free_trial") {
+                  try {
+                    await signOut(auth);
+                    return; // exit the listener
+                  } catch (e) {
+                    console.error("Failed to sign out after trial expiration", e);
+                  }
+                }
+              }
+            }
+            
+            if (isCurrentlyActive) {
+              setUserPlan(data.plan || "premium");
+              setSubscriptionExpiry(data.subscriptionExpiry || null);
+              setIsActive(true);
+              isActiveRef.current = true;
+            } else {
+              setIsActive(false);
+              isActiveRef.current = false;
+              setUserPlan(null);
+              setSubscriptionExpiry(null);
+            }
           } else {
             setIsActive(false);
             isActiveRef.current = false;
             setUserPlan(null);
+            setSubscriptionExpiry(null);
           }
           initialLoad = false;
           setAuthLoading(false);
@@ -4685,22 +4715,39 @@ export default function App() {
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Subscription Tier</p>
-                      <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
-                        <div>
-                          <p className="text-xs font-black text-amber-400">Subscription Status: {userPlan === "premium" ? "PREMIUM LICENSE" : "FREE TRIAL TIER"}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
+                      <div className="flex flex-col gap-2 p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-black text-amber-400">
+                              Subscription Status: {userPlan === "enterprise" ? "ENTERPRISE LICENSE" : userPlan === "premium" ? "PREMIUM PLAN" : userPlan === "basic" ? "BASIC PLAN" : userPlan === "free_trial" ? "FREE TRIAL" : "NO ACTIVE PLAN"}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
+                          </div>
+                          {userPlan !== "enterprise" && (
+                            <button
+                              onClick={() => {
+                                setIsAccountSettingsOpen(false);
+                                setShowUpgrade(true);
+                              }}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
+                            >
+                              Upgrade
+                            </button>
+                          )}
                         </div>
-                        {userPlan !== "premium" && (
-                          <button
-                            onClick={() => {
-                              setIsAccountSettingsOpen(false);
-                              setShowUpgrade(true);
-                            }}
-                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
-                          >
-                            Upgrade
-                          </button>
-                        )}
+                        {subscriptionExpiry ? (
+                          <div className="bg-slate-900/50 rounded-lg p-2 mt-1">
+                            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">
+                              Valid Until: <span className="text-amber-400">{new Date(subscriptionExpiry).toLocaleString()}</span>
+                            </p>
+                          </div>
+                        ) : userPlan ? (
+                          <div className="bg-slate-900/50 rounded-lg p-2 mt-1">
+                            <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                              LIFETIME ACCESS
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
