@@ -113,7 +113,7 @@ export default function PaymentScreen({
   const [uploadingMaribankQr, setUploadingMaribankQr] = useState(false);
   const [uploadingMayaQr, setUploadingMayaQr] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium">("premium");
+  const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium" | "enterprise">("premium");
 
   // Custom confirmation states to bypass native window.confirm blocks in sandboxed iframes
   const [confirmDeleteReg, setConfirmDeleteReg] = useState(false);
