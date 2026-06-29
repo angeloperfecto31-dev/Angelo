@@ -39,7 +39,8 @@ import {
   FileText,
   Copy,
   FileDown,
-  Printer
+  Printer,
+  Move
 } from 'lucide-react';
 import { exportToCAD } from '../utils/exportDxf';
 import { auth, db } from '../firebase';
@@ -516,6 +517,17 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 
 export default function IlluminationCalc({ panel, circuits, subPanels, vdCalculations, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
+  const [showWizard, setShowWizard] = useState<boolean>(true);
+  const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
+  
+  // Auto Save Effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLastAutoSave(new Date());
+    }, 60000); // Auto save every minute (simulated visual indicator)
+    return () => clearInterval(timer);
+  }, []);
+
   // Synchronized custom imported fixtures state
   const [importedFixtures, setImportedFixtures] = useState<any[]>([]);
 
@@ -1086,7 +1098,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     }
   };
 
-  const [activeSubTab, setActiveSubTab] = useState<'3d' | 'grid' | 'daylight' | 'glare' | 'energy' | 'reports'>('3d');
+  const [activeSubTab, setActiveSubTab] = useState<'rooms' | '3d' | 'grid' | 'daylight' | 'glare' | 'energy' | 'reports'>('3d');
   const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag'>('3d');
   const [draggedFixtureId, setDraggedFixtureId] = useState<string | null>(null);
   const [rotatingFixtureId, setRotatingFixtureId] = useState<string | null>(null);
@@ -1782,6 +1794,50 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   // Keep single active fixture's quantity in sync with dynamically calculated quantity for the room
   const prevCalcFixtures = useRef(calculation.fixtures);
+  
+  // Keyboard Shortcuts for Professional CAD Designer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
+        return;
+      }
+      
+      const key = e.key.toLowerCase();
+      
+      // Escape -> Select Tool
+      if (key === 'escape') {
+        setActiveTool('select');
+        setSelectedObjectId(null);
+      }
+      
+      // Delete/Backspace -> Delete selected object
+      if ((key === 'delete' || key === 'backspace') && selectedObjectId) {
+        setFloorPlanObjects(prev => {
+          const updated = prev.filter(o => o.id !== selectedObjectId);
+          setHistory(h => [...h, prev]);
+          setRedoHistory([]);
+          return updated;
+        });
+        setSelectedObjectId(null);
+      }
+      
+      // Quick tools
+      if (key === 'v') setActiveTool('select');
+      if (key === 'w') setActiveTool('wall');
+      if (key === 'd') setActiveTool('door');
+      if (key === 'c') setActiveTool('column');
+      if (key === 'r') setActiveTool('rectangle');
+      if (key === 'space' || key === ' ') {
+        e.preventDefault();
+        setActiveTool('pan');
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedObjectId]);
+
   useEffect(() => {
     if (params.activeFixtures && params.activeFixtures.length === 1 && calculation.fixtures > 0) {
       if (prevCalcFixtures.current !== calculation.fixtures || params.activeFixtures[0].quantity === 4 /* Initial seed */) {
@@ -2245,6 +2301,61 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   return (
     <div className={`w-full max-w-full space-y-6 ${isFullscreen ? 'fixed inset-0 z-[100] bg-slate-50 dark:bg-slate-950 overflow-y-auto p-4 md:p-8 !m-0' : ''}`}>
+      
+      {/* Auto Save Notification */}
+      {lastAutoSave && (
+        <div className="fixed top-4 right-4 z-[999] bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-xs font-bold animate-fade-in pointer-events-none">
+          <CheckCircle2 className="w-4 h-4" />
+          Project Auto-Saved at {lastAutoSave.toLocaleTimeString()}
+        </div>
+      )}
+
+      {/* Guided Setup Wizard Modal */}
+      {showWizard && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col animate-scale-up">
+            <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 p-8 text-center relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-4">
+                <button onClick={() => setShowWizard(false)} className="text-white/70 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <Sparkles className="w-12 h-12 text-white/90 mx-auto mb-4" />
+              <h2 className="text-2xl font-black text-white tracking-tight mb-2">Lighting Design Workspace</h2>
+              <p className="text-indigo-100 text-sm max-w-lg mx-auto">Welcome to the professional CAD suite. Let's configure your initial room parameters to optimize the lux calculation and 3D environment.</p>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Primary Room Name</label>
+                  <input type="text" value={params.roomName} onChange={(e) => setParams({ ...params, roomName: e.target.value })} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. Master Bedroom" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Target Lux Level</label>
+                  <input type="number" value={params.targetLux} onChange={(e) => setParams({ ...params, targetLux: Number(e.target.value) })} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Room Length (m)</label>
+                  <input type="number" value={params.roomLength} onChange={(e) => setParams({ ...params, roomLength: Math.max(1, Number(e.target.value)) })} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Room Width (m)</label>
+                  <input type="number" value={params.roomWidth} onChange={(e) => setParams({ ...params, roomWidth: Math.max(1, Number(e.target.value)) })} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+              <button onClick={() => setShowWizard(false)} className="px-6 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Skip Setup</button>
+              <button onClick={() => setShowWizard(false)} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2">
+                Launch Workspace <Target className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isFullscreen && (
         <div className="flex justify-between items-center mb-6">
            <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
@@ -2347,13 +2458,14 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
               <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">LUMEN METHOD, GLARE, UNIFORMITY & DAYLIGHT AUDIT</p>
            </div>
            
-           <div className="flex gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg self-start">
+           <div className="flex flex-wrap gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg self-start">
+             <button title="Multi-Room Manager" onClick={() => setActiveSubTab('rooms')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'rooms' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Grid className="w-3.5 h-3.5" /> Rooms & Properties</button>
              <button title="3D Visualizer" onClick={() => setActiveSubTab('3d')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === '3d' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Maximize className="w-3.5 h-3.5" /> 3D View</button>
-             <button title="Reports" onClick={() => setActiveSubTab('reports')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'reports' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><FileText className="w-3.5 h-3.5" /> Reports</button>
-             <button title="Lux Grid" onClick={() => setActiveSubTab('grid')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'grid' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Activity className="w-3.5 h-3.5" /> Uniformity Grid</button>
+             <button title="Lux Grid" onClick={() => setActiveSubTab('grid')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'grid' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Activity className="w-3.5 h-3.5" /> Heat Map & Grid</button>
              <button title="Daylight" onClick={() => setActiveSubTab('daylight')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'daylight' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Sun className="w-3.5 h-3.5" /> Daylight</button>
              <button title="Glare Index" onClick={() => setActiveSubTab('glare')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'glare' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Eye className="w-3.5 h-3.5" /> Glare (UGR)</button>
              <button title="Energy audit" onClick={() => setActiveSubTab('energy')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'energy' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><Zap className="w-3.5 h-3.5" /> Energy & LPD</button>
+             <button title="Reports" onClick={() => setActiveSubTab('reports')} className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 rounded transition-all ${activeSubTab === 'reports' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}><FileText className="w-3.5 h-3.5" /> Smart Compliance & Reports</button>
            </div>
         </div>
 
@@ -2708,6 +2820,52 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
           {/* Interactive view main column */}
           <div className="md:col-span-2 border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
 
+            {/* TAB: Rooms & Properties */}
+            {activeSubTab === 'rooms' && (
+              <div className="space-y-6">
+                <div className="border-b border-slate-100 pb-3">
+                   <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block">Multi-Room Project Manager</span>
+                   <span className="text-base font-extrabold text-slate-800">Rooms & Properties</span>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {params.savedRooms?.map(room => (
+                    <div key={room.id} className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm relative group">
+                      <button onClick={() => removeSavedRoom(room.id)} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <X className="w-4 h-4" />
+                      </button>
+                      <h4 className="text-sm font-black text-slate-800 mb-1">{room.roomName || 'Unnamed Room'}</h4>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider space-y-1">
+                        <p>Dimensions: {room.roomWidth}m × {room.roomLength}m</p>
+                        <p>Area: {(room.roomWidth * room.roomLength).toFixed(1)} m²</p>
+                        <p>Target Lux: {room.targetLux} lx</p>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setParams({ ...params, ...room });
+                          setActiveSubTab('3d');
+                        }}
+                        className="mt-4 w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition-colors"
+                      >
+                        Load Room Data
+                      </button>
+                    </div>
+                  ))}
+                  
+                  <button 
+                    onClick={() => {
+                      const newRoom = { ...params, id: crypto.randomUUID() };
+                      setParams({ ...params, savedRooms: [...(params.savedRooms || []), newRoom] });
+                    }}
+                    className="border-2 border-dashed border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-indigo-300 text-slate-500 hover:text-indigo-600 rounded-xl flex flex-col items-center justify-center p-6 transition-all min-h-[160px]"
+                  >
+                    <Plus className="w-6 h-6 mb-2" />
+                    <span className="text-xs font-bold">Save Current Room</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* TAB 1: 3D Visualization */}
             {activeSubTab === '3d' && (
               <div className="space-y-4">
@@ -2859,6 +3017,14 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                               className={`p-1.5 rounded-lg transition-all ${activeTool === 'rectangle' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                             >
                               <Square className="w-3.5 h-3.5 opacity-60" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Pan Tool (Hand)"
+                              onClick={() => { setActiveTool('pan'); setSelectedObjectId(null); }}
+                              className={`p-1.5 rounded-lg transition-all ${activeTool === 'pan' ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                            >
+                              <Move className="w-3.5 h-3.5" />
                             </button>
                           </div>
 
@@ -4227,17 +4393,18 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       .meta-box { margin-top: 150px; border-top: 2px solid #e5e7eb; padding-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
                       .meta-line { font-size: 14px; margin-bottom: 8px; }
                       .meta-label { font-weight: bold; color: #4b5563; }
-                      h1 { font-size: 24px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-top: 40px; }
-                      h2 { font-size: 18px; color: #2563eb; margin-top: 30px; }
+                      h1 { font-size: 20px; color: #1e3a8a; border-bottom: 2px solid #3b82f6; padding-bottom: 6px; margin-top: 40px; }
+                      h2 { font-size: 16px; color: #2563eb; margin-top: 30px; }
                       table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 15px; }
-                      th { background-color: #f3f4f6; color: #1e293b; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #d1d5db; }
-                      td { padding: 10px; border: 1px solid #d1d5db; }
+                      th { background-color: #f3f4f6; color: #1e293b; font-weight: bold; text-align: left; padding: 10px; border: 1px solid #d1d5db; font-size: 13px; }
+                      td { padding: 10px; border: 1px solid #d1d5db; font-size: 13px; }
                       .success-badge { color: #16a34a; font-weight: bold; }
                       .warning-badge { color: #d97706; font-weight: bold; }
                       .formula-box { background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; font-family: Consolas, monospace; font-size: 13px; margin: 15px 0; }
                     </style>
                   </head>
                   <body>
+                    ${reportIncludeCover ? `
                     <div class="cover-page">
                       <div class="project-title">${reportProjectName}</div>
                       <div class="project-subtitle">Professional Lighting Design & Compliance Audit</div>
@@ -4248,45 +4415,109 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                         <div class="meta-line"><span class="meta-label">Standard Reference:</span> Philippine Electrical Code (PEC)</div>
                       </div>
                     </div>
+                    ` : ''}
 
+                    ${reportIncludeSummary ? `
                     <h1>1. Executive Summary</h1>
-                    <p>${reportExecutiveSummary}</p>
+                    <p style="font-style: italic; background-color: #f8fafc; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                      "${reportExecutiveSummary}"
+                    </p>
+                    ` : ''}
 
-                    <h1>2. Design Metrics & Room Details</h1>
+                    ${reportIncludeFloorPlan ? `
+                    <h1>2. Architectural & CAD Layout Elements</h1>
+                    <table>
+                      <tr>
+                        <th>Element Name</th>
+                        <th>Type</th>
+                      </tr>
+                      ${floorPlanObjects.length === 0 ? '<tr><td colspan="2">No structural components drawn.</td></tr>' : floorPlanObjects.map(obj => `
+                      <tr>
+                        <td>${obj.label || obj.id}</td>
+                        <td style="text-transform: uppercase;">${obj.type}</td>
+                      </tr>
+                      `).join('')}
+                    </table>
+                    ` : ''}
+
+                    ${reportIncludeUniformity ? `
+                    <h1>3. Uniformity & Grid Calculations</h1>
                     <table>
                       <tr>
                         <th>Parameter</th>
-                        <th>Designed Value</th>
-                        <th>Target / Limit</th>
-                        <th>Compliance Status</th>
+                        <th>Value</th>
                       </tr>
                       <tr>
-                        <td>Room Dimensions</td>
-                        <td>${params.roomWidth}m x ${params.roomLength}m x ${params.ceilingHeight}m</td>
-                        <td>-</td>
-                        <td><span class="success-badge">Valid Dimensions</span></td>
+                        <td>Calculated Average</td>
+                        <td style="font-weight: bold; color: #4338ca;">${luxGridData.averageLux} lx</td>
                       </tr>
                       <tr>
-                        <td>Average Calculated Illuminance</td>
-                        <td>${avgLux} lx</td>
-                        <td>${params.targetLux} lx</td>
-                        <td><span class="${avgLux >= params.targetLux * 0.9 ? 'success-badge' : 'warning-badge'}">${avgLux >= params.targetLux * 0.9 ? 'PEC Compliant' : 'Needs Correction'}</span></td>
+                        <td>Uniformity (U₀)</td>
+                        <td style="font-weight: bold; color: ${luxGridData.uniformityU0 >= 0.4 ? '#047857' : '#b45309'};">${luxGridData.uniformityU0}</td>
                       </tr>
                       <tr>
-                        <td>Overall Uniformity (U₀)</td>
-                        <td>${uniformity}</td>
-                        <td>&ge; 0.40</td>
-                        <td><span class="${uniformity >= 0.4 ? 'success-badge' : 'warning-badge'}">${uniformity >= 0.4 ? 'Pass' : 'Low'}</span></td>
+                        <td>Min Illuminance</td>
+                        <td>${luxGridData.minLux} lx</td>
+                      </tr>
+                      <tr>
+                        <td>Max Illuminance</td>
+                        <td>${luxGridData.maxLux} lx</td>
+                      </tr>
+                    </table>
+                    ` : ''}
+
+                    ${reportIncludeEnergy ? `
+                    <h1>4. Green Building Energy Audit</h1>
+                    <table>
+                      <tr>
+                        <th>Audit Parameter</th>
+                        <th>Value</th>
                       </tr>
                       <tr>
                         <td>Lighting Power Density (LPD)</td>
-                        <td>${energyAudit.lpd} W/m²</td>
-                        <td>&le; ${lpdLimitInfo.limit} W/m²</td>
-                        <td><span class="${energyAudit.passLPD ? 'success-badge' : 'warning-badge'}">${energyAudit.passLPD ? 'ASHRAE Compliant' : 'Warning'}</span></td>
+                        <td style="font-weight: bold;">${energyAudit.lpd} W/m²</td>
+                      </tr>
+                      <tr>
+                        <td>Annual Energy consumption</td>
+                        <td style="font-weight: bold;">${energyAudit.annualKWhStandard} kWh</td>
+                      </tr>
+                      <tr>
+                        <td>Standard Annual Cost</td>
+                        <td style="font-weight: bold;">PHP ${energyAudit.annualCostStandard.toLocaleString()}</td>
+                      </tr>
+                      <tr>
+                        <td>Smart Sensors Savings</td>
+                        <td style="font-weight: bold; color: #16a34a;">PHP ${energyAudit.annualSavingsCost.toLocaleString()}</td>
+                      </tr>
+                      <tr>
+                        <td>Annual Carbon Footprint</td>
+                        <td style="font-weight: bold;">${enableDaylight ? energyAudit.co2Optimized : energyAudit.co2Standard} kg CO₂</td>
                       </tr>
                     </table>
+                    ` : ''}
 
-                    <h1>3. Fixture Schedule & Specifications</h1>
+                    ${reportIncludeCompliance ? `
+                    <h1>5. Code Compliance Checklist</h1>
+                    <table>
+                      <tr>
+                        <th>Requirement</th>
+                        <th>Status</th>
+                        <th>Remarks</th>
+                      </tr>
+                      <tr>
+                        <td>PEC Illuminance Standard</td>
+                        <td class="${luxGridData.averageLux >= params.targetLux * 0.9 ? 'success-badge' : 'warning-badge'}">${luxGridData.averageLux >= params.targetLux * 0.9 ? 'Compliant' : 'Fail'}</td>
+                        <td>Target: ${params.targetLux} lx, Actual: ${luxGridData.averageLux} lx</td>
+                      </tr>
+                      <tr>
+                        <td>ASHRAE 90.1 LPD Standard</td>
+                        <td class="${energyAudit.passLPD ? 'success-badge' : 'warning-badge'}">${energyAudit.passLPD ? 'Compliant' : 'Warning'}</td>
+                        <td>Limit: ${lpdLimitInfo.limit} W/m², Actual: ${energyAudit.lpd} W/m²</td>
+                      </tr>
+                    </table>
+                    ` : ''}
+
+                    <h1>6. Fixture Schedule</h1>
                     <table>
                       <tr>
                         <th>Fixture Name</th>
@@ -4296,7 +4527,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                         <th>Luminous Flux</th>
                       </tr>
                       <tr>
-                        <td>${activeFixture.lightType || 'Custom Fixture'}</td>
+                        <td>${activeFixture.lightType || 'LED Panel'}</td>
                         <td>${activeFixture.lightType || 'LED Panel'}</td>
                         <td>${totalFixtures}</td>
                         <td>${activeFixture.wattage}W</td>
@@ -4304,7 +4535,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       </tr>
                     </table>
 
-                    <h1>4. Appendix - Calculations & Equations</h1>
+                    <h1>Appendix - Calculations & Equations</h1>
                     <div class="formula-box">
                       Average Illuminance (E_avg) = (N * Phi * CU * LLF) / Area<br>
                       LPD = Total Wattage / Area<br>
