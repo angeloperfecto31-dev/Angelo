@@ -198,7 +198,7 @@ export default function PaymentScreen({
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [planFilter, setPlanFilter] = useState<"all" | "basic" | "premium">("all");
+  const [planFilter, setPlanFilter] = useState<"all" | "basic" | "premium" | "enterprise">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [confirmingAction, setConfirmingAction] = useState<{
     uid: string;
@@ -2031,7 +2031,7 @@ export default function PaymentScreen({
         
         // Default regular (gross) prices
         let regPrice = 0;
-        if (planStr === "premium") {
+        if (planStr === "premium" || planStr === "enterprise") {
           if (isUpgradeUser) {
             regPrice = pricingSettings.upgradePrice || 500;
           } else {
@@ -3675,7 +3675,7 @@ export default function PaymentScreen({
                     Plan
                   </span>
                   <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
-                    {(["all", "basic", "premium"] as const).map((mode) => (
+                    {(["all", "basic", "premium", "enterprise"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setPlanFilter(mode)}

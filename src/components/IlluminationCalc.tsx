@@ -1173,6 +1173,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   const [reportProjectName, setReportProjectName] = useState('Premium Commercial Space');
   const [reportExecutiveSummary, setReportExecutiveSummary] = useState('The lighting design presented in this report is optimized for maximum eye comfort, minimal carbon footprint, and complete code compliance. Utilizing high-efficiency fixtures, the design provides exceptional uniformity while remaining well below ASHRAE power limits.');
   const [reportIncludeSummary, setReportIncludeSummary] = useState(true);
+  const [reportIncludeCover, setReportIncludeCover] = useState(true);
+  const [reportIncludeCompliance, setReportIncludeCompliance] = useState(true);
   const [reportIncludeFloorPlan, setReportIncludeFloorPlan] = useState(true);
   const [reportIncludeUniformity, setReportIncludeUniformity] = useState(true);
   const [reportIncludeEnergy, setReportIncludeEnergy] = useState(true);
@@ -2854,8 +2856,16 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                   
                   <button 
                     onClick={() => {
-                      const newRoom = { ...params, id: crypto.randomUUID() };
-                      setParams({ ...params, savedRooms: [...(params.savedRooms || []), newRoom] });
+                      const newRoom = { 
+                        ...params, 
+                        id: crypto.randomUUID(),
+                        roomName: params.roomName || params.targetRoomName || 'Unnamed Room',
+                        area: params.inputMode === 'area' ? params.userArea : (params.roomWidth * params.roomLength),
+                        fixturesCount: calculation.fixtures,
+                        totalLumens: calculation.fixtures * (activeFixture?.lumens || 0),
+                        totalWattage: calculation.fixtures * (activeFixture?.wattage || 0)
+                      };
+                      setParams({ ...params, savedRooms: [...(params.savedRooms || []), newRoom as any] });
                     }}
                     className="border-2 border-dashed border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-indigo-300 text-slate-500 hover:text-indigo-600 rounded-xl flex flex-col items-center justify-center p-6 transition-all min-h-[160px]"
                   >

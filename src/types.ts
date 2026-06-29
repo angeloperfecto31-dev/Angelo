@@ -176,6 +176,8 @@ export interface SavedLightingDetail {
   roomName: string;
   targetLux: number;
   area: number;
+  roomWidth?: number;
+  roomLength?: number;
   fixtureId?: string;
   fixtureLightType?: string;
   fixturesCount: number;
@@ -218,6 +220,7 @@ export interface PlacedFixtureDragPosition {
 
 export interface IlluminationParams {
   inputMode: 'dimensions' | 'area';
+  roomName?: string;
   roomWidth: number;
   roomLength: number;
   userArea: number;
