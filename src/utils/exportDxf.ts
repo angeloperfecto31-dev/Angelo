@@ -4618,7 +4618,8 @@ export const exportToCAD = (
           const isPremium =
             userData?.plan === "premium" ||
             userData?.plan === "Premium" ||
-            userData?.plan === "PREMIUM";
+            userData?.plan === "PREMIUM" ||
+            (userData?.plan || "").toLowerCase() === "enterprise";
 
           if (!isAdmin && (!isActive || !isPremium)) {
             alert(

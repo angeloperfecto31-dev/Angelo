@@ -43,6 +43,16 @@ service cloud.firestore {
         && (!("paymentStatus" in data) || data.paymentStatus == null || data.paymentStatus is string)
         && (!("bypassPayment" in data) || data.bypassPayment == null || data.bypassPayment is bool)
         && (!("activatedAt" in data) || data.activatedAt == null || data.activatedAt is string)
+        && (!("plan" in data) || data.plan == null || data.plan is string)
+        && (!("plan_name" in data) || data.plan_name == null || data.plan_name is string)
+        && (!("subscription_type" in data) || data.subscription_type == null || data.subscription_type is string)
+        && (!("is_lifetime" in data) || data.is_lifetime == null || data.is_lifetime is bool)
+        && (!("status" in data) || data.status == null || data.status is string)
+        && (!("started_at" in data) || data.started_at == null || data.started_at is string)
+        && (!("expires_at" in data) || data.expires_at == null || data.expires_at is string)
+        && (!("upgraded_by_admin" in data) || data.upgraded_by_admin == null || data.upgraded_by_admin is bool)
+        && (!("last_modified_by" in data) || data.last_modified_by == null || data.last_modified_by is string)
+        && (!("modified_at" in data) || data.modified_at == null || data.modified_at is string)
         && (!("pendingVerification" in data) || data.pendingVerification == null || (
              data.pendingVerification.senderName is string && data.pendingVerification.senderName.size() <= 128 &&
              data.pendingVerification.referenceNo is string && data.pendingVerification.referenceNo.size() <= 128 &&

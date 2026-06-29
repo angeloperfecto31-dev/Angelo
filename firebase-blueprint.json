@@ -70,6 +70,36 @@
         "senderName": {
           "type": "string",
           "description": "Name of sender for manually submitted payments"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "plan_name": {
+          "type": "string"
+        },
+        "subscription_type": {
+          "type": "string"
+        },
+        "is_lifetime": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "upgraded_by_admin": {
+          "type": "boolean"
+        },
+        "last_modified_by": {
+          "type": "string"
+        },
+        "modified_at": {
+          "type": "string"
         }
       },
       "required": [

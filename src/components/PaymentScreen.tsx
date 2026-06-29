@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
+import SubscriptionManager from "./SubscriptionManager";
 
 const getUserName = (u: any) => {
   if (u.name) return u.name;
@@ -120,7 +121,7 @@ export default function PaymentScreen({
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices">("verifications");
+  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions">("verifications");
 
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\n-Word File Export feature";
@@ -1342,9 +1343,9 @@ export default function PaymentScreen({
   // 1. Unified function to resolve a user's subscription, payment status, amount, and promo calculations
   const getUserFinanceDetails = (u: any) => {
     const rawPlan = (u.plan || u.pendingVerification?.plan || "basic").toLowerCase();
-    const isPremiumTier = rawPlan === "premium";
+    const isPremiumTier = rawPlan === "premium" || rawPlan === "enterprise";
     const isUpgradeUser = !!(u.pendingVerification?.isUpgrade || u.isUpgrade);
-    const formattedPlan = isPremiumTier ? "Premium Plan" : "Basic Plan";
+    const formattedPlan = rawPlan === "enterprise" ? "Enterprise Plan" : (isPremiumTier ? "Premium Plan" : "Basic Plan");
 
     const isPending = u.paymentStatus === "pending_verification";
     const isPaid = u.isActive === true || u.paymentStatus === "paid";
@@ -2596,26 +2597,37 @@ export default function PaymentScreen({
           </div>
 
           {/* Tab Selection Switcher */}
-          <div className="flex border-b border-slate-200 mb-8 pointer-events-auto">
+          <div className="flex border-b border-slate-200 mb-8 pointer-events-auto overflow-x-auto">
             <button
               onClick={() => setAdminSubTab("verifications")}
-              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all whitespace-nowrap ${
                 adminSubTab === "verifications"
                   ? "border-indigo-600 text-indigo-600 font-extrabold"
                   : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
               }`}
             >
-              🔐 Verifications & Pricing Configurations
+              🔐 Verifications & Pricing
             </button>
             <button
               onClick={() => setAdminSubTab("invoices")}
-              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
                 adminSubTab === "invoices"
                   ? "border-indigo-600 text-indigo-600 font-extrabold"
                   : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
               }`}
             >
-              📄 Invoice & Billing Ledger
+              📄 Invoice & Ledger
+            </button>
+            <button
+              onClick={() => setAdminSubTab("subscriptions")}
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+                adminSubTab === "subscriptions"
+                  ? "border-indigo-600 text-indigo-600 font-extrabold"
+                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Subscriptions
             </button>
           </div>
 
@@ -2629,6 +2641,8 @@ export default function PaymentScreen({
 
           {adminSubTab === "invoices" ? (
             <InvoiceManager user={user} isAdminPanel={true} />
+          ) : adminSubTab === "subscriptions" ? (
+            <SubscriptionManager />
           ) : (
             <>
               {/* Flagged Payment Gateway Discrepancies & Audit Panel */}

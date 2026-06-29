@@ -118,10 +118,12 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
 
   const email = userObj.email;
   const rawPlan = (userObj.plan || userObj.pendingVerification?.plan || "basic").toLowerCase();
-  const isPremium = rawPlan === "premium";
+  const isEnterprise = rawPlan === "enterprise";
+  const isPremium = rawPlan === "premium" || isEnterprise;
   
   let basicPrice = 999;
   let premiumPrice = 1499;
+  let enterprisePrice = 2999;
   let upgradePrice = 500;
   
   try {
@@ -140,10 +142,10 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
   // Resolve amount and payment details
   let amountPaid = Number(userObj.amount || userObj.paymentAmount || userObj.pendingVerification?.amount || 0);
   if (amountPaid <= 0) {
-    amountPaid = userObj.isUpgrade ? upgradePrice : (isPremium ? premiumPrice : basicPrice);
+    amountPaid = userObj.isUpgrade ? upgradePrice : (isEnterprise ? enterprisePrice : (isPremium ? premiumPrice : basicPrice));
   }
 
-  let regPrice = isPremium ? premiumPrice : basicPrice;
+  let regPrice = isEnterprise ? enterprisePrice : (isPremium ? premiumPrice : basicPrice);
   if (userObj.isUpgrade) {
     regPrice = upgradePrice;
   }
@@ -172,7 +174,7 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
     userId: uid,
     userName,
     userEmail: email,
-    plan: userObj.isUpgrade ? "Premium (Upgrade)" : (isPremium ? "Premium (Standard)" : "Basic (Standard)"),
+    plan: isEnterprise ? "Enterprise (Lifetime)" : (userObj.isUpgrade ? "Premium (Upgrade)" : (isPremium ? "Premium (Standard)" : "Basic (Standard)")),
     billingPeriod,
     paymentMethod,
     amountPaid,
@@ -488,8 +490,10 @@ export default function InvoiceManager({
     // 3. Plan Filter
     if (planFilter !== "all") {
       const isPremium = item.plan.toLowerCase().includes("premium");
+      const isEnterprise = item.plan.toLowerCase().includes("enterprise");
       if (planFilter === "premium" && !isPremium) return false;
-      if (planFilter === "basic" && isPremium) return false;
+      if (planFilter === "basic" && (isPremium || isEnterprise)) return false;
+      if (planFilter === "enterprise" && !isEnterprise) return false;
     }
 
     // 4. Method Filter
