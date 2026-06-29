@@ -1,9 +1,26 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
-import { PanelConfig, Circuit, LoadType, VoltageDropCalculation } from "../types";
+import {
+  PanelConfig,
+  Circuit,
+  LoadType,
+  VoltageDropCalculation,
+} from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
 import { SingleLineDiagramContent } from "./SingleLineDiagram";
 import { toPng } from "html-to-image";
-import { Printer, Download, AlertCircle, Layers, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, X, Info } from "lucide-react";
+import {
+  Printer,
+  Download,
+  AlertCircle,
+  Layers,
+  Maximize2,
+  Minimize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  X,
+  Info,
+} from "lucide-react";
 import { exportToCAD } from "../utils/exportDxf";
 
 interface SubPanelData {
@@ -83,7 +100,10 @@ export default function SystemSLD({
   }, [isMaximized]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("select")) {
+    if (
+      (e.target as HTMLElement).closest("button") ||
+      (e.target as HTMLElement).closest("select")
+    ) {
       return;
     }
     isDragging.current = true;
@@ -107,7 +127,10 @@ export default function SystemSLD({
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("select")) {
+    if (
+      (e.target as HTMLElement).closest("button") ||
+      (e.target as HTMLElement).closest("select")
+    ) {
       return;
     }
     if (e.touches.length === 1) {
@@ -153,7 +176,11 @@ export default function SystemSLD({
   };
 
   const mdpData = useMemo(
-    () => computePanelScheduleValues(panel, circuits, { vdCalculations, panelId: "main" }),
+    () =>
+      computePanelScheduleValues(panel, circuits, {
+        vdCalculations,
+        panelId: "main",
+      }),
     [panel, circuits, vdCalculations],
   );
   const mdpRows = useMemo(
@@ -173,7 +200,10 @@ export default function SystemSLD({
       return true;
     });
     return allSubPanels.map((sp, idx) => {
-      const spData = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
+      const spData = computePanelScheduleValues(sp.panel, sp.circuits, {
+        vdCalculations,
+        panelId: sp.id,
+      });
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
       const spHeight = 320 + spRows.length * 60 + 100;
 
@@ -192,7 +222,9 @@ export default function SystemSLD({
       // Positional fallback: map idx-th subpanel to idx-th circuit of type SUB_PANEL
       if (mdpFeederIndex < 0) {
         const mdpSubCircuits = circuits.filter(
-          (c) => c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL,
+          (c) =>
+            c.loadType === LoadType.SUB_PANEL ||
+            c.loadType === LoadType.SUB_SUB_PANEL,
         );
         if (mdpSubCircuits.length > idx) {
           const matchingCircuit = mdpSubCircuits[idx];
@@ -254,10 +286,13 @@ export default function SystemSLD({
   const resolvedLayouts = useMemo(() => {
     const layoutMap = new Map(spLayouts.map((l) => [l.sp.id, l]));
 
-    const resolveIsLeft = (id: string, seen: Set<string> = new Set()): boolean => {
+    const resolveIsLeft = (
+      id: string,
+      seen: Set<string> = new Set(),
+    ): boolean => {
       if (seen.has(id)) return true;
       seen.add(id);
-      
+
       const layout = layoutMap.get(id);
       if (!layout) return true;
       if (layout.parentId === "mdp") {
@@ -280,69 +315,76 @@ export default function SystemSLD({
   const borderSpace = 50;
 
   // 1. Compute depths, required widths, and vertical offsets
-  const { depths, widths, maxDepth, yOffsets, depthMaxHeights } = useMemo(() => {
-    const dMap = new Map<string, number>();
-    const wMap = new Map<string, number>();
-    const getChildren = (pid: string) => resolvedLayouts.filter((l) => l.parentId === pid);
+  const { depths, widths, maxDepth, yOffsets, depthMaxHeights } =
+    useMemo(() => {
+      const dMap = new Map<string, number>();
+      const wMap = new Map<string, number>();
+      const getChildren = (pid: string) =>
+        resolvedLayouts.filter((l) => l.parentId === pid);
 
-    const getDepth = (id: string, seen: Set<string> = new Set()): number => {
-      if (seen.has(id)) return 2;
-      seen.add(id);
-      const layout = resolvedLayouts.find((l) => l.sp.id === id);
-      if (!layout) return 2;
-      if (layout.parentId === "mdp") return 2;
-      return getDepth(layout.parentId, seen) + 1;
-    };
+      const getDepth = (id: string, seen: Set<string> = new Set()): number => {
+        if (seen.has(id)) return 2;
+        seen.add(id);
+        const layout = resolvedLayouts.find((l) => l.sp.id === id);
+        if (!layout) return 2;
+        if (layout.parentId === "mdp") return 2;
+        return getDepth(layout.parentId, seen) + 1;
+      };
 
-    resolvedLayouts.forEach((l) => {
-      dMap.set(l.sp.id, getDepth(l.sp.id));
-    });
+      resolvedLayouts.forEach((l) => {
+        dMap.set(l.sp.id, getDepth(l.sp.id));
+      });
 
-    let md = 1;
-    dMap.forEach((d) => {
-      if (d > md) md = d;
-    });
+      let md = 1;
+      dMap.forEach((d) => {
+        if (d > md) md = d;
+      });
 
-    const getWidth = (id: string, seen: Set<string> = new Set()): number => {
-      if (seen.has(id)) return W_COLUMN;
-      seen.add(id);
-      const children = getChildren(id);
-      if (children.length === 0) return W_COLUMN;
-      return children.reduce((sum, c) => sum + getWidth(c.sp.id, seen), 0);
-    };
+      const getWidth = (id: string, seen: Set<string> = new Set()): number => {
+        if (seen.has(id)) return W_COLUMN;
+        seen.add(id);
+        const children = getChildren(id);
+        if (children.length === 0) return W_COLUMN;
+        return children.reduce((sum, c) => sum + getWidth(c.sp.id, seen), 0);
+      };
 
-    resolvedLayouts.forEach((l) => {
-      wMap.set(l.sp.id, getWidth(l.sp.id));
-    });
+      resolvedLayouts.forEach((l) => {
+        wMap.set(l.sp.id, getWidth(l.sp.id));
+      });
 
-    // Y Offsets per depth
-    const dMH = new Map<number, number>();
-    dMH.set(1, mdpHeight);
-    for (let d = 2; d <= md; d++) {
-      const layouts = resolvedLayouts.filter((l) => dMap.get(l.sp.id) === d);
-      dMH.set(
-        d,
-        layouts.length > 0
-          ? Math.max(...layouts.map((l) => l.spHeight))
-          : 0,
-      );
-    }
+      // Y Offsets per depth
+      const dMH = new Map<number, number>();
+      dMH.set(1, mdpHeight);
+      for (let d = 2; d <= md; d++) {
+        const layouts = resolvedLayouts.filter((l) => dMap.get(l.sp.id) === d);
+        dMH.set(
+          d,
+          layouts.length > 0 ? Math.max(...layouts.map((l) => l.spHeight)) : 0,
+        );
+      }
 
-    const yOff = new Map<number, number>();
-    yOff.set(1, 50); // mdp is at 50
-    let currY = 50 + mdpHeight + 200;
-    for (let d = 2; d <= md; d++) {
-      yOff.set(d, currY);
-      currY += (dMH.get(d) || 0) + 200;
-    }
+      const yOff = new Map<number, number>();
+      yOff.set(1, 50); // mdp is at 50
+      let currY = 50 + mdpHeight + 200;
+      for (let d = 2; d <= md; d++) {
+        yOff.set(d, currY);
+        currY += (dMH.get(d) || 0) + 200;
+      }
 
-    return { depths: dMap, widths: wMap, maxDepth: md, yOffsets: yOff, depthMaxHeights: dMH };
-  }, [resolvedLayouts, mdpHeight]);
+      return {
+        depths: dMap,
+        widths: wMap,
+        maxDepth: md,
+        yOffsets: yOff,
+        depthMaxHeights: dMH,
+      };
+    }, [resolvedLayouts, mdpHeight]);
 
   // 2. Compute horizontal positions (recursive tree placement)
   const { layoutPositions, svgWidth, MdpXOffset } = useMemo(() => {
     const positions = new Map<string, { x: number }>();
-    const getChildren = (pid: string) => resolvedLayouts.filter((l) => l.parentId === pid);
+    const getChildren = (pid: string) =>
+      resolvedLayouts.filter((l) => l.parentId === pid);
 
     const placeChildren = (parentId: string, startX: number) => {
       let currentX = startX;
@@ -357,8 +399,12 @@ export default function SystemSLD({
     };
 
     // Left side roots
-    const leftRoots = resolvedLayouts.filter((l) => l.parentId === "mdp" && l.isLeft);
-    const rightRoots = resolvedLayouts.filter((l) => l.parentId === "mdp" && !l.isLeft);
+    const leftRoots = resolvedLayouts.filter(
+      (l) => l.parentId === "mdp" && l.isLeft,
+    );
+    const rightRoots = resolvedLayouts.filter(
+      (l) => l.parentId === "mdp" && !l.isLeft,
+    );
 
     let currentLeftX = 50;
     leftRoots.forEach((r) => {
@@ -369,10 +415,11 @@ export default function SystemSLD({
       currentLeftX += w + borderSpace;
     });
 
-    const endLeftX = currentLeftX;
+    const endLeftX =
+      leftRoots.length > 0 ? currentLeftX - borderSpace : currentLeftX;
     const mdpX = leftRoots.length > 0 ? endLeftX + 100 : 50;
 
-    let currentRightX = mdpX + 800 + 100;
+    let currentRightX = mdpX + 800 + (rightRoots.length > 0 ? 100 : 0);
     rightRoots.forEach((r) => {
       const w = widths.get(r.sp.id) || W_COLUMN;
       const x = currentRightX + w / 2 - 400;
@@ -381,13 +428,20 @@ export default function SystemSLD({
       currentRightX += w + borderSpace;
     });
 
-    const endRightX = currentRightX;
+    const endRightX =
+      rightRoots.length > 0 ? currentRightX - borderSpace : currentRightX;
 
-    return { layoutPositions: positions, svgWidth: Math.max(1200, endRightX + 50), MdpXOffset: mdpX };
+    return {
+      layoutPositions: positions,
+      svgWidth: endRightX + 50,
+      MdpXOffset: mdpX,
+    };
   }, [resolvedLayouts, widths]);
 
   const svgHeight = useMemo(() => {
-    return (yOffsets.get(maxDepth) || 0) + (depthMaxHeights.get(maxDepth) || 0) + 100;
+    return (
+      (yOffsets.get(maxDepth) || 0) + (depthMaxHeights.get(maxDepth) || 0) + 100
+    );
   }, [maxDepth, yOffsets, depthMaxHeights]);
 
   const handlePrint = () => {
@@ -459,7 +513,7 @@ export default function SystemSLD({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-8 panel-container overflow-hidden">
+    <div className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-8 panel-container overflow-hidden">
       <div className="flex flex-col xl:flex-row xl:justify-between items-start xl:items-center mb-10 gap-4">
         <div>
           <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-3 tracking-tight">
@@ -494,8 +548,8 @@ export default function SystemSLD({
                   conductorType: "Copper",
                 },
                 "ALL",
-                [],                 // vdCalculations empty fallback
-                undefined           // illumParams empty fallback
+                [], // vdCalculations empty fallback
+                undefined, // illumParams empty fallback
               );
             }}
             disabled={isExporting}
@@ -568,151 +622,158 @@ export default function SystemSLD({
       )}
 
       <div className="w-full bg-white border-2 border-slate-800 p-4 sm:p-8 overflow-x-auto print-scaling">
-        <div style={{ minWidth: `${svgWidth}px` }} className="mx-auto flex justify-center">
-        <svg
-          id="sld-system-wide"
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          width={svgWidth}
-          height={svgHeight}
-          className="font-sans text-slate-800 print-svg"
+        <div
+          style={{ minWidth: `${svgWidth}px` }}
+          className="mx-auto flex justify-center"
         >
-          <defs>
-            <style>
-              {`
+          <svg
+            id="sld-system-wide"
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            width={svgWidth}
+            height={svgHeight}
+            className="font-sans text-slate-800 print-svg"
+          >
+            <defs>
+              <style>
+                {`
                  .sld-line { fill: none; stroke: #1e293b; stroke-width: 1.5; }
                  .sld-thick { fill: none; stroke: #ea580c; stroke-width: 3; stroke-dasharray: 6 4; }
                  .sld-text { fill: #1e293b; font-size: 14px; font-weight: bold; }
                  .sld-text-small { fill: #1e293b; font-size: 12px; }
                  .sld-label-blue { fill: #0284c7; font-size: 11px; font-weight: bold; }
                `}
-            </style>
-          </defs>
+              </style>
+            </defs>
 
-          {/* LEVEL 1: MAIN DISTRIBUTION PANEL */}
-          <g>
-            <text
-              x={MdpXOffset + 400}
-              y={30}
-              textAnchor="middle"
-              className="sld-text"
-              style={{ fontSize: "18px" }}
-            >
-              MAIN DISTRIBUTION PANEL ({panel.designation || "MDP"})
-            </text>
-            <SingleLineDiagramContent
-              panel={panel}
-              mainFeeder={mdpData.mainFeeder}
-              panelRows={mdpRows}
-              formatWireSize={formatWireSize}
-              isSubPanel={false}
-              xOffset={MdpXOffset}
-              yOffset={50}
-            />
-          </g>
+            {/* LEVEL 1: MAIN DISTRIBUTION PANEL */}
+            <g>
+              <text
+                x={MdpXOffset + 400}
+                y={30}
+                textAnchor="middle"
+                className="sld-text"
+                style={{ fontSize: "18px" }}
+              >
+                MAIN DISTRIBUTION PANEL ({panel.designation || "MDP"})
+              </text>
+              <SingleLineDiagramContent
+                panel={panel}
+                mainFeeder={mdpData.mainFeeder}
+                panelRows={mdpRows}
+                formatWireSize={formatWireSize}
+                isSubPanel={false}
+                xOffset={MdpXOffset}
+                yOffset={50}
+              />
+            </g>
 
-          {/* ALL SUB PANELS & ROUTING LINES */}
-          {resolvedLayouts.map((layout, i) => {
-            const isLeft = layout.isLeft;
-            const id = layout.sp.id;
-            const parentId = layout.parentId;
+            {/* ALL SUB PANELS & ROUTING LINES */}
+            {resolvedLayouts.map((layout, i) => {
+              const isLeft = layout.isLeft;
+              const id = layout.sp.id;
+              const parentId = layout.parentId;
 
-            const depth = depths.get(id) || 2;
-            const yOffset = yOffsets.get(depth) || 0;
-            const pos = layoutPositions.get(id);
-            const spXOffset = pos ? pos.x : 0;
+              const depth = depths.get(id) || 2;
+              const yOffset = yOffsets.get(depth) || 0;
+              const pos = layoutPositions.get(id);
+              const spXOffset = pos ? pos.x : 0;
 
-            let parentXOffset = MdpXOffset;
-            let parentYOffset = 50; // MDP yOffset
-            let isLeftBranchInParent = isLeft;
+              let parentXOffset = MdpXOffset;
+              let parentYOffset = 50; // MDP yOffset
+              let isLeftBranchInParent = isLeft;
 
-            if (parentId !== "mdp") {
-              const pPos = layoutPositions.get(parentId);
-              parentXOffset = pPos ? pPos.x : MdpXOffset;
-              const pDepth = depths.get(parentId) || 2;
-              parentYOffset = yOffsets.get(pDepth) || 50;
-              const pLayout = resolvedLayouts.find((l) => l.sp.id === parentId);
-              if (pLayout) {
-                isLeftBranchInParent =
-                  pLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
+              if (parentId !== "mdp") {
+                const pPos = layoutPositions.get(parentId);
+                parentXOffset = pPos ? pPos.x : MdpXOffset;
+                const pDepth = depths.get(parentId) || 2;
+                parentYOffset = yOffsets.get(pDepth) || 50;
+                const pLayout = resolvedLayouts.find(
+                  (l) => l.sp.id === parentId,
+                );
+                if (pLayout) {
+                  isLeftBranchInParent =
+                    pLayout.spRows[layout.rowIndex]?.left?.id ===
+                    layout.feedingCircuit?.id;
+                }
+              } else {
+                isLeftBranchInParent = layout.tempIsLeft;
               }
-            } else {
-              isLeftBranchInParent = layout.tempIsLeft;
-            }
 
-            const y1 = parentYOffset + 320 + layout.rowIndex * 60;
-            const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
+              const y1 = parentYOffset + 320 + layout.rowIndex * 60;
+              const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
 
-            // Staggered drop column
-            let dropX = 0;
-            if (isLeftBranchInParent) {
-              dropX = parentXOffset + 150 - ((i % 10) + 1) * 20;
-            } else {
-              dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
-            }
+              // Staggered drop column
+              let dropX = 0;
+              if (isLeftBranchInParent) {
+                dropX = parentXOffset + 150 - ((i % 10) + 1) * 20;
+              } else {
+                dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
+              }
 
-            // Staggered horizontal channels
-            const yChannel = yOffset - 75 + (i % 10) * 12;
-            const spFeedX = spXOffset + 270;
-            const spFeedY = yOffset + 150;
+              // Staggered horizontal channels
+              const yChannel = yOffset - 75 + (i % 10) * 12;
+              const spFeedX = spXOffset + 270;
+              const spFeedY = yOffset + 150;
 
-            const pathY = y1 + 25;
-            let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
+              const pathY = y1 + 25;
+              let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
 
-            const label = depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
+              const label =
+                depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
 
-            return (
-              <g key={`page-l${depth}-${id}`}>
-                {/* Routing Line connects branch to feed */}
-                <path d={path} className="sld-thick" />
+              return (
+                <g key={`page-l${depth}-${id}`}>
+                  {/* Routing Line connects branch to feed */}
+                  <path d={path} className="sld-thick" />
 
-                {/* Feeder Details Text Box overlaid on routing line */}
-                <rect
-                  x={spFeedX - 62.5}
-                  y={spFeedY - 90}
-                  width="125"
-                  height="20"
-                  fill="white"
-                  stroke="#0284c7"
-                  strokeWidth="0.5"
-                  rx="3"
-                />
-                <text
-                  x={spFeedX}
-                  y={spFeedY - 76}
-                  textAnchor="middle"
-                  className="sld-label-blue"
-                >
-                  FEED TO {layout.sp.panel.designation || `${label}-${i + 1}`}
-                </text>
+                  {/* Feeder Details Text Box overlaid on routing line */}
+                  <rect
+                    x={spFeedX - 62.5}
+                    y={spFeedY - 90}
+                    width="125"
+                    height="20"
+                    fill="white"
+                    stroke="#0284c7"
+                    strokeWidth="0.5"
+                    rx="3"
+                  />
+                  <text
+                    x={spFeedX}
+                    y={spFeedY - 76}
+                    textAnchor="middle"
+                    className="sld-label-blue"
+                  >
+                    FEED TO {layout.sp.panel.designation || `${label}-${i + 1}`}
+                  </text>
 
-                {/* Sub Panel Fully Expanded Rendering */}
-                <text
-                  x={spXOffset + 400}
-                  y={yOffset + 30}
-                  textAnchor="middle"
-                  className="sld-text"
-                  style={{ fontSize: "18px" }}
-                >
-                  {depth === 2
-                    ? "SUB-PANEL"
-                    : depth === 3
-                    ? "SUB-SUB PANEL"
-                    : `LEVEL ${depth} PANEL`}
-                  : {layout.sp.panel.designation || `${label}-${i + 1}`}
-                </text>
-                <SingleLineDiagramContent
-                  panel={layout.sp.panel}
-                  mainFeeder={layout.spData.mainFeeder}
-                  panelRows={layout.spRows}
-                  formatWireSize={formatWireSize}
-                  isSubPanel={true}
-                  xOffset={spXOffset}
-                  yOffset={yOffset + 50}
-                />
-              </g>
-            );
-          })}
-        </svg>
+                  {/* Sub Panel Fully Expanded Rendering */}
+                  <text
+                    x={spXOffset + 400}
+                    y={yOffset + 30}
+                    textAnchor="middle"
+                    className="sld-text"
+                    style={{ fontSize: "18px" }}
+                  >
+                    {depth === 2
+                      ? "SUB-PANEL"
+                      : depth === 3
+                        ? "SUB-SUB PANEL"
+                        : `LEVEL ${depth} PANEL`}
+                    : {layout.sp.panel.designation || `${label}-${i + 1}`}
+                  </text>
+                  <SingleLineDiagramContent
+                    panel={layout.sp.panel}
+                    mainFeeder={layout.spData.mainFeeder}
+                    panelRows={layout.spRows}
+                    formatWireSize={formatWireSize}
+                    isSubPanel={true}
+                    xOffset={spXOffset}
+                    yOffset={yOffset + 50}
+                  />
+                </g>
+              );
+            })}
+          </svg>
         </div>
       </div>
 
@@ -733,11 +794,12 @@ export default function SystemSLD({
                   </span>
                 </h4>
                 <p className="text-xxs sm:text-xs text-slate-400">
-                  Project: {panel.project || "Unnamed Project"} • Panel Board: {panel.designation || "MDP"} • Design Standard: PEC 2017
+                  Project: {panel.project || "Unnamed Project"} • Panel Board:{" "}
+                  {panel.designation || "MDP"} • Design Standard: PEC 2017
                 </p>
               </div>
             </div>
-            
+
             {/* Quick Export Actions, Zoom Stats & Exit controls */}
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -764,7 +826,7 @@ export default function SystemSLD({
                     },
                     "ALL",
                     [],
-                    undefined
+                    undefined,
                   );
                 }}
                 disabled={isExporting}
@@ -778,7 +840,7 @@ export default function SystemSLD({
                 <Layers className="w-3.5 h-3.5" />
                 <span>Export CAD</span>
               </button>
-              
+
               <button
                 onClick={handlePrint}
                 disabled={isExporting}
@@ -787,7 +849,7 @@ export default function SystemSLD({
                 <Printer className="w-3.5 h-3.5" />
                 <span>Print</span>
               </button>
-              
+
               <button
                 onClick={handleDownloadPDF}
                 disabled={isExporting}
@@ -796,7 +858,7 @@ export default function SystemSLD({
                 <Download className="w-3.5 h-3.5" />
                 <span>PDF</span>
               </button>
-              
+
               <button
                 onClick={handleDownloadPNG}
                 disabled={isExporting}
@@ -805,9 +867,9 @@ export default function SystemSLD({
                 <Download className="w-3.5 h-3.5" />
                 <span>PNG</span>
               </button>
-              
+
               <div className="h-6 w-[1px] bg-slate-800 mx-1"></div>
-              
+
               <button
                 onClick={() => setIsMaximized(false)}
                 className="bg-slate-850 hover:bg-rose-900/40 hover:text-rose-400 text-rose-300 border border-slate-700/80 p-1.5 rounded-lg shadow-md transition-all flex items-center justify-center cursor-pointer"
@@ -817,7 +879,7 @@ export default function SystemSLD({
               </button>
             </div>
           </div>
-          
+
           {/* Infinite-Canvas Grid Viewport */}
           <div
             ref={containerRef}
@@ -832,13 +894,14 @@ export default function SystemSLD({
             className="flex-1 relative overflow-hidden select-none cursor-grab active:cursor-grabbing outline-none"
             style={{
               backgroundColor: "#080c14",
-              backgroundImage: "radial-gradient(#1e293b 1.5px, transparent 1.5px)",
-              backgroundSize: "28px 28px"
+              backgroundImage:
+                "radial-gradient(#1e293b 1.5px, transparent 1.5px)",
+              backgroundSize: "28px 28px",
             }}
           >
             {/* Ambient Lighting Overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-slate-950/50 via-transparent to-slate-950/20 pointer-events-none"></div>
-            
+
             {/* Smooth-Pannable Schematic Sheet */}
             <div
               style={{
@@ -848,11 +911,13 @@ export default function SystemSLD({
                 marginTop: `-${svgHeight / 2}px`,
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                 transformOrigin: "center center",
-                transition: isDragging.current ? "none" : "transform 0.15s ease-out",
+                transition: isDragging.current
+                  ? "none"
+                  : "transform 0.15s ease-out",
                 backgroundColor: "#ffffff",
                 padding: "48px",
                 borderRadius: "12px",
-                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)"
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
               }}
               className="absolute top-1/2 left-1/2 select-none border border-slate-800/80"
             >
@@ -874,7 +939,7 @@ export default function SystemSLD({
                      `}
                   </style>
                 </defs>
-      
+
                 {/* LEVEL 1: MAIN DISTRIBUTION PANEL */}
                 <g>
                   <text
@@ -896,39 +961,42 @@ export default function SystemSLD({
                     yOffset={50}
                   />
                 </g>
-      
+
                 {/* ALL SUB PANELS & ROUTING LINES */}
                 {resolvedLayouts.map((layout, i) => {
                   const isLeft = layout.isLeft;
                   const id = layout.sp.id;
                   const parentId = layout.parentId;
-      
+
                   const depth = depths.get(id) || 2;
                   const yOffset = yOffsets.get(depth) || 0;
                   const pos = layoutPositions.get(id);
                   const spXOffset = pos ? pos.x : 0;
-      
+
                   let parentXOffset = MdpXOffset;
                   let parentYOffset = 50; // MDP yOffset
                   let isLeftBranchInParent = isLeft;
-      
+
                   if (parentId !== "mdp") {
                     const pPos = layoutPositions.get(parentId);
                     parentXOffset = pPos ? pPos.x : MdpXOffset;
                     const pDepth = depths.get(parentId) || 2;
                     parentYOffset = yOffsets.get(pDepth) || 50;
-                    const pLayout = resolvedLayouts.find((l) => l.sp.id === parentId);
+                    const pLayout = resolvedLayouts.find(
+                      (l) => l.sp.id === parentId,
+                    );
                     if (pLayout) {
                       isLeftBranchInParent =
-                        pLayout.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id;
+                        pLayout.spRows[layout.rowIndex]?.left?.id ===
+                        layout.feedingCircuit?.id;
                     }
                   } else {
                     isLeftBranchInParent = layout.tempIsLeft;
                   }
-      
+
                   const y1 = parentYOffset + 320 + layout.rowIndex * 60;
                   const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
-      
+
                   // Staggered drop column
                   let dropX = 0;
                   if (isLeftBranchInParent) {
@@ -936,22 +1004,23 @@ export default function SystemSLD({
                   } else {
                     dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
                   }
-      
+
                   // Staggered horizontal channels
                   const yChannel = yOffset - 75 + (i % 10) * 12;
                   const spFeedX = spXOffset + 270;
                   const spFeedY = yOffset + 150;
-      
+
                   const pathY = y1 + 25;
                   let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
-      
-                  const label = depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
-      
+
+                  const label =
+                    depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
+
                   return (
                     <g key={`max-l${depth}-${id}`}>
                       {/* Routing Line connects branch to feed */}
                       <path d={path} className="sld-thick" />
-      
+
                       {/* Feeder Details Text Box overlaid on routing line */}
                       <rect
                         x={spFeedX - 62.5}
@@ -969,9 +1038,10 @@ export default function SystemSLD({
                         textAnchor="middle"
                         className="sld-label-blue"
                       >
-                        FEED TO {layout.sp.panel.designation || `${label}-${i + 1}`}
+                        FEED TO{" "}
+                        {layout.sp.panel.designation || `${label}-${i + 1}`}
                       </text>
-      
+
                       {/* Sub Panel Fully Expanded Rendering */}
                       <text
                         x={spXOffset + 400}
@@ -983,8 +1053,8 @@ export default function SystemSLD({
                         {depth === 2
                           ? "SUB-PANEL"
                           : depth === 3
-                          ? "SUB-SUB PANEL"
-                          : `LEVEL ${depth} PANEL`}
+                            ? "SUB-SUB PANEL"
+                            : `LEVEL ${depth} PANEL`}
                         : {layout.sp.panel.designation || `${label}-${i + 1}`}
                       </text>
                       <SingleLineDiagramContent
@@ -1001,12 +1071,13 @@ export default function SystemSLD({
                 })}
               </svg>
             </div>
-            
+
             {/* Navigation Hint HUD Display (Bottom Left) */}
             <div className="absolute bottom-6 left-6 flex items-center bg-slate-900/90 backdrop-blur-md px-4 py-3 rounded-xl border border-slate-800 text-slate-300 text-xs shadow-2xl pointer-events-auto">
               <Info className="w-4 h-4 text-emerald-400 mr-2 shrink-0 animate-pulse" />
               <span>
-                <strong>CAD Panel Navigation:</strong> Scroll wheel zoom • Left click &amp; drag or touch to pan.
+                <strong>CAD Panel Navigation:</strong> Scroll wheel zoom • Left
+                click &amp; drag or touch to pan.
               </span>
             </div>
 
@@ -1019,11 +1090,11 @@ export default function SystemSLD({
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
-              
+
               <span className="text-xs font-mono font-bold text-slate-300 px-3 min-w-[50px] text-center bg-slate-950/50 py-1.5 rounded-md">
                 {Math.round(zoom * 100)}%
               </span>
-              
+
               <button
                 onClick={zoomIn}
                 className="p-2 border border-slate-800 text-slate-300 hover:text-white dark:hover:bg-slate-800/80 rounded-lg cursor-pointer transition-colors"
@@ -1031,9 +1102,9 @@ export default function SystemSLD({
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
-              
+
               <div className="w-[1px] h-6 bg-slate-800"></div>
-              
+
               <button
                 onClick={fitToScreen}
                 className="p-2 border border-slate-800 text-slate-300 hover:text-white dark:hover:bg-slate-800/80 rounded-lg cursor-pointer transition-colors"
@@ -1047,13 +1118,22 @@ export default function SystemSLD({
       )}
 
       {/* Esc shortcut registration when maximized */}
-      <EscListener isMaximized={isMaximized} onClose={() => setIsMaximized(false)} />
+      <EscListener
+        isMaximized={isMaximized}
+        onClose={() => setIsMaximized(false)}
+      />
     </div>
   );
 }
 
 // Inline Helper Keyboard listener
-function EscListener({ isMaximized, onClose }: { isMaximized: boolean; onClose: () => void }) {
+function EscListener({
+  isMaximized,
+  onClose,
+}: {
+  isMaximized: boolean;
+  onClose: () => void;
+}) {
   useEffect(() => {
     if (!isMaximized) return;
     const handleKeyDown = (e: KeyboardEvent) => {
