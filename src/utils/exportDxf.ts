@@ -3228,7 +3228,7 @@ export const exportToCAD = (
       "center",
     );
     b.addText(
-      `${scParams.transformerKVA}kVA Delta-Wye (D-Y)`,
+      `${scParams.transformerKVA}kVA ${scParams.transformerConnection}`,
       xLeft,
       tfY - 29,
       4.0,
@@ -3267,7 +3267,7 @@ export const exportToCAD = (
       "left",
     );
     b.addText(
-      "Delta-Wye (D-Y)",
+      scParams.transformerConnection,
       xLeft - 144,
       tfY - 15,
       4.0,

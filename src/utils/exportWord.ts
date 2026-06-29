@@ -765,6 +765,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     docChildren.push(
       createSubHeader(`System Configuration Parameters`),
       createParagraph(`• System Rating: ${p.system}`),
+      createParagraph(`• Transformer Connection: ${p.transformerConnection || params?.transformerConnection || 'Delta-Wye (Δ-Y)'}`),
       createParagraph(`• Secondary Voltage: ${p.voltage}V`),
       createParagraph(`• Primary Voltage (HV): ${tfPrimaryV}V`),
       new Paragraph({ spacing: { after: 150 } }),

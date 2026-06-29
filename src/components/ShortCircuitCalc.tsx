@@ -494,6 +494,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                      <option value="Wye-Wye (Y-Y)" className="dark:bg-slate-900 dark:text-slate-100">Wye-Wye (Y-Y)</option>
                      <option value="Open Delta (V-V)" className="dark:bg-slate-900 dark:text-slate-100">Open Delta (V-V)</option>
                      <option value="Open Wye-Open Delta" className="dark:bg-slate-900 dark:text-slate-100">Open Wye-Open Delta</option>
+                     <option value="Single-Phase Transformer" className="dark:bg-slate-900 dark:text-slate-100">Single-Phase Transformer</option>
                   </select>
                 </div>
                 

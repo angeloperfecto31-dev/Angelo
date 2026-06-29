@@ -1862,6 +1862,12 @@ export default function LoadSchedule({
               >
                 Open Wye-Open Delta
               </option>
+              <option
+                value="Single-Phase Transformer"
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                Single-Phase Transformer
+              </option>
             </select>
           </div>
           <div className="space-y-1.5">

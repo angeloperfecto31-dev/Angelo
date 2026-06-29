@@ -1365,6 +1365,7 @@ export default function App() {
           p.voltage,
         ]);
         wsData.push(["", "", "", "PRIMARY VOLTAGE:", transformerPrimaryVoltage]);
+        wsData.push(["", "", "", "TX CONNECTION:", (p.transformerConnection || "Delta-Wye (Δ-Y)").toUpperCase()]);
         if (p.location) wsData.push(["LOCATION:", p.location.toUpperCase()]);
         wsData.push([]);
 
