@@ -111,7 +111,10 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
   const [userPlan, setUserPlan] = useState<"basic" | "premium" | "enterprise" | string | null>(null);
+  const [activatedAt, setActivatedAt] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showRenew, setShowRenew] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
@@ -153,13 +156,35 @@ export default function App() {
         (docSnap) => {
           if (docSnap.exists() && docSnap.data().isActive === true) {
             const data = docSnap.data();
-            setUserPlan(data.plan || "premium");
+            const plan = data.plan || "premium";
+            
+            // Check expiration
+            if ((plan === "basic" || plan === "premium") && data.expiresAt) {
+              const expires = new Date(data.expiresAt);
+              if (new Date() >= expires) {
+                // Subscription has expired
+                setIsActive(false);
+                isActiveRef.current = false;
+                setUserPlan(plan);
+                setActivatedAt(data.activatedAt || null);
+                setExpiresAt(data.expiresAt);
+                setShowRenew(true); // Redirect to Subscription Page
+                setAuthLoading(false);
+                return;
+              }
+            }
+
+            setUserPlan(plan);
+            setActivatedAt(data.activatedAt || null);
+            setExpiresAt(data.expiresAt || null);
             setIsActive(true);
             isActiveRef.current = true;
           } else {
             setIsActive(false);
             isActiveRef.current = false;
-            setUserPlan(null);
+            setUserPlan(docSnap.data()?.plan || null);
+            setActivatedAt(null);
+            setExpiresAt(null);
           }
           initialLoad = false;
           setAuthLoading(false);
@@ -197,6 +222,25 @@ export default function App() {
       if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, [user, isAdmin]);
+
+  // Periodic expiration check
+  useEffect(() => {
+    if (!isActive || !expiresAt || (userPlan !== "basic" && userPlan !== "premium")) return;
+
+    const checkExpiration = () => {
+      const expires = new Date(expiresAt);
+      if (new Date() >= expires) {
+        setIsActive(false);
+        isActiveRef.current = false;
+        setShowRenew(true);
+      }
+    };
+
+    // Check immediately and then every minute
+    checkExpiration();
+    const intervalId = setInterval(checkExpiration, 60000);
+    return () => clearInterval(intervalId);
+  }, [isActive, expiresAt, userPlan]);
 
   const [activeTab, setActiveTab] = useState<
     | "dashboard"
@@ -1181,7 +1225,18 @@ export default function App() {
     return <PaymentScreen user={user} />;
   }
 
-  if (showUpgrade && (userPlan !== "premium" && userPlan !== "enterprise" || isAdmin)) {
+  if (showRenew && (userPlan !== "enterprise" || isAdmin)) {
+    return (
+      <PaymentScreen
+        user={user}
+        isUpgrade={false}
+        onClose={() => setShowRenew(false)}
+        onPaymentSuccess={() => setShowRenew(false)}
+      />
+    );
+  }
+
+  if (showUpgrade && (userPlan !== "enterprise" || isAdmin)) {
     return (
       <PaymentScreen
         user={user}
@@ -3145,6 +3200,44 @@ export default function App() {
           className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 w-full"
         >
           <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-8 pb-32">
+            
+            {/* Expiration Notification Banner */}
+            {(() => {
+              if (isActive && expiresAt && (userPlan === "basic" || userPlan === "premium")) {
+                const daysLeft = Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                if (daysLeft <= 7 && daysLeft > 0) {
+                  return (
+                    <div className={`w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm ${
+                      daysLeft <= 3 ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200"
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle className={`w-5 h-5 ${daysLeft <= 3 ? "text-rose-600" : "text-amber-600"}`} />
+                        <div>
+                          <p className={`text-sm font-bold ${daysLeft <= 3 ? "text-rose-800" : "text-amber-800"}`}>
+                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription expires in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                          </p>
+                          <p className={`text-xs ${daysLeft <= 3 ? "text-rose-600" : "text-amber-600"}`}>
+                            Renew now to keep uninterrupted access to your tools and blueprints.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowRenew(true)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                          daysLeft <= 3 
+                            ? "bg-rose-600 hover:bg-rose-500 text-white" 
+                            : "bg-amber-500 hover:bg-amber-400 text-slate-900"
+                        }`}
+                      >
+                        Renew Plan
+                      </button>
+                    </div>
+                  );
+                }
+              }
+              return null;
+            })()}
+
             {isMaintenanceMode && (
               <div className="w-full flex flex-col items-center justify-center min-h-[50vh] text-center space-y-6">
                 <div className="bg-yellow-50 p-6 rounded-full inline-block mb-4">
@@ -4687,21 +4780,46 @@ export default function App() {
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Subscription Tier</p>
-                      <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
-                        <div>
-                          <p className="text-xs font-black text-amber-400">Subscription Status: {userPlan === "enterprise" ? "ENTERPRISE (LIFETIME)" : (userPlan === "premium" || userPlan === "enterprise") ? "PREMIUM LICENSE" : "FREE TRIAL TIER"}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
+                      <div className="flex flex-col gap-2 p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="text-xs font-black text-amber-400 uppercase">
+                              {userPlan === "enterprise" ? "ENTERPRISE (LIFETIME)" : (userPlan === "premium" ? "PREMIUM (30 DAYS)" : (userPlan === "basic" ? "BASIC (30 DAYS)" : "FREE TRIAL TIER"))}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
+                          </div>
+                          {userPlan !== "enterprise" && (
+                            <button
+                              onClick={() => {
+                                setIsAccountSettingsOpen(false);
+                                if (userPlan === "basic" || userPlan === "premium") {
+                                  setShowRenew(true);
+                                } else {
+                                  setShowUpgrade(true);
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
+                            >
+                              {userPlan === "premium" || userPlan === "basic" ? "Renew" : "Upgrade"}
+                            </button>
+                          )}
                         </div>
-                        {userPlan !== "premium" && userPlan !== "enterprise" && (
-                          <button
-                            onClick={() => {
-                              setIsAccountSettingsOpen(false);
-                              setShowUpgrade(true);
-                            }}
-                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
-                          >
-                            Upgrade
-                          </button>
+                        {(userPlan === "basic" || userPlan === "premium") && expiresAt && (
+                          <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
+                            <div className="bg-slate-950/50 px-2 py-1 rounded">
+                              <span className="text-slate-500 mr-1">Activated:</span> {new Date(activatedAt || "").toLocaleDateString()}
+                            </div>
+                            <div className="bg-slate-950/50 px-2 py-1 rounded">
+                              <span className="text-slate-500 mr-1">Expires:</span> {new Date(expiresAt).toLocaleDateString()}
+                            </div>
+                            <div className={`px-2 py-1 rounded font-bold ${
+                              (new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 3 ? "text-rose-400 bg-rose-950/50" : 
+                              (new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 7 ? "text-amber-400 bg-amber-950/50" : 
+                              "text-emerald-400 bg-emerald-950/50"
+                            }`}>
+                              {Math.max(0, Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))} Days Left
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>

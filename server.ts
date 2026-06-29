@@ -690,6 +690,11 @@ app.post("/api/verify-checkout", async (req, res) => {
                 sessionId
               });
 
+              const activatedAt = new Date().toISOString();
+              const expiresAt = (plan === "basic" || plan === "premium")
+                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+                : null;
+
               await db.collection("users").doc(userId).set(
                 {
                   paymentStatus: "paid",
@@ -698,7 +703,9 @@ app.post("/api/verify-checkout", async (req, res) => {
                   amount: actualAmountPaid,
                   isUpgrade: isUpgrade,
                   paymentSource: "GCASH",
-                  approvedAt: new Date().toISOString(),
+                  approvedAt: activatedAt,
+                  activatedAt: activatedAt,
+                  expiresAt: expiresAt,
                   approvedBy: "PAYMONGO CHECKOUT",
                   pendingVerification: null,
                   paymentDiscrepancy: null // clear any prior discrepancy
@@ -815,6 +822,12 @@ app.post("/api/paymongo-webhook", async (req, res) => {
           });
 
           console.log(`Webhook received: activating user ${userId} with plan ${plan} paid ${actualAmountPaid}`);
+          
+          const activatedAt = new Date().toISOString();
+          const expiresAt = (plan === "basic" || plan === "premium")
+            ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+            : null;
+
           await db.collection("users").doc(userId).set(
             {
               paymentStatus: "paid",
@@ -823,7 +836,9 @@ app.post("/api/paymongo-webhook", async (req, res) => {
               amount: actualAmountPaid,
               isUpgrade: isUpgrade,
               paymentSource: "GCASH",
-              approvedAt: new Date().toISOString(),
+              approvedAt: activatedAt,
+              activatedAt: activatedAt,
+              expiresAt: expiresAt,
               approvedBy: "PAYMONGO CHECKOUT",
               pendingVerification: null,
               paymentDiscrepancy: null
