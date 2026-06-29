@@ -760,7 +760,15 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     }
 
+    const tfPrimaryV = transformerConfig?.primaryVoltage || params?.primaryVoltage || 34500;
+
     docChildren.push(
+      createSubHeader(`System Configuration Parameters`),
+      createParagraph(`• System Rating: ${p.system}`),
+      createParagraph(`• Secondary Voltage: ${p.voltage}V`),
+      createParagraph(`• Primary Voltage (HV): ${tfPrimaryV}V`),
+      new Paragraph({ spacing: { after: 150 } }),
+
       createSubHeader(`A. Sizing Computations Criteria (Main Feeder)`),
       createParagraph(`The main feeder conductor and overcurrent protection are sized based on the total accumulated system load. The governing mathematical steps and formulas applied from PEC Article 2.20 and 4.30 are:`),
       
@@ -1174,8 +1182,9 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     createParagraph(`• Voltage drop for Three-Phase ($3\\phi$) balanced load circuits:`),
     createFormulaCallout(`V_{\\text{drop, 3}\\phi} = \\frac{\\sqrt{3} \\times R_{\\text{ohms}} \\times L \\times I}{1000}\\text{ Volts}`),
     createParagraph(`• System percentage loss ratio relative to nominal standard working potential:`),
-    createFormulaCallout(`V_{\\text{drop, \\%}} = \\left(\\frac{V_{\\text{drop}}}{V_{\\text{nominal}}}\\right) \\times 100\\%`),
+    createFormulaCallout(`V_{\\text{drop, \\%}} = \\left(\\frac{V_{\\text{drop}}}{V_{\\text{source}}}\\right) \\times 100\\%`),
     createParagraph(`* $R_{\\text{ohms}}$ represents standard copper conductor AC internal resistance values $(\\Omega/\\text{km})$ from the standard table.`),
+    createParagraph(`* $V_{\\text{source}}$ represents the Primary Voltage of the system (evaluated here at ${transformerConfig?.primaryVoltage || params?.primaryVoltage || 34500} V) used as the calculation base.`),
     new Paragraph({ spacing: { after: 150 } })
   );
 

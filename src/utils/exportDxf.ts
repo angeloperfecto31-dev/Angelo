@@ -1699,7 +1699,7 @@ export const exportToCAD = (
       "center",
     );
     b.addText(
-      `SYSTEM RATING: ${currentPanel.system} | ENCLOSURE: ${currentPanel.enclosure} | MOUNTING: ${currentPanel.mounting} | VOLTAGE: ${currentPanel.voltage}V`,
+      `SYSTEM RATING: ${currentPanel.system} | ENCLOSURE: ${currentPanel.enclosure} | MOUNTING: ${currentPanel.mounting} | VOLTAGE: ${currentPanel.voltage}V | PRIMARY VOLTAGE (HV): ${iscParams?.primaryVoltage || 34500}V`,
       xOffset + 20 + tableWidth / 2,
       ty - 18,
       metrics.subtitleFontSize,

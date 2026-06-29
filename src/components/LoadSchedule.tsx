@@ -166,6 +166,8 @@ export interface LoadScheduleProps {
   onRequestUpgrade?: () => void;
   parentMdpConnection?: { circuitNo: number; description: string; mdpDesignation: string; circuitId?: string; feederSize?: string; feederRuns?: number };
   vdCalculations?: VoltageDropCalculation[];
+  transformerPrimaryVoltage?: number;
+  setTransformerPrimaryVoltage?: (val: number) => void;
 }
 
 const AmpsInput = ({ c, panel, is3P, onAmpsUpdate, disabled }: { c: Circuit; panel: PanelConfig; is3P: boolean; onAmpsUpdate: (newAmps: number) => void; disabled: boolean }) => {
@@ -495,6 +497,8 @@ export default function LoadSchedule({
   onRequestUpgrade,
   isAdmin = false,
   parentMdpConnection,
+  transformerPrimaryVoltage,
+  setTransformerPrimaryVoltage,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [customKaicCircuitIds, setCustomKaicCircuitIds] = useState<string[]>([]);
@@ -510,6 +514,8 @@ export default function LoadSchedule({
   const [presetPhaseFilter, setPresetPhaseFilter] = useState<string>("All");
   const [presetSortBy, setPresetSortBy] = useState<string>("Alphabetical");
   const [presetSortOrder, setPresetSortOrder] = useState<"asc" | "desc">("asc");
+
+  const [isCustomPrimaryVoltage, setIsCustomPrimaryVoltage] = useState<boolean>(![13800, 34500, 69000, 115000, 230000].includes(transformerPrimaryVoltage || 34500));
 
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
 
@@ -1691,7 +1697,55 @@ export default function LoadSchedule({
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              System Voltage
+              Primary Voltage (HV)
+            </label>
+            <div className="flex gap-2">
+              <select
+                value={isCustomPrimaryVoltage ? "custom" : (transformerPrimaryVoltage || 34500)}
+                onChange={(e) => {
+                  if (e.target.value === "custom") {
+                    setIsCustomPrimaryVoltage(true);
+                  } else {
+                    setIsCustomPrimaryVoltage(false);
+                    if (setTransformerPrimaryVoltage) {
+                      setTransformerPrimaryVoltage(Number(e.target.value));
+                    }
+                  }
+                }}
+                disabled={isSubPanel || isSubSubPanel}
+                className={`px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed ${isCustomPrimaryVoltage ? "w-1/3" : "w-full"}`}
+              >
+                <option value={13800}>13.8 kV</option>
+                <option value={34500}>34.5 kV</option>
+                <option value={69000}>69 kV</option>
+                <option value={115000}>115 kV</option>
+                <option value={230000}>230 kV</option>
+                <option value="custom">Custom</option>
+              </select>
+              {isCustomPrimaryVoltage && (
+                <div className="relative w-2/3">
+                  <input
+                    type="number"
+                    value={transformerPrimaryVoltage}
+                    onChange={(e) => {
+                      if (setTransformerPrimaryVoltage) {
+                        setTransformerPrimaryVoltage(Number(e.target.value));
+                      }
+                    }}
+                    disabled={isSubPanel || isSubSubPanel}
+                    className="w-full px-3 py-2 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder="Voltage (V)"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                    <span className="text-slate-400 dark:text-slate-500 text-xs font-bold">V</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              System Voltage (LV)
             </label>
             <select
               value={panel.system}

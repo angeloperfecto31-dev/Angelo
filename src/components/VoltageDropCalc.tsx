@@ -48,6 +48,7 @@ export interface VoltageDropCalcProps {
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
   isExporting?: boolean;
+  transformerPrimaryVoltage?: number;
 }
 
 export default function VoltageDropCalc({
@@ -60,6 +61,7 @@ export default function VoltageDropCalc({
   isPremium = true,
   onRequestUpgrade,
   isExporting = false,
+  transformerPrimaryVoltage = 34500,
 }: VoltageDropCalcProps) {
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({ main: true });
   const [searchQuery, setSearchQuery] = useState("");
@@ -107,7 +109,7 @@ export default function VoltageDropCalc({
         length: getLength("main"),
         wireSize: mainFeeder.wire.size.toString(),
         wireSets: mainFeeder.wire.runs,
-        voltage: panel.voltage,
+        voltage: transformerPrimaryVoltage,
         systemType: is3PH ? "3PH" : "1PH",
       });
       
@@ -121,7 +123,7 @@ export default function VoltageDropCalc({
             length: getLength(c.id),
             wireSize: c.wireSize,
             wireSets: c.wireSets,
-            voltage: c.voltage,
+            voltage: transformerPrimaryVoltage,
             systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
          });
       });
@@ -138,7 +140,7 @@ export default function VoltageDropCalc({
         length: getLength(sp.id),
         wireSize: mainFeeder.wire.size.toString(),
         wireSets: mainFeeder.wire.runs,
-        voltage: sp.panel.voltage,
+        voltage: transformerPrimaryVoltage,
         systemType: is3PH ? "3PH" : "1PH",
       });
 
@@ -152,7 +154,7 @@ export default function VoltageDropCalc({
             length: getLength(c.id),
             wireSize: c.wireSize,
             wireSets: c.wireSets,
-            voltage: c.voltage,
+            voltage: transformerPrimaryVoltage,
             systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
          });
       });
@@ -177,7 +179,7 @@ export default function VoltageDropCalc({
     if (changed) {
        setCalculations(newCalcs);
     }
-  }, [panel, circuits, allSubPanels]);
+  }, [panel, circuits, allSubPanels, transformerPrimaryVoltage]);
 
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data =

@@ -1364,6 +1364,7 @@ export default function App() {
           "VOLTAGE:",
           p.voltage,
         ]);
+        wsData.push(["", "", "", "PRIMARY VOLTAGE:", transformerPrimaryVoltage]);
         if (p.location) wsData.push(["LOCATION:", p.location.toUpperCase()]);
         wsData.push([]);
 
@@ -4031,6 +4032,8 @@ export default function App() {
                         isPremium={userPlan === "premium" || isAdmin}
                         onRequestUpgrade={() => setShowUpgrade(true)}
                         isAdmin={isAdmin}
+                        transformerPrimaryVoltage={transformerPrimaryVoltage}
+                        setTransformerPrimaryVoltage={setTransformerPrimaryVoltage}
                       />
                     )}
 
@@ -4112,6 +4115,8 @@ export default function App() {
                             isPremium={userPlan === "premium" || isAdmin}
                             onRequestUpgrade={() => setShowUpgrade(true)}
                             isAdmin={isAdmin}
+                            transformerPrimaryVoltage={transformerPrimaryVoltage}
+                            setTransformerPrimaryVoltage={setTransformerPrimaryVoltage}
                             parentMdpConnection={parentConn ? {
                               circuitNo: parentConn.circuitNo,
                               description: parentConn.description,
