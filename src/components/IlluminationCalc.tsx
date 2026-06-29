@@ -63,6 +63,8 @@ export interface IlluminationCalcProps {
   onSnapshotCapture?: (circuitId: string, image: string, roomName: string) => void;
   snapshots?: Record<string, string>;
   userId?: string;
+  hasEnterpriseAccess?: boolean;
+  onRequestUpgrade?: () => void;
 }
 
 function calcSinglePointLux(
@@ -516,7 +518,7 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 
-export default function IlluminationCalc({ panel, circuits, subPanels, vdCalculations, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
+export default function IlluminationCalc({ panel, circuits, subPanels, vdCalculations, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId, hasEnterpriseAccess, onRequestUpgrade }: IlluminationCalcProps) {
   const [showWizard, setShowWizard] = useState<boolean>(true);
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   
@@ -1172,11 +1174,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   const [reportPreparedBy, setReportPreparedBy] = useState('Lead Lighting Engineer');
   const [reportProjectName, setReportProjectName] = useState('Premium Commercial Space');
   const [reportExecutiveSummary, setReportExecutiveSummary] = useState('The lighting design presented in this report is optimized for maximum eye comfort, minimal carbon footprint, and complete code compliance. Utilizing high-efficiency fixtures, the design provides exceptional uniformity while remaining well below ASHRAE power limits.');
+  const [reportIncludeCover, setReportIncludeCover] = useState(true);
   const [reportIncludeSummary, setReportIncludeSummary] = useState(true);
   const [reportIncludeFloorPlan, setReportIncludeFloorPlan] = useState(true);
   const [reportIncludeUniformity, setReportIncludeUniformity] = useState(true);
   const [reportIncludeEnergy, setReportIncludeEnergy] = useState(true);
   const [reportIncludeAppendix, setReportIncludeAppendix] = useState(true);
+  const [reportIncludeCompliance, setReportIncludeCompliance] = useState(true);
 
   const pushToHistory = (newObjects: any[]) => {
     setHistory(prev => [...prev, floorPlanObjects]);
@@ -2209,10 +2213,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     const newNo = nextNo;
     
     // Create local Saved Rooms table entry 
-    const newSavedRoom = {
+    const newSavedRoom: import('../types').SavedLightingDetail & import('../types').IlluminationParams = {
+      ...params,
       id: crypto.randomUUID(),
       circuitNo: newNo,
       roomName: lpdLimitInfo.roomName,
+      targetRoomName: lpdLimitInfo.roomName,
       targetLux: params.targetLux,
       area: Number(calculation.area),
       fixtureId: isCombined ? 'combined' : activeFixture.id,
@@ -2329,7 +2335,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Primary Room Name</label>
-                  <input type="text" value={params.roomName} onChange={(e) => setParams({ ...params, roomName: e.target.value })} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. Master Bedroom" />
+                  <input type="text" value={params.targetRoomName} onChange={(e) => setParams({ ...params, targetRoomName: e.target.value })} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. Master Bedroom" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Target Lux Level</label>
@@ -2834,7 +2840,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       <button onClick={() => removeSavedRoom(room.id)} className="absolute top-3 right-3 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity">
                         <X className="w-4 h-4" />
                       </button>
-                      <h4 className="text-sm font-black text-slate-800 mb-1">{room.roomName || 'Unnamed Room'}</h4>
+                      <h4 className="text-sm font-black text-slate-800 mb-1">{room.targetRoomName || 'Unnamed Room'}</h4>
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider space-y-1">
                         <p>Dimensions: {room.roomWidth}m × {room.roomLength}m</p>
                         <p>Area: {(room.roomWidth * room.roomLength).toFixed(1)} m²</p>
@@ -2852,16 +2858,6 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                     </div>
                   ))}
                   
-                  <button 
-                    onClick={() => {
-                      const newRoom = { ...params, id: crypto.randomUUID() };
-                      setParams({ ...params, savedRooms: [...(params.savedRooms || []), newRoom] });
-                    }}
-                    className="border-2 border-dashed border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-indigo-300 text-slate-500 hover:text-indigo-600 rounded-xl flex flex-col items-center justify-center p-6 transition-all min-h-[160px]"
-                  >
-                    <Plus className="w-6 h-6 mb-2" />
-                    <span className="text-xs font-bold">Save Current Room</span>
-                  </button>
                 </div>
               </div>
             )}
@@ -4581,6 +4577,11 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                        <button
                          type="button"
                          onClick={() => {
+                           if (!hasEnterpriseAccess) {
+                             alert("CAD export is available exclusively with the Enterprise Plan. Upgrade your subscription to unlock professional AutoCAD blueprint generation.");
+                             onRequestUpgrade?.();
+                             return;
+                           }
                            const roomArea = params.roomWidth * params.roomLength;
                            const currentSavedRooms = [
                              {

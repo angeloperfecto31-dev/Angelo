@@ -760,12 +760,12 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
     }
 
-    const tfPrimaryV = transformerConfig?.primaryVoltage || params?.primaryVoltage || 34500;
+    const tfPrimaryV = transformerConfig?.primaryVoltage || iscParams?.primaryVoltage || 34500;
 
     docChildren.push(
       createSubHeader(`System Configuration Parameters`),
       createParagraph(`• System Rating: ${p.system}`),
-      createParagraph(`• Transformer Connection: ${p.transformerConnection || params?.transformerConnection || 'Delta-Wye (Δ-Y)'}`),
+      createParagraph(`• Transformer Connection: ${p.transformerConnection || iscParams?.transformerConnection || 'Delta-Wye (Δ-Y)'}`),
       createParagraph(`• Secondary Voltage: ${p.voltage}V`),
       createParagraph(`• Primary Voltage (HV): ${tfPrimaryV}V`),
       new Paragraph({ spacing: { after: 150 } }),

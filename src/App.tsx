@@ -120,6 +120,8 @@ export default function App() {
 
   const isAdmin =
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
+  const hasPremiumAccess = isAdmin || ["premium", "enterprise", "free_trial"].includes(userPlan?.toLowerCase() || "");
+  const hasEnterpriseAccess = isAdmin || ["enterprise"].includes(userPlan?.toLowerCase() || "");
   const isActiveRef = useRef(false);
 
   useEffect(() => {
@@ -1211,7 +1213,7 @@ export default function App() {
     return <PaymentScreen user={user} />;
   }
 
-  if (showUpgrade && (userPlan !== "premium" || isAdmin)) {
+  if (showUpgrade && (!hasEnterpriseAccess || isAdmin)) {
     return (
       <PaymentScreen
         user={user}
@@ -1331,7 +1333,7 @@ export default function App() {
 
   const exportToExcel = () => {
     try {
-      const isPremiumUser = userPlan === "premium" || isAdmin;
+      const isPremiumUser = hasPremiumAccess;
       const wb = XLSX.utils.book_new();
 
       const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
@@ -2483,7 +2485,7 @@ export default function App() {
   };
 
   const handleExportWord = async () => {
-    const isPremiumUser = userPlan === "premium" || isAdmin;
+    const isPremiumUser = hasPremiumAccess;
     if (!isPremiumUser) {
       alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
       setShowUpgrade(true);
@@ -2869,7 +2871,7 @@ export default function App() {
           {/* Action CTAs Area */}
           <div className="space-y-1.5">
             {/* Upgrade to Premium */}
-            {(userPlan !== "premium" || isAdmin) && (
+            {(!hasEnterpriseAccess || isAdmin) && (
               <div className="relative group">
                 <button
                   onClick={() => setShowUpgrade(true)}
@@ -2891,10 +2893,10 @@ export default function App() {
             {[
               { label: "Manage Projects", icon: FolderOpen, onClick: () => setIsProjectManagerOpen(true), priority: "secondary" },
               { 
-                label: userPlan !== "premium" && !isAdmin ? "Report (Premium)" : "Generate Report", 
+                label: !hasPremiumAccess ? "Report (Premium)" : "Generate Report", 
                 icon: FileText, 
                 onClick: () => {
-                  if (userPlan === "premium" || isAdmin) {
+                  if (hasPremiumAccess) {
                     handleExportWord();
                   } else {
                     alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
@@ -2902,14 +2904,14 @@ export default function App() {
                   }
                 }, 
                 priority: "primary", 
-                title: userPlan !== "premium" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary",
-                isLocked: userPlan !== "premium" && !isAdmin
+                title: !hasPremiumAccess ? "Available on Premium Plan" : "Generate Custom Word Document Summary",
+                isLocked: !hasPremiumAccess
               },
               { 
-                label: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
+                label: (!hasPremiumAccess && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
                 icon: FileSpreadsheet,
                 onClick: async () => {
-                  if (userPlan === "premium" || isAdmin || activeTab === "schedule") {
+                  if (hasPremiumAccess || activeTab === "schedule") {
                     if (user?.uid) {
                       try {
                         const response = await fetch("/api/verify-excel-export", {
@@ -2934,23 +2936,24 @@ export default function App() {
                   }
                 },
                 priority: "secondary",
-                title: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Available on Premium Plan" : "Export current module details to Excel",
-                isLocked: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule")
+                title: (!hasPremiumAccess && activeTab !== "schedule") ? "Available on Premium Plan" : "Export current module details to Excel",
+                isLocked: (!hasPremiumAccess && activeTab !== "schedule")
               },
               { 
-                label: userPlan !== "premium" && !isAdmin ? "CAD Export (Premium)" : "Export AutoCAD Drawing", 
+                label: !hasEnterpriseAccess ? "CAD Export (Enterprise)" : "Export AutoCAD Drawing", 
                 icon: Layers, 
                 onClick: () => {
-                  if (userPlan === "premium" || isAdmin) {
+                  if (hasEnterpriseAccess) {
                     const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
                     exportToCAD(panel, updatedMdpCircuits, updatedSubPanels, iscParams, "ALL", vdCalculations, illumParams);
                   } else {
+                    alert("CAD export is available exclusively with the Enterprise Plan. Upgrade your subscription to unlock professional AutoCAD blueprint generation.");
                     setShowUpgrade(true);
                   }
                 }, 
                 priority: "secondary",
                 title: "Complete Load Schedule and calculations directly to AutoCAD schema blocks",
-                isLocked: userPlan !== "premium" && !isAdmin
+                isLocked: !hasEnterpriseAccess
               }
             ].map((btn, index) => {
               const isPri = btn.priority === "primary";
@@ -4060,7 +4063,7 @@ export default function App() {
                         availableSubPanels={uniqueSubPanels}
                         iscParams={iscParams}
                         vdCalculations={vdCalculations}
-                        isPremium={userPlan === "premium" || isAdmin}
+                        isPremium={hasPremiumAccess}
                         onRequestUpgrade={() => setShowUpgrade(true)}
                         isAdmin={isAdmin}
                         transformerPrimaryVoltage={transformerPrimaryVoltage}
@@ -4143,7 +4146,7 @@ export default function App() {
                               setDuplicateName(`${sp.panel.designation || "Subpanel"} (Copy)`);
                             }}
                             iscParams={iscParams}
-                            isPremium={userPlan === "premium" || isAdmin}
+                            isPremium={hasPremiumAccess}
                             onRequestUpgrade={() => setShowUpgrade(true)}
                             isAdmin={isAdmin}
                             transformerPrimaryVoltage={transformerPrimaryVoltage}
@@ -4243,7 +4246,7 @@ export default function App() {
                     setParams={setIscParams}
                     source={iscSource}
                     setSource={setIscSource}
-                    isPremium={userPlan === "premium" || isAdmin}
+                    isPremium={hasPremiumAccess}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                   />
                 </motion.div>
@@ -4274,7 +4277,7 @@ export default function App() {
                     
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
-                    isPremium={userPlan === "premium" || isAdmin}
+                    isPremium={hasPremiumAccess}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     isExporting={isExporting}
                   />
@@ -4340,7 +4343,7 @@ export default function App() {
                     subPanels={subPanels}
                     
                     iscParams={iscParams}
-                    isPremium={userPlan === "premium" || isAdmin}
+                    isPremium={hasPremiumAccess}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     vdCalculations={vdCalculations}
                   />
@@ -4373,7 +4376,7 @@ export default function App() {
                     iscParams={iscParams}
                     setIscParams={setIscParams}
                     vdCalculations={vdCalculations}
-                    isPremium={userPlan === "premium" || isAdmin}
+                    isPremium={hasPremiumAccess}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     transformerPrimaryVoltage={transformerPrimaryVoltage}
                     transformerPowerFactor={transformerPowerFactor}
@@ -4443,7 +4446,7 @@ export default function App() {
                   className="w-full"
                 >
                   <EgcSizingCalculator
-                    isPremium={userPlan === "premium" || isAdmin}
+                    isPremium={hasPremiumAccess}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
                   />
@@ -4473,7 +4476,7 @@ export default function App() {
                     setDemandFactor={setTransformerDemandFactor}
                     loadingFactor={transformerLoadingFactor}
                     setLoadingFactor={setTransformerLoadingFactor}
-                    isPremium={userPlan === "premium" || isAdmin}
+                    isPremium={hasPremiumAccess}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
                   />

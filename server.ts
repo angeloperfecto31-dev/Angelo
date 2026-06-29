@@ -902,8 +902,10 @@ function startSubscriptionScheduler() {
         await batch.commit();
         console.log(`Subscription scheduler: Processed ${count} users (migrations or expirations).`);
       }
-    } catch (e) {
-      console.error("Subscription scheduler error:", e);
+    } catch (e: any) {
+      if (e.code !== 7 && !e.message?.includes('PERMISSION_DENIED')) {
+        console.error("Subscription scheduler error:", e);
+      }
     }
   }, 5 * 60 * 1000); // 5 minutes
 }
