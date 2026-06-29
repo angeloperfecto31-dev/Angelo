@@ -3042,18 +3042,35 @@ export default function App() {
                       <span className="text-[9px] font-medium text-slate-500 truncate block mt-0.5">
                         {user.email}
                       </span>
-                      {/* Subscription indicator bubble */}
-                      <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full mt-1 ${
-                        isAdmin 
-                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
-                          : userPlan === "enterprise"
-                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                            : (userPlan === "premium" || userPlan === "enterprise")
-                              ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" 
-                              : "bg-slate-800 text-slate-400 border border-slate-700/50"
-                      }`}>
-                        {isAdmin ? "Admin Engine" : userPlan === "enterprise" ? "Enterprise (Lifetime)" : (userPlan === "premium" || userPlan === "enterprise") ? "Premium Access" : "Free Member"}
-                      </span>
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        {/* Subscription indicator bubble */}
+                        <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                          isAdmin 
+                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                            : userPlan === "enterprise"
+                              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                              : userPlan === "premium"
+                                ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" 
+                                : userPlan === "basic"
+                                  ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                                  : "bg-slate-800 text-slate-400 border border-slate-700/50"
+                        }`}>
+                          {isAdmin ? "Admin Engine" : userPlan === "enterprise" ? "Enterprise (Lifetime)" : userPlan === "premium" ? "Premium Access" : userPlan === "basic" ? "Basic Access" : "Free Member"}
+                        </span>
+                        
+                        {/* Remaining Days indicator */}
+                        {!isAdmin && (userPlan === "basic" || userPlan === "premium") && expiresAt && (
+                          <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                            Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
+                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20" 
+                              : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
+                                ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          }`}>
+                            {Math.max(0, Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))} Days Left
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </button>
@@ -3061,9 +3078,35 @@ export default function App() {
                 {/* Profile Quick-Access Dropdown Panel (Absolute Popover) */}
                 {isProfileDropdownOpen && (
                   <div className={`absolute bottom-14 ${isSidebarCollapsed ? "left-14" : "left-0 right-0"} w-56 bg-slate-950 border border-slate-850 rounded-xl shadow-2xl p-1.5 z-50 animate-fade-in`}>
-                    <div className="px-3 py-2 border-b border-slate-850/60 pb-1.5 mb-1.5">
+                    <div className="px-3 py-2 border-b border-slate-850/60 pb-2 mb-1.5">
                       <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">QUICK METERS</p>
                       <p className="text-xs font-extrabold text-slate-200 mt-0.5 truncate">{user.displayName || "User Profile"}</p>
+                      
+                      {!isAdmin && (userPlan === "basic" || userPlan === "premium") && expiresAt && (
+                        <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Time Remaining</span>
+                            <span className={`text-[10px] font-black ${
+                              Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
+                                ? "text-rose-400" 
+                                : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
+                                  ? "text-amber-400"
+                                  : "text-emerald-400"
+                            }`}>
+                              {Math.max(0, Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))} Days
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-800 rounded-full h-1.5 mt-1 overflow-hidden">
+                            <div className={`h-1.5 rounded-full ${
+                              Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
+                                ? "bg-rose-500" 
+                                : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-500"
+                            }`} style={{ width: `${Math.min(100, Math.max(0, (Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) / 30) * 100))}%` }}></div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <button
