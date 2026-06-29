@@ -265,7 +265,7 @@ app.post("/api/download-cad", async (req, res) => {
         const userData = userSnap.data();
         isAdmin = userData?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = ["premium", "enterprise", "free_trial"].includes(userData?.plan?.toLowerCase());
+        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -320,7 +320,7 @@ app.post("/api/verify-excel-export", async (req, res) => {
         userEmail = userData?.email || "";
         isAdmin = userEmail.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = ["premium", "enterprise", "free_trial"].includes(userData?.plan?.toLowerCase());
+        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -379,7 +379,7 @@ app.post("/api/verify-cad-export", async (req, res) => {
         userEmail = userData?.email || "";
         isAdmin = userEmail.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = ["premium", "enterprise", "free_trial"].includes(userData?.plan?.toLowerCase());
+        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -435,7 +435,7 @@ app.post("/api/verify-doc-export", async (req, res) => {
         userEmail = userData?.email || "";
         isAdmin = userEmail.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = ["premium", "enterprise", "free_trial"].includes(userData?.plan?.toLowerCase());
+        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -690,14 +690,6 @@ app.post("/api/verify-checkout", async (req, res) => {
                 sessionId
               });
 
-              // Calculate expiry date for new subscriptions
-              let expiryDate = null;
-              if (plan === "basic" || plan === "premium") {
-                const date = new Date();
-                date.setDate(date.getDate() + 30);
-                expiryDate = date.toISOString();
-              }
-
               await db.collection("users").doc(userId).set(
                 {
                   paymentStatus: "paid",
@@ -709,8 +701,7 @@ app.post("/api/verify-checkout", async (req, res) => {
                   approvedAt: new Date().toISOString(),
                   approvedBy: "PAYMONGO CHECKOUT",
                   pendingVerification: null,
-                  paymentDiscrepancy: null, // clear any prior discrepancy
-                  subscriptionExpiry: expiryDate
+                  paymentDiscrepancy: null // clear any prior discrepancy
                 },
                 { merge: true },
               );
@@ -824,14 +815,6 @@ app.post("/api/paymongo-webhook", async (req, res) => {
           });
 
           console.log(`Webhook received: activating user ${userId} with plan ${plan} paid ${actualAmountPaid}`);
-          
-          let expiryDate = null;
-          if (plan === "basic" || plan === "premium") {
-            const date = new Date();
-            date.setDate(date.getDate() + 30);
-            expiryDate = date.toISOString();
-          }
-
           await db.collection("users").doc(userId).set(
             {
               paymentStatus: "paid",
@@ -843,8 +826,7 @@ app.post("/api/paymongo-webhook", async (req, res) => {
               approvedAt: new Date().toISOString(),
               approvedBy: "PAYMONGO CHECKOUT",
               pendingVerification: null,
-              paymentDiscrepancy: null,
-              subscriptionExpiry: expiryDate
+              paymentDiscrepancy: null
             },
             { merge: true },
           );
@@ -859,60 +841,7 @@ app.post("/api/paymongo-webhook", async (req, res) => {
   }
 });
 
-// Setup Subscription Scheduler
-function startSubscriptionScheduler() {
-  if (!db) return;
-  // Run every 5 minutes to check expirations
-  setInterval(async () => {
-    try {
-      const now = new Date();
-      // Check active users with an expiry date
-      const usersSnap = await db.collection("users").where("isActive", "==", true).get();
-      
-      const batch = db.batch();
-      let count = 0;
-
-      usersSnap.forEach((docSnap) => {
-        const data = docSnap.data();
-        
-        // 1. Migration for legacy Premium Lifetime users -> Enterprise Lifetime
-        if (data.plan === "premium" && !data.subscriptionExpiry) {
-           console.log(`Migrating legacy premium user ${docSnap.id} to enterprise.`);
-           const userRef = db.collection("users").doc(docSnap.id);
-           batch.update(userRef, { plan: "enterprise" });
-           count++;
-        }
-
-        // 2. Expiration check
-        if (data.subscriptionExpiry) {
-          const expiryDate = new Date(data.subscriptionExpiry);
-          if (now > expiryDate) {
-            console.log(`User ${docSnap.id} subscription expired.`);
-            const userRef = db.collection("users").doc(docSnap.id);
-            batch.update(userRef, {
-              isActive: false,
-              paymentStatus: "expired"
-            });
-            count++;
-          }
-        }
-      });
-
-      if (count > 0) {
-        await batch.commit();
-        console.log(`Subscription scheduler: Processed ${count} users (migrations or expirations).`);
-      }
-    } catch (e: any) {
-      if (e.code !== 7 && !e.message?.includes('PERMISSION_DENIED')) {
-        console.error("Subscription scheduler error:", e);
-      }
-    }
-  }, 5 * 60 * 1000); // 5 minutes
-}
-
 async function startServer() {
-  startSubscriptionScheduler();
-
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -173,16 +173,9 @@ export interface LightFixture {
 
 export interface SavedLightingDetail {
   id: string;
-  roomName?: string;
-  targetRoomName?: string;
+  roomName: string;
   targetLux: number;
   area: number;
-  roomWidth?: number;
-  roomLength?: number;
-  userArea?: number;
-  ceilingHeight?: number;
-  workingPlaneHeight?: number;
-  mountingHeight?: number;
   fixtureId?: string;
   fixtureLightType?: string;
   fixturesCount: number;
@@ -237,7 +230,7 @@ export interface IlluminationParams {
   lumensPerFixture: number;
   coefficientOfUtilization: number;
   maintenanceFactor: number;
-  savedRooms?: Array<SavedLightingDetail & IlluminationParams>;
+  savedRooms?: SavedLightingDetail[];
   isCustomFixture?: boolean;
   customLightType?: string;
   customLumens?: number;

@@ -110,8 +110,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
-  const [userPlan, setUserPlan] = useState<string | null>(null);
-  const [subscriptionExpiry, setSubscriptionExpiry] = useState<string | null>(null);
+  const [userPlan, setUserPlan] = useState<"basic" | "premium" | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -120,8 +119,6 @@ export default function App() {
 
   const isAdmin =
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
-  const hasPremiumAccess = isAdmin || ["premium", "enterprise", "free_trial"].includes(userPlan?.toLowerCase() || "");
-  const hasEnterpriseAccess = isAdmin || ["enterprise"].includes(userPlan?.toLowerCase() || "");
   const isActiveRef = useRef(false);
 
   useEffect(() => {
@@ -153,45 +150,16 @@ export default function App() {
       
       unsubscribe = onSnapshot(
         doc(db, "users", user.uid),
-        async (docSnap) => {
+        (docSnap) => {
           if (docSnap.exists() && docSnap.data().isActive === true) {
             const data = docSnap.data();
-            
-            // Client-side expiry check
-            let isCurrentlyActive = true;
-            if (data.subscriptionExpiry) {
-              const expiryDate = new Date(data.subscriptionExpiry);
-              if (new Date() > expiryDate) {
-                isCurrentlyActive = false;
-                
-                // If it's a free trial that expired, we log the user out
-                if (data.plan === "free_trial") {
-                  try {
-                    await signOut(auth);
-                    return; // exit the listener
-                  } catch (e) {
-                    console.error("Failed to sign out after trial expiration", e);
-                  }
-                }
-              }
-            }
-            
-            if (isCurrentlyActive) {
-              setUserPlan(data.plan || "premium");
-              setSubscriptionExpiry(data.subscriptionExpiry || null);
-              setIsActive(true);
-              isActiveRef.current = true;
-            } else {
-              setIsActive(false);
-              isActiveRef.current = false;
-              setUserPlan(null);
-              setSubscriptionExpiry(null);
-            }
+            setUserPlan(data.plan || "premium");
+            setIsActive(true);
+            isActiveRef.current = true;
           } else {
             setIsActive(false);
             isActiveRef.current = false;
             setUserPlan(null);
-            setSubscriptionExpiry(null);
           }
           initialLoad = false;
           setAuthLoading(false);
@@ -1213,7 +1181,7 @@ export default function App() {
     return <PaymentScreen user={user} />;
   }
 
-  if (showUpgrade && (!hasEnterpriseAccess || isAdmin)) {
+  if (showUpgrade && (userPlan !== "premium" || isAdmin)) {
     return (
       <PaymentScreen
         user={user}
@@ -1333,7 +1301,7 @@ export default function App() {
 
   const exportToExcel = () => {
     try {
-      const isPremiumUser = hasPremiumAccess;
+      const isPremiumUser = userPlan === "premium" || isAdmin;
       const wb = XLSX.utils.book_new();
 
       const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
@@ -2485,7 +2453,7 @@ export default function App() {
   };
 
   const handleExportWord = async () => {
-    const isPremiumUser = hasPremiumAccess;
+    const isPremiumUser = userPlan === "premium" || isAdmin;
     if (!isPremiumUser) {
       alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
       setShowUpgrade(true);
@@ -2871,7 +2839,7 @@ export default function App() {
           {/* Action CTAs Area */}
           <div className="space-y-1.5">
             {/* Upgrade to Premium */}
-            {(!hasEnterpriseAccess || isAdmin) && (
+            {(userPlan !== "premium" || isAdmin) && (
               <div className="relative group">
                 <button
                   onClick={() => setShowUpgrade(true)}
@@ -2893,10 +2861,10 @@ export default function App() {
             {[
               { label: "Manage Projects", icon: FolderOpen, onClick: () => setIsProjectManagerOpen(true), priority: "secondary" },
               { 
-                label: !hasPremiumAccess ? "Report (Premium)" : "Generate Report", 
+                label: userPlan !== "premium" && !isAdmin ? "Report (Premium)" : "Generate Report", 
                 icon: FileText, 
                 onClick: () => {
-                  if (hasPremiumAccess) {
+                  if (userPlan === "premium" || isAdmin) {
                     handleExportWord();
                   } else {
                     alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
@@ -2904,14 +2872,14 @@ export default function App() {
                   }
                 }, 
                 priority: "primary", 
-                title: !hasPremiumAccess ? "Available on Premium Plan" : "Generate Custom Word Document Summary",
-                isLocked: !hasPremiumAccess
+                title: userPlan !== "premium" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary",
+                isLocked: userPlan !== "premium" && !isAdmin
               },
               { 
-                label: (!hasPremiumAccess && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
+                label: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
                 icon: FileSpreadsheet,
                 onClick: async () => {
-                  if (hasPremiumAccess || activeTab === "schedule") {
+                  if (userPlan === "premium" || isAdmin || activeTab === "schedule") {
                     if (user?.uid) {
                       try {
                         const response = await fetch("/api/verify-excel-export", {
@@ -2936,24 +2904,23 @@ export default function App() {
                   }
                 },
                 priority: "secondary",
-                title: (!hasPremiumAccess && activeTab !== "schedule") ? "Available on Premium Plan" : "Export current module details to Excel",
-                isLocked: (!hasPremiumAccess && activeTab !== "schedule")
+                title: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule") ? "Available on Premium Plan" : "Export current module details to Excel",
+                isLocked: (userPlan !== "premium" && !isAdmin && activeTab !== "schedule")
               },
               { 
-                label: !hasEnterpriseAccess ? "CAD Export (Enterprise)" : "Export AutoCAD Drawing", 
+                label: userPlan !== "premium" && !isAdmin ? "CAD Export (Premium)" : "Export AutoCAD Drawing", 
                 icon: Layers, 
                 onClick: () => {
-                  if (hasEnterpriseAccess) {
+                  if (userPlan === "premium" || isAdmin) {
                     const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
                     exportToCAD(panel, updatedMdpCircuits, updatedSubPanels, iscParams, "ALL", vdCalculations, illumParams);
                   } else {
-                    alert("CAD export is available exclusively with the Enterprise Plan. Upgrade your subscription to unlock professional AutoCAD blueprint generation.");
                     setShowUpgrade(true);
                   }
                 }, 
                 priority: "secondary",
                 title: "Complete Load Schedule and calculations directly to AutoCAD schema blocks",
-                isLocked: !hasEnterpriseAccess
+                isLocked: userPlan !== "premium" && !isAdmin
               }
             ].map((btn, index) => {
               const isPri = btn.priority === "primary";
@@ -4063,7 +4030,7 @@ export default function App() {
                         availableSubPanels={uniqueSubPanels}
                         iscParams={iscParams}
                         vdCalculations={vdCalculations}
-                        isPremium={hasPremiumAccess}
+                        isPremium={userPlan === "premium" || isAdmin}
                         onRequestUpgrade={() => setShowUpgrade(true)}
                         isAdmin={isAdmin}
                         transformerPrimaryVoltage={transformerPrimaryVoltage}
@@ -4146,7 +4113,7 @@ export default function App() {
                               setDuplicateName(`${sp.panel.designation || "Subpanel"} (Copy)`);
                             }}
                             iscParams={iscParams}
-                            isPremium={hasPremiumAccess}
+                            isPremium={userPlan === "premium" || isAdmin}
                             onRequestUpgrade={() => setShowUpgrade(true)}
                             isAdmin={isAdmin}
                             transformerPrimaryVoltage={transformerPrimaryVoltage}
@@ -4246,7 +4213,7 @@ export default function App() {
                     setParams={setIscParams}
                     source={iscSource}
                     setSource={setIscSource}
-                    isPremium={hasPremiumAccess}
+                    isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                   />
                 </motion.div>
@@ -4277,7 +4244,7 @@ export default function App() {
                     
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
-                    isPremium={hasPremiumAccess}
+                    isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     isExporting={isExporting}
                   />
@@ -4343,7 +4310,7 @@ export default function App() {
                     subPanels={subPanels}
                     
                     iscParams={iscParams}
-                    isPremium={hasPremiumAccess}
+                    isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     vdCalculations={vdCalculations}
                   />
@@ -4376,7 +4343,7 @@ export default function App() {
                     iscParams={iscParams}
                     setIscParams={setIscParams}
                     vdCalculations={vdCalculations}
-                    isPremium={hasPremiumAccess}
+                    isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     transformerPrimaryVoltage={transformerPrimaryVoltage}
                     transformerPowerFactor={transformerPowerFactor}
@@ -4446,7 +4413,7 @@ export default function App() {
                   className="w-full"
                 >
                   <EgcSizingCalculator
-                    isPremium={hasPremiumAccess}
+                    isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
                   />
@@ -4476,7 +4443,7 @@ export default function App() {
                     setDemandFactor={setTransformerDemandFactor}
                     loadingFactor={transformerLoadingFactor}
                     setLoadingFactor={setTransformerLoadingFactor}
-                    isPremium={hasPremiumAccess}
+                    isPremium={userPlan === "premium" || isAdmin}
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
                   />
@@ -4718,39 +4685,22 @@ export default function App() {
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
                       <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Subscription Tier</p>
-                      <div className="flex flex-col gap-2 p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-black text-amber-400">
-                              Subscription Status: {userPlan === "enterprise" ? "ENTERPRISE LICENSE" : userPlan === "premium" ? "PREMIUM PLAN" : userPlan === "basic" ? "BASIC PLAN" : userPlan === "free_trial" ? "FREE TRIAL" : "NO ACTIVE PLAN"}
-                            </p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
-                          </div>
-                          {userPlan !== "enterprise" && (
-                            <button
-                              onClick={() => {
-                                setIsAccountSettingsOpen(false);
-                                setShowUpgrade(true);
-                              }}
-                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
-                            >
-                              Upgrade
-                            </button>
-                          )}
+                      <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
+                        <div>
+                          <p className="text-xs font-black text-amber-400">Subscription Status: {userPlan === "premium" ? "PREMIUM LICENSE" : "FREE TRIAL TIER"}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
                         </div>
-                        {subscriptionExpiry ? (
-                          <div className="bg-slate-900/50 rounded-lg p-2 mt-1">
-                            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">
-                              Valid Until: <span className="text-amber-400">{new Date(subscriptionExpiry).toLocaleString()}</span>
-                            </p>
-                          </div>
-                        ) : userPlan ? (
-                          <div className="bg-slate-900/50 rounded-lg p-2 mt-1">
-                            <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
-                              LIFETIME ACCESS
-                            </p>
-                          </div>
-                        ) : null}
+                        {userPlan !== "premium" && (
+                          <button
+                            onClick={() => {
+                              setIsAccountSettingsOpen(false);
+                              setShowUpgrade(true);
+                            }}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
+                          >
+                            Upgrade
+                          </button>
+                        )}
                       </div>
                     </div>
 

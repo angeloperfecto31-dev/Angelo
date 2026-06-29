@@ -111,7 +111,7 @@ export default function PaymentScreen({
   const [uploadingMaribankQr, setUploadingMaribankQr] = useState(false);
   const [uploadingMayaQr, setUploadingMayaQr] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium" | "enterprise">("enterprise");
+  const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium">("premium");
 
   // Custom confirmation states to bypass native window.confirm blocks in sandboxed iframes
   const [confirmDeleteReg, setConfirmDeleteReg] = useState(false);
@@ -125,23 +125,19 @@ export default function PaymentScreen({
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\n-Word File Export feature";
   const DEFAULT_PREMIUM_FEATURES = "Everything in Basic Plan\nFull Word File Report Generation\nPremium Support Access";
-  const DEFAULT_ENTERPRISE_FEATURES = "Lifetime Access to Everything\nComplete Single-Line CAD Blueprints\nBulk Word Compiling\nPriority Support";
   const DEFAULT_UPGRADE_FEATURES = "Full Word File Report Generation\nPremium Support Access";
 
   // Dynamic Pricing State
   const [pricingSettings, setPricingSettings] = useState({
     basicPrice: 999,
     premiumPrice: 1499,
-    enterprisePrice: 2999,
     upgradePrice: 500,
     promoDiscountBasic: 0,
     promoDiscountPremium: 0,
-    promoDiscountEnterprise: 0,
     offerTitle: "",
     offerExpiry: "",
     basicFeatures: DEFAULT_BASIC_FEATURES,
     premiumFeatures: DEFAULT_PREMIUM_FEATURES,
-    enterpriseFeatures: DEFAULT_ENTERPRISE_FEATURES,
     upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
     enableMaribank: true,
     enableGCash: true,
@@ -152,16 +148,13 @@ export default function PaymentScreen({
   // Admin Pricing Input States
   const [adminBasicPrice, setAdminBasicPrice] = useState<string>("999");
   const [adminPremiumPrice, setAdminPremiumPrice] = useState<string>("1499");
-  const [adminEnterprisePrice, setAdminEnterprisePrice] = useState<string>("2999");
   const [adminUpgradePrice, setAdminUpgradePrice] = useState<string>("500");
   const [adminPromoDiscountBasic, setAdminPromoDiscountBasic] = useState<string>("0");
   const [adminPromoDiscountPremium, setAdminPromoDiscountPremium] = useState<string>("0");
-  const [adminPromoDiscountEnterprise, setAdminPromoDiscountEnterprise] = useState<string>("0");
   const [adminOfferTitle, setAdminOfferTitle] = useState<string>("");
   const [adminOfferExpiry, setAdminOfferExpiry] = useState<string>("");
   const [adminBasicFeatures, setAdminBasicFeatures] = useState<string>(DEFAULT_BASIC_FEATURES);
   const [adminPremiumFeatures, setAdminPremiumFeatures] = useState<string>(DEFAULT_PREMIUM_FEATURES);
-  const [adminEnterpriseFeatures, setAdminEnterpriseFeatures] = useState<string>(DEFAULT_ENTERPRISE_FEATURES);
   const [adminUpgradeFeatures, setAdminUpgradeFeatures] = useState<string>(DEFAULT_UPGRADE_FEATURES);
   const [adminEnableMaribank, setAdminEnableMaribank] = useState<boolean>(true);
   const [adminEnableGCash, setAdminEnableGCash] = useState<boolean>(true);
@@ -183,9 +176,6 @@ export default function PaymentScreen({
   const premiumFinalPrice = (isOfferActive && pricingSettings.promoDiscountPremium > 0) 
     ? pricingSettings.promoDiscountPremium 
     : pricingSettings.premiumPrice;
-  const enterpriseFinalPrice = (isOfferActive && pricingSettings.promoDiscountEnterprise > 0) 
-    ? pricingSettings.promoDiscountEnterprise 
-    : pricingSettings.enterprisePrice;
   
   // Calculate upgrade price safely - upgrade section should not apply any promo/discount campaign rates
   const upgradeFinalPrice = pricingSettings.upgradePrice;
@@ -340,16 +330,13 @@ export default function PaymentScreen({
           const data = docSnap.data();
           const basic = typeof data.basicPrice === 'number' ? data.basicPrice : 999;
           const premium = typeof data.premiumPrice === 'number' ? data.premiumPrice : 1499;
-          const enterprise = typeof data.enterprisePrice === 'number' ? data.enterprisePrice : 2999;
           const upgrade = typeof data.upgradePrice === 'number' ? data.upgradePrice : 500;
           const promoBasic = typeof data.promoDiscountBasic === 'number' ? data.promoDiscountBasic : 0;
           const promoPremium = typeof data.promoDiscountPremium === 'number' ? data.promoDiscountPremium : 0;
-          const promoEnterprise = typeof data.promoDiscountEnterprise === 'number' ? data.promoDiscountEnterprise : 0;
           const title = data.offerTitle || "";
           const expiry = data.offerExpiry || "";
           const basicFeatures = data.basicFeatures || DEFAULT_BASIC_FEATURES;
           const premiumFeatures = data.premiumFeatures || DEFAULT_PREMIUM_FEATURES;
-          const enterpriseFeatures = data.enterpriseFeatures || DEFAULT_ENTERPRISE_FEATURES;
           const upgradeFeatures = data.upgradeFeatures || DEFAULT_UPGRADE_FEATURES;
           const enableMaribank = data.enableMaribank !== false; // defaults to true
           const enableGCash = data.enableGCash !== false;
@@ -359,16 +346,13 @@ export default function PaymentScreen({
           setPricingSettings({
             basicPrice: basic,
             premiumPrice: premium,
-            enterprisePrice: enterprise,
             upgradePrice: upgrade,
             promoDiscountBasic: promoBasic,
             promoDiscountPremium: promoPremium,
-            promoDiscountEnterprise: promoEnterprise,
             offerTitle: title,
             offerExpiry: expiry,
             basicFeatures: basicFeatures,
             premiumFeatures: premiumFeatures,
-            enterpriseFeatures: enterpriseFeatures,
             upgradeFeatures: upgradeFeatures,
             enableMaribank,
             enableGCash,
@@ -380,16 +364,13 @@ export default function PaymentScreen({
           if (!hasLoadedPricingInputs.current) {
             setAdminBasicPrice(basic.toString());
             setAdminPremiumPrice(premium.toString());
-            setAdminEnterprisePrice(enterprise.toString());
             setAdminUpgradePrice(upgrade.toString());
             setAdminPromoDiscountBasic(promoBasic.toString());
             setAdminPromoDiscountPremium(promoPremium.toString());
-            setAdminPromoDiscountEnterprise(promoEnterprise.toString());
             setAdminOfferTitle(title);
             setAdminOfferExpiry(expiry);
             setAdminBasicFeatures(basicFeatures);
             setAdminPremiumFeatures(premiumFeatures);
-            setAdminEnterpriseFeatures(enterpriseFeatures);
             setAdminUpgradeFeatures(upgradeFeatures);
             setAdminEnableMaribank(enableMaribank);
             setAdminEnableGCash(enableGCash);
@@ -402,16 +383,13 @@ export default function PaymentScreen({
           setPricingSettings({
             basicPrice: 999,
             premiumPrice: 1499,
-            enterprisePrice: 2999,
             upgradePrice: 500,
             promoDiscountBasic: 0,
             promoDiscountPremium: 0,
-            promoDiscountEnterprise: 0,
             offerTitle: "",
             offerExpiry: "",
             basicFeatures: DEFAULT_BASIC_FEATURES,
             premiumFeatures: DEFAULT_PREMIUM_FEATURES,
-            enterpriseFeatures: DEFAULT_ENTERPRISE_FEATURES,
             upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
             enableMaribank: true,
             enableGCash: true,
@@ -424,16 +402,13 @@ export default function PaymentScreen({
               await setDoc(doc(db, "settings", "pricing"), {
                 basicPrice: 999,
                 premiumPrice: 1499,
-                enterprisePrice: 2999,
                 upgradePrice: 500,
                 promoDiscountBasic: 0,
                 promoDiscountPremium: 0,
-                promoDiscountEnterprise: 0,
                 offerTitle: "",
                 offerExpiry: "",
                 basicFeatures: DEFAULT_BASIC_FEATURES,
                 premiumFeatures: DEFAULT_PREMIUM_FEATURES,
-                enterpriseFeatures: DEFAULT_ENTERPRISE_FEATURES,
                 upgradeFeatures: DEFAULT_UPGRADE_FEATURES,
                 enableMaribank: true,
                 enableGCash: true,
@@ -628,19 +603,15 @@ export default function PaymentScreen({
     
     const basicVal = parseFloat(adminBasicPrice || "0");
     const premiumVal = parseFloat(adminPremiumPrice || "0");
-    const enterpriseVal = parseFloat(adminEnterprisePrice || "0");
     const upgradeVal = parseFloat(adminUpgradePrice || "0");
     const promoBasicVal = parseFloat(adminPromoDiscountBasic || "0");
     const promoPremiumVal = parseFloat(adminPromoDiscountPremium || "0");
-    const promoEnterpriseVal = parseFloat(adminPromoDiscountEnterprise || "0");
 
     if (isNaN(basicVal) || basicVal < 0 ||
         isNaN(premiumVal) || premiumVal < 0 ||
-        isNaN(enterpriseVal) || enterpriseVal < 0 ||
         isNaN(upgradeVal) || upgradeVal < 0 ||
         isNaN(promoBasicVal) || promoBasicVal < 0 ||
-        isNaN(promoPremiumVal) || promoPremiumVal < 0 ||
-        isNaN(promoEnterpriseVal) || promoEnterpriseVal < 0) {
+        isNaN(promoPremiumVal) || promoPremiumVal < 0) {
       setAdminStatusMsg("Error: All price and discount values must be non-negative numbers.");
       setSavingPricing(false);
       return;
@@ -667,16 +638,13 @@ export default function PaymentScreen({
         {
           basicPrice: basicVal,
           premiumPrice: premiumVal,
-          enterprisePrice: enterpriseVal,
           upgradePrice: upgradeVal,
           promoDiscountBasic: promoBasicVal,
           promoDiscountPremium: promoPremiumVal,
-          promoDiscountEnterprise: promoEnterpriseVal,
           offerTitle: adminOfferTitle.trim(),
           offerExpiry: adminOfferExpiry,
           basicFeatures: adminBasicFeatures,
           premiumFeatures: adminPremiumFeatures,
-          enterpriseFeatures: adminEnterpriseFeatures,
           upgradeFeatures: adminUpgradeFeatures,
           enableMaribank: adminEnableMaribank,
           enableGCash: adminEnableGCash,
@@ -872,14 +840,13 @@ export default function PaymentScreen({
     setError("");
     try {
       const origin = window.location.origin;
-      const isUpgradingToEnterprise = isUpgrade && userProfile?.plan === "premium";
-      const amount = isUpgrade ? (isUpgradingToEnterprise ? enterpriseFinalPrice : upgradeFinalPrice) : (selectedPlan === "enterprise" ? enterpriseFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice));
+      const amount = isUpgrade ? upgradeFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice);
       const response = await axios.post("/api/create-checkout", {
         userId: user.uid,
         email: user.email,
         origin,
         amount,
-        plan: isUpgrade ? (isUpgradingToEnterprise ? "enterprise" : "premium") : selectedPlan,
+        plan: isUpgrade ? "premium" : selectedPlan,
         isUpgrade,
       });
 
@@ -893,36 +860,6 @@ export default function PaymentScreen({
         "Failed to initiate payment. " +
           (err.response?.data?.error || err.message),
       );
-      setLoading(false);
-    }
-  };
-
-  const handleActivateFreeTrial = async () => {
-    if (!user || userProfile?.trialUsed) return;
-    
-    setLoading(true);
-    setError("");
-    
-    try {
-      const now = new Date();
-      const expiryDate = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours
-      
-      await setDoc(doc(db, "users", user.uid), {
-        isActive: true,
-        paymentStatus: "paid",
-        plan: "free_trial",
-        trialUsed: true,
-        subscriptionExpiry: expiryDate.toISOString(),
-        approvedAt: now.toISOString(),
-        approvedBy: "SYSTEM_FREE_TRIAL"
-      }, { merge: true });
-      
-      setSuccess(true);
-      window.location.reload(); // Force reload to apply new access immediately
-    } catch (err: any) {
-      console.error("Failed to activate free trial:", err);
-      setError("Failed to activate free trial. Please try again.");
-    } finally {
       setLoading(false);
     }
   };
@@ -961,8 +898,6 @@ export default function PaymentScreen({
     setManualMessage("");
 
     try {
-      const isUpgradingToEnterprise = isUpgrade && userProfile?.plan === "premium";
-      const amount = isUpgrade ? (isUpgradingToEnterprise ? enterpriseFinalPrice : upgradeFinalPrice) : (selectedPlan === "enterprise" ? enterpriseFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice));
       const updateData: any = {
         email: user.email,
         paymentStatus: "pending_verification",
@@ -970,8 +905,8 @@ export default function PaymentScreen({
           method: paymentMethod === "maribank" ? "MariBank" : paymentMethod === "maya" ? "Maya" : "GCash",
           senderName: manualName.trim(),
           referenceNo: cleanedRef,
-          amount: amount,
-          plan: isUpgrade ? (isUpgradingToEnterprise ? "enterprise" : "premium") : selectedPlan,
+          amount: isUpgrade ? upgradeFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice),
+          plan: isUpgrade ? "premium" : selectedPlan,
           submittedAt: new Date().toISOString(),
           isUpgrade: isUpgrade, // Keep a record if this was an upgrade explicitly
         },
@@ -1033,13 +968,6 @@ export default function PaymentScreen({
       }
 
       // Activate user account and register cleared amount
-      let expiryDate = null;
-      if (plan === "basic" || plan === "premium") {
-        const date = new Date();
-        date.setDate(date.getDate() + 30);
-        expiryDate = date.toISOString();
-      }
-
       await setDoc(
         doc(db, "users", targetUid),
         {
@@ -1054,7 +982,6 @@ export default function PaymentScreen({
           paymentDiscrepancy: null,
           approvedBy: user?.email || "Admin (Reconciliation)",
           approvedAt: new Date().toISOString(),
-          subscriptionExpiry: expiryDate
         },
         { merge: true },
       );
@@ -1114,13 +1041,6 @@ export default function PaymentScreen({
       const senderNameVal = userToApprove?.pendingVerification?.senderName || "None";
       const isUpgradeVal = userToApprove?.pendingVerification?.isUpgrade || false;
 
-      let expiryDate = null;
-      if (planToSet === "basic" || planToSet === "premium") {
-        const date = new Date();
-        date.setDate(date.getDate() + 30);
-        expiryDate = date.toISOString();
-      }
-
       await setDoc(
         doc(db, "users", targetUid),
         {
@@ -1135,7 +1055,6 @@ export default function PaymentScreen({
           pendingVerification: null,
           approvedBy: user.email,
           approvedAt: new Date().toISOString(),
-          subscriptionExpiry: expiryDate
         },
         { merge: true },
       );
@@ -3202,7 +3121,7 @@ export default function PaymentScreen({
             </div>
 
             <form onSubmit={handleSavePricing} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Basic price */}
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
@@ -3241,25 +3160,6 @@ export default function PaymentScreen({
                   </div>
                 </div>
 
-                {/* Enterprise price */}
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
-                    Enterprise Plan Price (₱)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-2 py-0.5 text-xs text-slate-400 font-bold">₱</span>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      value={adminEnterprisePrice || 0}
-                      onChange={(e) => setAdminEnterprisePrice(e.target.value)}
-                      placeholder="2999"
-                      className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-mono"
-                    />
-                  </div>
-                </div>
-
                 {/* Upgrade price */}
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
@@ -3281,10 +3181,11 @@ export default function PaymentScreen({
               </div>
 
               {/* Editable Plan Features Section */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
                     <span>Basic Plan Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
                   </label>
                   <textarea
                     rows={4}
@@ -3298,6 +3199,7 @@ export default function PaymentScreen({
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
                     <span>Premium Plan Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
                   </label>
                   <textarea
                     rows={4}
@@ -3310,20 +3212,8 @@ export default function PaymentScreen({
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
-                    <span>Enterprise Features</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={adminEnterpriseFeatures}
-                    onChange={(e) => setAdminEnterpriseFeatures(e.target.value)}
-                    placeholder={DEFAULT_ENTERPRISE_FEATURES}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all font-sans leading-relaxed resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
                     <span>Upgrade Promo Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
                   </label>
                   <textarea
                     rows={4}
@@ -3370,7 +3260,7 @@ export default function PaymentScreen({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                   {/* Basic discount deductions */}
                   <div>
                     <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
@@ -3401,24 +3291,6 @@ export default function PaymentScreen({
                         min="0"
                         value={adminPromoDiscountPremium || 0}
                         onChange={(e) => setAdminPromoDiscountPremium(e.target.value)}
-                        placeholder="0"
-                        className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Enterprise discount deductions */}
-                  <div>
-                    <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
-                      Enterprise Promo Final Price (₱)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2 py-0.5 text-xs text-indigo-400 font-bold">₱</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={adminPromoDiscountEnterprise || 0}
-                        onChange={(e) => setAdminPromoDiscountEnterprise(e.target.value)}
                         placeholder="0"
                         className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
                       />
@@ -4085,7 +3957,7 @@ export default function PaymentScreen({
                               {isPending && u.pendingVerification ? (() => {
                                 const isUpgrade = u.pendingVerification?.isUpgrade === true;
                                 const plan = u.pendingVerification?.plan || "premium";
-                                const expectedVal = isUpgrade ? (plan === "enterprise" ? enterpriseFinalPrice : upgradeFinalPrice) : (plan === "enterprise" ? enterpriseFinalPrice : (plan === "basic" ? basicFinalPrice : premiumFinalPrice));
+                                const expectedVal = isUpgrade ? upgradeFinalPrice : (plan === "basic" ? basicFinalPrice : premiumFinalPrice);
                                 const actualVal = typeof u.pendingVerification?.amount === 'number' ? u.pendingVerification.amount : (parseFloat(u.pendingVerification?.amount) || 0);
                                 const isManualMismatch = actualVal > 0 && Math.abs(actualVal - expectedVal) > 0.01;
 
@@ -4315,7 +4187,7 @@ export default function PaymentScreen({
                         {isPending && u.pendingVerification ? (() => {
                           const isUpgrade = u.pendingVerification?.isUpgrade === true;
                           const plan = u.pendingVerification?.plan || "premium";
-                          const expectedVal = isUpgrade ? (plan === "enterprise" ? enterpriseFinalPrice : upgradeFinalPrice) : (plan === "enterprise" ? enterpriseFinalPrice : (plan === "basic" ? basicFinalPrice : premiumFinalPrice));
+                          const expectedVal = isUpgrade ? upgradeFinalPrice : (plan === "basic" ? basicFinalPrice : premiumFinalPrice);
                           const actualVal = typeof u.pendingVerification?.amount === 'number' ? u.pendingVerification.amount : (parseFloat(u.pendingVerification?.amount) || 0);
                           const isManualMismatch = actualVal > 0 && Math.abs(actualVal - expectedVal) > 0.01;
 
@@ -4562,7 +4434,7 @@ export default function PaymentScreen({
           </h2>
           <p className="text-slate-500 text-center mb-8">
             {isUpgrade 
-              ? (userProfile?.plan === "premium" ? "Your account has been upgraded to Enterprise. You now have full access to all features. Please wait while we load your dashboard..." : "Your account has been upgraded to Premium. You now have full access to ElectricalPH's premium features. Please wait while we load your dashboard...")
+              ? "Your account has been upgraded to Premium. You now have full access to ElectricalPH's premium features. Please wait while we load your dashboard..."
               : "Your account has been activated. You now have full access to ElectricalPH. Please wait while we load your dashboard..."}
           </p>
           <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
@@ -4812,45 +4684,28 @@ export default function PaymentScreen({
             </div>
           )}
 
-          {/* Free Trial Banner */}
-          {!userProfile?.trialUsed && !isUpgrade && (
-            <div className="mb-6 bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <h3 className="text-sm font-black text-emerald-800 uppercase tracking-tight mb-1">Start Free Trial</h3>
-                <p className="text-xs text-emerald-600 font-bold">Get 2 hours of unlimited access to all Premium features.</p>
-              </div>
-              <button
-                onClick={handleActivateFreeTrial}
-                disabled={loading}
-                className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-colors disabled:opacity-50"
-              >
-                {loading ? "Activating..." : "Activate Now"}
-              </button>
-            </div>
-          )}
-
           <div className="mb-6 border-b border-slate-100 pb-6">
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">1. Select Your Subscription Plan</h3>
             {isUpgrade ? (
                <button
-               className={`w-full text-left p-4 rounded-2xl border-2 transition-all relative ${userProfile?.plan === "premium" ? "border-amber-600 bg-amber-50/50" : "border-indigo-600 bg-indigo-50/50"} scale-[1.02] shadow-md z-10 cursor-default`}
+               className={`w-full text-left p-4 rounded-2xl border-2 transition-all relative border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10 cursor-default`}
              >
-               <div className={`absolute top-3 right-3 ${userProfile?.plan === "premium" ? "text-amber-600" : "text-indigo-600"}`}>
+               <div className="absolute top-3 right-3 text-indigo-600">
                  <CheckCircle2 className="w-5 h-5" />
                </div>
-               <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Upgrade to {userProfile?.plan === "premium" ? "Enterprise" : "Premium"} Plan</span>
+               <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Upgrade to Premium Plan</span>
                <div className="mt-1 flex items-end gap-1">
-                 <span className={`text-2xl font-black tracking-tight ${userProfile?.plan === "premium" ? "text-amber-700" : "text-indigo-700"}`}>₱{userProfile?.plan === "premium" ? enterpriseFinalPrice.toLocaleString() : upgradeFinalPrice.toLocaleString()}</span>
+                 <span className="text-2xl font-black tracking-tight text-indigo-700">₱{upgradeFinalPrice.toLocaleString()}</span>
                  {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
                    null
                  )}
                </div>
                <ul className="mt-3 space-y-1.5">
-                 {renderFeatures(userProfile?.plan === "premium" ? pricingSettings.enterpriseFeatures : pricingSettings.upgradeFeatures, "text-slate-900")}
+                 {renderFeatures(pricingSettings.upgradeFeatures, "text-slate-900")}
                </ul>
              </button>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <button
                   onClick={() => setSelectedPlan('basic')}
                   className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
@@ -4866,9 +4721,9 @@ export default function PaymentScreen({
                   )}
                   <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Basic Plan</span>
                   <div className="mt-1 flex items-end gap-1 flex-wrap">
-                    <span className={`text-xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{basicFinalPrice.toLocaleString()}</span>
+                    <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{basicFinalPrice.toLocaleString()}</span>
                     {isOfferActive && pricingSettings.promoDiscountBasic > 0 && (
-                      <span className="text-[10px] text-red-500 font-bold line-through ml-1 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
+                      <span className="text-[11px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
                     )}
                   </div>
                   <ul className="mt-3 space-y-1.5 min-h-[60px]">
@@ -4894,41 +4749,13 @@ export default function PaymentScreen({
                   )}
                   <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Premium Plan</span>
                   <div className="mt-1 flex items-end gap-1 flex-wrap">
-                    <span className={`text-xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{premiumFinalPrice.toLocaleString()}</span>
+                    <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{premiumFinalPrice.toLocaleString()}</span>
                     {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
-                      <span className="text-[10px] text-red-500 font-bold line-through ml-1 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
+                      <span className="text-[11px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
                     )}
                   </div>
                   <ul className="mt-3 space-y-1.5 min-h-[60px]">
                     {renderFeatures(pricingSettings.premiumFeatures, "text-slate-900")}
-                  </ul>
-                </button>
-
-                <button
-                  onClick={() => setSelectedPlan('enterprise')}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
-                    selectedPlan === 'enterprise' 
-                    ? 'border-amber-500 bg-amber-50/50 scale-[1.02] shadow-md z-10' 
-                    : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
-                    Lifetime
-                  </div>
-                  {selectedPlan === 'enterprise' && (
-                    <div className="absolute top-3 right-3 text-amber-500">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                  )}
-                  <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Enterprise</span>
-                  <div className="mt-1 flex items-end gap-1 flex-wrap">
-                    <span className={`text-xl font-black tracking-tight ${selectedPlan === 'enterprise' ? 'text-amber-600' : 'text-slate-900'}`}>₱{enterpriseFinalPrice.toLocaleString()}</span>
-                    {isOfferActive && pricingSettings.promoDiscountEnterprise > 0 && (
-                      <span className="text-[10px] text-red-500 font-bold line-through ml-1 align-middle">₱{pricingSettings.enterprisePrice.toLocaleString()}</span>
-                    )}
-                  </div>
-                  <ul className="mt-3 space-y-1.5 min-h-[60px]">
-                    {renderFeatures(pricingSettings.enterpriseFeatures, "text-slate-900")}
                   </ul>
                 </button>
               </div>
@@ -5085,7 +4912,7 @@ export default function PaymentScreen({
                 <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
                     Please transfer exactly{" "}
-                    <strong className="text-slate-800">₱{(isUpgrade ? (userProfile?.plan === "premium" ? enterpriseFinalPrice : upgradeFinalPrice) : (selectedPlan === "enterprise" ? enterpriseFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice))).toLocaleString()}.00</strong> via
+                    <strong className="text-slate-800">₱{(isUpgrade ? upgradeFinalPrice : (selectedPlan === 'premium' ? premiumFinalPrice : basicFinalPrice)).toLocaleString()}.00</strong> via
                     Maya QR.
                   </span>
                 </div>
@@ -5202,7 +5029,7 @@ export default function PaymentScreen({
                 <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
                     Please transfer exactly{" "}
-                    <strong className="text-slate-800">₱{(isUpgrade ? (userProfile?.plan === "premium" ? enterpriseFinalPrice : upgradeFinalPrice) : (selectedPlan === "enterprise" ? enterpriseFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice))).toLocaleString()}.00</strong> via
+                    <strong className="text-slate-800">₱{(isUpgrade ? upgradeFinalPrice : (selectedPlan === 'premium' ? premiumFinalPrice : basicFinalPrice)).toLocaleString()}.00</strong> via
                     MariBank QR.
                   </span>
                 </div>
@@ -5338,7 +5165,7 @@ export default function PaymentScreen({
                 <div className="mt-3 flex items-center gap-1.5 text-center leading-relaxed">
                   <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
                     Please transfer exactly{" "}
-                    <strong className="text-slate-800">₱{(isUpgrade ? (userProfile?.plan === "premium" ? enterpriseFinalPrice : upgradeFinalPrice) : (selectedPlan === "enterprise" ? enterpriseFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice))).toLocaleString()}.00</strong> to the
+                    <strong className="text-slate-800">₱{(isUpgrade ? upgradeFinalPrice : (selectedPlan === 'premium' ? premiumFinalPrice : basicFinalPrice)).toLocaleString()}.00</strong> to the
                     GCash details above.
                   </span>
                 </div>
