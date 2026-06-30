@@ -10,6 +10,18 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [subEndedNotice, setSubEndedNotice] = useState(() => {
+    try {
+      const ended = localStorage.getItem("subscription_ended_logout");
+      if (ended === "true") {
+        localStorage.removeItem("subscription_ended_logout");
+        return "Your subscription has ended or expired. Please sign in to choose and purchase another subscription.";
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return "";
+  });
   const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -186,6 +198,13 @@ export default function LoginScreen() {
 
           <div className="bg-slate-900/40 p-6 sm:p-8 rounded-2xl border border-slate-800/60 shadow-2xl backdrop-blur-sm space-y-6">
             <form className="space-y-5" onSubmit={handleSubmit}>
+              {subEndedNotice && (
+                <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-200 font-medium leading-relaxed">{subEndedNotice}</p>
+                </div>
+              )}
+
               {error && (
                 <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />

@@ -168,19 +168,34 @@ export default function App() {
             const userIsActive = data.isActive === true;
             
             // Check expiration for basic, premium, and free trials
+            let isExpired = false;
             if ((plan === "basic" || plan === "premium" || plan === "free") && data.expiresAt) {
               const expires = new Date(data.expiresAt);
               if (new Date() >= expires) {
-                // Subscription/Trial has expired
-                setIsActive(false);
-                isActiveRef.current = false;
-                setUserPlan(plan);
-                setActivatedAt(data.activatedAt || null);
-                setExpiresAt(data.expiresAt);
-                setShowRenew(true); // Redirect to Subscription/Upgrade Page
-                setAuthLoading(false);
-                return;
+                isExpired = true;
               }
+            }
+
+            const isSubscriptionEnded = !userIsActive || isExpired;
+
+            if (isSubscriptionEnded) {
+              const previouslyActive = isActiveRef.current;
+              setIsActive(false);
+              isActiveRef.current = false;
+              setUserPlan(plan);
+              setActivatedAt(data.activatedAt || null);
+              setExpiresAt(data.expiresAt || null);
+              setShowRenew(true); // Redirect to Subscription/Upgrade Page
+              setAuthLoading(false);
+
+              if (previouslyActive && !isAdmin) {
+                signOut(auth).then(() => {
+                  localStorage.setItem("subscription_ended_logout", "true");
+                }).catch((err) => {
+                  console.error("Error logging out on snapshot subscription expiration:", err);
+                });
+              }
+              return;
             }
 
             setUserPlan(plan);
@@ -314,6 +329,13 @@ export default function App() {
         setIsActive(false);
         isActiveRef.current = false;
         setShowRenew(true);
+        if (!isAdmin) {
+          signOut(auth).then(() => {
+            localStorage.setItem("subscription_ended_logout", "true");
+          }).catch((err) => {
+            console.error("Error logging out on active subscription expiration:", err);
+          });
+        }
       }
     };
 
