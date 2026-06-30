@@ -253,7 +253,7 @@ const WireBundle = ({
           { id: "N", color: "bg-slate-300", size: mainPx },
           { id: "G", color: "bg-green-500", size: gPx },
         );
-      } else if (system.includes("4W")) {
+      } else if (system.includes("4W") || system.includes("5W")) {
         wires.push(
           { id: "L1", color: "bg-red-500", size: mainPx },
           { id: "L2", color: "bg-yellow-400", size: mainPx },
@@ -771,7 +771,7 @@ export default function LoadSchedule({
   ): string => {
     // poles is 1, 2, or 3
     let activePhaseCount = poles === 1 ? 2 : poles; // 1P branch has Phase + Neutral (2 wires)
-    if (poles === 3 && systemName.includes("4W")) {
+    if (poles === 3 && (systemName.includes("4W") || systemName.includes("5W"))) {
       activePhaseCount = 4; // 3 phases + 1 neutral (4 wires)
     }
 
@@ -1777,6 +1777,15 @@ export default function LoadSchedule({
               <optgroup label="Single-Phase (1PH) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
                 {Object.keys(SYSTEM_VOLTAGES)
                   .filter((s) => s.includes("1PH"))
+                  .map((s) => (
+                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                      {s}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Three-Phase, 5-Wire (3PH, 5W) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+                {Object.keys(SYSTEM_VOLTAGES)
+                  .filter((s) => s.includes("3PH") && s.includes("5W"))
                   .map((s) => (
                     <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
                       {s}

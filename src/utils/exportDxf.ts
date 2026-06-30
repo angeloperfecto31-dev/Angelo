@@ -329,7 +329,7 @@ const drawCadPanelSLD = (
   const is3Phase = panel.system.includes("3PH");
   const voltage = panel.voltage || 230;
   const phaseText = is3Phase ? "3-PH" : "1-PH";
-  const wireNumber = is3Phase ? (panel.system.includes("4W") ? 4 : 3) : 2;
+  const wireNumber = is3Phase ? ((panel.system.includes("4W") || panel.system.includes("5W")) ? 4 : 3) : 2;
 
   // 1. Source / Incoming feed terminal
   b.addLine(xBase, yBase, xBase, yBase - 15, "SLD_GEOMETRY");
@@ -1097,22 +1097,9 @@ export const exportToCAD = (
 
   const getRunsBySystemLocal = (system?: string): number => {
     if (!system) return 1;
-    if (system === "230V, 1PH, 2W") return 2;
-    if (
-      system === "230V, 3PH, 3W" ||
-      system === "380V, 3PH, 3W" ||
-      system === "400V, 3PH, 3W" ||
-      system === "440V, 3PH, 3W" ||
-      system === "480V, 3PH, 3W"
-    )
-      return 3;
-    if (
-      system === "380V/230V, 3PH, 4W" ||
-      system === "400V/230V, 3PH, 4W" ||
-      system === "440V/230V, 3PH, 4W" ||
-      system === "480V/230V, 3PH, 4W"
-    )
-      return 4;
+    if (system.includes("4W") || system.includes("5W")) return 4;
+    if (system.includes("3W")) return 3;
+    if (system.includes("2W") || system.includes("1PH")) return 2;
     return 1;
   };
 

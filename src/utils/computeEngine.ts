@@ -141,7 +141,7 @@ export const getConduitSizeForWiresLocal = (
   conduitType: string = "PVC",
 ): string => {
   let activePhaseCount = poles === 1 ? 2 : poles;
-  if (poles === 3 && systemName.includes("4W")) {
+  if (poles === 3 && (systemName.includes("4W") || systemName.includes("5W"))) {
     activePhaseCount = 4;
   }
 
@@ -228,8 +228,8 @@ export function parseSystemVoltage(sys: string | undefined | null): ParsedVoltag
     if (!isNaN(num)) {
       vll = num;
     }
-    // Automatically determine VN if 4W or 3W split
-    if (is3Phase && wireCount === 4) {
+    // Automatically determine VN if 4W, 5W or 3W split
+    if (is3Phase && (wireCount === 4 || wireCount === 5)) {
       vln = Math.round(vll / 1.732);
     } else if (!is3Phase && wireCount === 3) {
       vln = Math.round(vll / 2);

@@ -917,20 +917,9 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
   const getRunsBySystemLocal = (system?: string): number => {
     if (!system) return 1;
-    if (system === '230V, 1PH, 2W') return 2;
-    if (
-      system === '230V, 3PH, 3W' ||
-      system === '380V, 3PH, 3W' ||
-      system === '400V, 3PH, 3W' ||
-      system === '440V, 3PH, 3W' ||
-      system === '480V, 3PH, 3W'
-    ) return 3;
-    if (
-      system === '380V/230V, 3PH, 4W' ||
-      system === '400V/230V, 3PH, 4W' ||
-      system === '440V/230V, 3PH, 4W' ||
-      system === '480V/230V, 3PH, 4W'
-    ) return 4;
+    if (system.includes("4W") || system.includes("5W")) return 4;
+    if (system.includes("3W")) return 3;
+    if (system.includes("2W") || system.includes("1PH")) return 2;
     return 1;
   };
 
