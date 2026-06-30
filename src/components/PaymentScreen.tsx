@@ -979,6 +979,7 @@ export default function PaymentScreen({
           plan: isUpgrade ? "premium" : selectedPlan,
           submittedAt: new Date().toISOString(),
           isUpgrade: isUpgrade, // Keep a record if this was an upgrade explicitly
+          isRenewal: isRenewal, // Notify admin that this is a renewal
         },
       };
 
@@ -4176,7 +4177,7 @@ export default function PaymentScreen({
                               ) : isPending ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200/50 shadow-sm animate-pulse">
                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                  Pending Review
+                                  {u.pendingVerification?.isRenewal ? "Pending Renewal" : "Pending Review"}
                                 </span>
                               ) : u.paymentStatus === "flagged_discrepancy" ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-250 shadow-sm animate-pulse font-extrabold">
@@ -4443,7 +4444,7 @@ export default function PaymentScreen({
                               </span>
                             ) : isPending ? (
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-100 animate-pulse">
-                                PENDING
+                                {u.pendingVerification?.isRenewal ? "RENEWAL" : "PENDING"}
                               </span>
                             ) : u.paymentStatus === "flagged_discrepancy" ? (
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-100 animate-pulse font-extrabold">
