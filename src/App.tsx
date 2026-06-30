@@ -2889,8 +2889,70 @@ export default function App() {
         </div>
 
         {/* Bottom Actions, Upgrade, and Profile Card */}
-        <div className="p-3 border-t border-slate-800/60 bg-slate-950/60 space-y-2 shrink-0">
+        <div className="p-3 border-t border-slate-800/60 bg-slate-950/60 space-y-3 shrink-0">
           
+          {/* Active Subscription Countdown Card */}
+          {!isSidebarCollapsed && isActive && expiresAt && (userPlan === "basic" || userPlan === "premium") && (
+            <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    SUBSCRIPTION
+                  </span>
+                </div>
+                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                  userPlan === "premium" 
+                    ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" 
+                    : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                }`}>
+                  {userPlan}
+                </span>
+              </div>
+              
+              {(() => {
+                const daysLeft = Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
+                return (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-end">
+                      <span className="text-base font-black text-white font-mono tracking-tight leading-none">
+                        {Math.max(0, daysLeft)} <span className="text-[10px] text-slate-400 font-normal">Days Left</span>
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-500 font-mono">
+                        {Math.round(percent)}%
+                      </span>
+                    </div>
+                    
+                    {/* Custom progress bar */}
+                    <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800/30">
+                      <div 
+                        className={`h-full transition-all duration-500 rounded-full ${
+                          daysLeft <= 3 
+                            ? "bg-gradient-to-r from-rose-500 to-red-500 animate-pulse" 
+                            : daysLeft <= 7
+                              ? "bg-gradient-to-r from-amber-500 to-orange-500"
+                              : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                        }`}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5">
+                      <span>30-Day Cycle</span>
+                      <button 
+                        onClick={() => setShowRenew(true)}
+                        className="font-black text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
+                      >
+                        Renew Plan
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {/* Action CTAs Area */}
           <div className="space-y-1.5">
             {/* Upgrade to Premium */}
@@ -3248,32 +3310,130 @@ export default function App() {
             {(() => {
               if (isActive && expiresAt && (userPlan === "basic" || userPlan === "premium")) {
                 const daysLeft = Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                if (daysLeft <= 7 && daysLeft > 0) {
+                const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
+                
+                if (daysLeft <= 0) {
                   return (
-                    <div className={`w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm ${
-                      daysLeft <= 3 ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200"
-                    }`}>
+                    <div className="w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30">
                       <div className="flex items-center gap-3">
-                        <AlertTriangle className={`w-5 h-5 ${daysLeft <= 3 ? "text-rose-600" : "text-amber-600"}`} />
+                        <AlertTriangle className="w-5 h-5 text-rose-600" />
                         <div>
-                          <p className={`text-sm font-bold ${daysLeft <= 3 ? "text-rose-800" : "text-amber-800"}`}>
-                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription expires in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                          <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
+                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription has expired!
                           </p>
-                          <p className={`text-xs ${daysLeft <= 3 ? "text-rose-600" : "text-amber-600"}`}>
-                            Renew now to keep uninterrupted access to your tools and blueprints.
+                          <p className="text-xs text-rose-600 dark:text-rose-400">
+                            Renew your subscription to regain access to premium features and exports.
                           </p>
                         </div>
                       </div>
                       <button
                         onClick={() => setShowRenew(true)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
-                          daysLeft <= 3 
-                            ? "bg-rose-600 hover:bg-rose-500 text-white" 
-                            : "bg-amber-500 hover:bg-amber-400 text-slate-900"
-                        }`}
+                        className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                       >
                         Renew Plan
                       </button>
+                    </div>
+                  );
+                } else if (daysLeft <= 3) {
+                  return (
+                    <div className="w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30">
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse animate-bounce" />
+                        <div>
+                          <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
+                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription expires in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                          </p>
+                          <p className="text-xs text-rose-600 dark:text-rose-400">
+                            Critical countdown: Renew immediately to avoid interruption.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="hidden sm:flex flex-col items-end text-right font-mono">
+                          <span className="text-xxs text-rose-400 font-bold uppercase">Time Remaining</span>
+                          <span className="text-sm font-bold text-rose-600 dark:text-rose-400">{daysLeft}d / 30d</span>
+                        </div>
+                        <button
+                          onClick={() => setShowRenew(true)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
+                        >
+                          Renew Plan
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else if (daysLeft <= 7) {
+                  return (
+                    <div className="w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30">
+                      <div className="flex items-center gap-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-600" />
+                        <div>
+                          <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
+                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription expires in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                          </p>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            Renew now to keep uninterrupted access to your engineering tools.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="hidden sm:flex flex-col items-end text-right font-mono">
+                          <span className="text-xxs text-amber-400 font-bold uppercase">Time Remaining</span>
+                          <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{daysLeft}d / 30d</span>
+                        </div>
+                        <button
+                          onClick={() => setShowRenew(true)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-amber-500 hover:bg-amber-400 text-slate-900 cursor-pointer"
+                        >
+                          Renew Plan
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="w-full p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between border shadow-sm bg-white dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/80 gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0">
+                          <Zap className="w-5 h-5 fill-emerald-500 text-emerald-500" />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                            Active {userPlan === "basic" ? "Basic" : "Premium"} Plan 
+                            <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2.5 py-0.5 rounded-full font-black uppercase border border-emerald-500/20">
+                              Active
+                            </span>
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span>You have <strong>{daysLeft} days left</strong> in your current cycle.</span>
+                            <span className="text-slate-300 dark:text-slate-700">•</span>
+                            <span className="font-mono text-[10px]">Expires: {new Date(expiresAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-4 w-full sm:w-auto max-w-xs shrink-0 self-end sm:self-center">
+                        {/* Countdown progress bar */}
+                        <div className="flex-1 space-y-1 min-w-[120px]">
+                          <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
+                            <span>DAYS REMAINING</span>
+                            <span>{daysLeft}d / 30d</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden border border-slate-200/30 dark:border-slate-750">
+                            <div 
+                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setShowRenew(true)}
+                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-extrabold transition-all duration-200 shadow-sm whitespace-nowrap cursor-pointer"
+                        >
+                          Renew Plan
+                        </button>
+                      </div>
                     </div>
                   );
                 }
