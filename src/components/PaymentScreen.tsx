@@ -236,6 +236,8 @@ export default function PaymentScreen({
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
 
   useEffect(() => {
+    if (forceAdmin) return;
+
     // Listen to real-time changes in the user's Firestore document
     const unsubscribe = onSnapshot(
       doc(db, "users", user.uid),
