@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
@@ -162,21 +162,22 @@ export default function App() {
       unsubscribe = onSnapshot(
         doc(db, "users", user.uid),
         (docSnap) => {
-          if (docSnap.exists() && docSnap.data().isActive === true) {
+          if (docSnap.exists()) {
             const data = docSnap.data();
-            const plan = data.plan || "premium";
+            const plan = data.plan || "free";
+            const userIsActive = data.isActive === true;
             
-            // Check expiration
-            if ((plan === "basic" || plan === "premium") && data.expiresAt) {
+            // Check expiration for basic, premium, and free trials
+            if ((plan === "basic" || plan === "premium" || plan === "free") && data.expiresAt) {
               const expires = new Date(data.expiresAt);
               if (new Date() >= expires) {
-                // Subscription has expired
+                // Subscription/Trial has expired
                 setIsActive(false);
                 isActiveRef.current = false;
                 setUserPlan(plan);
                 setActivatedAt(data.activatedAt || null);
                 setExpiresAt(data.expiresAt);
-                setShowRenew(true); // Redirect to Subscription Page
+                setShowRenew(true); // Redirect to Subscription/Upgrade Page
                 setAuthLoading(false);
                 return;
               }
@@ -185,14 +186,39 @@ export default function App() {
             setUserPlan(plan);
             setActivatedAt(data.activatedAt || null);
             setExpiresAt(data.expiresAt || null);
+            setIsActive(userIsActive);
+            isActiveRef.current = userIsActive;
+          } else {
+            // Profile does not exist, automatically provision a 30-Day Free Trial
+            const now = new Date();
+            const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            
+            const initialUserData = {
+              uid: user.uid,
+              email: user.email,
+              displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
+              plan: "free",
+              isActive: true,
+              activatedAt: now.toISOString(),
+              expiresAt: thirtyDaysFromNow.toISOString(),
+              createdAt: now.toISOString(),
+              paymentStatus: "free_trial"
+            };
+
+            setDoc(doc(db, "users", user.uid), initialUserData)
+              .then(() => {
+                console.log("Successfully initialized user profile in Firestore.");
+              })
+              .catch((err) => {
+                console.error("Error creating initial user profile:", err);
+              });
+
+            // Optimistically update local state so they don't have to wait for the next snapshot
+            setUserPlan("free");
+            setActivatedAt(now.toISOString());
+            setExpiresAt(thirtyDaysFromNow.toISOString());
             setIsActive(true);
             isActiveRef.current = true;
-          } else {
-            setIsActive(false);
-            isActiveRef.current = false;
-            setUserPlan(docSnap.data()?.plan || null);
-            setActivatedAt(null);
-            setExpiresAt(null);
           }
           initialLoad = false;
           setAuthLoading(false);
@@ -233,7 +259,7 @@ export default function App() {
 
   // Periodic expiration check
   useEffect(() => {
-    if (!isActive || !expiresAt || (userPlan !== "basic" && userPlan !== "premium")) return;
+    if (!isActive || !expiresAt || (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")) return;
 
     const checkExpiration = () => {
       const expires = new Date(expiresAt);
@@ -252,7 +278,7 @@ export default function App() {
 
   // Real-time countdown timer effect
   useEffect(() => {
-    if (!expiresAt || !isActive || (userPlan !== "basic" && userPlan !== "premium")) {
+    if (!expiresAt || !isActive || (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")) {
       setCountdownTime(null);
       return;
     }
@@ -2929,21 +2955,23 @@ export default function App() {
         <div className="p-3 border-t border-slate-800/60 bg-slate-950/60 space-y-3 shrink-0">
           
           {/* Active Subscription Countdown Card */}
-          {!isSidebarCollapsed && isActive && expiresAt && (userPlan === "basic" || userPlan === "premium") && (
+          {!isSidebarCollapsed && isActive && expiresAt && (userPlan === "basic" || userPlan === "premium" || userPlan === "free") && (
             <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-indigo-400" />
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                    SUBSCRIPTION
+                    {userPlan === "free" ? "Free Trial" : "SUBSCRIPTION"}
                   </span>
                 </div>
                 <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
                   userPlan === "premium" 
                     ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" 
-                    : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                    : userPlan === "basic"
+                      ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                      : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                 }`}>
-                  {userPlan}
+                  {userPlan === "free" ? "Trial" : userPlan}
                 </span>
               </div>
               
@@ -2990,10 +3018,16 @@ export default function App() {
                     <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5">
                       <span>30-Day Cycle</span>
                       <button 
-                        onClick={() => setShowRenew(true)}
+                        onClick={() => {
+                          if (userPlan === "free") {
+                            setShowUpgrade(true);
+                          } else {
+                            setShowRenew(true);
+                          }
+                        }}
                         className="font-black text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
                       >
-                        Renew Plan
+                        {userPlan === "free" ? "Upgrade Plan" : "Renew Plan"}
                       </button>
                     </div>
                   </div>
@@ -3170,10 +3204,10 @@ export default function App() {
                         </span>
                         
                         {/* Remaining Days indicator */}
-                        {!isAdmin && (userPlan === "basic" || userPlan === "premium") && expiresAt && (
+                        {(userPlan === "basic" || userPlan === "premium" || userPlan === "free") && expiresAt && (
                           <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
                             Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
-                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20" 
+                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse" 
                               : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
                                 ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                 : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
@@ -3193,7 +3227,7 @@ export default function App() {
                       <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">QUICK METERS</p>
                       <p className="text-xs font-extrabold text-slate-200 mt-0.5 truncate">{user.displayName || "User Profile"}</p>
                       
-                      {!isAdmin && (userPlan === "basic" || userPlan === "premium") && expiresAt && (
+                      {(userPlan === "basic" || userPlan === "premium" || userPlan === "free") && expiresAt && (
                         <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
                           <div className="flex justify-between items-center mb-1">
                             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Time Remaining</span>
@@ -3289,9 +3323,15 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1">
-            {isActive && countdownTime && (userPlan === "basic" || userPlan === "premium") && (
+            {isActive && countdownTime && (userPlan === "basic" || userPlan === "premium" || userPlan === "free") && (
               <div 
-                onClick={() => setShowRenew(true)}
+                onClick={() => {
+                  if (userPlan === "free") {
+                    setShowUpgrade(true);
+                  } else {
+                    setShowRenew(true);
+                  }
+                }}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black font-mono border cursor-pointer select-none transition-all mr-1.5 ${
                   countdownTime.days <= 3 
                     ? "bg-rose-500/10 text-rose-650 dark:text-rose-400 border-rose-500/25 animate-pulse" 
@@ -3299,7 +3339,7 @@ export default function App() {
                       ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/25"
                       : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 border-emerald-500/25"
                 }`}
-                title={`Subscription expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
               >
                 <Clock className="w-3 h-3" />
                 <span>
@@ -3318,6 +3358,65 @@ export default function App() {
               title={
                 isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"
               }
+            >
+              {isDarkMode ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-slate-500" />
+              )}
+            </button>
+          </div>
+        </header>
+
+        {/* Desktop Navbar / Top Bar */}
+        <header className="hidden md:flex h-14 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800/80 items-center justify-between px-6 shrink-0 z-20 shadow-sm no-print">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">
+              SYSTEM STATION
+            </span>
+            <span className="text-slate-350 dark:text-slate-700 font-normal">•</span>
+            <span className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md">
+              {tabs.find(t => t.id === activeTab)?.label || "Dashboard"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {isActive && countdownTime && (userPlan === "basic" || userPlan === "premium" || userPlan === "free") && (
+              <div 
+                onClick={() => {
+                  if (userPlan === "free") {
+                    setShowUpgrade(true);
+                  } else {
+                    setShowRenew(true);
+                  }
+                }}
+                className={`flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-black font-mono border cursor-pointer select-none transition-all hover:scale-102 ${
+                  countdownTime.days <= 3 
+                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 shadow-sm shadow-rose-500/5 animate-pulse" 
+                    : countdownTime.days <= 7
+                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 shadow-sm"
+                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm"
+                }`}
+                title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+              >
+                <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                <span className="text-slate-500 dark:text-slate-400 font-bold tracking-normal mr-0.5">
+                  {userPlan === "free" ? "Trial Time Left:" : "Access Time Left:"}
+                </span>
+                <span className="tracking-tight text-slate-900 dark:text-white">
+                  {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
+                  {String(countdownTime.hours).padStart(2, "0")}:
+                  {String(countdownTime.minutes).padStart(2, "0")}:
+                  {String(countdownTime.seconds).padStart(2, "0")}
+                </span>
+              </div>
+            )}
+
+            {/* Desktop Theme Toggle */}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
             >
               {isDarkMode ? (
                 <Sun className="w-4 h-4 text-amber-400" />
@@ -3379,9 +3478,11 @@ export default function App() {
             
             {/* Expiration Notification Banner */}
             {(() => {
-              if (isActive && expiresAt && (userPlan === "basic" || userPlan === "premium")) {
+              if (isActive && expiresAt && (userPlan === "basic" || userPlan === "premium" || userPlan === "free")) {
                 const daysLeft = countdownTime ? countdownTime.days : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                 const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
+                const planName = userPlan === "free" ? "Free Trial" : userPlan === "basic" ? "Basic" : "Premium";
+                const isTrial = userPlan === "free";
                 
                 if (daysLeft <= 0) {
                   return (
@@ -3390,18 +3491,18 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse" />
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
-                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription has expired!
+                            Your {planName} {isTrial ? "has ended" : "has expired"}!
                           </p>
                           <p className="text-xs text-rose-600 dark:text-rose-400">
-                            Renew your subscription to regain access to premium features and exports.
+                            {isTrial ? "Upgrade to a premium plan to continue using professional electrical calculation engines." : "Renew your subscription to regain access to premium features and exports."}
                           </p>
                         </div>
                       </div>
                       <button
-                        onClick={() => setShowRenew(true)}
+                        onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
                         className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                       >
-                        Renew Plan
+                        {isTrial ? "Upgrade Now" : "Renew Plan"}
                       </button>
                     </div>
                   );
@@ -3412,10 +3513,10 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse animate-bounce" />
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
-                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription expires in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                            Your {planName} {isTrial ? "ends" : "expires"} in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
                           </p>
                           <p className="text-xs text-rose-600 dark:text-rose-400">
-                            Critical countdown: Renew immediately to avoid interruption.
+                            Critical countdown: {isTrial ? "Upgrade to a premium plan to avoid losing workspace access." : "Renew immediately to avoid interruption."}
                           </p>
                         </div>
                       </div>
@@ -3437,10 +3538,10 @@ export default function App() {
                           )}
                         </div>
                         <button
-                          onClick={() => setShowRenew(true)}
+                          onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
                           className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                         >
-                          Renew Plan
+                          {isTrial ? "Upgrade Now" : "Renew Plan"}
                         </button>
                       </div>
                     </div>
@@ -3452,10 +3553,10 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-amber-600" />
                         <div>
                           <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                            Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription expires in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                            Your {planName} {isTrial ? "ends" : "expires"} in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
                           </p>
                           <p className="text-xs text-amber-600 dark:text-amber-400">
-                            Renew now to keep uninterrupted access to your engineering tools.
+                            {isTrial ? "Upgrade now to keep uninterrupted access to your professional suite." : "Renew now to keep uninterrupted access to your engineering tools."}
                           </p>
                         </div>
                       </div>
@@ -3477,10 +3578,10 @@ export default function App() {
                           )}
                         </div>
                         <button
-                          onClick={() => setShowRenew(true)}
+                          onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
                           className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-amber-500 hover:bg-amber-400 text-slate-900 cursor-pointer"
                         >
-                          Renew Plan
+                          {isTrial ? "Upgrade Now" : "Renew Plan"}
                         </button>
                       </div>
                     </div>
@@ -3494,7 +3595,7 @@ export default function App() {
                         </div>
                         <div className="space-y-0.5 animate-fade-in">
                           <p className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                            Active {userPlan === "basic" ? "Basic" : "Premium"} Plan 
+                            Active {planName} {isTrial ? "Trial" : "Plan"}
                             <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2.5 py-0.5 rounded-full font-black uppercase border border-emerald-500/20">
                               Active
                             </span>
@@ -3502,7 +3603,7 @@ export default function App() {
                           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                             {countdownTime ? (
                               <span className="flex items-center gap-1">
-                                <span>Remaining Access Time:</span>
+                                <span>{isTrial ? "Remaining Trial Access Time:" : "Remaining Access Time:"}</span>
                                 <strong className="font-mono text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-0.5 text-xxs">
                                   <span>{countdownTime.days}d</span>
                                   <span className="animate-pulse">:</span>
@@ -3517,7 +3618,7 @@ export default function App() {
                               <span>You have <strong>{daysLeft} days left</strong> in your current cycle.</span>
                             )}
                             <span className="text-slate-300 dark:text-slate-700">•</span>
-                            <span className="font-mono text-[10px]">Expires: {new Date(expiresAt).toLocaleDateString()}</span>
+                            <span className="font-mono text-[10px]">{isTrial ? "Trial Ends:" : "Expires:"} {new Date(expiresAt).toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
@@ -3526,7 +3627,7 @@ export default function App() {
                         {/* Countdown progress bar */}
                         <div className="flex-1 space-y-1 min-w-[120px]">
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
-                            <span>DAYS REMAINING</span>
+                            <span>{isTrial ? "TRIAL DAYS REMAINING" : "DAYS REMAINING"}</span>
                             {countdownTime ? (
                               <span>{countdownTime.days}d {String(countdownTime.hours).padStart(2, "0")}h</span>
                             ) : (
@@ -3535,17 +3636,23 @@ export default function App() {
                           </div>
                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden border border-slate-200/30 dark:border-slate-750">
                             <div 
-                              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-500"
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isTrial ? "bg-gradient-to-r from-amber-500 to-yellow-500" : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                              }`}
                               style={{ width: `${percent}%` }}
                             />
                           </div>
                         </div>
 
                         <button
-                          onClick={() => setShowRenew(true)}
-                          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-extrabold transition-all duration-200 shadow-sm whitespace-nowrap cursor-pointer"
+                          onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
+                          className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all duration-200 shadow-sm whitespace-nowrap cursor-pointer active:scale-98 ${
+                            isTrial 
+                              ? "bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950" 
+                              : "bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900"
+                          }`}
                         >
-                          Renew Plan
+                          {isTrial ? "Upgrade Now" : "Renew Plan"}
                         </button>
                       </div>
                     </div>

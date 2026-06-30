@@ -42,7 +42,7 @@ export default function SubscriptionManager() {
     setTargetUsers([u]);
     setEditPlan(u.plan || u.plan_name || (u.isActive ? "premium" : "basic"));
     setEditStatus(u.status || (u.isActive ? "Active" : "Expired"));
-    setEditExpiresAt(u.expires_at || "");
+    setEditExpiresAt(u.expiresAt || u.expires_at || "");
     setEditIsLifetime(u.is_lifetime || false);
     setMessage("");
   };
@@ -77,6 +77,7 @@ export default function SubscriptionManager() {
       is_lifetime: editIsLifetime,
       status: editStatus,
       expires_at: editIsLifetime ? null : (editExpiresAt || null),
+      expiresAt: editIsLifetime ? null : (editExpiresAt || null),
       upgraded_by_admin: true,
       last_modified_by: "Admin",
       modified_at: new Date().toISOString(),
@@ -253,7 +254,7 @@ export default function SubscriptionManager() {
                   </span>
                 </td>
                 <td className="py-3 px-4 text-sm text-slate-600">
-                  {u.is_lifetime ? "Never Expires" : (u.expires_at ? new Date(u.expires_at).toLocaleDateString() : "N/A")}
+                  {u.is_lifetime ? "Never Expires" : ((u.expiresAt || u.expires_at) ? new Date(u.expiresAt || u.expires_at).toLocaleDateString() : "N/A")}
                 </td>
                 <td className="py-3 px-4 text-right">
                   <button

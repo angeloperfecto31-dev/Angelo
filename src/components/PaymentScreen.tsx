@@ -1021,6 +1021,12 @@ export default function PaymentScreen({
           isActive: true,
           paymentStatus: "paid",
           plan: plan,
+          plan_name: plan,
+          status: "Active",
+          expiresAt: expiresAt,
+          expires_at: expiresAt,
+          is_lifetime: plan === "enterprise",
+          subscription_type: plan === "enterprise" ? "Lifetime" : "Standard",
           amount: actualPaid,
           paymentSource: "PAYMONGO CHECKOUT (RESOLVED)",
           paymentReference: `RECON-${discrepancyId.substring(0, 8).toUpperCase()}`,
@@ -1030,7 +1036,6 @@ export default function PaymentScreen({
           approvedBy: user?.email || "Admin (Reconciliation)",
           approvedAt: activatedAt,
           activatedAt: activatedAt,
-          expiresAt: expiresAt,
         },
         { merge: true },
       );
@@ -1101,6 +1106,12 @@ export default function PaymentScreen({
           isActive: true,
           paymentStatus: "paid",
           plan: planToSet,
+          plan_name: planToSet,
+          status: "Active",
+          expiresAt: expiresAt,
+          expires_at: expiresAt,
+          is_lifetime: planToSet === "enterprise",
+          subscription_type: planToSet === "enterprise" ? "Lifetime" : "Standard",
           amount: amountVal,
           paymentSource: paymentSourceVal,
           paymentReference: paymentReferenceVal,
@@ -1110,7 +1121,6 @@ export default function PaymentScreen({
           approvedBy: user.email,
           approvedAt: activatedAt,
           activatedAt: activatedAt,
-          expiresAt: expiresAt,
         },
         { merge: true },
       );
@@ -1225,7 +1235,18 @@ export default function PaymentScreen({
         {
           isActive: nextActive,
           paymentStatus: nextActive ? "paid" : "unpaid",
-          ...(nextActive ? { activatedAt: activatedAt, expiresAt: expiresAt } : {})
+          status: nextActive ? "Active" : "Expired",
+          ...(nextActive ? { 
+            activatedAt: activatedAt, 
+            expiresAt: expiresAt, 
+            expires_at: expiresAt,
+            plan_name: plan,
+            is_lifetime: plan === "enterprise",
+            subscription_type: plan === "enterprise" ? "Lifetime" : "Standard"
+          } : {
+            expiresAt: null,
+            expires_at: null
+          })
         },
         { merge: true },
       );
@@ -1314,8 +1335,13 @@ export default function PaymentScreen({
         doc(db, "users", manageSubAction.uid),
         {
           plan: manageSubAction.plan,
+          plan_name: manageSubAction.plan,
           expiresAt: manageSubAction.expiresAt || null,
+          expires_at: manageSubAction.expiresAt || null,
           isActive: manageSubAction.isActive,
+          status: manageSubAction.isActive ? "Active" : "Expired",
+          is_lifetime: manageSubAction.plan === "enterprise",
+          subscription_type: manageSubAction.plan === "enterprise" ? "Lifetime" : "Standard",
           paymentStatus: manageSubAction.isActive ? "paid" : "unpaid"
         },
         { merge: true }
