@@ -171,6 +171,7 @@ export default function PaymentScreen({
   const [adminEnableMaya, setAdminEnableMaya] = useState<boolean>(true);
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
+  const hasSelectedInitialPlan = useRef(false);
 
   // Helper calculations for dynamic values
   const offerExpiryDate = (pricingSettings.offerExpiry && pricingSettings.offerExpiry.trim() !== "" && !isNaN(new Date(pricingSettings.offerExpiry).getTime())) 
@@ -239,6 +240,13 @@ export default function PaymentScreen({
         if (docSnap.exists()) {
           const data = docSnap.data();
           setUserProfile(data);
+          
+          // Pre-select the user's current plan on initial load so they can choose what subscription to renew
+          if (!hasSelectedInitialPlan.current && data.plan && (data.plan === "basic" || data.plan === "premium" || data.plan === "enterprise")) {
+            setSelectedPlan(data.plan);
+            hasSelectedInitialPlan.current = true;
+          }
+
           if (isUpgrade) {
             if (data.plan === "premium") {
               setSuccess(true);
@@ -4780,7 +4788,7 @@ export default function PaymentScreen({
           </div>
         )}
         <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center mb-6 relative">
-          {isUpgrade && onClose && (
+          {onClose && (
             <button onClick={onClose} className="absolute -top-4 right-0 p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full">
               <X className="w-5 h-5" />
             </button>
@@ -4962,7 +4970,7 @@ export default function PaymentScreen({
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-lg px-4 relative">
-        {isUpgrade && onClose && (
+        {onClose && (
           <button onClick={onClose} className="absolute -top-12 right-4 p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full shadow-sm">
             <X className="w-5 h-5" />
           </button>
