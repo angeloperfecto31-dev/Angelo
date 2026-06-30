@@ -179,7 +179,7 @@ export default function App() {
             const isSubscriptionEnded = !userIsActive || isExpired;
 
             if (isSubscriptionEnded) {
-              const previouslyActive = isActiveRef.current;
+              const justLoggedIn = sessionStorage.getItem('just_logged_in') === 'true';
               setIsActive(false);
               isActiveRef.current = false;
               setUserPlan(plan);
@@ -188,14 +188,18 @@ export default function App() {
               setShowRenew(true); // Redirect to Subscription/Upgrade Page
               setAuthLoading(false);
 
-              if (previouslyActive && !isAdmin) {
+              if (!justLoggedIn && !isAdmin) {
                 signOut(auth).then(() => {
                   localStorage.setItem("subscription_ended_logout", "true");
                 }).catch((err) => {
                   console.error("Error logging out on snapshot subscription expiration:", err);
                 });
+              } else {
+                sessionStorage.removeItem('just_logged_in');
               }
               return;
+            } else {
+              sessionStorage.removeItem('just_logged_in');
             }
 
             setUserPlan(plan);
