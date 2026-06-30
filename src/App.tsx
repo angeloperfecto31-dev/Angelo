@@ -18,6 +18,7 @@ import {
   Moon,
   FolderOpen,
   Calculator,
+  Clock,
   Receipt,
   Hammer,
   Cpu,
@@ -119,6 +120,13 @@ export default function App() {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [isAccountSettingsOpen, setIsAccountSettingsOpen] = useState(false);
+  const [countdownTime, setCountdownTime] = useState<{
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+    totalMs: number;
+  } | null>(null);
 
   const isAdmin =
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
@@ -241,6 +249,35 @@ export default function App() {
     const intervalId = setInterval(checkExpiration, 60000);
     return () => clearInterval(intervalId);
   }, [isActive, expiresAt, userPlan]);
+
+  // Real-time countdown timer effect
+  useEffect(() => {
+    if (!expiresAt || !isActive || (userPlan !== "basic" && userPlan !== "premium")) {
+      setCountdownTime(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const target = new Date(expiresAt).getTime();
+      const now = new Date().getTime();
+      const diff = target - now;
+      if (diff <= 0) {
+        setCountdownTime({ days: 0, hours: 0, minutes: 0, seconds: 0, totalMs: 0 });
+        return;
+      }
+      
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      setCountdownTime({ days, hours, minutes, seconds, totalMs: diff });
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAt, isActive, userPlan]);
 
   const [activeTab, setActiveTab] = useState<
     | "dashboard"
@@ -2911,13 +2948,25 @@ export default function App() {
               </div>
               
               {(() => {
-                const daysLeft = Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                const daysLeft = countdownTime ? countdownTime.days : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                 const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
                 return (
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-end">
                       <span className="text-base font-black text-white font-mono tracking-tight leading-none">
-                        {Math.max(0, daysLeft)} <span className="text-[10px] text-slate-400 font-normal">Days Left</span>
+                        {countdownTime ? (
+                          <span className="flex items-center gap-0.5 text-xs">
+                            <span className="text-white font-bold">{countdownTime.days}d</span>
+                            <span className="text-slate-600 font-normal">:</span>
+                            <span className="text-indigo-300 font-bold">{String(countdownTime.hours).padStart(2, "0")}h</span>
+                            <span className="text-slate-600 font-normal">:</span>
+                            <span className="text-indigo-300 font-bold">{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                            <span className="text-slate-600 font-normal">:</span>
+                            <span className="text-rose-450 font-bold">{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                          </span>
+                        ) : (
+                          <span>{Math.max(0, daysLeft)} <span className="text-[10px] text-slate-400 font-normal">Days Left</span></span>
+                        )}
                       </span>
                       <span className="text-[9px] font-bold text-slate-500 font-mono">
                         {Math.round(percent)}%
@@ -3240,6 +3289,28 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1">
+            {isActive && countdownTime && (userPlan === "basic" || userPlan === "premium") && (
+              <div 
+                onClick={() => setShowRenew(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black font-mono border cursor-pointer select-none transition-all mr-1.5 ${
+                  countdownTime.days <= 3 
+                    ? "bg-rose-500/10 text-rose-650 dark:text-rose-400 border-rose-500/25 animate-pulse" 
+                    : countdownTime.days <= 7
+                      ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/25"
+                      : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 border-emerald-500/25"
+                }`}
+                title={`Subscription expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+              >
+                <Clock className="w-3 h-3" />
+                <span>
+                  {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
+                  {String(countdownTime.hours).padStart(2, "0")}:
+                  {String(countdownTime.minutes).padStart(2, "0")}:
+                  {String(countdownTime.seconds).padStart(2, "0")}
+                </span>
+              </div>
+            )}
+
             {/* Mobile Theme Toggle Button */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
@@ -3309,14 +3380,14 @@ export default function App() {
             {/* Expiration Notification Banner */}
             {(() => {
               if (isActive && expiresAt && (userPlan === "basic" || userPlan === "premium")) {
-                const daysLeft = Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                const daysLeft = countdownTime ? countdownTime.days : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                 const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
                 
                 if (daysLeft <= 0) {
                   return (
                     <div className="w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30">
                       <div className="flex items-center gap-3">
-                        <AlertTriangle className="w-5 h-5 text-rose-600" />
+                        <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse" />
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
                             Your {userPlan === "basic" ? "Basic" : "Premium"} Subscription has expired!
@@ -3351,7 +3422,19 @@ export default function App() {
                       <div className="flex items-center gap-4">
                         <div className="hidden sm:flex flex-col items-end text-right font-mono">
                           <span className="text-xxs text-rose-400 font-bold uppercase">Time Remaining</span>
-                          <span className="text-sm font-bold text-rose-600 dark:text-rose-400">{daysLeft}d / 30d</span>
+                          {countdownTime ? (
+                            <span className="text-sm font-black text-rose-600 dark:text-rose-450 flex items-center gap-1">
+                              <span>{countdownTime.days}d</span>
+                              <span className="animate-pulse">:</span>
+                              <span>{String(countdownTime.hours).padStart(2, "0")}h</span>
+                              <span className="animate-pulse">:</span>
+                              <span>{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                              <span className="animate-pulse">:</span>
+                              <span>{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold text-rose-600 dark:text-rose-400">{daysLeft}d / 30d</span>
+                          )}
                         </div>
                         <button
                           onClick={() => setShowRenew(true)}
@@ -3379,7 +3462,19 @@ export default function App() {
                       <div className="flex items-center gap-4">
                         <div className="hidden sm:flex flex-col items-end text-right font-mono">
                           <span className="text-xxs text-amber-400 font-bold uppercase">Time Remaining</span>
-                          <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{daysLeft}d / 30d</span>
+                          {countdownTime ? (
+                            <span className="text-sm font-black text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                              <span>{countdownTime.days}d</span>
+                              <span className="animate-pulse">:</span>
+                              <span>{String(countdownTime.hours).padStart(2, "0")}h</span>
+                              <span className="animate-pulse">:</span>
+                              <span>{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                              <span className="animate-pulse">:</span>
+                              <span>{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                            </span>
+                          ) : (
+                            <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{daysLeft}d / 30d</span>
+                          )}
                         </div>
                         <button
                           onClick={() => setShowRenew(true)}
@@ -3397,7 +3492,7 @@ export default function App() {
                         <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shrink-0">
                           <Zap className="w-5 h-5 fill-emerald-500 text-emerald-500" />
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-0.5 animate-fade-in">
                           <p className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
                             Active {userPlan === "basic" ? "Basic" : "Premium"} Plan 
                             <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2.5 py-0.5 rounded-full font-black uppercase border border-emerald-500/20">
@@ -3405,7 +3500,22 @@ export default function App() {
                             </span>
                           </p>
                           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                            <span>You have <strong>{daysLeft} days left</strong> in your current cycle.</span>
+                            {countdownTime ? (
+                              <span className="flex items-center gap-1">
+                                <span>Remaining Access Time:</span>
+                                <strong className="font-mono text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-0.5 text-xxs">
+                                  <span>{countdownTime.days}d</span>
+                                  <span className="animate-pulse">:</span>
+                                  <span>{String(countdownTime.hours).padStart(2, "0")}h</span>
+                                  <span className="animate-pulse">:</span>
+                                  <span>{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                                  <span className="animate-pulse">:</span>
+                                  <span>{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                                </strong>
+                              </span>
+                            ) : (
+                              <span>You have <strong>{daysLeft} days left</strong> in your current cycle.</span>
+                            )}
                             <span className="text-slate-300 dark:text-slate-700">•</span>
                             <span className="font-mono text-[10px]">Expires: {new Date(expiresAt).toLocaleDateString()}</span>
                           </div>
@@ -3417,7 +3527,11 @@ export default function App() {
                         <div className="flex-1 space-y-1 min-w-[120px]">
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
                             <span>DAYS REMAINING</span>
-                            <span>{daysLeft}d / 30d</span>
+                            {countdownTime ? (
+                              <span>{countdownTime.days}d {String(countdownTime.hours).padStart(2, "0")}h</span>
+                            ) : (
+                              <span>{daysLeft}d / 30d</span>
+                            )}
                           </div>
                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden border border-slate-200/30 dark:border-slate-750">
                             <div 
