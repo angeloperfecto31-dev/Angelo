@@ -1356,10 +1356,6 @@ export default function App() {
     return <LoginScreen />;
   }
 
-  if (!isActive && !isAdmin) {
-    return <PaymentScreen user={user} />;
-  }
-
   if (showRenew && (userPlan !== "enterprise" || isAdmin)) {
     return (
       <PaymentScreen
@@ -1382,6 +1378,10 @@ export default function App() {
         onPaymentSuccess={() => setShowUpgrade(false)}
       />
     );
+  }
+
+  if (!isActive && !isAdmin) {
+    return <PaymentScreen user={user} />;
   }
 
   const tabs = [

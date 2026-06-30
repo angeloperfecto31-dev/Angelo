@@ -251,7 +251,8 @@ export default function PaymentScreen({
           }
 
           let isExpired = false;
-          if ((data.plan === "basic" || data.plan === "premium" || data.plan === "free") && data.expiresAt) {
+          const plan = data.plan || "free";
+          if ((plan === "basic" || plan === "premium" || plan === "free") && data.expiresAt) {
             const expires = new Date(data.expiresAt);
             if (new Date() >= expires) {
               isExpired = true;
@@ -295,7 +296,7 @@ export default function PaymentScreen({
     );
 
     return () => unsubscribe();
-  }, [user.uid, isUpgrade]);
+  }, [user.uid, isUpgrade, isRenewal, onPaymentSuccess]);
 
   useEffect(() => {
     // If the currently selected method is disabled, switch to another available method
