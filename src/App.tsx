@@ -208,9 +208,9 @@ export default function App() {
                     setIsActive(false);
                     isActiveRef.current = false;
                   } else {
-                    // Not blacklisted, provision the normal 30-Day Free Trial
+                    // Not blacklisted, provision the normal 2-Hour Free Trial
                     const now = new Date();
-                    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                    const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
                     
                     const initialUserData = {
                       uid: user.uid,
@@ -219,7 +219,7 @@ export default function App() {
                       plan: "free",
                       isActive: true,
                       activatedAt: now.toISOString(),
-                      expiresAt: thirtyDaysFromNow.toISOString(),
+                      expiresAt: twoHoursFromNow.toISOString(),
                       createdAt: now.toISOString(),
                       paymentStatus: "free_trial"
                     };
@@ -235,7 +235,7 @@ export default function App() {
                     // Optimistically update local state so they don't have to wait for the next snapshot
                     setUserPlan("free");
                     setActivatedAt(now.toISOString());
-                    setExpiresAt(thirtyDaysFromNow.toISOString());
+                    setExpiresAt(twoHoursFromNow.toISOString());
                     setIsActive(true);
                     isActiveRef.current = true;
                   }
