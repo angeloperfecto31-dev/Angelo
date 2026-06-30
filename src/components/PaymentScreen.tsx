@@ -900,7 +900,7 @@ export default function PaymentScreen({
     setError("");
     try {
       const origin = window.location.origin;
-      const amount = isUpgrade ? upgradeFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice);
+      const amount = isUpgrade ? upgradeFinalPrice : (selectedPlan === "enterprise" ? enterpriseFinalPrice : selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice);
       const response = await axios.post("/api/create-checkout", {
         userId: user.uid,
         email: user.email,
@@ -965,7 +965,7 @@ export default function PaymentScreen({
           method: paymentMethod === "maribank" ? "MariBank" : paymentMethod === "maya" ? "Maya" : "GCash",
           senderName: manualName.trim(),
           referenceNo: cleanedRef,
-          amount: isUpgrade ? upgradeFinalPrice : (selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice),
+          amount: isUpgrade ? upgradeFinalPrice : (selectedPlan === "enterprise" ? enterpriseFinalPrice : selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice),
           plan: isUpgrade ? "premium" : selectedPlan,
           submittedAt: new Date().toISOString(),
           isUpgrade: isUpgrade, // Keep a record if this was an upgrade explicitly
