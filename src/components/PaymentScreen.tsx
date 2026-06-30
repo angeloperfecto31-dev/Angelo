@@ -249,6 +249,14 @@ export default function PaymentScreen({
             hasSelectedInitialPlan.current = true;
           }
 
+          let isExpired = false;
+          if ((data.plan === "basic" || data.plan === "premium" || data.plan === "free") && data.expiresAt) {
+            const expires = new Date(data.expiresAt);
+            if (new Date() >= expires) {
+              isExpired = true;
+            }
+          }
+
           if (isUpgrade) {
             if (!isRenewal && data.plan === "premium") {
               setSuccess(true);
@@ -257,7 +265,7 @@ export default function PaymentScreen({
               }
             }
           } else {
-            if (!isRenewal && data.isActive === true) {
+            if (!isRenewal && data.isActive === true && !isExpired) {
               setSuccess(true);
               if (onPaymentSuccess) {
                 setTimeout(() => onPaymentSuccess(), 2500);

@@ -32,7 +32,6 @@ export default function LoginScreen() {
     try {
       if (isLogin) {
         try {
-          sessionStorage.setItem('just_logged_in', 'true');
           await signInWithEmailAndPassword(auth, email, password);
         } catch (signInErr: any) {
           const code = signInErr.code || '';
@@ -49,7 +48,6 @@ export default function LoginScreen() {
           }
         }
       } else {
-        sessionStorage.setItem('just_logged_in', 'true');
         await createUserWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
@@ -78,7 +76,6 @@ export default function LoginScreen() {
   const handleGoogleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      sessionStorage.setItem('just_logged_in', 'true');
       await signInWithPopup(auth, provider);
     } catch (err: any) {
       console.error(err);
