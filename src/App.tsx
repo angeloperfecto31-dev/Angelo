@@ -203,6 +203,9 @@ export default function App() {
             setExpiresAt(data.expiresAt || null);
             setIsActive(userIsActive);
             isActiveRef.current = userIsActive;
+            if (userIsActive) {
+              setShowRenew(false);
+            }
           } else {
             // Profile does not exist. Check if this is a brand new Auth account.
             const creationTime = user.metadata.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;

@@ -579,7 +579,7 @@ app.post("/api/create-checkout", async (req, res) => {
 // Verify a checkout session
 app.post("/api/verify-checkout", async (req, res) => {
   try {
-    const { sessionId } = req.body;
+    const { sessionId, clientUserId, clientPlan, clientIsUpgrade } = req.body;
 
     if (!sessionId) {
       return res.status(400).json({ error: "Session ID is missing." });
@@ -616,9 +616,9 @@ app.post("/api/verify-checkout", async (req, res) => {
       }
     }
 
-    const userId = attributes.metadata?.userId;
-    const plan = attributes.metadata?.plan || "premium";
-    const isUpgrade = attributes.metadata?.isUpgrade === "true";
+    const userId = attributes.metadata?.userId || clientUserId;
+    const plan = attributes.metadata?.plan || clientPlan || "premium";
+    const isUpgrade = attributes.metadata?.isUpgrade === "true" || clientIsUpgrade === true;
 
     // 1. Double transaction/duplication prevention guard
     if (transactionStatus === "paid" && db) {

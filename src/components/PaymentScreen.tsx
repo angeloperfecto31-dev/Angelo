@@ -879,7 +879,12 @@ export default function PaymentScreen({
 
   const verifySession = async (sessionId: string) => {
     try {
-      const response = await axios.post("/api/verify-checkout", { sessionId });
+      const response = await axios.post("/api/verify-checkout", { 
+        sessionId,
+        clientUserId: user.uid,
+        clientPlan: selectedPlan,
+        clientIsUpgrade: isUpgrade
+      });
       if (response.data.status === "paid") {
         setSuccess(true);
         // Wipe the session_id from URL
@@ -888,10 +893,15 @@ export default function PaymentScreen({
           document.title,
           window.location.pathname,
         );
-        alert("Payment Successful! Your account has been upgraded and is now active.");
-        if (onPaymentSuccess) {
-          onPaymentSuccess();
-        }
+        
+        setTimeout(() => {
+          if (onPaymentSuccess) {
+            onPaymentSuccess();
+          } else {
+            // Force a reload to let App.tsx re-evaluate user status from DB
+            window.location.reload();
+          }
+        }, 2000);
       } else {
         setError("Payment has not been completed or is still pending.");
       }
