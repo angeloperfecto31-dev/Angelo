@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, onSnapshot, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
 import PaymentScreen from "./components/PaymentScreen";
@@ -195,36 +195,99 @@ export default function App() {
             const isBrandNew = Math.abs(nowTime - creationTime) < 60000; // registered in the last 60 seconds
 
             if (isBrandNew) {
-              // Profile does not exist, automatically provision a 30-Day Free Trial
-              const now = new Date();
-              const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-              
-              const initialUserData = {
-                uid: user.uid,
-                email: user.email,
-                displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
-                plan: "free",
-                isActive: true,
-                activatedAt: now.toISOString(),
-                expiresAt: thirtyDaysFromNow.toISOString(),
-                createdAt: now.toISOString(),
-                paymentStatus: "free_trial"
-              };
+              // Check if the user's email is blacklisted from free trials
+              const emailLower = user.email ? user.email.toLowerCase() : "";
+              getDoc(doc(db, "blacklisted_emails", emailLower))
+                .then((blacklistSnap) => {
+                  if (blacklistSnap.exists()) {
+                    // Email is blacklisted! No free trial. Force them to subscribe.
+                    console.warn("User email is blacklisted. Denying free trial.");
+                    const now = new Date();
+                    const initialUserData = {
+                      uid: user.uid,
+                      email: user.email,
+                      displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
+                      plan: "free",
+                      isActive: false, // NOT active!
+                      activatedAt: null,
+                      expiresAt: null,
+                      createdAt: now.toISOString(),
+                      paymentStatus: "unpaid", // Unpaid - requires purchase
+                      trialBanned: true
+                    };
 
-              setDoc(doc(db, "users", user.uid), initialUserData)
-                .then(() => {
-                  console.log("Successfully initialized user profile in Firestore.");
+                    setDoc(doc(db, "users", user.uid), initialUserData)
+                      .then(() => {
+                        console.log("Successfully initialized trial-restricted user profile in Firestore.");
+                      })
+                      .catch((err) => {
+                        console.error("Error creating restricted user profile:", err);
+                      });
+
+                    setUserPlan("free");
+                    setActivatedAt(null);
+                    setExpiresAt(null);
+                    setIsActive(false);
+                    isActiveRef.current = false;
+                  } else {
+                    // Not blacklisted, provision the normal 30-Day Free Trial
+                    const now = new Date();
+                    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                    
+                    const initialUserData = {
+                      uid: user.uid,
+                      email: user.email,
+                      displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
+                      plan: "free",
+                      isActive: true,
+                      activatedAt: now.toISOString(),
+                      expiresAt: thirtyDaysFromNow.toISOString(),
+                      createdAt: now.toISOString(),
+                      paymentStatus: "free_trial"
+                    };
+
+                    setDoc(doc(db, "users", user.uid), initialUserData)
+                      .then(() => {
+                        console.log("Successfully initialized user profile in Firestore.");
+                      })
+                      .catch((err) => {
+                        console.error("Error creating initial user profile:", err);
+                      });
+
+                    // Optimistically update local state so they don't have to wait for the next snapshot
+                    setUserPlan("free");
+                    setActivatedAt(now.toISOString());
+                    setExpiresAt(thirtyDaysFromNow.toISOString());
+                    setIsActive(true);
+                    isActiveRef.current = true;
+                  }
                 })
-                .catch((err) => {
-                  console.error("Error creating initial user profile:", err);
+                .catch((blErr) => {
+                  console.error("Error checking blacklist:", blErr);
+                  // fallback to safe unpaid profile if error checking blacklist to be secure
+                  const now = new Date();
+                  const initialUserData = {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
+                    plan: "free",
+                    isActive: false,
+                    activatedAt: null,
+                    expiresAt: null,
+                    createdAt: now.toISOString(),
+                    paymentStatus: "unpaid"
+                  };
+                  setDoc(doc(db, "users", user.uid), initialUserData);
+                  setUserPlan("free");
+                  setIsActive(false);
+                  isActiveRef.current = false;
+                })
+                .finally(() => {
+                  initialLoad = false;
+                  setAuthLoading(false);
                 });
-
-              // Optimistically update local state so they don't have to wait for the next snapshot
-              setUserPlan("free");
-              setActivatedAt(now.toISOString());
-              setExpiresAt(thirtyDaysFromNow.toISOString());
-              setIsActive(true);
-              isActiveRef.current = true;
+                
+              return; // return so we don't call setAuthLoading(false) immediately below
             } else {
               // Existing user but their Firestore document does not exist (meaning it was deleted/revoked)
               console.warn("User profile not found in Firestore. Account may have been deleted/revoked by an administrator.");

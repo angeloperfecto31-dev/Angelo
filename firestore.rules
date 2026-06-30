@@ -232,6 +232,12 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(settingId);
     }
 
+    // 4.5 Blacklisted Emails
+    match /blacklisted_emails/{emailId} {
+      allow read: if isSignedIn() && ("email" in request.auth.token) && emailId == request.auth.token.email.lower();
+      allow write: if isAdmin();
+    }
+
     // 5. Motor FLC Library Collection (Dynamic Table 4.30.14.4)
     match /motor_flc_library/{entryId} {
       allow read: if true;

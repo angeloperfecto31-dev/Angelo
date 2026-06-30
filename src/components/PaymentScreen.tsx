@@ -1312,6 +1312,18 @@ export default function PaymentScreen({
     try {
       await deleteDoc(doc(db, "users", targetUid));
 
+      if (userEmail) {
+        try {
+          await setDoc(doc(db, "blacklisted_emails", userEmail.toLowerCase()), {
+            email: userEmail.toLowerCase(),
+            blacklistedAt: new Date().toISOString(),
+            reason: "Deleted by Administrator"
+          });
+        } catch (blErr) {
+          console.warn("Failed to write to blacklisted_emails:", blErr);
+        }
+      }
+
       // Log user profile deletion to admin activity logs
       try {
         await addDoc(collection(db, "admin_activity_logs"), {

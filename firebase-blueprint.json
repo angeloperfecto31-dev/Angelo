@@ -348,9 +348,24 @@
         "timestamp": { "type": "string" }
       },
       "required": ["adminEmail", "moduleId", "newStatus", "timestamp"]
+    },
+    "BlacklistedEmail": {
+      "title": "BlacklistedEmail",
+      "description": "Blacklisted emails that are banned/restricted from receiving a new free trial",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "blacklistedAt": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["email", "blacklistedAt"]
     }
   },
   "firestore": {
+    "blacklisted_emails/{emailId}": {
+      "schema": "BlacklistedEmail",
+      "description": "Records of emails restricted from auto-provisioning free trials"
+    },
     "modules/{moduleId}": {
       "schema": "SystemModule",
       "description": "Module state configurations"
