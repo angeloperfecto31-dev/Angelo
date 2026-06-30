@@ -174,6 +174,7 @@ export default function PaymentScreen({
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
   const hasSelectedInitialPlan = useRef(false);
+  const wasPendingRef = useRef(false);
 
   // Helper calculations for dynamic values
   const offerExpiryDate = (pricingSettings.offerExpiry && pricingSettings.offerExpiry.trim() !== "" && !isNaN(new Date(pricingSettings.offerExpiry).getTime())) 
@@ -257,8 +258,17 @@ export default function PaymentScreen({
             }
           }
 
-          if (isUpgrade) {
-            if (!isRenewal && data.plan === "premium") {
+          if (data.paymentStatus === "pending_verification") {
+            wasPendingRef.current = true;
+          }
+
+          if (wasPendingRef.current && data.paymentStatus === "paid" && data.isActive === true) {
+            setSuccess(true);
+            if (onPaymentSuccess) {
+              setTimeout(() => onPaymentSuccess(), 2500);
+            }
+          } else if (isUpgrade) {
+            if (!isRenewal && (data.plan === "premium" || data.plan === "enterprise")) {
               setSuccess(true);
               if (onPaymentSuccess) {
                 setTimeout(() => onPaymentSuccess(), 2500);
