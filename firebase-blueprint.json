@@ -314,7 +314,7 @@
         "paymentStatus",
         "transactionDate"
       ]
-    }
+    },
     "SystemModule": {
       "title": "SystemModule",
       "description": "Module visibility and maintenance configuration",
