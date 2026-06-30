@@ -189,36 +189,49 @@ export default function App() {
             setIsActive(userIsActive);
             isActiveRef.current = userIsActive;
           } else {
-            // Profile does not exist, automatically provision a 30-Day Free Trial
-            const now = new Date();
-            const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-            
-            const initialUserData = {
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
-              plan: "free",
-              isActive: true,
-              activatedAt: now.toISOString(),
-              expiresAt: thirtyDaysFromNow.toISOString(),
-              createdAt: now.toISOString(),
-              paymentStatus: "free_trial"
-            };
+            // Profile does not exist. Check if this is a brand new Auth account.
+            const creationTime = user.metadata.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;
+            const nowTime = new Date().getTime();
+            const isBrandNew = Math.abs(nowTime - creationTime) < 60000; // registered in the last 60 seconds
 
-            setDoc(doc(db, "users", user.uid), initialUserData)
-              .then(() => {
-                console.log("Successfully initialized user profile in Firestore.");
-              })
-              .catch((err) => {
-                console.error("Error creating initial user profile:", err);
-              });
+            if (isBrandNew) {
+              // Profile does not exist, automatically provision a 30-Day Free Trial
+              const now = new Date();
+              const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+              
+              const initialUserData = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
+                plan: "free",
+                isActive: true,
+                activatedAt: now.toISOString(),
+                expiresAt: thirtyDaysFromNow.toISOString(),
+                createdAt: now.toISOString(),
+                paymentStatus: "free_trial"
+              };
 
-            // Optimistically update local state so they don't have to wait for the next snapshot
-            setUserPlan("free");
-            setActivatedAt(now.toISOString());
-            setExpiresAt(thirtyDaysFromNow.toISOString());
-            setIsActive(true);
-            isActiveRef.current = true;
+              setDoc(doc(db, "users", user.uid), initialUserData)
+                .then(() => {
+                  console.log("Successfully initialized user profile in Firestore.");
+                })
+                .catch((err) => {
+                  console.error("Error creating initial user profile:", err);
+                });
+
+              // Optimistically update local state so they don't have to wait for the next snapshot
+              setUserPlan("free");
+              setActivatedAt(now.toISOString());
+              setExpiresAt(thirtyDaysFromNow.toISOString());
+              setIsActive(true);
+              isActiveRef.current = true;
+            } else {
+              // Existing user but their Firestore document does not exist (meaning it was deleted/revoked)
+              console.warn("User profile not found in Firestore. Account may have been deleted/revoked by an administrator.");
+              setIsActive(false);
+              isActiveRef.current = false;
+              auth.signOut();
+            }
           }
           initialLoad = false;
           setAuthLoading(false);
