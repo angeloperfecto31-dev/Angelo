@@ -342,8 +342,41 @@ export default function SubscriptionManager() {
                   <label className="block text-xs font-black uppercase text-slate-500 mb-1.5">Expiration Date</label>
                   <input
                     type="date"
-                    value={editExpiresAt ? editExpiresAt.substring(0, 10) : ""}
-                    onChange={(e) => setEditExpiresAt(e.target.value ? new Date(e.target.value).toISOString() : "")}
+                    value={editExpiresAt ? (() => {
+                      try {
+                        const d = new Date(editExpiresAt);
+                        if (isNaN(d.getTime())) return "";
+                        const offset = d.getTimezoneOffset();
+                        const localDate = new Date(d.getTime() - offset * 60000);
+                        return localDate.toISOString().slice(0, 10);
+                      } catch (e) {
+                        return "";
+                      }
+                    })() : ""}
+                    onChange={(e) => {
+                      if (!e.target.value) {
+                        setEditExpiresAt("");
+                        return;
+                      }
+                      try {
+                        const parts = e.target.value.split('-');
+                        if (parts.length === 3) {
+                          const year = parseInt(parts[0], 10);
+                          const month = parseInt(parts[1], 10) - 1;
+                          const day = parseInt(parts[2], 10);
+                          // create a date at noon local time to avoid any timezone shifts
+                          const d = new Date(year, month, day, 12, 0, 0);
+                          setEditExpiresAt(d.toISOString());
+                        } else {
+                          const d = new Date(e.target.value);
+                          if (!isNaN(d.getTime())) {
+                            setEditExpiresAt(d.toISOString());
+                          }
+                        }
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:border-indigo-500 outline-none"
                   />
                 </div>

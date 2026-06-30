@@ -4599,10 +4599,30 @@ export default function PaymentScreen({
                     <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block mb-1">Expiration Date</label>
                     <input 
                       type="datetime-local" 
-                      value={manageSubAction.expiresAt ? new Date(manageSubAction.expiresAt).toISOString().slice(0,16) : ""}
+                      value={manageSubAction.expiresAt ? (() => {
+                        try {
+                          const d = new Date(manageSubAction.expiresAt);
+                          if (isNaN(d.getTime())) return "";
+                          const offset = d.getTimezoneOffset();
+                          const localDate = new Date(d.getTime() - offset * 60000);
+                          return localDate.toISOString().slice(0,16);
+                        } catch (e) {
+                          return "";
+                        }
+                      })() : ""}
                       onChange={(e) => {
-                        const dateStr = e.target.value ? new Date(e.target.value).toISOString() : "";
-                        setManageSubAction({...manageSubAction, expiresAt: dateStr});
+                        if (!e.target.value) {
+                          setManageSubAction({...manageSubAction, expiresAt: ""});
+                          return;
+                        }
+                        try {
+                          const d = new Date(e.target.value);
+                          if (!isNaN(d.getTime())) {
+                            setManageSubAction({...manageSubAction, expiresAt: d.toISOString()});
+                          }
+                        } catch (err) {
+                          console.error("Invalid date selected:", err);
+                        }
                       }}
                       disabled={manageSubAction.plan === "enterprise"}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-amber-500 text-slate-700 disabled:opacity-50 disabled:bg-slate-100"
