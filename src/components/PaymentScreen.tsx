@@ -207,12 +207,12 @@ export default function PaymentScreen({
   const [discrepancies, setDiscrepancies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [adminFilter, setAdminFilter] = useState<
-    "all" | "pending" | "paid" | "lifetime" | "unpaid"
+    "all" | "pending" | "paid" | "lifetime" | "unpaid" | "free_trial"
   >("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [planFilter, setPlanFilter] = useState<"all" | "basic" | "premium" | "enterprise">("all");
+  const [planFilter, setPlanFilter] = useState<"all" | "free" | "basic" | "premium" | "enterprise">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [confirmingAction, setConfirmingAction] = useState<{
     uid: string;
@@ -1435,10 +1435,11 @@ export default function PaymentScreen({
     if (adminFilter === "pending") {
       if (u.paymentStatus !== "pending_verification") return false;
     } else if (adminFilter === "paid") {
-      if (u.isActive !== true) return false;
+      if (u.isActive !== true || u.paymentStatus === "free_trial") return false;
     } else if (adminFilter === "lifetime") {
-      // verified paid subscribers have Lifetime Access
-      if (u.isActive !== true) return false;
+      if (u.isActive !== true || u.plan !== "enterprise") return false;
+    } else if (adminFilter === "free_trial") {
+      if (u.paymentStatus !== "free_trial") return false;
     } else if (adminFilter === "unpaid") {
       if (u.isActive === true || u.paymentStatus === "pending_verification") return false;
     }
@@ -3865,7 +3866,7 @@ export default function PaymentScreen({
                     Plan
                   </span>
                   <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
-                    {(["all", "basic", "premium", "enterprise"] as const).map((mode) => (
+                    {(["all", "free", "basic", "premium", "enterprise"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setPlanFilter(mode)}
@@ -3875,7 +3876,7 @@ export default function PaymentScreen({
                             : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
-                        {mode === "all" ? "All Plans" : mode}
+                        {mode === "all" ? "All Plans" : mode === "free" ? "Free Trial" : mode}
                       </button>
                     ))}
                   </div>
@@ -3887,7 +3888,7 @@ export default function PaymentScreen({
                     Status
                   </span>
                   <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40 flex-wrap">
-                    {(["all", "pending", "paid", "lifetime", "unpaid"] as const).map((mode) => (
+                    {(["all", "pending", "paid", "lifetime", "free_trial", "unpaid"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setAdminFilter(mode)}
@@ -3905,7 +3906,9 @@ export default function PaymentScreen({
                               ? "Active"
                               : mode === "lifetime"
                                 ? "Lifetime"
-                                : "Unpaid"}
+                                : mode === "free_trial"
+                                  ? "Free Trial"
+                                  : "Unpaid"}
                       </button>
                     ))}
                   </div>
