@@ -1293,6 +1293,7 @@ export default function App() {
       <PaymentScreen
         user={user}
         isUpgrade={false}
+        isRenewal={true}
         onClose={() => setShowRenew(false)}
         onPaymentSuccess={() => setShowRenew(false)}
       />
@@ -1304,6 +1305,7 @@ export default function App() {
       <PaymentScreen
         user={user}
         isUpgrade={true}
+        isRenewal={true}
         onClose={() => setShowUpgrade(false)}
         onPaymentSuccess={() => setShowUpgrade(false)}
       />

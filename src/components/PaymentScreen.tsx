@@ -76,6 +76,7 @@ interface PaymentScreenProps {
   onPaymentSuccess?: () => void;
   forceAdmin?: boolean;
   isUpgrade?: boolean;
+  isRenewal?: boolean;
   onClose?: () => void;
 }
 
@@ -84,6 +85,7 @@ export default function PaymentScreen({
   onPaymentSuccess,
   forceAdmin = false,
   isUpgrade = false,
+  isRenewal = false,
   onClose,
 }: PaymentScreenProps) {
   const [loading, setLoading] = useState(false);
@@ -248,14 +250,14 @@ export default function PaymentScreen({
           }
 
           if (isUpgrade) {
-            if (data.plan === "premium") {
+            if (!isRenewal && data.plan === "premium") {
               setSuccess(true);
               if (onPaymentSuccess) {
                 setTimeout(() => onPaymentSuccess(), 2500);
               }
             }
           } else {
-            if (data.isActive === true) {
+            if (!isRenewal && data.isActive === true) {
               setSuccess(true);
               if (onPaymentSuccess) {
                 setTimeout(() => onPaymentSuccess(), 2500);
@@ -962,7 +964,7 @@ export default function PaymentScreen({
         },
       };
 
-      if (!isUpgrade) {
+      if (!isUpgrade && !isRenewal) {
         updateData.isActive = false;
       }
 
