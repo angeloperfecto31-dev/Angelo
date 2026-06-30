@@ -4131,10 +4131,19 @@ export default function PaymentScreen({
                             {/* PLAN COLUMN */}
                             <td className="px-5 py-3">
                               <div className="flex flex-col items-start gap-1">
-                                {finance.isPremiumTier ? (
+                                {finance.planStr === "enterprise" ? (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-indigo-550/10 text-indigo-700 border border-indigo-255/15 rounded-md flex items-center gap-1 shadow-sm">
+                                    <Sparkles className="w-2.5 h-2.5 text-indigo-650" />
+                                    Enterprise
+                                  </span>
+                                ) : finance.planStr === "premium" ? (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-purple-550/10 text-purple-700 border border-purple-255/15 rounded-md flex items-center gap-1 shadow-sm">
                                     <Sparkles className="w-2.5 h-2.5 text-purple-650" />
                                     Premium Pro
+                                  </span>
+                                ) : finance.planStr === "free" ? (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-sm">
+                                    Free Trial
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md shadow-sm">
@@ -4382,9 +4391,17 @@ export default function PaymentScreen({
                               </span>
                               
                               {/* Tier Badge */}
-                              {finance.isPremiumTier ? (
+                              {finance.planStr === "enterprise" ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 rounded border border-indigo-205/15">
+                                  ENTERPRISE
+                                </span>
+                              ) : finance.planStr === "premium" ? (
                                 <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 rounded border border-purple-205/15">
                                   PREMIUM
+                                </span>
+                              ) : finance.planStr === "free" ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-slate-50 text-slate-700 rounded border border-slate-200">
+                                  FREE
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 rounded border border-blue-200">
