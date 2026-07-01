@@ -2870,7 +2870,7 @@ export default function PaymentScreen({
                     </tr>
                   </thead>
                   <tbody>
-                    {usersList
+                    {allUsers
                       .filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus))
                       .sort((a, b) => new Date(b.trialRequestedAt || 0).getTime() - new Date(a.trialRequestedAt || 0).getTime())
                       .map(u => (
@@ -2926,7 +2926,7 @@ export default function PaymentScreen({
                         </td>
                       </tr>
                     ))}
-                    {usersList.filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus)).length === 0 && (
+                    {allUsers.filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus)).length === 0 && (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-slate-500 text-sm">
                           No free trial requests found.
