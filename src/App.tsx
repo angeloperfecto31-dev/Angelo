@@ -259,11 +259,8 @@ export default function App() {
                     setIsActive(false);
                     isActiveRef.current = false;
                   } else {
-                    // Not blacklisted, provision the normal 2-Hour Free Trial
+                    // Not blacklisted, set as eligible for 1-Hour Free Trial
                     const now = new Date();
-                    const twoHoursFromNow = new Date(
-                      now.getTime() + 2 * 60 * 60 * 1000,
-                    );
 
                     const initialUserData = {
                       uid: user.uid,

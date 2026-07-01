@@ -5173,13 +5173,13 @@ export default function PaymentScreen({
     setError("");
     try {
       const now = new Date();
-      const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      const oneHourFromNow = new Date(now.getTime() + 1 * 60 * 60 * 1000);
       await updateDoc(doc(db, "users", user.uid), {
         freeTrialStatus: "used",
         paymentStatus: "free_trial",
         isActive: true,
         activatedAt: now.toISOString(),
-        expiresAt: twoHoursFromNow.toISOString()
+        expiresAt: oneHourFromNow.toISOString()
       });
     } catch (err) {
       console.error("Error starting free trial:", err);
@@ -5251,7 +5251,7 @@ export default function PaymentScreen({
             <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-black text-slate-800 mb-2">Want to try before you buy?</h3>
               <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-                You can request a 2-hour free trial to test out all premium features. Your request will be reviewed by an administrator.
+                You can request a 1-hour free trial to test out all premium features. Your request will be reviewed by an administrator.
               </p>
               <button
                 onClick={handleRequestFreeTrial}
@@ -5292,7 +5292,7 @@ export default function PaymentScreen({
             <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-black text-green-800 mb-2">Free Trial Approved!</h3>
               <p className="text-sm text-green-700 mb-4 leading-relaxed">
-                Your 2-hour free trial has been approved by the administrator. Click the button below to start your trial immediately.
+                Your 1-hour free trial has been approved by the administrator. Click the button below to start your trial immediately.
               </p>
               <button
                 onClick={handleStartFreeTrial}
@@ -5300,7 +5300,7 @@ export default function PaymentScreen({
                 className="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {startingTrial ? "Starting Trial..." : "Start 2-Hour Free Trial"}
+                {startingTrial ? "Starting Trial..." : "Start 1-Hour Free Trial"}
               </button>
             </div>
           )}
