@@ -127,9 +127,9 @@ export default function PaymentScreen({
   const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions">("verifications");
 
   // Feature List Defaults
-  const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\n-Word File Export feature";
-  const DEFAULT_PREMIUM_FEATURES = "Everything in Basic Plan\nFull Word File Report Generation\nPremium Support Access";
-  const DEFAULT_ENTERPRISE_FEATURES = "Everything in Premium Plan\nAdvanced Admin Analytics\nPriority White-Glove Support\nCustom API Integrations";
+  const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
+  const DEFAULT_PREMIUM_FEATURES = "Everything in Basic Plan\nFull Word File Report Generation\nAutoCAD File Export feature\nPremium Support Access\nONE MONTH SUBSCRIPTION";
+  const DEFAULT_ENTERPRISE_FEATURES = "Lifetime Access to Everything\nComplete Single-Line CAD Blueprints\nBulk Word Compiling\nPriority Support";
   const DEFAULT_UPGRADE_FEATURES = "Full Word File Report Generation\nPremium Support Access";
 
   // Dynamic Pricing State
@@ -388,9 +388,20 @@ export default function PaymentScreen({
           const promoEnterprise = typeof data.promoDiscountEnterprise === 'number' ? data.promoDiscountEnterprise : 0;
           const title = data.offerTitle || "";
           const expiry = data.offerExpiry || "";
-          const basicFeatures = data.basicFeatures || DEFAULT_BASIC_FEATURES;
-          const premiumFeatures = data.premiumFeatures || DEFAULT_PREMIUM_FEATURES;
-          const enterpriseFeatures = data.enterpriseFeatures || DEFAULT_ENTERPRISE_FEATURES;
+          // Migrate old features to new features
+          let basicFeatures = data.basicFeatures || DEFAULT_BASIC_FEATURES;
+          if (basicFeatures === "Access to all design tools\nExport load schedules to Excel\n-Word File Export feature") {
+            basicFeatures = DEFAULT_BASIC_FEATURES;
+          }
+          let premiumFeatures = data.premiumFeatures || DEFAULT_PREMIUM_FEATURES;
+          if (premiumFeatures === "Everything in Basic Plan\nFull Word File Report Generation\nPremium Support Access") {
+            premiumFeatures = DEFAULT_PREMIUM_FEATURES;
+          }
+          let enterpriseFeatures = data.enterpriseFeatures || DEFAULT_ENTERPRISE_FEATURES;
+          if (enterpriseFeatures === "Everything in Premium Plan\nAdvanced Admin Analytics\nPriority White-Glove Support\nCustom API Integrations") {
+            enterpriseFeatures = DEFAULT_ENTERPRISE_FEATURES;
+          }
+
           const upgradeFeatures = data.upgradeFeatures || DEFAULT_UPGRADE_FEATURES;
           const enableMaribank = data.enableMaribank !== false; // defaults to true
           const enableGCash = data.enableGCash !== false;
