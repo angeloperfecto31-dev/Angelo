@@ -21,6 +21,7 @@ interface Props {
 
 export const DEFAULT_MODULES: SystemModule[] = [
   { id: "dashboard", name: "Dashboard", status: "active" },
+  { id: "mdp-management", name: "Source & MDPs", status: "active" },
   { id: "schedule", name: "Load Schedule", status: "active" },
   { id: "power-suite", name: "Power Analysis Suite", status: "active" },
   { id: "isc", name: "Short Circuit Analysis", status: "active" },

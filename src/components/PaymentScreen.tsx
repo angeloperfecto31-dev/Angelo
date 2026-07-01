@@ -11,6 +11,7 @@ import {
   onSnapshot,
   collection,
   addDoc,
+  updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "../utils/firestoreError";
@@ -116,6 +117,8 @@ export default function PaymentScreen({
   const [uploadingMayaQr, setUploadingMayaQr] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium" | "enterprise">("premium");
+  const [requestingTrial, setRequestingTrial] = useState(false);
+  const [startingTrial, setStartingTrial] = useState(false);
 
   // Custom confirmation states to bypass native window.confirm blocks in sandboxed iframes
   const [confirmDeleteReg, setConfirmDeleteReg] = useState(false);
@@ -124,7 +127,7 @@ export default function PaymentScreen({
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions">("verifications");
+  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions" | "free_trials">("verifications");
 
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
@@ -2820,6 +2823,17 @@ export default function PaymentScreen({
               <Users className="w-4 h-4" />
               Subscriptions
             </button>
+            <button
+              onClick={() => setAdminSubTab("free_trials")}
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+                adminSubTab === "free_trials"
+                  ? "border-indigo-600 text-indigo-600 font-extrabold"
+                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Free Trials
+            </button>
           </div>
 
           {adminStatusMsg && (
@@ -2834,6 +2848,95 @@ export default function PaymentScreen({
             <InvoiceManager user={user} isAdminPanel={true} />
           ) : adminSubTab === "subscriptions" ? (
             <SubscriptionManager />
+          ) : adminSubTab === "free_trials" ? (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md mb-8">
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                Free Trial Requests
+              </h2>
+              <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+                Review and approve or reject free trial requests from newly registered users.
+              </p>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-y border-slate-200">
+                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">User</th>
+                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Registered</th>
+                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Requested</th>
+                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Status</th>
+                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usersList
+                      .filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus))
+                      .sort((a, b) => new Date(b.trialRequestedAt || 0).getTime() - new Date(a.trialRequestedAt || 0).getTime())
+                      .map(u => (
+                      <tr key={u.uid} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-800 text-sm">{u.displayName || "Unknown User"}</div>
+                          <div className="text-xs text-slate-500">{u.email}</div>
+                        </td>
+                        <td className="py-3 px-4 text-xs text-slate-600">
+                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "N/A"}
+                        </td>
+                        <td className="py-3 px-4 text-xs text-slate-600">
+                          {u.trialRequestedAt ? new Date(u.trialRequestedAt).toLocaleString() : "N/A"}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                            u.freeTrialStatus === "pending" ? "bg-yellow-100 text-yellow-800" :
+                            u.freeTrialStatus === "approved" ? "bg-green-100 text-green-800" :
+                            "bg-red-100 text-red-800"
+                          }`}>
+                            {u.freeTrialStatus}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          {u.freeTrialStatus === "pending" && (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "approved" });
+                                  } catch (err) {
+                                    console.error("Error approving", err);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "rejected" });
+                                  } catch (err) {
+                                    console.error("Error rejecting", err);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-slate-200 hover:bg-red-500 hover:text-white text-slate-600 text-xs font-bold rounded-lg transition-colors"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {usersList.filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus)).length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-500 text-sm">
+                          No free trial requests found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
             <>
               {/* Flagged Payment Gateway Discrepancies & Audit Panel */}
@@ -5047,6 +5150,45 @@ export default function PaymentScreen({
     });
   };
 
+  const handleRequestFreeTrial = async () => {
+    if (!user) return;
+    setRequestingTrial(true);
+    setError("");
+    try {
+      await updateDoc(doc(db, "users", user.uid), {
+        freeTrialStatus: "pending",
+        trialRequestedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error requesting free trial:", err);
+      setError("Failed to request free trial. Please try again.");
+    } finally {
+      setRequestingTrial(false);
+    }
+  };
+
+  const handleStartFreeTrial = async () => {
+    if (!user) return;
+    setStartingTrial(true);
+    setError("");
+    try {
+      const now = new Date();
+      const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      await updateDoc(doc(db, "users", user.uid), {
+        freeTrialStatus: "used",
+        paymentStatus: "free_trial",
+        isActive: true,
+        activatedAt: now.toISOString(),
+        expiresAt: twoHoursFromNow.toISOString()
+      });
+    } catch (err) {
+      console.error("Error starting free trial:", err);
+      setError("Failed to start free trial. Please try again.");
+    } finally {
+      setStartingTrial(false);
+    }
+  };
+
   // General Customer View Screen
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
@@ -5102,6 +5244,64 @@ export default function PaymentScreen({
                   Expiry: {new Date(pricingSettings.offerExpiry).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </div>
               )}
+            </div>
+          )}
+
+          {!isUpgrade && userProfile?.freeTrialStatus === "eligible" && (
+            <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-black text-slate-800 mb-2">Want to try before you buy?</h3>
+              <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                You can request a 2-hour free trial to test out all premium features. Your request will be reviewed by an administrator.
+              </p>
+              <button
+                onClick={handleRequestFreeTrial}
+                disabled={requestingTrial}
+                className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {requestingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {requestingTrial ? "Requesting..." : "Request Free Trial"}
+              </button>
+            </div>
+          )}
+
+          {!isUpgrade && userProfile?.freeTrialStatus === "pending" && (
+            <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+              <AlertCircle className="w-6 h-6 text-yellow-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-black text-yellow-800 mb-1">Trial Request Pending</h3>
+                <p className="text-sm text-yellow-700 leading-relaxed">
+                  Your free trial request is awaiting admin approval. Please check back later.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!isUpgrade && userProfile?.freeTrialStatus === "rejected" && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+              <AlertCircle className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-black text-red-800 mb-1">Trial Request Declined</h3>
+                <p className="text-sm text-red-700 leading-relaxed">
+                  Unfortunately, your free trial request was declined by the administrator. Please select a subscription plan below to continue.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!isUpgrade && userProfile?.freeTrialStatus === "approved" && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-6 shadow-sm">
+              <h3 className="text-sm font-black text-green-800 mb-2">Free Trial Approved!</h3>
+              <p className="text-sm text-green-700 mb-4 leading-relaxed">
+                Your 2-hour free trial has been approved by the administrator. Click the button below to start your trial immediately.
+              </p>
+              <button
+                onClick={handleStartFreeTrial}
+                disabled={startingTrial}
+                className="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {startingTrial ? "Starting Trial..." : "Start 2-Hour Free Trial"}
+              </button>
             </div>
           )}
 

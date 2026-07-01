@@ -1,6 +1,26 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, IlluminationParams } from "../types";
 
+export interface MainSourceConfig {
+  systemVoltage: number;
+  systemFrequency: number;
+  phaseConfiguration: string;
+  transformerConnection: string;
+  availableFaultCurrent: number;
+  sourceCapacity: number;
+  utilityProvider?: string;
+}
+
+export interface MdpData {
+  id: string;
+  panel: PanelConfig;
+  circuits: Circuit[];
+  subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
+  subSubPanels?: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
+}
+
 export interface ProjectData {
+  mainSource?: MainSourceConfig;
+  mdps?: MdpData[];
   panel: PanelConfig;
   circuits: Circuit[];
   subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];

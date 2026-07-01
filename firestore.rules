@@ -18,9 +18,11 @@ service cloud.firestore {
 
     // Verify if the user matches our master admin email
     function isAdmin() {
-      return isSignedIn() && 
-             ("email" in request.auth.token) &&
-             (request.auth.token.email.lower() == 'angeloperfecto31@gmail.com');
+      return request.auth != null && 
+             request.auth.token != null &&
+             request.auth.token.email != null &&
+             request.auth.token.email is string &&
+             request.auth.token.email.lower() == 'angeloperfecto31@gmail.com';
     }
 
     // Prevent ID poisoning
@@ -38,7 +40,7 @@ service cloud.firestore {
 
     // 2. Validation Blueprints (Pillar 2: Validation Blueprints)
     function isValidUser(data) {
-      return data.email is string && data.email.size() <= 128
+      return "email" in data && data.email is string && data.email.size() <= 128
         && (!("isActive" in data) || data.isActive == null || data.isActive is bool)
         && (!("paymentStatus" in data) || data.paymentStatus == null || data.paymentStatus is string)
         && (!("bypassPayment" in data) || data.bypassPayment == null || data.bypassPayment is bool)
@@ -53,6 +55,8 @@ service cloud.firestore {
         && (!("upgraded_by_admin" in data) || data.upgraded_by_admin == null || data.upgraded_by_admin is bool)
         && (!("last_modified_by" in data) || data.last_modified_by == null || data.last_modified_by is string)
         && (!("modified_at" in data) || data.modified_at == null || data.modified_at is string)
+        && (!("freeTrialStatus" in data) || data.freeTrialStatus == null || data.freeTrialStatus is string)
+        && (!("trialRequestedAt" in data) || data.trialRequestedAt == null || data.trialRequestedAt is string)
         && (!("pendingVerification" in data) || data.pendingVerification == null || (
              data.pendingVerification.senderName is string && data.pendingVerification.senderName.size() <= 128 &&
              data.pendingVerification.referenceNo is string && data.pendingVerification.referenceNo.size() <= 128 &&
@@ -168,7 +172,7 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
 
       allow create: if isValidId(userId) && (
-        (isOwner(userId) && isValidUser(incoming()) && ("email" in request.auth.token) && incoming().email.lower() == request.auth.token.email.lower()) ||
+        (isOwner(userId) && isValidUser(incoming()) && request.auth.token.email != null && request.auth.token.email is string && incoming().email.lower() == request.auth.token.email.lower()) ||
         isAdmin()
       );
 
@@ -176,7 +180,7 @@ service cloud.firestore {
         isAdmin() ||
         (
           isOwner(userId) && isValidUser(incoming()) &&
-          (!("email" in existing()) || existing().email == null || incoming().email.lower() == existing().email.lower()) &&                                         // Email is immutable (case-insensitive)
+          (!("email" in existing()) || existing().email == null || (incoming().email is string && existing().email is string && incoming().email.lower() == existing().email.lower())) &&                                         // Email is immutable (case-insensitive)
           (
             // Action 1: Standard customer flow (no self-activation)
             (
@@ -193,6 +197,13 @@ service cloud.firestore {
               incoming().isActive == true &&
               incoming().paymentStatus == "paid" &&
               incoming().bypassPayment == true
+            ) ||
+            // Action 3: Free Trial Request and Activation
+            (
+              // User requests free trial
+              (incoming().freeTrialStatus == "pending" && existing().freeTrialStatus == "eligible" && incoming().isActive == existing().isActive) ||
+              // User starts approved free trial
+              (incoming().freeTrialStatus == "used" && existing().freeTrialStatus == "approved" && incoming().paymentStatus == "free_trial" && incoming().isActive == true)
             )
           )
         )
@@ -234,7 +245,7 @@ service cloud.firestore {
 
     // 4.5 Blacklisted Emails
     match /blacklisted_emails/{emailId} {
-      allow read: if isSignedIn() && ("email" in request.auth.token) && emailId == request.auth.token.email.lower();
+      allow read: if isSignedIn() && request.auth.token.email != null && request.auth.token.email is string && emailId == request.auth.token.email.lower();
       allow write: if isAdmin();
     }
 
