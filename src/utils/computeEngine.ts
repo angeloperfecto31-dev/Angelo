@@ -1030,34 +1030,33 @@ export const computePanelScheduleValues = (
   let subPanelDemandAmps = 0;
   let internalDemandCurrent = 0;
   let globalHML = 0;
+  let internalConnectedVA = 0;
+
+  const phaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
+  c.forEach((cir) => {
+    if (isIdleSpareOrSpace(cir)) return;
+    
+    if (cir.subPanelReflectionMode === 'max_demand') {
+      subPanelDemandAmps += cir.loadA;
+    } else {
+      internalConnectedVA += cir.loadVA;
+      
+      if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
+        phaseAmps.R += cir.reflectedPhaseAmps.R;
+        phaseAmps.Y += cir.reflectedPhaseAmps.Y;
+        phaseAmps.B += cir.reflectedPhaseAmps.B;
+        phaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
+      } else if (cir.phases && cir.phases.length === 3) {
+        phaseAmps.threePhase += cir.loadA;
+      } else if (cir.phases) {
+        if (cir.phases.includes("R")) phaseAmps.R += cir.loadA;
+        if (cir.phases.includes("Y")) phaseAmps.Y += cir.loadA;
+        if (cir.phases.includes("B")) phaseAmps.B += cir.loadA;
+      }
+    }
+  });
 
   if (p.system.includes("3PH")) {
-    const localPhaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-    c.forEach((cir) => {
-      if (isIdleSpareOrSpace(cir)) return;
-
-      const is3Phase = cir.phases && cir.phases.length === 3;
-      let cirV =
-        cir.voltage ||
-        getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-      
-      const isSubPanel = cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL;
-      if (isSubPanel) {
-        cirV = cir.voltage || cirV;
-      }
-
-      const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
-
-      if (is3Phase) {
-        localPhaseAmps.threePhase += loadI;
-      } else {
-        const activeLines = getCircuitActiveLines(cir, p.connectionType);
-        if (activeLines.includes("R")) localPhaseAmps.R += loadI;
-        if (activeLines.includes("Y")) localPhaseAmps.Y += loadI;
-        if (activeLines.includes("B")) localPhaseAmps.B += loadI;
-      }
-    });
-
     const motorCircuits = c.filter(
       (cir) =>
         cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
@@ -1076,23 +1075,17 @@ export const computePanelScheduleValues = (
     globalHML = HML;
 
     const totalAmpere = Math.max(
-      localPhaseAmps.R,
-      localPhaseAmps.Y,
-      localPhaseAmps.B,
+      phaseAmps.R,
+      phaseAmps.Y,
+      phaseAmps.B,
     );
     internalDemandCurrent =
-      (totalAmpere * 1.732 * 0.8 + localPhaseAmps.threePhase + 0.25 * HML) *
+      (totalAmpere * 1.732 * 0.8 + phaseAmps.threePhase + 0.25 * HML) *
       1.25;
 
-    maxBaseAmp = internalDemandCurrent;
+    maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
     maxDesignAmp = maxBaseAmp;
   } else {
-    let internalConnectedVA = 0;
-    c.forEach((cir) => {
-      if (isIdleSpareOrSpace(cir)) return;
-      internalConnectedVA += cir.loadVA;
-    });
-
     const motorCircuits = c.filter(
       (cir) =>
         cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
@@ -1108,7 +1101,7 @@ export const computePanelScheduleValues = (
     internalDemandCurrent =
       ((internalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
 
-    maxBaseAmp = internalDemandCurrent;
+    maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
     maxDesignAmp = maxBaseAmp;
   }
 
@@ -1261,22 +1254,6 @@ export const computePanelScheduleValues = (
         100
       : 0;
 
-  const phaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-  c.forEach((cir) => {
-    if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
-      phaseAmps.R += cir.reflectedPhaseAmps.R;
-      phaseAmps.Y += cir.reflectedPhaseAmps.Y;
-      phaseAmps.B += cir.reflectedPhaseAmps.B;
-      phaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
-    } else if (cir.phases.length === 3) {
-      phaseAmps.threePhase += cir.loadA;
-    } else {
-      if (cir.phases.includes("R")) phaseAmps.R += cir.loadA;
-      if (cir.phases.includes("Y")) phaseAmps.Y += cir.loadA;
-      if (cir.phases.includes("B")) phaseAmps.B += cir.loadA;
-    }
-  });
-
   const maxDemandDetails = {
     is3PH: p.system.includes("3PH"),
     systemVoltage,
@@ -1286,6 +1263,7 @@ export const computePanelScheduleValues = (
     total3Phase: phaseAmps.threePhase,
     totalAmpere: Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B),
     totalConnectedVA: totalVA,
+    internalConnectedVA,
     HML: globalHML,
     baseAmp: maxBaseAmp,
     connectionType: p.connectionType || "Line-to-Line",
