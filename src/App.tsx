@@ -89,21 +89,39 @@ import {
   setGlobalSubPanels,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from "recharts";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Cell,
+} from "recharts";
 
 import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 import EgcSizingCalculator from "./components/EgcSizingCalculator";
 import TransformerCalc from "./components/TransformerCalc";
-import { ModuleManagement, SystemModule, DEFAULT_MODULES } from "./components/ModuleManagement";
-import { collection, onSnapshot as onFirestoreSnapshot } from "firebase/firestore";
+import {
+  ModuleManagement,
+  SystemModule,
+  DEFAULT_MODULES,
+} from "./components/ModuleManagement";
+import {
+  collection,
+  onSnapshot as onFirestoreSnapshot,
+} from "firebase/firestore";
 
 export const getFreshInitialCircuits = (): Circuit[] => {
   return INITIAL_CIRCUITS.map((c) => ({
     ...c,
     id: crypto.randomUUID(),
-    subLoads: c.subLoads ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() })) : undefined,
+    subLoads: c.subLoads
+      ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() }))
+      : undefined,
   }));
 };
 
@@ -111,7 +129,9 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
-  const [userPlan, setUserPlan] = useState<"basic" | "premium" | "enterprise" | string | null>(null);
+  const [userPlan, setUserPlan] = useState<
+    "basic" | "premium" | "enterprise" | string | null
+  >(null);
   const [activatedAt, setActivatedAt] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -158,7 +178,7 @@ export default function App() {
       if (unsubscribe) {
         unsubscribe();
       }
-      
+
       unsubscribe = onSnapshot(
         doc(db, "users", user.uid),
         (docSnap) => {
@@ -166,10 +186,13 @@ export default function App() {
             const data = docSnap.data();
             const plan = data.plan || "free";
             const userIsActive = data.isActive === true;
-            
+
             // Check expiration for basic, premium, and free trials
             let isExpired = false;
-            if ((plan === "basic" || plan === "premium" || plan === "free") && data.expiresAt) {
+            if (
+              (plan === "basic" || plan === "premium" || plan === "free") &&
+              data.expiresAt
+            ) {
               const expires = new Date(data.expiresAt);
               if (new Date() >= expires) {
                 isExpired = true;
@@ -189,11 +212,16 @@ export default function App() {
               setAuthLoading(false);
 
               if (previouslyActive && !isAdmin) {
-                signOut(auth).then(() => {
-                  localStorage.setItem("subscription_ended_logout", "true");
-                }).catch((err) => {
-                  console.error("Error logging out on snapshot subscription expiration:", err);
-                });
+                signOut(auth)
+                  .then(() => {
+                    localStorage.setItem("subscription_ended_logout", "true");
+                  })
+                  .catch((err) => {
+                    console.error(
+                      "Error logging out on snapshot subscription expiration:",
+                      err,
+                    );
+                  });
               }
               return;
             }
@@ -208,7 +236,9 @@ export default function App() {
             }
           } else {
             // Profile does not exist. Check if this is a brand new Auth account.
-            const creationTime = user.metadata.creationTime ? new Date(user.metadata.creationTime).getTime() : 0;
+            const creationTime = user.metadata.creationTime
+              ? new Date(user.metadata.creationTime).getTime()
+              : 0;
             const nowTime = new Date().getTime();
             const isBrandNew = Math.abs(nowTime - creationTime) < 60000; // registered in the last 60 seconds
 
@@ -219,7 +249,9 @@ export default function App() {
                 .then((blacklistSnap) => {
                   if (blacklistSnap.exists()) {
                     // Email is blacklisted! No free trial. Force them to subscribe. Do NOT write a document to Firestore to avoid restoring the account automatically!
-                    console.warn("User email is blacklisted. Denying free trial.");
+                    console.warn(
+                      "User email is blacklisted. Denying free trial.",
+                    );
                     setUserPlan("free");
                     setActivatedAt(null);
                     setExpiresAt(null);
@@ -228,26 +260,36 @@ export default function App() {
                   } else {
                     // Not blacklisted, provision the normal 2-Hour Free Trial
                     const now = new Date();
-                    const twoHoursFromNow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-                    
+                    const twoHoursFromNow = new Date(
+                      now.getTime() + 2 * 60 * 60 * 1000,
+                    );
+
                     const initialUserData = {
                       uid: user.uid,
                       email: user.email,
-                      displayName: user.displayName || user.email?.split("@")[0] || "Engineering User",
+                      displayName:
+                        user.displayName ||
+                        user.email?.split("@")[0] ||
+                        "Engineering User",
                       plan: "free",
                       isActive: true,
                       activatedAt: now.toISOString(),
                       expiresAt: twoHoursFromNow.toISOString(),
                       createdAt: now.toISOString(),
-                      paymentStatus: "free_trial"
+                      paymentStatus: "free_trial",
                     };
 
                     setDoc(doc(db, "users", user.uid), initialUserData)
                       .then(() => {
-                        console.log("Successfully initialized user profile in Firestore.");
+                        console.log(
+                          "Successfully initialized user profile in Firestore.",
+                        );
                       })
                       .catch((err) => {
-                        console.error("Error creating initial user profile:", err);
+                        console.error(
+                          "Error creating initial user profile:",
+                          err,
+                        );
                       });
 
                     // Optimistically update local state so they don't have to wait for the next snapshot
@@ -271,13 +313,15 @@ export default function App() {
                   initialLoad = false;
                   setAuthLoading(false);
                 });
-                
+
               return; // return so we don't call setAuthLoading(false) immediately below
             } else {
               // Existing user but their Firestore document does not exist (meaning it was deleted/revoked)
               // To prevent automatic restoration in the database, we DO NOT write any document to Firestore.
               // Instead, we just lock them into the PaymentScreen so they must avail/pay for a subscription.
-              console.warn("User profile not found in Firestore. Account may have been deleted/revoked by an administrator. Locking to payment/subscription screen.");
+              console.warn(
+                "User profile not found in Firestore. Account may have been deleted/revoked by an administrator. Locking to payment/subscription screen.",
+              );
               setUserPlan("free");
               setActivatedAt(null);
               setExpiresAt(null);
@@ -290,9 +334,12 @@ export default function App() {
         },
         (error: any) => {
           console.error("Firestore listener error:", error);
-          
+
           // Only mark as inactive if it's a definitive permission error
-          if (error.code === 'permission-denied' || error.code === 'unauthenticated') {
+          if (
+            error.code === "permission-denied" ||
+            error.code === "unauthenticated"
+          ) {
             setIsActive(false);
             isActiveRef.current = false;
             setUserPlan(null);
@@ -324,7 +371,12 @@ export default function App() {
 
   // Periodic expiration check
   useEffect(() => {
-    if (!isActive || !expiresAt || (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")) return;
+    if (
+      !isActive ||
+      !expiresAt ||
+      (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")
+    )
+      return;
 
     const checkExpiration = () => {
       const expires = new Date(expiresAt);
@@ -333,11 +385,16 @@ export default function App() {
         isActiveRef.current = false;
         setShowRenew(true);
         if (!isAdmin) {
-          signOut(auth).then(() => {
-            localStorage.setItem("subscription_ended_logout", "true");
-          }).catch((err) => {
-            console.error("Error logging out on active subscription expiration:", err);
-          });
+          signOut(auth)
+            .then(() => {
+              localStorage.setItem("subscription_ended_logout", "true");
+            })
+            .catch((err) => {
+              console.error(
+                "Error logging out on active subscription expiration:",
+                err,
+              );
+            });
         }
       }
     };
@@ -350,7 +407,11 @@ export default function App() {
 
   // Real-time countdown timer effect
   useEffect(() => {
-    if (!expiresAt || !isActive || (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")) {
+    if (
+      !expiresAt ||
+      !isActive ||
+      (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")
+    ) {
       setCountdownTime(null);
       return;
     }
@@ -360,15 +421,23 @@ export default function App() {
       const now = new Date().getTime();
       const diff = target - now;
       if (diff <= 0) {
-        setCountdownTime({ days: 0, hours: 0, minutes: 0, seconds: 0, totalMs: 0 });
+        setCountdownTime({
+          days: 0,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+          totalMs: 0,
+        });
         return;
       }
-      
+
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const hours = Math.floor(
+        (diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
+      );
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      
+
       setCountdownTime({ days, hours, minutes, seconds, totalMs: diff });
     };
 
@@ -395,13 +464,14 @@ export default function App() {
     | "module-management"
   >("dashboard");
 
-  const [systemModules, setSystemModules] = useState<SystemModule[]>(DEFAULT_MODULES);
+  const [systemModules, setSystemModules] =
+    useState<SystemModule[]>(DEFAULT_MODULES);
 
   useEffect(() => {
     const unsub = onFirestoreSnapshot(collection(db, "modules"), (snapshot) => {
-      const docs = snapshot.docs.map(d => d.data() as SystemModule);
-      const merged = DEFAULT_MODULES.map(def => {
-        const found = docs.find(d => d.id === def.id);
+      const docs = snapshot.docs.map((d) => d.data() as SystemModule);
+      const merged = DEFAULT_MODULES.map((def) => {
+        const found = docs.find((d) => d.id === def.id);
         return found || def;
       });
       setSystemModules(merged);
@@ -409,14 +479,15 @@ export default function App() {
     return unsub;
   }, []);
 
-  const activeModuleStatus = systemModules.find(m => m.id === activeTab);
-  const isMaintenanceMode = activeModuleStatus?.status === "maintenance" && !isAdmin;
+  const activeModuleStatus = systemModules.find((m) => m.id === activeTab);
+  const isMaintenanceMode =
+    activeModuleStatus?.status === "maintenance" && !isAdmin;
   const isDisabledMode = activeModuleStatus?.status === "disabled" && !isAdmin;
   const isHiddenMode = activeModuleStatus?.status === "hidden" && !isAdmin;
 
   const getModuleStatus = (moduleId: string) => {
     if (isAdmin) return "active";
-    const mod = systemModules.find(m => m.id === moduleId);
+    const mod = systemModules.find((m) => m.id === moduleId);
     return mod?.status || "active";
   };
 
@@ -447,7 +518,6 @@ export default function App() {
   const [subPanels, setSubPanels] = useState<
     { id: string; panel: PanelConfig; circuits: Circuit[] }[]
   >([]);
-  
 
   const uniqueSubPanels = useMemo(() => {
     const seen = new Set<string>();
@@ -458,8 +528,6 @@ export default function App() {
       return true;
     });
   }, [subPanels]);
-
-  
 
   useEffect(() => {
     setGlobalSubPanels(uniqueSubPanels);
@@ -475,40 +543,54 @@ export default function App() {
     VoltageDropCalculation[]
   >(INITIAL_VOLTAGE_DROP_CALCULATIONS);
 
-  const [transformerPrimaryVoltage, setTransformerPrimaryVoltage] = useState<number>(13800);
-  const [transformerPowerFactor, setTransformerPowerFactor] = useState<number>(0.85);
-  const [transformerDemandFactor, setTransformerDemandFactor] = useState<number>(0.80);
-  const [transformerLoadingFactor, setTransformerLoadingFactor] = useState<number>(0.80);
+  const [transformerPrimaryVoltage, setTransformerPrimaryVoltage] =
+    useState<number>(13800);
+  const [transformerPowerFactor, setTransformerPowerFactor] =
+    useState<number>(0.85);
+  const [transformerDemandFactor, setTransformerDemandFactor] =
+    useState<number>(0.8);
+  const [transformerLoadingFactor, setTransformerLoadingFactor] =
+    useState<number>(0.8);
 
   // Real-time synchronization of Short Circuit and Voltage Drop calculation parameters
   useEffect(() => {
     if (!circuits || !panel) return;
-    
+
     if (iscSource === "auto") {
-      const { mainFeeder, totalVA } = computePanelScheduleValues(panel, circuits);
+      const { mainFeeder, totalVA } = computePanelScheduleValues(
+        panel,
+        circuits,
+      );
       const totalKVA = totalVA / 1000;
       const demandKVA = totalKVA * transformerDemandFactor;
-      const requiredKVA = transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
-      
-      const standardKVA = [10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500, 2000, 2500];
-      const recommendedKVA = standardKVA.find(k => k >= requiredKVA) || standardKVA[standardKVA.length - 1];
+      const requiredKVA =
+        transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
+
+      const standardKVA = [
+        10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500,
+        2000, 2500,
+      ];
+      const recommendedKVA =
+        standardKVA.find((k) => k >= requiredKVA) ||
+        standardKVA[standardKVA.length - 1];
 
       let recommendedFeederSize = mainFeeder.wire.size.toString();
       let recommendedRuns = panel.system.includes("3PH") ? 3 : 2;
 
       if (mainFeeder.cb > 250) {
-        recommendedRuns = mainFeeder.wire.runs; 
+        recommendedRuns = mainFeeder.wire.runs;
         recommendedFeederSize = mainFeeder.wire.size.toString();
       }
 
-      setIscParams(p => {
+      setIscParams((p) => {
         if (
-          p.transformerKVA === recommendedKVA && 
-          p.transformerVoltage === panel.voltage && 
+          p.transformerKVA === recommendedKVA &&
+          p.transformerVoltage === panel.voltage &&
           p.primaryVoltage === transformerPrimaryVoltage &&
-          p.feederSize === recommendedFeederSize && 
+          p.feederSize === recommendedFeederSize &&
           p.feederRuns === recommendedRuns &&
-          (!panel.transformerConnection || p.transformerConnection === panel.transformerConnection)
+          (!panel.transformerConnection ||
+            p.transformerConnection === panel.transformerConnection)
         ) {
           return p;
         }
@@ -519,20 +601,28 @@ export default function App() {
           primaryVoltage: transformerPrimaryVoltage,
           feederSize: recommendedFeederSize,
           feederRuns: recommendedRuns,
-          transformerConnection: panel.transformerConnection || p.transformerConnection
+          transformerConnection:
+            panel.transformerConnection || p.transformerConnection,
         };
       });
     }
-  }, [iscSource, circuits, panel, transformerDemandFactor, transformerLoadingFactor, transformerPrimaryVoltage]);
+  }, [
+    iscSource,
+    circuits,
+    panel,
+    transformerDemandFactor,
+    transformerLoadingFactor,
+    transformerPrimaryVoltage,
+  ]);
 
   // Real-time alignment of feederRuns with system phase count
   useEffect(() => {
     if (!panel?.system) return;
     const expectedRuns = panel.system.includes("3PH") ? 3 : 2;
     if (iscParams.feederRuns !== expectedRuns) {
-      setIscParams(current => ({
+      setIscParams((current) => ({
         ...current,
-        feederRuns: expectedRuns
+        feederRuns: expectedRuns,
       }));
     }
   }, [panel, iscParams.feederRuns]);
@@ -542,13 +632,18 @@ export default function App() {
     if (!circuits || !panel) return;
 
     setVdCalculations((prev) => {
-      const prevMap = new globalThis.Map((prev || []).map((calc) => [calc.source, calc]));
+      const prevMap = new globalThis.Map(
+        (prev || []).map((calc) => [calc.source, calc]),
+      );
       const updatedCalcs: VoltageDropCalculation[] = [];
       let changed = false;
 
       // 1. Maintain Main Feeder
       const is3PH = panel.system.includes("3PH");
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits);
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(
+        panel,
+        circuits,
+      );
 
       const mainLoadA = Number(mainCurrent.baseAmp.toFixed(2));
       const mainWireSize = mainFeeder.wire.size.toString();
@@ -604,12 +699,20 @@ export default function App() {
 
         const existingBranch = prevMap.get(c.id);
         const branchName = `Circuit ${c.circuitNo}: ${c.description}`;
-        const branchIs3P = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
+        const branchIs3P =
+          c.is3PhaseMarker !== undefined
+            ? c.is3PhaseMarker
+            : c.phases && c.phases.length === 3;
         const branchSystemType: "1PH" | "3PH" = branchIs3P ? "3PH" : "1PH";
 
         if (existingBranch) {
-          const isLoadADiff = existingBranch.loadA !== c.loadA && !(Number.isNaN(existingBranch.loadA) && Number.isNaN(c.loadA));
-          const isVoltageDiff = existingBranch.voltage !== c.voltage && !(existingBranch.voltage == null && c.voltage == null) && !(Number.isNaN(existingBranch.voltage) && Number.isNaN(c.voltage));
+          const isLoadADiff =
+            existingBranch.loadA !== c.loadA &&
+            !(Number.isNaN(existingBranch.loadA) && Number.isNaN(c.loadA));
+          const isVoltageDiff =
+            existingBranch.voltage !== c.voltage &&
+            !(existingBranch.voltage == null && c.voltage == null) &&
+            !(Number.isNaN(existingBranch.voltage) && Number.isNaN(c.voltage));
           const hasBranchChanged =
             existingBranch.name !== branchName ||
             isLoadADiff ||
@@ -646,7 +749,7 @@ export default function App() {
       });
 
       // 3. Maintain Sub-Panel Feeders & their branch circuits
-      const allSubPanels = [...subPanels, ...subPanels];
+      const allSubPanels = [...subPanels];
       const seen = new Set();
       const uniqueAllSubPanels = allSubPanels.filter((sp) => {
         if (!sp || !sp.id) return false;
@@ -658,7 +761,8 @@ export default function App() {
       if (uniqueAllSubPanels.length > 0) {
         uniqueAllSubPanels.forEach((sp) => {
           const spIs3PH = sp.panel.system.includes("3PH");
-          const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+          const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } =
+            computePanelScheduleValues(sp.panel, sp.circuits);
 
           const spLoadA = Number(spMainCurrent.baseAmp.toFixed(2));
           const spWireSize = spMainFeeder.wire.size.toString();
@@ -702,6 +806,72 @@ export default function App() {
               systemType: spSystemType,
             });
           }
+
+          // Also include the branch circuits of the sub-panel
+          sp.circuits.forEach((c) => {
+            const ltStr = c.loadType as string;
+            if (
+              ltStr === "SP" ||
+              ltStr === "SPACE" ||
+              ltStr === LoadType.SPARE ||
+              ltStr === LoadType.SPACE
+            ) {
+              return;
+            }
+
+            const existingBranch = prevMap.get(c.id);
+            const branchName = `[${sp.panel.designation || "SP"}] C${c.circuitNo}: ${c.description}`;
+            const branchIs3P =
+              c.is3PhaseMarker !== undefined
+                ? c.is3PhaseMarker
+                : c.phases && c.phases.length === 3;
+            const branchSystemType: "1PH" | "3PH" = branchIs3P ? "3PH" : "1PH";
+
+            if (existingBranch) {
+              const isLoadADiff =
+                existingBranch.loadA !== c.loadA &&
+                !(Number.isNaN(existingBranch.loadA) && Number.isNaN(c.loadA));
+              const isVoltageDiff =
+                existingBranch.voltage !== c.voltage &&
+                !(existingBranch.voltage == null && c.voltage == null) &&
+                !(
+                  Number.isNaN(existingBranch.voltage) &&
+                  Number.isNaN(c.voltage)
+                );
+              const hasBranchChanged =
+                existingBranch.name !== branchName ||
+                isLoadADiff ||
+                existingBranch.wireSize !== c.wireSize ||
+                existingBranch.wireSets !== c.wireSets ||
+                isVoltageDiff ||
+                existingBranch.systemType !== branchSystemType;
+              if (hasBranchChanged) {
+                changed = true;
+              }
+              updatedCalcs.push({
+                ...existingBranch,
+                name: branchName,
+                loadA: c.loadA,
+                wireSize: c.wireSize,
+                wireSets: c.wireSets,
+                voltage: c.voltage,
+                systemType: branchSystemType,
+              });
+            } else {
+              changed = true;
+              updatedCalcs.push({
+                id: crypto.randomUUID(),
+                source: c.id,
+                name: branchName,
+                loadA: c.loadA,
+                length: 30, // Default to 30 meters
+                wireSize: c.wireSize,
+                wireSets: c.wireSets,
+                voltage: c.voltage,
+                systemType: branchSystemType,
+              });
+            }
+          });
         });
       }
 
@@ -767,12 +937,14 @@ export default function App() {
     const nextSavedRooms = illumParams.savedRooms.map((room) => {
       // Find matching lighting circuit
       const matchingCircuit = circuits.find(
-        (c) => c.loadType === LoadType.LIGHTING && c.circuitNo === room.circuitNo
+        (c) =>
+          c.loadType === LoadType.LIGHTING && c.circuitNo === room.circuitNo,
       );
 
       if (matchingCircuit) {
         const fixWattage = matchingCircuit.wattage || 15;
-        const totalVA = matchingCircuit.loadVA || (fixWattage * matchingCircuit.quantity);
+        const totalVA =
+          matchingCircuit.loadVA || fixWattage * matchingCircuit.quantity;
         const fixturesCount = matchingCircuit.quantity || 1;
 
         // Try extracting roomName if description has "LIGHTING: <type> - <name>"
@@ -815,7 +987,7 @@ export default function App() {
 
   // Wrapper for updating MDP circuits from the Load Schedule that handles reverse propagation to connected Sub-Panels
   const handleSetMdpCircuits = (
-    newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[])
+    newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[]),
   ) => {
     let subPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
 
@@ -856,7 +1028,7 @@ export default function App() {
               if ("voltage" in changedFields) {
                 panelUpdates.voltage = nextC.voltage || 230;
               }
-              
+
               let overrideChanged = false;
               const nextOverrides: any = { isOverrideEnabled: true };
               if ("mcbAT" in changedFields) {
@@ -882,12 +1054,18 @@ export default function App() {
 
               if (overrideChanged) {
                 panelUpdates.mainOverrides = nextOverrides as any;
-                if ("mcbAT" in changedFields) panelUpdates.mainBreakerAT = nextC.mcbAT;
-                if ("mcbAF" in changedFields) panelUpdates.mainBreakerAF = nextC.mcbAF;
-                if ("mcbKAIC" in changedFields) panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
+                if ("mcbAT" in changedFields)
+                  panelUpdates.mainBreakerAT = nextC.mcbAT;
+                if ("mcbAF" in changedFields)
+                  panelUpdates.mainBreakerAF = nextC.mcbAF;
+                if ("mcbKAIC" in changedFields)
+                  panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
               }
-              
-              subPanelsToUpdate.push({ id: nextC.linkedSubPanelId, panel: panelUpdates });
+
+              subPanelsToUpdate.push({
+                id: nextC.linkedSubPanelId,
+                panel: panelUpdates,
+              });
             }
           }
         }
@@ -897,25 +1075,28 @@ export default function App() {
     });
 
     if (subPanelsToUpdate.length > 0) {
-      setSubPanels((prev) => 
+      setSubPanels((prev) =>
         prev.map((sp) => {
-          const update = subPanelsToUpdate.find(u => u.id === sp.id);
+          const update = subPanelsToUpdate.find((u) => u.id === sp.id);
           if (update) {
-            const newOverrides = update.panel.mainOverrides 
-              ? { ...(sp.panel.mainOverrides || {}), ...update.panel.mainOverrides }
+            const newOverrides = update.panel.mainOverrides
+              ? {
+                  ...(sp.panel.mainOverrides || {}),
+                  ...update.panel.mainOverrides,
+                }
               : sp.panel.mainOverrides;
-              
+
             return {
               ...sp,
               panel: {
                 ...sp.panel,
                 ...update.panel,
-                mainOverrides: newOverrides
-              }
+                mainOverrides: newOverrides,
+              },
             };
           }
           return sp;
-        })
+        }),
       );
     }
   };
@@ -923,12 +1104,12 @@ export default function App() {
   const handleSetSubPanelCircuits = (
     spIdx: number,
     spId: string,
-    newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[])
+    newCircuitsOrFn: Circuit[] | ((prev: Circuit[]) => Circuit[]),
   ) => {
     let subPanelsToUpdate: { id: string; panel: Partial<PanelConfig> }[] = [];
 
     setSubPanels((prevSubPanels) => {
-      const currentSp = prevSubPanels.find(p => p.id === spId);
+      const currentSp = prevSubPanels.find((p) => p.id === spId);
       if (!currentSp) return prevSubPanels;
 
       const prevCircuits = currentSp.circuits;
@@ -941,7 +1122,10 @@ export default function App() {
 
       // Check if any SUB_SUB_PANEL circuits changed from prev to next
       nextCircuits.forEach((nextC) => {
-        if (nextC.loadType === LoadType.SUB_SUB_PANEL && nextC.linkedSubPanelId) {
+        if (
+          nextC.loadType === LoadType.SUB_SUB_PANEL &&
+          nextC.linkedSubPanelId
+        ) {
           const prevC = prevCircuits.find((pc) => pc.id === nextC.id);
           if (prevC) {
             // Collect any edited fields
@@ -970,7 +1154,7 @@ export default function App() {
               if ("voltage" in changedFields) {
                 panelUpdates.voltage = nextC.voltage || 230;
               }
-              
+
               let overrideChanged = false;
               const nextOverrides: any = { isOverrideEnabled: true };
               if ("mcbAT" in changedFields) {
@@ -996,54 +1180,59 @@ export default function App() {
 
               if (overrideChanged) {
                 panelUpdates.mainOverrides = nextOverrides as any;
-                if ("mcbAT" in changedFields) panelUpdates.mainBreakerAT = nextC.mcbAT;
-                if ("mcbAF" in changedFields) panelUpdates.mainBreakerAF = nextC.mcbAF;
-                if ("mcbKAIC" in changedFields) panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
+                if ("mcbAT" in changedFields)
+                  panelUpdates.mainBreakerAT = nextC.mcbAT;
+                if ("mcbAF" in changedFields)
+                  panelUpdates.mainBreakerAF = nextC.mcbAF;
+                if ("mcbKAIC" in changedFields)
+                  panelUpdates.icRating = `${nextC.mcbKAIC}kAIC`;
               }
-              
-              subPanelsToUpdate.push({ id: nextC.linkedSubPanelId, panel: panelUpdates });
+
+              subPanelsToUpdate.push({
+                id: nextC.linkedSubPanelId,
+                panel: panelUpdates,
+              });
             }
           }
         }
       });
 
       return prevSubPanels.map((p) =>
-        p.id === spId ? { ...p, circuits: nextCircuits } : p
+        p.id === spId ? { ...p, circuits: nextCircuits } : p,
       );
     });
 
     if (subPanelsToUpdate.length > 0) {
-      setSubPanels((prev) => 
+      setSubPanels((prev) =>
         prev.map((ssp) => {
-          const update = subPanelsToUpdate.find(u => u.id === ssp.id);
+          const update = subPanelsToUpdate.find((u) => u.id === ssp.id);
           if (update) {
-            const newOverrides = update.panel.mainOverrides 
-              ? { ...(ssp.panel.mainOverrides || {}), ...update.panel.mainOverrides }
+            const newOverrides = update.panel.mainOverrides
+              ? {
+                  ...(ssp.panel.mainOverrides || {}),
+                  ...update.panel.mainOverrides,
+                }
               : ssp.panel.mainOverrides;
-              
+
             return {
               ...ssp,
               panel: {
                 ...ssp.panel,
                 ...update.panel,
-                mainOverrides: newOverrides
-              }
+                mainOverrides: newOverrides,
+              },
             };
           }
           return ssp;
-        })
+        }),
       );
     }
   };
 
   // Centralized N-Level Hierarchy Synchronization
   useEffect(() => {
-    const { updatedMdpCircuits, updatedSubPanels, hasChanges } = syncHierarchyData(
-      panel,
-      circuits,
-      subPanels,
-      vdCalculations
-    );
+    const { updatedMdpCircuits, updatedSubPanels, hasChanges } =
+      syncHierarchyData(panel, circuits, subPanels, vdCalculations);
 
     if (hasChanges) {
       setCircuits(updatedMdpCircuits);
@@ -1072,7 +1261,10 @@ export default function App() {
     useState<boolean>(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
 
-  const [panelToDuplicate, setPanelToDuplicate] = useState<{ id: string; name: string } | null>(null);
+  const [panelToDuplicate, setPanelToDuplicate] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [duplicateName, setDuplicateName] = useState("");
 
   const handleConfirmDuplicate = () => {
@@ -1081,26 +1273,32 @@ export default function App() {
     const originalSp = subPanels.find((sp) => sp.id === targetId);
     const originalSsp = subPanels.find((ssp) => ssp.id === targetId);
     const original = originalSp || originalSsp;
-    
+
     if (!original) {
       setPanelToDuplicate(null);
       return;
     }
 
     const newId = crypto.randomUUID();
-    
+
     // Deep copy circuits and assign brand-new circuit IDs
     const duplicatedCircuits = original.circuits.map((c) => ({
       ...c,
       id: crypto.randomUUID(),
-      subLoads: c.subLoads ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() })) : undefined,
+      subLoads: c.subLoads
+        ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() }))
+        : undefined,
     }));
 
     // Deep copy panel config with the unique duplicated designation
     const duplicatedPanel = {
       ...original.panel,
-      designation: duplicateName.trim() || `${original.panel.designation || "Subpanel"} (Copy)`,
-      mainOverrides: original.panel.mainOverrides ? { ...original.panel.mainOverrides } : undefined,
+      designation:
+        duplicateName.trim() ||
+        `${original.panel.designation || "Subpanel"} (Copy)`,
+      mainOverrides: original.panel.mainOverrides
+        ? { ...original.panel.mainOverrides }
+        : undefined,
     };
 
     const cloned = {
@@ -1152,19 +1350,21 @@ export default function App() {
         normalizedIscParams.transformerConnection = "Wye-Wye (Y-Y)";
     }
     setIscParams(normalizedIscParams || INITIAL_SHORT_CIRCUIT_PARAMS);
-    setIscSource(data.iscSource || 'auto');
+    setIscSource(data.iscSource || "auto");
     setIllumParams(data.illumParams || INITIAL_ILLUMINATION_PARAMS);
 
     if (data.transformerConfig) {
-      setTransformerPrimaryVoltage(data.transformerConfig.primaryVoltage ?? 13800);
+      setTransformerPrimaryVoltage(
+        data.transformerConfig.primaryVoltage ?? 13800,
+      );
       setTransformerPowerFactor(data.transformerConfig.powerFactor ?? 0.85);
-      setTransformerDemandFactor(data.transformerConfig.demandFactor ?? 0.80);
-      setTransformerLoadingFactor(data.transformerConfig.loadingFactor ?? 0.80);
+      setTransformerDemandFactor(data.transformerConfig.demandFactor ?? 0.8);
+      setTransformerLoadingFactor(data.transformerConfig.loadingFactor ?? 0.8);
     } else {
       setTransformerPrimaryVoltage(13800);
       setTransformerPowerFactor(0.85);
-      setTransformerDemandFactor(0.80);
-      setTransformerLoadingFactor(0.80);
+      setTransformerDemandFactor(0.8);
+      setTransformerLoadingFactor(0.8);
     }
 
     // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
@@ -1185,17 +1385,33 @@ export default function App() {
           ...calculateCircuitValues(c, sp.panel, [], data.vdCalculations),
         };
       }) as Circuit[];
-      
-      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits, { vdCalculations: data.vdCalculations, panelId: sp.id });
-      return { 
-        ...sp, 
+
+      const { mainFeeder } = computePanelScheduleValues(
+        sp.panel,
+        updatedCircuits,
+        { vdCalculations: data.vdCalculations, panelId: sp.id },
+      );
+      return {
+        ...sp,
         panel: {
           ...sp.panel,
-          mainBreakerAT: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAT ? sp.panel.mainOverrides.breakerAT : mainFeeder.cb,
-          mainBreakerAF: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAF ? sp.panel.mainOverrides.breakerAF : mainFeeder.af,
-          icRating: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.kaic ? `${sp.panel.mainOverrides.kaic}kAIC` : `${mainFeeder.kaic}kAIC`,
+          mainBreakerAT:
+            sp.panel.mainOverrides?.isOverrideEnabled &&
+            sp.panel.mainOverrides.breakerAT
+              ? sp.panel.mainOverrides.breakerAT
+              : mainFeeder.cb,
+          mainBreakerAF:
+            sp.panel.mainOverrides?.isOverrideEnabled &&
+            sp.panel.mainOverrides.breakerAF
+              ? sp.panel.mainOverrides.breakerAF
+              : mainFeeder.af,
+          icRating:
+            sp.panel.mainOverrides?.isOverrideEnabled &&
+            sp.panel.mainOverrides.kaic
+              ? `${sp.panel.mainOverrides.kaic}kAIC`
+              : `${mainFeeder.kaic}kAIC`,
         },
-        circuits: updatedCircuits 
+        circuits: updatedCircuits,
       };
     });
 
@@ -1210,20 +1426,41 @@ export default function App() {
         return {
           ...c,
           id: uniqueId,
-          ...calculateCircuitValues(c, sp.panel, migratedSubSubPanels, data.vdCalculations),
+          ...calculateCircuitValues(
+            c,
+            sp.panel,
+            migratedSubSubPanels,
+            data.vdCalculations,
+          ),
         };
       }) as Circuit[];
-      
-      const { mainFeeder } = computePanelScheduleValues(sp.panel, updatedCircuits, { vdCalculations: data.vdCalculations, panelId: sp.id });
-      return { 
-        ...sp, 
+
+      const { mainFeeder } = computePanelScheduleValues(
+        sp.panel,
+        updatedCircuits,
+        { vdCalculations: data.vdCalculations, panelId: sp.id },
+      );
+      return {
+        ...sp,
         panel: {
           ...sp.panel,
-          mainBreakerAT: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAT ? sp.panel.mainOverrides.breakerAT : mainFeeder.cb,
-          mainBreakerAF: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.breakerAF ? sp.panel.mainOverrides.breakerAF : mainFeeder.af,
-          icRating: sp.panel.mainOverrides?.isOverrideEnabled && sp.panel.mainOverrides.kaic ? `${sp.panel.mainOverrides.kaic}kAIC` : `${mainFeeder.kaic}kAIC`,
+          mainBreakerAT:
+            sp.panel.mainOverrides?.isOverrideEnabled &&
+            sp.panel.mainOverrides.breakerAT
+              ? sp.panel.mainOverrides.breakerAT
+              : mainFeeder.cb,
+          mainBreakerAF:
+            sp.panel.mainOverrides?.isOverrideEnabled &&
+            sp.panel.mainOverrides.breakerAF
+              ? sp.panel.mainOverrides.breakerAF
+              : mainFeeder.af,
+          icRating:
+            sp.panel.mainOverrides?.isOverrideEnabled &&
+            sp.panel.mainOverrides.kaic
+              ? `${sp.panel.mainOverrides.kaic}kAIC`
+              : `${mainFeeder.kaic}kAIC`,
         },
-        circuits: updatedCircuits 
+        circuits: updatedCircuits,
       };
     });
 
@@ -1237,11 +1474,20 @@ export default function App() {
       return {
         ...c,
         id: uniqueId,
-        ...calculateCircuitValues(c, data.panel, migratedSubPanels, data.vdCalculations),
+        ...calculateCircuitValues(
+          c,
+          data.panel,
+          migratedSubPanels,
+          data.vdCalculations,
+        ),
       };
     }) as Circuit[];
 
-    const { mainFeeder: mainFeederData } = computePanelScheduleValues(data.panel, migratedCircuits, { vdCalculations: data.vdCalculations, panelId: "main" });
+    const { mainFeeder: mainFeederData } = computePanelScheduleValues(
+      data.panel,
+      migratedCircuits,
+      { vdCalculations: data.vdCalculations, panelId: "main" },
+    );
 
     let tc = data.panel.transformerConnection;
     if (tc === "Delta-Wye") tc = "Delta-Wye (Δ-Y)";
@@ -1253,14 +1499,25 @@ export default function App() {
     setPanel({
       ...data.panel,
       transformerConnection: tc,
-      mainBreakerAT: data.panel.mainOverrides?.isOverrideEnabled && data.panel.mainOverrides.breakerAT ? data.panel.mainOverrides.breakerAT : mainFeederData.cb,
-      mainBreakerAF: data.panel.mainOverrides?.isOverrideEnabled && data.panel.mainOverrides.breakerAF ? data.panel.mainOverrides.breakerAF : mainFeederData.af,
-      icRating: data.panel.mainOverrides?.isOverrideEnabled && data.panel.mainOverrides.kaic ? `${data.panel.mainOverrides.kaic}kAIC` : `${mainFeederData.kaic}kAIC`,
+      mainBreakerAT:
+        data.panel.mainOverrides?.isOverrideEnabled &&
+        data.panel.mainOverrides.breakerAT
+          ? data.panel.mainOverrides.breakerAT
+          : mainFeederData.cb,
+      mainBreakerAF:
+        data.panel.mainOverrides?.isOverrideEnabled &&
+        data.panel.mainOverrides.breakerAF
+          ? data.panel.mainOverrides.breakerAF
+          : mainFeederData.af,
+      icRating:
+        data.panel.mainOverrides?.isOverrideEnabled &&
+        data.panel.mainOverrides.kaic
+          ? `${data.panel.mainOverrides.kaic}kAIC`
+          : `${mainFeederData.kaic}kAIC`,
     });
 
     setCircuits(migratedCircuits);
     setSubPanels(migratedSubPanels);
-    setSubPanels(migratedSubSubPanels);
 
     // MIGRATION: Update Voltage Drop tracking values
     const newVdCalculations = (data.vdCalculations || []).map((vd) => {
@@ -1276,7 +1533,8 @@ export default function App() {
           wireSize: mainFeeder.wire.size.toString(),
           wireSets: mainFeeder.wire.runs || 1,
           voltage: data.panel.voltage,
-          systemType: (data.panel.system.includes("3PH") ? "3PH" : "1PH") as "1PH" | "3PH",
+          systemType: (data.panel.system.includes("3PH") ? "3PH" : "1PH") as
+            "1PH" | "3PH",
         };
       } else if (vd.source !== "custom") {
         // Evaluate for subpanel
@@ -1292,7 +1550,8 @@ export default function App() {
             wireSize: mainFeeder.wire.size.toString(),
             wireSets: mainFeeder.wire.runs || 1,
             voltage: sp.panel.voltage,
-            systemType: (sp.panel.system.includes("3PH") ? "3PH" : "1PH") as "1PH" | "3PH",
+            systemType: (sp.panel.system.includes("3PH") ? "3PH" : "1PH") as
+              "1PH" | "3PH",
           };
         }
       }
@@ -1306,7 +1565,7 @@ export default function App() {
     panel,
     circuits,
     subPanels,
-    
+
     iscParams,
     iscSource,
     vdCalculations,
@@ -1330,8 +1589,8 @@ export default function App() {
     setIllumParams(INITIAL_ILLUMINATION_PARAMS);
     setTransformerPrimaryVoltage(13800);
     setTransformerPowerFactor(0.85);
-    setTransformerDemandFactor(0.80);
-    setTransformerLoadingFactor(0.80);
+    setTransformerDemandFactor(0.8);
+    setTransformerLoadingFactor(0.8);
   };
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
@@ -1493,10 +1752,16 @@ export default function App() {
 
   const exportToExcel = () => {
     try {
-      const isPremiumUser = userPlan === "premium" || userPlan === "enterprise" || isAdmin;
+      const isPremiumUser =
+        userPlan === "premium" || userPlan === "enterprise" || isAdmin;
       const wb = XLSX.utils.book_new();
 
-      const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+      const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(
+        panel,
+        circuits,
+        subPanels,
+        vdCalculations,
+      );
 
       const sanitizeSheetName = (name: string): string => {
         // Excel worksheet names cannot contain: \ / ? * : [ ]
@@ -1514,8 +1779,8 @@ export default function App() {
           id: sp.id,
           panel: sp.panel,
           circuits: sp.circuits,
-          type: "Sub Panel"
-        }))
+          type: "Sub Panel",
+        })),
       ];
 
       allPanelsToExport.forEach((item, index) => {
@@ -1538,7 +1803,10 @@ export default function App() {
             kaic,
             af,
           },
-        } = computePanelScheduleValues(p, c, { vdCalculations, panelId: item.id });
+        } = computePanelScheduleValues(p, c, {
+          vdCalculations,
+          panelId: item.id,
+        });
 
         const formatWireSize = (size: number): string =>
           size <= 8 ? size.toFixed(1) : size.toString();
@@ -1546,9 +1814,16 @@ export default function App() {
         const wsData: any[][] = [];
         wsData.push(["ELECTRICAL LOAD SCHEDULE", "", "", "", "", ""]);
         wsData.push([]);
-        if (p.projectType) wsData.push(["PROJECT TYPE:", p.projectType.toUpperCase()]);
+        if (p.projectType)
+          wsData.push(["PROJECT TYPE:", p.projectType.toUpperCase()]);
         if (p.owner) wsData.push(["OWNER:", p.owner.toUpperCase()]);
-        wsData.push(["PROJECT:", (p.project || "").toUpperCase(), "", "SYSTEM:", (p.system || "").toUpperCase()]);
+        wsData.push([
+          "PROJECT:",
+          (p.project || "").toUpperCase(),
+          "",
+          "SYSTEM:",
+          (p.system || "").toUpperCase(),
+        ]);
         wsData.push([
           "PANEL DESIGNATION:",
           (p.designation || "").toUpperCase(),
@@ -1556,8 +1831,20 @@ export default function App() {
           "VOLTAGE:",
           p.voltage,
         ]);
-        wsData.push(["", "", "", "PRIMARY VOLTAGE:", transformerPrimaryVoltage]);
-        wsData.push(["", "", "", "TX CONNECTION:", (p.transformerConnection || "Delta-Wye (Δ-Y)").toUpperCase()]);
+        wsData.push([
+          "",
+          "",
+          "",
+          "PRIMARY VOLTAGE:",
+          transformerPrimaryVoltage,
+        ]);
+        wsData.push([
+          "",
+          "",
+          "",
+          "TX CONNECTION:",
+          (p.transformerConnection || "Delta-Wye (Δ-Y)").toUpperCase(),
+        ]);
         if (p.location) wsData.push(["LOCATION:", p.location.toUpperCase()]);
         wsData.push([]);
 
@@ -1613,12 +1900,23 @@ export default function App() {
           if (is3Phase) {
             if (isSpace || cir.loadType === LoadType.SPARE) {
               row.push("-", "-", "-", "-");
-            } else if (cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps) {
+            } else if (
+              cir.subPanelReflectionMode === "phase_loads" &&
+              cir.reflectedPhaseAmps
+            ) {
               row.push(
-                cir.reflectedPhaseAmps.R > 0 ? cir.reflectedPhaseAmps.R.toFixed(2) : "-",
-                cir.reflectedPhaseAmps.Y > 0 ? cir.reflectedPhaseAmps.Y.toFixed(2) : "-",
-                cir.reflectedPhaseAmps.B > 0 ? cir.reflectedPhaseAmps.B.toFixed(2) : "-",
-                cir.reflectedPhaseAmps.ThreePhase > 0 ? cir.reflectedPhaseAmps.ThreePhase.toFixed(2) : "-"
+                cir.reflectedPhaseAmps.R > 0
+                  ? cir.reflectedPhaseAmps.R.toFixed(2)
+                  : "-",
+                cir.reflectedPhaseAmps.Y > 0
+                  ? cir.reflectedPhaseAmps.Y.toFixed(2)
+                  : "-",
+                cir.reflectedPhaseAmps.B > 0
+                  ? cir.reflectedPhaseAmps.B.toFixed(2)
+                  : "-",
+                cir.reflectedPhaseAmps.ThreePhase > 0
+                  ? cir.reflectedPhaseAmps.ThreePhase.toFixed(2)
+                  : "-",
               );
             } else {
               const phases = cir.phases || [];
@@ -1636,7 +1934,11 @@ export default function App() {
               );
             }
           } else {
-            row.push(isSpace || cir.loadType === LoadType.SPARE ? "-" : cir.loadA.toFixed(2));
+            row.push(
+              isSpace || cir.loadType === LoadType.SPARE
+                ? "-"
+                : cir.loadA.toFixed(2),
+            );
           }
 
           row.push(
@@ -1647,7 +1949,7 @@ export default function App() {
             isSpace ? "-" : cir.mcbType,
             isSpace
               ? "-"
-              : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
+              : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ""}${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
           );
           wsData.push(row);
         });
@@ -1707,7 +2009,7 @@ export default function App() {
         wsData.push(["SUMMARY & MAIN FEEDER"]);
         wsData.push([
           "Main Feeder:",
-          `${wire.runs && wire.runs > 1 ? `${wire.runs} Sets of ` : ''}${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
+          `${wire.runs && wire.runs > 1 ? `${wire.runs} Sets of ` : ""}${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
         ]);
         wsData.push([
           "Main Breaker:",
@@ -1726,19 +2028,58 @@ export default function App() {
         const merges = [];
         merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } });
         if (is3Phase) {
-          merges.push({ s: { r: headerRowIndex, c: 0 }, e: { r: headerRowIndex + 1, c: 0 } });
-          merges.push({ s: { r: headerRowIndex, c: 1 }, e: { r: headerRowIndex + 1, c: 1 } });
-          merges.push({ s: { r: headerRowIndex, c: 2 }, e: { r: headerRowIndex + 1, c: 2 } });
-          merges.push({ s: { r: headerRowIndex, c: 3 }, e: { r: headerRowIndex + 1, c: 3 } });
-          merges.push({ s: { r: headerRowIndex, c: 4 }, e: { r: headerRowIndex + 1, c: 4 } });
-          merges.push({ s: { r: headerRowIndex, c: 5 }, e: { r: headerRowIndex + 1, c: 5 } });
-          merges.push({ s: { r: headerRowIndex, c: 6 }, e: { r: headerRowIndex, c: 9 } }); // AMPS spans cols 6, 7, 8, 9
-          merges.push({ s: { r: headerRowIndex, c: 10 }, e: { r: headerRowIndex + 1, c: 10 } });
-          merges.push({ s: { r: headerRowIndex, c: 11 }, e: { r: headerRowIndex + 1, c: 11 } });
-          merges.push({ s: { r: headerRowIndex, c: 12 }, e: { r: headerRowIndex + 1, c: 12 } });
-          merges.push({ s: { r: headerRowIndex, c: 13 }, e: { r: headerRowIndex + 1, c: 13 } });
-          merges.push({ s: { r: headerRowIndex, c: 14 }, e: { r: headerRowIndex + 1, c: 14 } });
-          merges.push({ s: { r: headerRowIndex, c: 15 }, e: { r: headerRowIndex + 1, c: 15 } });
+          merges.push({
+            s: { r: headerRowIndex, c: 0 },
+            e: { r: headerRowIndex + 1, c: 0 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 1 },
+            e: { r: headerRowIndex + 1, c: 1 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 2 },
+            e: { r: headerRowIndex + 1, c: 2 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 3 },
+            e: { r: headerRowIndex + 1, c: 3 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 4 },
+            e: { r: headerRowIndex + 1, c: 4 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 5 },
+            e: { r: headerRowIndex + 1, c: 5 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 6 },
+            e: { r: headerRowIndex, c: 9 },
+          }); // AMPS spans cols 6, 7, 8, 9
+          merges.push({
+            s: { r: headerRowIndex, c: 10 },
+            e: { r: headerRowIndex + 1, c: 10 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 11 },
+            e: { r: headerRowIndex + 1, c: 11 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 12 },
+            e: { r: headerRowIndex + 1, c: 12 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 13 },
+            e: { r: headerRowIndex + 1, c: 13 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 14 },
+            e: { r: headerRowIndex + 1, c: 14 },
+          });
+          merges.push({
+            s: { r: headerRowIndex, c: 15 },
+            e: { r: headerRowIndex + 1, c: 15 },
+          });
         }
         if (merges.length > 0) {
           ws["!merges"] = merges;
@@ -1773,13 +2114,17 @@ export default function App() {
         for (let R = range.s.r; R <= range.e.r; ++R) {
           for (let C = range.s.c; C <= range.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-            
+
             const cellExists = !!ws[cellAddress];
             const isTopHeaderRow = R < headerRowIndex;
-            const isTableHeader = (R >= headerRowIndex && R <= headerRowIndex + headerRowOffset);
+            const isTableHeader =
+              R >= headerRowIndex && R <= headerRowIndex + headerRowOffset;
             const isHeader = isTopHeaderRow || isTableHeader;
-            const isTotalRow = (R === headerRowIndex + 1 + headerRowOffset + c.length + 1) || (R === headerRowIndex + 1 + headerRowOffset + c.length + 2);
-            const isSummaryRow = (R >= headerRowIndex + 1 + headerRowOffset + c.length + 4);
+            const isTotalRow =
+              R === headerRowIndex + 1 + headerRowOffset + c.length + 1 ||
+              R === headerRowIndex + 1 + headerRowOffset + c.length + 2;
+            const isSummaryRow =
+              R >= headerRowIndex + 1 + headerRowOffset + c.length + 4;
 
             if (!cellExists && !isHeader && !isTotalRow && !isSummaryRow) {
               continue; // Optimization: skip empty elements to save memory
@@ -1802,31 +2147,76 @@ export default function App() {
             if (isTopHeaderRow) {
               if (R === 0) {
                 // Main Banner title
-                style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+                style.font = {
+                  name: "Segoe UI",
+                  sz: 12,
+                  bold: true,
+                  color: { rgb: "FFFFFF" },
+                };
                 style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
-                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+                style.alignment = {
+                  horizontal: "left",
+                  vertical: "center",
+                  indent: 1,
+                };
                 style.border = {
                   top: { style: "medium", color: { rgb: "172554" } },
                   bottom: { style: "medium", color: { rgb: "172554" } },
                   left: { style: "medium", color: { rgb: "172554" } },
                   right: { style: "medium", color: { rgb: "172554" } },
                 };
-              } else if (ws[cellAddress].v && ws[cellAddress].v.toString().endsWith(":")) {
-                style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "1E293B" } }; // Slate-800
+              } else if (
+                ws[cellAddress].v &&
+                ws[cellAddress].v.toString().endsWith(":")
+              ) {
+                style.font = {
+                  name: "Segoe UI",
+                  sz: 10,
+                  bold: true,
+                  color: { rgb: "1E293B" },
+                }; // Slate-800
                 style.fill.fgColor.rgb = "FFFFFF";
-                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
-                style.border = { top: { style: "none" }, bottom: { style: "none" }, left: { style: "none" }, right: { style: "none" } };
+                style.alignment = {
+                  horizontal: "left",
+                  vertical: "center",
+                  indent: 1,
+                };
+                style.border = {
+                  top: { style: "none" },
+                  bottom: { style: "none" },
+                  left: { style: "none" },
+                  right: { style: "none" },
+                };
               } else {
-                style.font = { name: "Segoe UI", sz: 10, bold: false, color: { rgb: "334155" } }; // Slate-700
+                style.font = {
+                  name: "Segoe UI",
+                  sz: 10,
+                  bold: false,
+                  color: { rgb: "334155" },
+                }; // Slate-700
                 style.fill.fgColor.rgb = "FFFFFF";
                 style.alignment = { horizontal: "left", vertical: "center" };
-                style.border = { top: { style: "none" }, bottom: { style: "none" }, left: { style: "none" }, right: { style: "none" } };
+                style.border = {
+                  top: { style: "none" },
+                  bottom: { style: "none" },
+                  left: { style: "none" },
+                  right: { style: "none" },
+                };
               }
             } else if (isTableHeader) {
               // Table Header row (Load schedule columns header group)
-              style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
+              style.font = {
+                name: "Segoe UI",
+                sz: 10,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
               style.fill.fgColor.rgb = "312E81"; // Indigo Navy
-              style.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+              style.alignment = {
+                horizontal: "center",
+                vertical: "center",
+                wrapText: true,
+              };
               style.border = {
                 bottom: { style: "medium", color: { rgb: "1E1B4B" } },
                 top: { style: "medium", color: { rgb: "1E1B4B" } },
@@ -1849,26 +2239,50 @@ export default function App() {
               }
               if (C === 1) {
                 // Description (load name) of circuit - align left
-                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+                style.alignment = {
+                  horizontal: "left",
+                  vertical: "center",
+                  indent: 1,
+                };
               } else {
                 style.alignment = { horizontal: "center", vertical: "center" };
               }
             } else if (isTotalRow) {
               // Total rows
-              style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "1E1B4B" } };
+              style.font = {
+                name: "Segoe UI",
+                sz: 10,
+                bold: true,
+                color: { rgb: "1E1B4B" },
+              };
               style.fill.fgColor.rgb = "EEF2FF"; // soft indigo background for accountant calculations
-              style.alignment = { horizontal: C <= 3 ? "left" : "center", vertical: "center", indent: C <= 3 ? 1 : 0 };
+              style.alignment = {
+                horizontal: C <= 3 ? "left" : "center",
+                vertical: "center",
+                indent: C <= 3 ? 1 : 0,
+              };
               style.border = {
                 top: { style: "thin", color: { rgb: "312E81" } },
-                bottom: R === headerRowIndex + 1 + headerRowOffset + c.length + 2 ? { style: "double", color: { rgb: "312E81" } } : { style: "thin", color: { rgb: "312E81" } },
+                bottom:
+                  R === headerRowIndex + 1 + headerRowOffset + c.length + 2
+                    ? { style: "double", color: { rgb: "312E81" } }
+                    : { style: "thin", color: { rgb: "312E81" } },
                 left: { style: "thin", color: { rgb: "C7D2FE" } },
                 right: { style: "thin", color: { rgb: "C7D2FE" } },
               };
             } else if (isSummaryRow) {
               // Summaries at bottom
               style.fill.fgColor.rgb = "F8FAFC";
-              style.font = { name: "Segoe UI", sz: 9.5, color: { rgb: "475569" } };
-              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              style.font = {
+                name: "Segoe UI",
+                sz: 9.5,
+                color: { rgb: "475569" },
+              };
+              style.alignment = {
+                horizontal: "left",
+                vertical: "center",
+                indent: 1,
+              };
               style.border = {
                 top: { style: "thin", color: { rgb: "F1F5F9" } },
                 bottom: { style: "thin", color: { rgb: "F1F5F9" } },
@@ -1920,19 +2334,23 @@ export default function App() {
 
         const panelsForVd = [
           { id: "main", type: "MDP", panel: panel, circuits: circuits },
-          ...(subPanels || [])
-        ].filter(p => p && p.panel);
-        
-        const allSpIds = new Set([...(subPanels || [])].map(sp => sp.id));
+          ...(subPanels || []),
+        ].filter((p) => p && p.panel);
+
+        const allSpIds = new Set([...(subPanels || [])].map((sp) => sp.id));
 
         panelsForVd.forEach((group) => {
-          const groupCalcs = vdCalculations.filter(c => 
-            c.source === group.id || 
-            (group.circuits && group.circuits.some(circuit => circuit.id === c.source))
+          const groupCalcs = vdCalculations.filter(
+            (c) =>
+              c.source === group.id ||
+              (group.circuits &&
+                group.circuits.some((circuit) => circuit.id === c.source)),
           );
 
           if (groupCalcs.length > 0) {
-            vdData.push([`PANEL: ${group.panel.designation || ("type" in group ? (group as any).type : "Sub Panel")}`]);
+            vdData.push([
+              `PANEL: ${group.panel.designation || ("type" in group ? (group as any).type : "Sub Panel")}`,
+            ]);
             vdData.push([
               "LINE NAME",
               "CURRENT (A)",
@@ -1952,25 +2370,35 @@ export default function App() {
               const cLoad = vd.loadA || 0;
               const cVoltage = vd.voltage || 230;
               const dataStr = vd.wireSize;
-              const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] || WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
-              
+              const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
+                WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+
               const sets = vd.wireSets && vd.wireSets > 1 ? vd.wireSets : 1;
               const R = impedanceInfo.r / sets;
 
               const VD_v = (factor * cLength * cLoad * R) / 1000;
               const VD_percent = (VD_v / cVoltage) * 100;
-              
-              const isFeeder = vd.source === "main" || allSpIds.has(vd.source) || vd.name.toLowerCase().includes("feeder");
+
+              const isFeeder =
+                vd.source === "main" ||
+                allSpIds.has(vd.source) ||
+                vd.name.toLowerCase().includes("feeder");
               const limit = isFeeder ? 5.0 : 3.0;
               const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
               const isCompliant = VD_percent <= limit;
-              const status = !isCompliant ? "CRITICAL" : (isWarning ? "WARNING" : "COMPLIANT");
+              const status = !isCompliant
+                ? "CRITICAL"
+                : isWarning
+                  ? "WARNING"
+                  : "COMPLIANT";
 
               vdData.push([
                 vd.name,
                 vd.loadA,
                 vd.length,
-                vd.wireSets && vd.wireSets > 1 ? `${vd.wireSets}x ${vd.wireSize}` : vd.wireSize,
+                vd.wireSets && vd.wireSets > 1
+                  ? `${vd.wireSets}x ${vd.wireSize}`
+                  : vd.wireSize,
                 vd.voltage,
                 vd.systemType,
                 VD_v.toFixed(2),
@@ -1984,55 +2412,62 @@ export default function App() {
         });
 
         // Add custom calculations not belonging to any panel
-        const customCalcs = vdCalculations.filter(c => c.source === "custom");
+        const customCalcs = vdCalculations.filter((c) => c.source === "custom");
         if (customCalcs.length > 0) {
-            vdData.push([`CUSTOM CIRCUITS`]);
+          vdData.push([`CUSTOM CIRCUITS`]);
+          vdData.push([
+            "LINE NAME",
+            "CURRENT (A)",
+            "LENGTH (m)",
+            "WIRE SIZE (mm²)",
+            "VOLTAGE",
+            "SYSTEM TYPE",
+            "VD (V)",
+            "VD (%)",
+            "LIMIT (%)",
+            "STATUS",
+          ]);
+
+          customCalcs.forEach((vd) => {
+            const factor = vd.systemType === "3PH" ? 1.732 : 2;
+            const cLength = vd.length || 0;
+            const cLoad = vd.loadA || 0;
+            const cVoltage = vd.voltage || 230;
+            const dataStr = vd.wireSize;
+            const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] ||
+              WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
+
+            const sets = vd.wireSets && vd.wireSets > 1 ? vd.wireSets : 1;
+            const R = impedanceInfo.r / sets;
+
+            const VD_v = (factor * cLength * cLoad * R) / 1000;
+            const VD_percent = (VD_v / cVoltage) * 100;
+
+            const limit = 3.0;
+            const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
+            const isCompliant = VD_percent <= limit;
+            const status = !isCompliant
+              ? "CRITICAL"
+              : isWarning
+                ? "WARNING"
+                : "COMPLIANT";
+
             vdData.push([
-              "LINE NAME",
-              "CURRENT (A)",
-              "LENGTH (m)",
-              "WIRE SIZE (mm²)",
-              "VOLTAGE",
-              "SYSTEM TYPE",
-              "VD (V)",
-              "VD (%)",
-              "LIMIT (%)",
-              "STATUS",
+              vd.name,
+              vd.loadA,
+              vd.length,
+              vd.wireSets && vd.wireSets > 1
+                ? `${vd.wireSets}x ${vd.wireSize}`
+                : vd.wireSize,
+              vd.voltage,
+              vd.systemType,
+              VD_v.toFixed(2),
+              VD_percent.toFixed(2) + "%",
+              limit.toFixed(1) + "%",
+              status,
             ]);
-
-            customCalcs.forEach((vd) => {
-              const factor = vd.systemType === "3PH" ? 1.732 : 2;
-              const cLength = vd.length || 0;
-              const cLoad = vd.loadA || 0;
-              const cVoltage = vd.voltage || 230;
-              const dataStr = vd.wireSize;
-              const impedanceInfo = WIRE_IMPEDANCE_TABLE[dataStr] || WIRE_IMPEDANCE_TABLE["3.5"] || { r: 5.76, x: 0.157 };
-              
-              const sets = vd.wireSets && vd.wireSets > 1 ? vd.wireSets : 1;
-              const R = impedanceInfo.r / sets;
-
-              const VD_v = (factor * cLength * cLoad * R) / 1000;
-              const VD_percent = (VD_v / cVoltage) * 100;
-              
-              const limit = 3.0;
-              const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
-              const isCompliant = VD_percent <= limit;
-              const status = !isCompliant ? "CRITICAL" : (isWarning ? "WARNING" : "COMPLIANT");
-
-              vdData.push([
-                vd.name,
-                vd.loadA,
-                vd.length,
-                vd.wireSets && vd.wireSets > 1 ? `${vd.wireSets}x ${vd.wireSize}` : vd.wireSize,
-                vd.voltage,
-                vd.systemType,
-                VD_v.toFixed(2),
-                VD_percent.toFixed(2) + "%",
-                limit.toFixed(1) + "%",
-                status,
-              ]);
-            });
-            vdData.push([]);
+          });
+          vdData.push([]);
         }
 
         const wsVd = XLSX.utils.aoa_to_sheet(vdData);
@@ -2066,9 +2501,9 @@ export default function App() {
         for (let R = rangeVd.s.r; R <= rangeVd.e.r; ++R) {
           for (let C = rangeVd.s.c; C <= rangeVd.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-            
+
             const cellExists = !!wsVd[cellAddress];
-            const isHeader = (R === 0 || R === 2);
+            const isHeader = R === 0 || R === 2;
 
             if (!cellExists && !isHeader) {
               continue;
@@ -2083,17 +2518,26 @@ export default function App() {
                 top: { style: "thin", color: { rgb: "E2E8F0" } },
                 bottom: { style: "thin", color: { rgb: "E2E8F0" } },
                 left: { style: "thin", color: { rgb: "E2E8F0" } },
-                right: { style: "thin", color: { rgb: "E2E8F0" } }
-              }
+                right: { style: "thin", color: { rgb: "E2E8F0" } },
+              },
             };
-            
+
             if (R === 0) {
               // Title Banner block
-              style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+              style.font = {
+                name: "Segoe UI",
+                sz: 12,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
               style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
-              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              style.alignment = {
+                horizontal: "left",
+                vertical: "center",
+                indent: 1,
+              };
               style.border = {
-                bottom: { style: "medium", color: { rgb: "172554" } }
+                bottom: { style: "medium", color: { rgb: "172554" } },
               };
             } else if (R === 1) {
               // Spacer row
@@ -2101,16 +2545,25 @@ export default function App() {
                 top: { style: "none" },
                 bottom: { style: "none" },
                 left: { style: "none" },
-                right: { style: "none" }
+                right: { style: "none" },
               };
             } else if (R === 2) {
               // Table header columns
-              style.font = { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } };
+              style.font = {
+                name: "Segoe UI",
+                sz: 9.5,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
               style.fill.fgColor.rgb = "312E81"; // Indigo Navy
-              style.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+              style.alignment = {
+                horizontal: "center",
+                vertical: "center",
+                wrapText: true,
+              };
               style.border = {
                 bottom: { style: "medium", color: { rgb: "1E1B4B" } },
-                top: { style: "medium", color: { rgb: "1E1B4B" } }
+                top: { style: "medium", color: { rgb: "1E1B4B" } },
               };
             } else {
               // Zebra Row Striping
@@ -2120,7 +2573,11 @@ export default function App() {
 
               // Adjust alignment based on column type
               if (C === 0 || C === 1) {
-                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+                style.alignment = {
+                  horizontal: "left",
+                  vertical: "center",
+                  indent: 1,
+                };
               } else if (C === 2 || C === 3 || C === 7 || C === 8) {
                 style.alignment = { horizontal: "right", vertical: "center" };
               } else {
@@ -2163,286 +2620,332 @@ export default function App() {
           conductorType: "Copper",
         };
 
-      const scBaseKVA = scParams.transformerKVA;
-      const scBaseKV = scParams.transformerVoltage / 1000;
-      
-      let connectionMultiplier = 1.0;
-      if (scParams.transformerConnection?.includes('Open') || false) {
-        connectionMultiplier = 0.866; 
-      } 
-      
-      let groundFaultFactor = 1.0;
-      if (scParams.transformerConnection === 'Wye (Star) Connection' || 
-          scParams.transformerConnection === 'Delta-Wye (Δ-Y)' || 
-          scParams.transformerConnection === 'Wye-Wye (Y-Y)' ||
-          scParams.transformerConnection === 'Open Wye-Open Delta') {
-        groundFaultFactor = 1.25; 
-      }
+        const scBaseKVA = scParams.transformerKVA;
+        const scBaseKV = scParams.transformerVoltage / 1000;
 
-      const scZUtilitypu = scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
-      const scZTranspu = (scParams.transformerZ / 100) / connectionMultiplier;
-
-      const scFeederR =
-        (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-      const scFeederX =
-        (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-      const scFeederZ = Math.sqrt(scFeederR * scFeederR + scFeederX * scFeederX);
-      const scZFeederpu =
-        (scFeederZ * (scBaseKVA / 1000)) / (scBaseKV * scBaseKV);
-
-      const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
-      const scIFullLoad =
-        scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
-
-      const scIscMainBreaker = scIFullLoad / (scZUtilitypu + scZTranspu);
-      const scIscFaultPoint = scIFullLoad / scTotalZpu;
-
-      const scMotorLoadVA = circuits
-        .filter(
-          (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
-        )
-        .reduce((sum, c) => sum + c.loadVA, 0);
-      const scMotorContribution =
-        scMotorLoadVA > 0
-          ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
-          : 0;
-
-      const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
-      const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * groundFaultFactor; // Use PEC ground fault factor
-      const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
-
-      const fault1Isc = (scParams.utilityShortCircuitMVA * 1000000) / (1.732 * scParams.primaryVoltage);
-
-      const scData: any[][] = [];
-      scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
-      scData.push([]);
-      scData.push(["INPUT DESIGN PARAMETERS", "VALUE", "UNIT"]);
-      scData.push([
-        "Utility Short Circuit Strength",
-        scParams.utilityShortCircuitMVA,
-        "MVAsc",
-      ]);
-      scData.push(["Primary Bus Voltage (HV)", scParams.primaryVoltage, "Volts"]);
-      scData.push([
-        "Secondary Rated Bus Voltage (LV)",
-        scParams.transformerVoltage,
-        "Volts",
-      ]);
-      scData.push([
-        "Transformer Sizing Capacity",
-        scParams.transformerKVA,
-        "kVA",
-      ]);
-      scData.push([
-        "Transformer Percent Impedance (%Z)",
-        scParams.transformerZ,
-        "%",
-      ]);
-      scData.push([
-        "Feeder Conductor Cross-Section",
-        scParams.feederSize,
-        "mm² THHN",
-      ]);
-      scData.push(["Feeder Distance Length", scParams.feederLength, "Meters"]);
-      scData.push(["Parallel Feeder Conductors", scParams.feederRuns, "Runs"]);
-      scData.push([
-        "Active Conductor Metal Type",
-        scParams.conductorType,
-        "Copper/Aluminum",
-      ]);
-      scData.push([
-        "Transformer Connection",
-        scParams.transformerConnection,
-        "Configuration",
-      ]);
-      scData.push([
-        "Ground Fault Factor applied",
-        groundFaultFactor.toFixed(2),
-        "Multiplier",
-      ]);
-      scData.push([]);
-      scData.push([
-        "PER-UNIT IMPEDANCES (BASE S SYSTEM = " +
-          scParams.transformerKVA +
-          " kVA)",
-        "VALUE",
-        "UNIT",
-      ]);
-      scData.push([
-        "Transformer Full Load Current (FLA)",
-        scIFullLoad.toFixed(2),
-        "Amperes",
-      ]);
-      scData.push([
-        "Utility Grid Impedance (Z-utility)",
-        scZUtilitypu.toFixed(6),
-        "pu",
-      ]);
-      scData.push([
-        "Transformer Leakage Impedance (Z-transformer)",
-        scZTranspu.toFixed(6),
-        "pu",
-      ]);
-      scData.push([
-        "Main Feeder Ohmic Resistance (R)",
-        scFeederR.toFixed(5),
-        "Ohms",
-      ]);
-      scData.push([
-        "Main Feeder Ohmic Reactance (X)",
-        scFeederX.toFixed(5),
-        "Ohms",
-      ]);
-      scData.push([
-        "Main Feeder Absolute Ohmic Impedance (|Z|)",
-        scFeederZ.toFixed(5),
-        "Ohms",
-      ]);
-      scData.push([
-        "Feeder Integrated Impedance (Z-feeder)",
-        scZFeederpu.toFixed(6),
-        "pu",
-      ]);
-      scData.push([
-        "Total Consolidated System Impedance (Z-total)",
-        scTotalZpu.toFixed(6),
-        "pu",
-      ]);
-      scData.push([]);
-      scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
-      scData.push([
-        "Fault 1: Symmetrical Fault Current at Utility HV (Isc)",
-        fault1Isc.toFixed(2),
-        "Amps",
-      ]);
-      scData.push([
-        "Fault 2: Symmetrical Fault Current at Transformer (Isc Main)",
-        scIscMainBreaker.toFixed(2),
-        "Amps",
-      ]);
-      scData.push([
-        "Fault 3: Symmetrical Fault Current at Panel (Isc Panel)",
-        scIscFaultPoint.toFixed(2),
-        "Amps",
-      ]);
-      scData.push([
-        "Rotating Motor Feedback Symmetrical Contribution (Imotor)",
-        scMotorContribution.toFixed(2),
-        "Amps",
-      ]);
-      scData.push([
-        "Combined Total Symmetrical Fault Current (Isc sym)",
-        scCombinedSymmetricalCurrent.toFixed(2),
-        "Amps",
-      ]);
-      scData.push([
-        "Factored Asymmetrical Fault Current (Isc asym)",
-        scCombinedAsymmetricalCurrent.toFixed(2),
-        "Amps",
-      ]);
-      scData.push([
-        "Ultimate Fault Breaking Intensity Assessment",
-        scBreakingkAIC.toFixed(2),
-        "kAIC",
-      ]);
-      scData.push([
-        "Interrupting Protection Level Class",
-        scBreakingkAIC > 22
-          ? "35 kAIC Required"
-          : scBreakingkAIC > 10
-            ? "22 kAIC"
-            : "10 kAIC",
-        "",
-      ]);
-
-      const wsSc = XLSX.utils.aoa_to_sheet(scData);
-      const wscolsSc = [{ wch: 55 }, { wch: 25 }, { wch: 18 }];
-      wsSc["!cols"] = wscolsSc;
-
-      wsSc["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
-
-      const rangeSc = XLSX.utils.decode_range(wsSc["!ref"] || "A1:A1");
-      const wsrowsSc = [];
-      for (let r = 0; r <= rangeSc.e.r; r++) {
-        if (r === 0) wsrowsSc.push({ hpt: 28 });
-        else if (scData[r] && scData[r].length === 0) wsrowsSc.push({ hpt: 12 });
-        else if (r === 2 || r === 15 || r === 25) wsrowsSc.push({ hpt: 24 });
-        else wsrowsSc.push({ hpt: 20 });
-      }
-      wsSc["!rows"] = wsrowsSc;
-
-      for (let R = rangeSc.s.r; R <= rangeSc.e.r; ++R) {
-        for (let C = rangeSc.s.c; C <= rangeSc.e.c; ++C) {
-          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-          
-          const cellExists = !!wsSc[cellAddress];
-          const isHeader = (R === 0 || R === 2 || R === 15 || R === 25);
-
-          if (!cellExists && !isHeader) {
-            continue;
-          }
-
-          if (!wsSc[cellAddress]) wsSc[cellAddress] = { t: "s", v: "" };
-          let style: any = {
-            font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
-            fill: { fgColor: { rgb: "FFFFFF" } },
-            alignment: { vertical: "center", horizontal: "center" },
-            border: {
-              top: { style: "thin", color: { rgb: "E2E8F0" } },
-              bottom: { style: "thin", color: { rgb: "E2E8F0" } },
-              left: { style: "thin", color: { rgb: "E2E8F0" } },
-              right: { style: "thin", color: { rgb: "E2E8F0" } }
-            }
-          };
-
-          if (R === 0) {
-            // Main Banner Title
-            style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
-            style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
-            style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
-            style.border = {
-              bottom: { style: "medium", color: { rgb: "172554" } }
-            };
-          } else if (wsSc[cellAddress].v === "" && !isHeader) {
-            // Spacer row / Blank cells
-            style.border = {
-              top: { style: "none" },
-              bottom: { style: "none" },
-              left: { style: "none" },
-              right: { style: "none" }
-            };
-          } else if (R === 2 || R === 15 || R === 25) {
-            // Section Headers
-            style.font = { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "FFFFFF" } };
-            style.fill.fgColor.rgb = "312E81"; // Indigo Navy
-            style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
-            style.border = {
-              bottom: { style: "medium", color: { rgb: "1E1B4B" } },
-              top: { style: "medium", color: { rgb: "1E1B4B" } }
-            };
-          } else {
-            // Zebra data row striping
-            if (R % 2 === 0) {
-              style.fill.fgColor.rgb = "F8FAFC"; // Slate-50 alternating bg
-            }
-
-            // Alignments
-            if (C === 0) {
-              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
-            } else if (C === 1) {
-              style.alignment = { horizontal: "right", vertical: "center" };
-              style.font.bold = true;
-              style.font.color = { rgb: "0F172A" }; // Slate-900 (key values bold)
-            } else if (C === 2) {
-              style.alignment = { horizontal: "center", vertical: "center" };
-              style.font.italic = true;
-              style.font.color = { rgb: "64748B" }; // Muted Slate
-            }
-          }
-          wsSc[cellAddress].s = style;
+        let connectionMultiplier = 1.0;
+        if (scParams.transformerConnection?.includes("Open") || false) {
+          connectionMultiplier = 0.866;
         }
-      }
-      XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
+
+        let groundFaultFactor = 1.0;
+        if (
+          scParams.transformerConnection === "Wye (Star) Connection" ||
+          scParams.transformerConnection === "Delta-Wye (Δ-Y)" ||
+          scParams.transformerConnection === "Wye-Wye (Y-Y)" ||
+          scParams.transformerConnection === "Open Wye-Open Delta"
+        ) {
+          groundFaultFactor = 1.25;
+        }
+
+        const scZUtilitypu =
+          scBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
+        const scZTranspu = scParams.transformerZ / 100 / connectionMultiplier;
+
+        const scFeederR =
+          (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+        const scFeederX =
+          (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+        const scFeederZ = Math.sqrt(
+          scFeederR * scFeederR + scFeederX * scFeederX,
+        );
+        const scZFeederpu =
+          (scFeederZ * (scBaseKVA / 1000)) / (scBaseKV * scBaseKV);
+
+        const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
+        const scIFullLoad =
+          scParams.transformerKVA /
+          (1.732 * (scParams.transformerVoltage / 1000));
+
+        const scIscMainBreaker = scIFullLoad / (scZUtilitypu + scZTranspu);
+        const scIscFaultPoint = scIFullLoad / scTotalZpu;
+
+        const scMotorLoadVA = circuits
+          .filter(
+            (c) =>
+              c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
+          )
+          .reduce((sum, c) => sum + c.loadVA, 0);
+        const scMotorContribution =
+          scMotorLoadVA > 0
+            ? (scMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
+            : 0;
+
+        const scCombinedSymmetricalCurrent =
+          scIscFaultPoint + scMotorContribution;
+        const scCombinedAsymmetricalCurrent =
+          scCombinedSymmetricalCurrent * groundFaultFactor; // Use PEC ground fault factor
+        const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
+
+        const fault1Isc =
+          (scParams.utilityShortCircuitMVA * 1000000) /
+          (1.732 * scParams.primaryVoltage);
+
+        const scData: any[][] = [];
+        scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
+        scData.push([]);
+        scData.push(["INPUT DESIGN PARAMETERS", "VALUE", "UNIT"]);
+        scData.push([
+          "Utility Short Circuit Strength",
+          scParams.utilityShortCircuitMVA,
+          "MVAsc",
+        ]);
+        scData.push([
+          "Primary Bus Voltage (HV)",
+          scParams.primaryVoltage,
+          "Volts",
+        ]);
+        scData.push([
+          "Secondary Rated Bus Voltage (LV)",
+          scParams.transformerVoltage,
+          "Volts",
+        ]);
+        scData.push([
+          "Transformer Sizing Capacity",
+          scParams.transformerKVA,
+          "kVA",
+        ]);
+        scData.push([
+          "Transformer Percent Impedance (%Z)",
+          scParams.transformerZ,
+          "%",
+        ]);
+        scData.push([
+          "Feeder Conductor Cross-Section",
+          scParams.feederSize,
+          "mm² THHN",
+        ]);
+        scData.push([
+          "Feeder Distance Length",
+          scParams.feederLength,
+          "Meters",
+        ]);
+        scData.push([
+          "Parallel Feeder Conductors",
+          scParams.feederRuns,
+          "Runs",
+        ]);
+        scData.push([
+          "Active Conductor Metal Type",
+          scParams.conductorType,
+          "Copper/Aluminum",
+        ]);
+        scData.push([
+          "Transformer Connection",
+          scParams.transformerConnection,
+          "Configuration",
+        ]);
+        scData.push([
+          "Ground Fault Factor applied",
+          groundFaultFactor.toFixed(2),
+          "Multiplier",
+        ]);
+        scData.push([]);
+        scData.push([
+          "PER-UNIT IMPEDANCES (BASE S SYSTEM = " +
+            scParams.transformerKVA +
+            " kVA)",
+          "VALUE",
+          "UNIT",
+        ]);
+        scData.push([
+          "Transformer Full Load Current (FLA)",
+          scIFullLoad.toFixed(2),
+          "Amperes",
+        ]);
+        scData.push([
+          "Utility Grid Impedance (Z-utility)",
+          scZUtilitypu.toFixed(6),
+          "pu",
+        ]);
+        scData.push([
+          "Transformer Leakage Impedance (Z-transformer)",
+          scZTranspu.toFixed(6),
+          "pu",
+        ]);
+        scData.push([
+          "Main Feeder Ohmic Resistance (R)",
+          scFeederR.toFixed(5),
+          "Ohms",
+        ]);
+        scData.push([
+          "Main Feeder Ohmic Reactance (X)",
+          scFeederX.toFixed(5),
+          "Ohms",
+        ]);
+        scData.push([
+          "Main Feeder Absolute Ohmic Impedance (|Z|)",
+          scFeederZ.toFixed(5),
+          "Ohms",
+        ]);
+        scData.push([
+          "Feeder Integrated Impedance (Z-feeder)",
+          scZFeederpu.toFixed(6),
+          "pu",
+        ]);
+        scData.push([
+          "Total Consolidated System Impedance (Z-total)",
+          scTotalZpu.toFixed(6),
+          "pu",
+        ]);
+        scData.push([]);
+        scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
+        scData.push([
+          "Fault 1: Symmetrical Fault Current at Utility HV (Isc)",
+          fault1Isc.toFixed(2),
+          "Amps",
+        ]);
+        scData.push([
+          "Fault 2: Symmetrical Fault Current at Transformer (Isc Main)",
+          scIscMainBreaker.toFixed(2),
+          "Amps",
+        ]);
+        scData.push([
+          "Fault 3: Symmetrical Fault Current at Panel (Isc Panel)",
+          scIscFaultPoint.toFixed(2),
+          "Amps",
+        ]);
+        scData.push([
+          "Rotating Motor Feedback Symmetrical Contribution (Imotor)",
+          scMotorContribution.toFixed(2),
+          "Amps",
+        ]);
+        scData.push([
+          "Combined Total Symmetrical Fault Current (Isc sym)",
+          scCombinedSymmetricalCurrent.toFixed(2),
+          "Amps",
+        ]);
+        scData.push([
+          "Factored Asymmetrical Fault Current (Isc asym)",
+          scCombinedAsymmetricalCurrent.toFixed(2),
+          "Amps",
+        ]);
+        scData.push([
+          "Ultimate Fault Breaking Intensity Assessment",
+          scBreakingkAIC.toFixed(2),
+          "kAIC",
+        ]);
+        scData.push([
+          "Interrupting Protection Level Class",
+          scBreakingkAIC > 22
+            ? "35 kAIC Required"
+            : scBreakingkAIC > 10
+              ? "22 kAIC"
+              : "10 kAIC",
+          "",
+        ]);
+
+        const wsSc = XLSX.utils.aoa_to_sheet(scData);
+        const wscolsSc = [{ wch: 55 }, { wch: 25 }, { wch: 18 }];
+        wsSc["!cols"] = wscolsSc;
+
+        wsSc["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+
+        const rangeSc = XLSX.utils.decode_range(wsSc["!ref"] || "A1:A1");
+        const wsrowsSc = [];
+        for (let r = 0; r <= rangeSc.e.r; r++) {
+          if (r === 0) wsrowsSc.push({ hpt: 28 });
+          else if (scData[r] && scData[r].length === 0)
+            wsrowsSc.push({ hpt: 12 });
+          else if (r === 2 || r === 15 || r === 25) wsrowsSc.push({ hpt: 24 });
+          else wsrowsSc.push({ hpt: 20 });
+        }
+        wsSc["!rows"] = wsrowsSc;
+
+        for (let R = rangeSc.s.r; R <= rangeSc.e.r; ++R) {
+          for (let C = rangeSc.s.c; C <= rangeSc.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+
+            const cellExists = !!wsSc[cellAddress];
+            const isHeader = R === 0 || R === 2 || R === 15 || R === 25;
+
+            if (!cellExists && !isHeader) {
+              continue;
+            }
+
+            if (!wsSc[cellAddress]) wsSc[cellAddress] = { t: "s", v: "" };
+            let style: any = {
+              font: { name: "Segoe UI", sz: 10, color: { rgb: "334155" } }, // Slate-700
+              fill: { fgColor: { rgb: "FFFFFF" } },
+              alignment: { vertical: "center", horizontal: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "E2E8F0" } },
+                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
+                left: { style: "thin", color: { rgb: "E2E8F0" } },
+                right: { style: "thin", color: { rgb: "E2E8F0" } },
+              },
+            };
+
+            if (R === 0) {
+              // Main Banner Title
+              style.font = {
+                name: "Segoe UI",
+                sz: 12,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
+              style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
+              style.alignment = {
+                horizontal: "left",
+                vertical: "center",
+                indent: 1,
+              };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "172554" } },
+              };
+            } else if (wsSc[cellAddress].v === "" && !isHeader) {
+              // Spacer row / Blank cells
+              style.border = {
+                top: { style: "none" },
+                bottom: { style: "none" },
+                left: { style: "none" },
+                right: { style: "none" },
+              };
+            } else if (R === 2 || R === 15 || R === 25) {
+              // Section Headers
+              style.font = {
+                name: "Segoe UI",
+                sz: 10,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
+              style.fill.fgColor.rgb = "312E81"; // Indigo Navy
+              style.alignment = {
+                horizontal: "left",
+                vertical: "center",
+                indent: 1,
+              };
+              style.border = {
+                bottom: { style: "medium", color: { rgb: "1E1B4B" } },
+                top: { style: "medium", color: { rgb: "1E1B4B" } },
+              };
+            } else {
+              // Zebra data row striping
+              if (R % 2 === 0) {
+                style.fill.fgColor.rgb = "F8FAFC"; // Slate-50 alternating bg
+              }
+
+              // Alignments
+              if (C === 0) {
+                style.alignment = {
+                  horizontal: "left",
+                  vertical: "center",
+                  indent: 1,
+                };
+              } else if (C === 1) {
+                style.alignment = { horizontal: "right", vertical: "center" };
+                style.font.bold = true;
+                style.font.color = { rgb: "0F172A" }; // Slate-900 (key values bold)
+              } else if (C === 2) {
+                style.alignment = { horizontal: "center", vertical: "center" };
+                style.font.italic = true;
+                style.font.color = { rgb: "64748B" }; // Muted Slate
+              }
+            }
+            wsSc[cellAddress].s = style;
+          }
+        }
+        XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
       }
 
       // -----------------------------------------------------
@@ -2533,9 +3036,9 @@ export default function App() {
         for (let R = rangeIll.s.r; R <= rangeIll.e.r; ++R) {
           for (let C = rangeIll.s.c; C <= rangeIll.e.c; ++C) {
             const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-            
+
             const cellExists = !!wsIll[cellAddress];
-            const isHeader = (R === 0 || R === 2);
+            const isHeader = R === 0 || R === 2;
 
             if (!cellExists && !isHeader) {
               continue;
@@ -2550,17 +3053,26 @@ export default function App() {
                 top: { style: "thin", color: { rgb: "E2E8F0" } },
                 bottom: { style: "thin", color: { rgb: "E2E8F0" } },
                 left: { style: "thin", color: { rgb: "E2E8F0" } },
-                right: { style: "thin", color: { rgb: "E2E8F0" } }
-              }
+                right: { style: "thin", color: { rgb: "E2E8F0" } },
+              },
             };
 
             if (R === 0) {
               // Main Banner Title
-              style.font = { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } };
+              style.font = {
+                name: "Segoe UI",
+                sz: 12,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
               style.fill.fgColor.rgb = "1E3A8A"; // Royal Navy Blue
-              style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
+              style.alignment = {
+                horizontal: "left",
+                vertical: "center",
+                indent: 1,
+              };
               style.border = {
-                bottom: { style: "medium", color: { rgb: "172554" } }
+                bottom: { style: "medium", color: { rgb: "172554" } },
               };
             } else if (R === 1) {
               // Spacer row
@@ -2568,16 +3080,25 @@ export default function App() {
                 top: { style: "none" },
                 bottom: { style: "none" },
                 left: { style: "none" },
-                right: { style: "none" }
+                right: { style: "none" },
               };
             } else if (R === 2) {
               // Table header columns
-              style.font = { name: "Segoe UI", sz: 9.5, bold: true, color: { rgb: "FFFFFF" } };
+              style.font = {
+                name: "Segoe UI",
+                sz: 9.5,
+                bold: true,
+                color: { rgb: "FFFFFF" },
+              };
               style.fill.fgColor.rgb = "312E81"; // Indigo Navy
-              style.alignment = { horizontal: "center", vertical: "center", wrapText: true };
+              style.alignment = {
+                horizontal: "center",
+                vertical: "center",
+                wrapText: true,
+              };
               style.border = {
                 bottom: { style: "medium", color: { rgb: "1E1B4B" } },
-                top: { style: "medium", color: { rgb: "1E1B4B" } }
+                top: { style: "medium", color: { rgb: "1E1B4B" } },
               };
             } else {
               // Zebra data row striping
@@ -2587,8 +3108,20 @@ export default function App() {
 
               // Adjust alignment based on column type
               if (C === 0 || C === 3) {
-                style.alignment = { horizontal: "left", vertical: "center", indent: 1 };
-              } else if (C === 1 || C === 2 || C === 4 || C === 5 || C === 6 || C === 7 || C === 8) {
+                style.alignment = {
+                  horizontal: "left",
+                  vertical: "center",
+                  indent: 1,
+                };
+              } else if (
+                C === 1 ||
+                C === 2 ||
+                C === 4 ||
+                C === 5 ||
+                C === 6 ||
+                C === 7 ||
+                C === 8
+              ) {
                 style.alignment = { horizontal: "right", vertical: "center" };
               } else {
                 style.alignment = { horizontal: "center", vertical: "center" };
@@ -2617,16 +3150,19 @@ export default function App() {
       // Trigger File Download
       // -----------------------------------------------------
       const filename = `Engineering_Reports_${panel.designation || "Project"}.xlsx`;
-      
+
       try {
         XLSX.writeFile(wb, filename);
       } catch (writeError) {
-        console.warn("Standard XLSX.writeFile failed, using fallback Binary Blob Download:", writeError);
+        console.warn(
+          "Standard XLSX.writeFile failed, using fallback Binary Blob Download:",
+          writeError,
+        );
         const wbout = XLSX.write(wb, { bookType: "xlsx", type: "binary" });
         const buf = new ArrayBuffer(wbout.length);
         const view = new Uint8Array(buf);
         for (let i = 0; i < wbout.length; i++) {
-          view[i] = wbout.charCodeAt(i) & 0xFF;
+          view[i] = wbout.charCodeAt(i) & 0xff;
         }
         const blob = new Blob([buf], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
@@ -2645,21 +3181,33 @@ export default function App() {
   };
 
   const handleExportWord = async () => {
-    const isPremiumUser = userPlan === "premium" || userPlan === "enterprise" || isAdmin;
+    const isPremiumUser =
+      userPlan === "premium" || userPlan === "enterprise" || isAdmin;
     if (!isPremiumUser) {
-      alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
+      alert(
+        "Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.",
+      );
       setShowUpgrade(true);
       return;
     }
 
-    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
+    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(
+      panel,
+      circuits,
+      subPanels,
+      vdCalculations,
+    );
 
     if (user?.uid) {
       try {
         const response = await fetch("/api/verify-doc-export", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: user.uid, module: activeTab, format: "word" })
+          body: JSON.stringify({
+            userId: user.uid,
+            module: activeTab,
+            format: "word",
+          }),
         });
         if (!response.ok) {
           const data = await response.json();
@@ -2668,7 +3216,10 @@ export default function App() {
           return;
         }
       } catch (err) {
-        console.warn("Backend document validation failed, proceeding with client verification:", err);
+        console.warn(
+          "Backend document validation failed, proceeding with client verification:",
+          err,
+        );
       }
     }
 
@@ -2760,13 +3311,13 @@ export default function App() {
         illumParams,
         images,
         iscParams,
-        
+
         {
           primaryVoltage: transformerPrimaryVoltage,
           powerFactor: transformerPowerFactor,
           demandFactor: transformerDemandFactor,
           loadingFactor: transformerLoadingFactor,
-        }
+        },
       );
     } catch (e) {
       console.error("Error generating Word doc:", e);
@@ -2784,13 +3335,15 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Sidebar Navigation */}
-      <aside 
+      <aside
         className={`${isSidebarCollapsed ? "w-[76px]" : "w-64"} bg-slate-900 dark:bg-slate-950 border-r border-slate-800 flex flex-col justify-between hidden md:flex shrink-0 no-print transition-all duration-300 ease-in-out relative z-30`}
       >
         <div className="flex flex-col h-full overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {/* Logo, Brand & Collapse Toggler */}
           <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/60 bg-slate-900/40 relative">
-            <div className={`flex items-center gap-3 transition-opacity duration-200 ${isSidebarCollapsed ? "mx-auto justify-center" : ""}`}>
+            <div
+              className={`flex items-center gap-3 transition-opacity duration-200 ${isSidebarCollapsed ? "mx-auto justify-center" : ""}`}
+            >
               <div className="p-2 bg-gradient-to-tr from-yellow-300 to-amber-500 rounded-xl shadow-md shadow-amber-500/10 shrink-0 transform hover:rotate-12 transition-transform duration-300">
                 <Zap className="w-5 h-5 text-slate-950 fill-slate-950" />
               </div>
@@ -2813,7 +3366,9 @@ export default function App() {
                 <button
                   onClick={() => setIsDarkMode(!isDarkMode)}
                   className="p-1.5 hover:bg-slate-800/80 rounded-lg text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
-                  title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                  title={
+                    isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"
+                  }
                 >
                   {isDarkMode ? (
                     <Sun className="w-4 h-4 text-amber-400" />
@@ -2845,7 +3400,6 @@ export default function App() {
 
           {/* Navigation Menu */}
           <div className="flex-1 py-4 px-3 space-y-6">
-            
             {/* MODULES SECTION */}
             <div>
               <div className="flex items-center justify-between mb-2 px-3">
@@ -2857,79 +3411,152 @@ export default function App() {
                   <div className="w-full h-[1px] bg-slate-800/60 my-1"></div>
                 )}
               </div>
-              
+
               <div className="space-y-1">
                 {[
-                  { id: "dashboard", label: "Dashboard", icon: Gauge, requiresPremium: false },
-                  { id: "schedule", label: "Load Schedule", icon: Layout, requiresPremium: false },
-                  { id: "power-suite", label: "Power Analysis Suite", icon: Zap, requiresPremium: true },
-                  { id: "isc", label: "Short Circuit", icon: ShieldAlert, requiresPremium: false },
-                  { id: "vd", label: "Voltage Drop", icon: Ruler, requiresPremium: false },
-                  { id: "lighting", label: "Illumination", icon: Lightbulb, requiresPremium: false },
-                  { id: "system-sld", label: "System SLD", icon: Network, requiresPremium: false },
-                  { id: "floor-plan", label: "Floor Plan", icon: Map, requiresPremium: false },
-                  { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
-                  { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
-                  { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: false }
-                ].filter(item => {
-                  if (isAdmin) return true;
-                  const mod = systemModules.find(m => m.id === item.id);
-                  if (!mod) return true;
-                  return mod.status !== "hidden";
-                }).map((item) => {
-                  const isActive = activeTab === item.id;
-                  const IconComponent = item.icon;
-                  const mod = systemModules.find(m => m.id === item.id);
-                  const isMaintenance = !isAdmin && mod?.status === "maintenance";
-                  const isDisabled = !isAdmin && mod?.status === "disabled";
+                  {
+                    id: "dashboard",
+                    label: "Dashboard",
+                    icon: Gauge,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "schedule",
+                    label: "Load Schedule",
+                    icon: Layout,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "power-suite",
+                    label: "Power Analysis Suite",
+                    icon: Zap,
+                    requiresPremium: true,
+                  },
+                  {
+                    id: "isc",
+                    label: "Short Circuit",
+                    icon: ShieldAlert,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "vd",
+                    label: "Voltage Drop",
+                    icon: Ruler,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "lighting",
+                    label: "Illumination",
+                    icon: Lightbulb,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "system-sld",
+                    label: "System SLD",
+                    icon: Network,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "floor-plan",
+                    label: "Floor Plan",
+                    icon: Map,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "current-calc",
+                    label: "PEC Calculator",
+                    icon: Calculator,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "egc",
+                    label: "EGC Sizer",
+                    icon: Hammer,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "transformer",
+                    label: "Transformer Capacity",
+                    icon: Cpu,
+                    requiresPremium: false,
+                  },
+                ]
+                  .filter((item) => {
+                    if (isAdmin) return true;
+                    const mod = systemModules.find((m) => m.id === item.id);
+                    if (!mod) return true;
+                    return mod.status !== "hidden";
+                  })
+                  .map((item) => {
+                    const isActive = activeTab === item.id;
+                    const IconComponent = item.icon;
+                    const mod = systemModules.find((m) => m.id === item.id);
+                    const isMaintenance =
+                      !isAdmin && mod?.status === "maintenance";
+                    const isDisabled = !isAdmin && mod?.status === "disabled";
 
-                  const handleClick = () => {
-                    if (isDisabled) {
-                      alert(`Module Disabled\n\nThe ${mod?.name || item.label} module has been disabled by the administrator.`);
-                      return;
-                    }
-                    if (isMaintenance) {
-                      alert(`Module Under Maintenance\n\nThe ${mod?.name || item.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`);
-                      return;
-                    }
-                    setActiveTab(item.id as any);
-                  };
+                    const handleClick = () => {
+                      if (isDisabled) {
+                        alert(
+                          `Module Disabled\n\nThe ${mod?.name || item.label} module has been disabled by the administrator.`,
+                        );
+                        return;
+                      }
+                      if (isMaintenance) {
+                        alert(
+                          `Module Under Maintenance\n\nThe ${mod?.name || item.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`,
+                        );
+                        return;
+                      }
+                      setActiveTab(item.id as any);
+                    };
 
-                  return (
-                    <div key={item.id} className="relative group">
-                      <button
-                        onClick={handleClick}
-                        className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
-                          isActive
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner"
-                            : (isMaintenance || isDisabled)
-                              ? "text-slate-500 cursor-not-allowed opacity-50"
-                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
-                        }`}
-                      >
-                        {/* Active vertical left bar */}
-                        {isActive && !isSidebarCollapsed && (
-                          <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-emerald-500 rounded-r" />
+                    return (
+                      <div key={item.id} className="relative group">
+                        <button
+                          onClick={handleClick}
+                          className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"} rounded-lg text-xs font-bold transition-all relative ${
+                            isActive
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-inner"
+                              : isMaintenance || isDisabled
+                                ? "text-slate-500 cursor-not-allowed opacity-50"
+                                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 hover:translate-x-0.5"
+                          }`}
+                        >
+                          {/* Active vertical left bar */}
+                          {isActive && !isSidebarCollapsed && (
+                            <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-emerald-500 rounded-r" />
+                          )}
+                          <IconComponent
+                            className={`w-4 h-4 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-500 group-hover:text-slate-300"}`}
+                          />
+                          {!isSidebarCollapsed && (
+                            <span className="ml-3 truncate flex items-center justify-between w-full">
+                              <span>{item.label}</span>
+                              {isMaintenance && (
+                                <span className="text-[8px] font-black bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">
+                                  MAINT
+                                </span>
+                              )}
+                              {isDisabled && (
+                                <span className="text-[8px] font-black bg-rose-500/10 text-rose-500 border border-rose-500/20 px-1 py-0.2 rounded shrink-0">
+                                  LOCK
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Tooltip for Collapsed Sidebar */}
+                        {isSidebarCollapsed && (
+                          <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
+                            {item.label} {isMaintenance && "(Maintenance)"}{" "}
+                            {isDisabled && "(Disabled)"}
+                          </div>
                         )}
-                        <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-500 group-hover:text-slate-300"}`} />
-                        {!isSidebarCollapsed && (
-                          <span className="ml-3 truncate flex items-center justify-between w-full">
-                            <span>{item.label}</span>
-                            {isMaintenance && <span className="text-[8px] font-black bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">MAINT</span>}
-                            {isDisabled && <span className="text-[8px] font-black bg-rose-500/10 text-rose-500 border border-rose-500/20 px-1 py-0.2 rounded shrink-0">LOCK</span>}
-                          </span>
-                        )}
-                      </button>
-
-                      {/* Tooltip for Collapsed Sidebar */}
-                      {isSidebarCollapsed && (
-                        <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
-                          {item.label} {isMaintenance && "(Maintenance)"} {isDisabled && "(Disabled)"}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
@@ -2948,10 +3575,34 @@ export default function App() {
 
                 <div className="space-y-1">
                   {[
-                    { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
-                    { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
-                    { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" },
-                    { id: "module-management", label: "Module Visibility", icon: Settings, restricted: !isAdmin, badge: null }
+                    {
+                      id: "billing",
+                      label: "My Billing",
+                      icon: Receipt,
+                      restricted: !isAdmin,
+                      badge: null,
+                    },
+                    {
+                      id: "verify",
+                      label: "Verify Users",
+                      icon: Users,
+                      restricted: !isAdmin,
+                      badge: "3",
+                    },
+                    {
+                      id: "verify-registrations",
+                      label: "Verify Registrations",
+                      icon: ShieldCheck,
+                      restricted: !isAdmin,
+                      badge: "1",
+                    },
+                    {
+                      id: "module-management",
+                      label: "Module Visibility",
+                      icon: Settings,
+                      restricted: !isAdmin,
+                      badge: null,
+                    },
                   ].map((item) => {
                     const isActive = activeTab === item.id;
                     const IconComponent = item.icon;
@@ -2960,7 +3611,9 @@ export default function App() {
                         <button
                           onClick={() => {
                             if (item.restricted) {
-                              alert("Administrator Access Required\n\nThis module contains confidential billing ledgers, verify queues, and user registration directories. Access is restricted to angeloperfecto31@gmail.com.");
+                              alert(
+                                "Administrator Access Required\n\nThis module contains confidential billing ledgers, verify queues, and user registration directories. Access is restricted to angeloperfecto31@gmail.com.",
+                              );
                               return;
                             }
                             setActiveTab(item.id as any);
@@ -2979,27 +3632,35 @@ export default function App() {
                             <div className="absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-amber-500 rounded-r" />
                           )}
                           <span className="relative">
-                            <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"}`} />
-                            
+                            <IconComponent
+                              className={`w-4 h-4 shrink-0 ${isActive ? "text-amber-400" : "text-slate-500 group-hover:text-slate-300"}`}
+                            />
+
                             {/* Miniature Red Notification badge on icon when collapsed */}
                             {item.badge && isSidebarCollapsed && (
                               <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 bg-rose-500 border border-slate-900 rounded-full animate-ping" />
                             )}
                           </span>
-                          
+
                           {!isSidebarCollapsed && (
                             <>
-                              <span className="ml-3 truncate">{item.label}</span>
+                              <span className="ml-3 truncate">
+                                {item.label}
+                              </span>
                               {/* Restricted Lock Icon */}
                               {item.restricted && (
                                 <Lock className="w-3 h-3 text-slate-600 ml-auto shrink-0" />
                               )}
-                              
+
                               {/* Custom Notification Badge */}
                               {item.badge && !item.restricted && (
-                                <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-sans font-extrabold shadow-sm ${
-                                  item.badge === "3" ? "bg-rose-500/20 text-rose-450 border border-rose-500/30 font-mono animate-pulse" : "bg-amber-550/20 text-amber-400 border border-amber-500/30"
-                                }`}>
+                                <span
+                                  className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-sans font-extrabold shadow-sm ${
+                                    item.badge === "3"
+                                      ? "bg-rose-500/20 text-rose-450 border border-rose-500/30 font-mono animate-pulse"
+                                      : "bg-amber-550/20 text-amber-400 border border-amber-500/30"
+                                  }`}
+                                >
                                   {item.badge}
                                 </span>
                               )}
@@ -3011,8 +3672,14 @@ export default function App() {
                         {isSidebarCollapsed && (
                           <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap flex items-center gap-1.5">
                             {item.label}
-                            {item.restricted && <Lock className="w-2.5 h-2.5 text-slate-500" />}
-                            {item.badge && <span className="bg-rose-500 text-white text-[8px] px-1 rounded font-sans font-extrabold">{item.badge}</span>}
+                            {item.restricted && (
+                              <Lock className="w-2.5 h-2.5 text-slate-500" />
+                            )}
+                            {item.badge && (
+                              <span className="bg-rose-500 text-white text-[8px] px-1 rounded font-sans font-extrabold">
+                                {item.badge}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3021,99 +3688,134 @@ export default function App() {
                 </div>
               </div>
             )}
-
           </div>
         </div>
 
         {/* Bottom Actions, Upgrade, and Profile Card */}
         <div className="p-3 border-t border-slate-800/60 bg-slate-950/60 space-y-3 shrink-0">
-          
           {/* Active Subscription Countdown Card */}
-          {!isSidebarCollapsed && isActive && expiresAt && (userPlan === "basic" || userPlan === "premium" || userPlan === "free") && (
-            <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                    {userPlan === "free" ? "Free Trial" : "SUBSCRIPTION"}
+          {!isSidebarCollapsed &&
+            isActive &&
+            expiresAt &&
+            (userPlan === "basic" ||
+              userPlan === "premium" ||
+              userPlan === "free") && (
+              <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      {userPlan === "free" ? "Free Trial" : "SUBSCRIPTION"}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                      userPlan === "premium"
+                        ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                        : userPlan === "basic"
+                          ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                    }`}
+                  >
+                    {userPlan === "free" ? "Trial" : userPlan}
                   </span>
                 </div>
-                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
-                  userPlan === "premium" 
-                    ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" 
-                    : userPlan === "basic"
-                      ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                      : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                }`}>
-                  {userPlan === "free" ? "Trial" : userPlan}
-                </span>
+
+                {(() => {
+                  const daysLeft = countdownTime
+                    ? countdownTime.days
+                    : Math.ceil(
+                        (new Date(expiresAt).getTime() - new Date().getTime()) /
+                          (1000 * 3600 * 24),
+                      );
+                  const percent = Math.min(
+                    100,
+                    Math.max(0, (daysLeft / 30) * 100),
+                  );
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-end">
+                        <span className="text-base font-black text-white font-mono tracking-tight leading-none">
+                          {countdownTime ? (
+                            <span className="flex items-center gap-0.5 text-xs">
+                              <span className="text-white font-bold">
+                                {countdownTime.days}d
+                              </span>
+                              <span className="text-slate-600 font-normal">
+                                :
+                              </span>
+                              <span className="text-indigo-300 font-bold">
+                                {String(countdownTime.hours).padStart(2, "0")}h
+                              </span>
+                              <span className="text-slate-600 font-normal">
+                                :
+                              </span>
+                              <span className="text-indigo-300 font-bold">
+                                {String(countdownTime.minutes).padStart(2, "0")}
+                                m
+                              </span>
+                              <span className="text-slate-600 font-normal">
+                                :
+                              </span>
+                              <span className="text-rose-450 font-bold">
+                                {String(countdownTime.seconds).padStart(2, "0")}
+                                s
+                              </span>
+                            </span>
+                          ) : (
+                            <span>
+                              {Math.max(0, daysLeft)}{" "}
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                Days Left
+                              </span>
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-500 font-mono">
+                          {Math.round(percent)}%
+                        </span>
+                      </div>
+
+                      {/* Custom progress bar */}
+                      <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800/30">
+                        <div
+                          className={`h-full transition-all duration-500 rounded-full ${
+                            daysLeft <= 3
+                              ? "bg-gradient-to-r from-rose-500 to-red-500 animate-pulse"
+                              : daysLeft <= 7
+                                ? "bg-gradient-to-r from-amber-500 to-orange-500"
+                                : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                          }`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5">
+                        <span>30-Day Cycle</span>
+                        <button
+                          onClick={() => {
+                            if (userPlan === "free") {
+                              setShowUpgrade(true);
+                            } else {
+                              setShowRenew(true);
+                            }
+                          }}
+                          className="font-black text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
+                        >
+                          {userPlan === "free" ? "Upgrade Plan" : "Renew Plan"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
-              
-              {(() => {
-                const daysLeft = countdownTime ? countdownTime.days : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
-                return (
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-end">
-                      <span className="text-base font-black text-white font-mono tracking-tight leading-none">
-                        {countdownTime ? (
-                          <span className="flex items-center gap-0.5 text-xs">
-                            <span className="text-white font-bold">{countdownTime.days}d</span>
-                            <span className="text-slate-600 font-normal">:</span>
-                            <span className="text-indigo-300 font-bold">{String(countdownTime.hours).padStart(2, "0")}h</span>
-                            <span className="text-slate-600 font-normal">:</span>
-                            <span className="text-indigo-300 font-bold">{String(countdownTime.minutes).padStart(2, "0")}m</span>
-                            <span className="text-slate-600 font-normal">:</span>
-                            <span className="text-rose-450 font-bold">{String(countdownTime.seconds).padStart(2, "0")}s</span>
-                          </span>
-                        ) : (
-                          <span>{Math.max(0, daysLeft)} <span className="text-[10px] text-slate-400 font-normal">Days Left</span></span>
-                        )}
-                      </span>
-                      <span className="text-[9px] font-bold text-slate-500 font-mono">
-                        {Math.round(percent)}%
-                      </span>
-                    </div>
-                    
-                    {/* Custom progress bar */}
-                    <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800/30">
-                      <div 
-                        className={`h-full transition-all duration-500 rounded-full ${
-                          daysLeft <= 3 
-                            ? "bg-gradient-to-r from-rose-500 to-red-500 animate-pulse" 
-                            : daysLeft <= 7
-                              ? "bg-gradient-to-r from-amber-500 to-orange-500"
-                              : "bg-gradient-to-r from-emerald-500 to-teal-500"
-                        }`}
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-[9px] text-slate-500 pt-0.5">
-                      <span>30-Day Cycle</span>
-                      <button 
-                        onClick={() => {
-                          if (userPlan === "free") {
-                            setShowUpgrade(true);
-                          } else {
-                            setShowRenew(true);
-                          }
-                        }}
-                        className="font-black text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
-                      >
-                        {userPlan === "free" ? "Upgrade Plan" : "Renew Plan"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
+            )}
 
           {/* Action CTAs Area */}
           <div className="space-y-1.5">
             {/* Upgrade to Premium */}
-            {(userPlan !== "premium" && userPlan !== "enterprise" || isAdmin) && (
+            {((userPlan !== "premium" && userPlan !== "enterprise") ||
+              isAdmin) && (
               <div className="relative group">
                 <button
                   onClick={() => setShowUpgrade(true)}
@@ -3121,7 +3823,9 @@ export default function App() {
                   title="Unlock Exporting Word & DXF CAD Blocks"
                 >
                   <Zap className="w-3.5 h-3.5 fill-white animate-pulse shrink-0" />
-                  {!isSidebarCollapsed && <span>Premium {isAdmin && "(Admin Test)"}</span>}
+                  {!isSidebarCollapsed && (
+                    <span>Premium {isAdmin && "(Admin Test)"}</span>
+                  )}
                 </button>
                 {isSidebarCollapsed && (
                   <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xxs font-black tracking-wider uppercase rounded-md shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
@@ -3133,69 +3837,154 @@ export default function App() {
 
             {/* Standardized Actions Grid or Stack */}
             {[
-              { label: "Manage Projects", icon: FolderOpen, onClick: () => setIsProjectManagerOpen(true), priority: "secondary" },
-              { 
-                label: userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin ? "Report (Premium)" : "Generate Report", 
-                icon: FileText, 
+              {
+                label: "Manage Projects",
+                icon: FolderOpen,
+                onClick: () => setIsProjectManagerOpen(true),
+                priority: "secondary",
+              },
+              {
+                label:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin
+                    ? "Report (Premium)"
+                    : "Generate Report",
+                icon: FileText,
                 onClick: () => {
-                  if (userPlan === "premium" || userPlan === "enterprise" || isAdmin) {
+                  if (
+                    userPlan === "premium" ||
+                    userPlan === "enterprise" ||
+                    isAdmin
+                  ) {
                     handleExportWord();
                   } else {
-                    alert("Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.");
+                    alert(
+                      "Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.",
+                    );
                     setShowUpgrade(true);
                   }
-                }, 
-                priority: "primary", 
-                title: userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin ? "Available on Premium Plan" : "Generate Custom Word Document Summary",
-                isLocked: userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin
+                },
+                priority: "primary",
+                title:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin
+                    ? "Available on Premium Plan"
+                    : "Generate Custom Word Document Summary",
+                isLocked:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin,
               },
-              { 
-                label: (userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin && activeTab !== "schedule") ? "Excel Export (Premium)" : "Export to Excel",
+              {
+                label:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin &&
+                  activeTab !== "schedule"
+                    ? "Excel Export (Premium)"
+                    : "Export to Excel",
                 icon: FileSpreadsheet,
                 onClick: async () => {
-                  if (userPlan === "premium" || userPlan === "enterprise" || isAdmin || activeTab === "schedule") {
+                  if (
+                    userPlan === "premium" ||
+                    userPlan === "enterprise" ||
+                    isAdmin ||
+                    activeTab === "schedule"
+                  ) {
                     if (user?.uid) {
                       try {
-                        const response = await fetch("/api/verify-excel-export", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ userId: user.uid, module: activeTab })
-                        });
+                        const response = await fetch(
+                          "/api/verify-excel-export",
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              userId: user.uid,
+                              module: activeTab,
+                            }),
+                          },
+                        );
                         if (!response.ok) {
                           const data = await response.json();
-                          alert(data.error || "Excel export verification failed.");
+                          alert(
+                            data.error || "Excel export verification failed.",
+                          );
                           setShowUpgrade(true);
                           return;
                         }
                       } catch (err) {
-                        console.warn("Backend excel validation failed, proceeding with client verification:", err);
+                        console.warn(
+                          "Backend excel validation failed, proceeding with client verification:",
+                          err,
+                        );
                       }
                     }
                     exportToExcel();
                   } else {
-                    alert("Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.");
+                    alert(
+                      "Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.",
+                    );
                     setShowUpgrade(true);
                   }
                 },
                 priority: "secondary",
-                title: (userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin && activeTab !== "schedule") ? "Available on Premium Plan" : "Export current module details to Excel",
-                isLocked: (userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin && activeTab !== "schedule")
+                title:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin &&
+                  activeTab !== "schedule"
+                    ? "Available on Premium Plan"
+                    : "Export current module details to Excel",
+                isLocked:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin &&
+                  activeTab !== "schedule",
               },
-              { 
-                label: userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin ? "CAD Export (Premium)" : "Export AutoCAD Drawing", 
-                icon: Layers, 
+              {
+                label:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin
+                    ? "CAD Export (Premium)"
+                    : "Export AutoCAD Drawing",
+                icon: Layers,
                 onClick: () => {
-                  if (userPlan === "premium" || userPlan === "enterprise" || isAdmin) {
-                    const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, subPanels, vdCalculations);
-                    exportToCAD(panel, updatedMdpCircuits, updatedSubPanels, iscParams, "ALL", vdCalculations, illumParams);
+                  if (
+                    userPlan === "premium" ||
+                    userPlan === "enterprise" ||
+                    isAdmin
+                  ) {
+                    const { updatedMdpCircuits, updatedSubPanels } =
+                      syncHierarchyData(
+                        panel,
+                        circuits,
+                        subPanels,
+                        vdCalculations,
+                      );
+                    exportToCAD(
+                      panel,
+                      updatedMdpCircuits,
+                      updatedSubPanels,
+                      iscParams,
+                      "ALL",
+                      vdCalculations,
+                      illumParams,
+                    );
                   } else {
                     setShowUpgrade(true);
                   }
-                }, 
+                },
                 priority: "secondary",
-                title: "Complete Load Schedule and calculations directly to AutoCAD schema blocks",
-                isLocked: userPlan !== "premium" && userPlan !== "enterprise" && !isAdmin
-              }
+                title:
+                  "Complete Load Schedule and calculations directly to AutoCAD schema blocks",
+                isLocked:
+                  userPlan !== "premium" &&
+                  userPlan !== "enterprise" &&
+                  !isAdmin,
+              },
             ].map((btn, index) => {
               const isPri = btn.priority === "primary";
               const isLck = (btn as any).isLocked;
@@ -3207,14 +3996,20 @@ export default function App() {
                     className={`w-full flex items-center justify-center gap-2 h-9 rounded-lg font-extrabold text-[10px] uppercase tracking-wider transition-all duration-200 active:scale-98 border ${
                       isLck
                         ? "bg-slate-900/40 text-slate-500 hover:text-slate-400 border-slate-800/80 cursor-pointer"
-                        : isPri 
-                          ? "bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/10 text-white border-indigo-500/40" 
+                        : isPri
+                          ? "bg-indigo-600 hover:bg-indigo-500 hover:shadow-indigo-500/10 text-white border-indigo-500/40"
                           : "bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border-slate-700/60"
                     } ${isSidebarCollapsed ? "p-0" : "px-3"}`}
                   >
-                    <btn.icon className={`w-3.5 h-3.5 shrink-0 ${isLck ? "text-slate-600" : isPri ? "text-indigo-200" : "text-slate-400 group-hover:text-slate-200"}`} />
-                    {!isSidebarCollapsed && <span className="truncate">{btn.label}</span>}
-                    {isLck && <Lock className="w-3 h-3 text-amber-500 shrink-0 ml-0.5" />}
+                    <btn.icon
+                      className={`w-3.5 h-3.5 shrink-0 ${isLck ? "text-slate-600" : isPri ? "text-indigo-200" : "text-slate-400 group-hover:text-slate-200"}`}
+                    />
+                    {!isSidebarCollapsed && (
+                      <span className="truncate">{btn.label}</span>
+                    )}
+                    {isLck && (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0 ml-0.5" />
+                    )}
                   </button>
                   {isSidebarCollapsed && (
                     <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
@@ -3231,20 +4026,24 @@ export default function App() {
             {user ? (
               <div className="relative">
                 <button
-                  onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                  onClick={() =>
+                    setIsProfileDropdownOpen(!isProfileDropdownOpen)
+                  }
                   className={`w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800/60 hover:border-slate-750 transition-all text-left group/profile cursor-pointer ${isSidebarCollapsed ? "justify-center p-1.5" : ""}`}
                 >
                   <div className="relative shrink-0 select-none">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm shadow-md ring-2 ring-emerald-500/20">
                       {user.photoURL ? (
-                        <img 
-                          src={user.photoURL} 
-                          alt="Avatar" 
-                          className="w-full h-full rounded-xl object-cover" 
-                          referrerPolicy="no-referrer" 
+                        <img
+                          src={user.photoURL}
+                          alt="Avatar"
+                          className="w-full h-full rounded-xl object-cover"
+                          referrerPolicy="no-referrer"
                         />
+                      ) : user.displayName ? (
+                        user.displayName.charAt(0).toUpperCase()
                       ) : (
-                        user.displayName ? user.displayName.charAt(0).toUpperCase() : (user.email?.charAt(0).toUpperCase() || "?")
+                        user.email?.charAt(0).toUpperCase() || "?"
                       )}
                     </div>
                     {/* Active online dot */}
@@ -3263,32 +4062,63 @@ export default function App() {
                       </span>
                       <div className="flex items-center gap-1 mt-1 flex-wrap">
                         {/* Subscription indicator bubble */}
-                        <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                          isAdmin 
-                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+                        <span
+                          className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                            isAdmin
+                              ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                              : userPlan === "enterprise"
+                                ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                                : userPlan === "premium"
+                                  ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                                  : userPlan === "basic"
+                                    ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                                    : "bg-slate-800 text-slate-400 border border-slate-700/50"
+                          }`}
+                        >
+                          {isAdmin
+                            ? "Admin Engine"
                             : userPlan === "enterprise"
-                              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                              ? "Enterprise (Lifetime)"
                               : userPlan === "premium"
-                                ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" 
+                                ? "Premium Access"
                                 : userPlan === "basic"
-                                  ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
-                                  : "bg-slate-800 text-slate-400 border border-slate-700/50"
-                        }`}>
-                          {isAdmin ? "Admin Engine" : userPlan === "enterprise" ? "Enterprise (Lifetime)" : userPlan === "premium" ? "Premium Access" : userPlan === "basic" ? "Basic Access" : "Free Member"}
+                                  ? "Basic Access"
+                                  : "Free Member"}
                         </span>
-                        
+
                         {/* Remaining Days indicator */}
-                        {(userPlan === "basic" || userPlan === "premium" || userPlan === "free") && expiresAt && (
-                          <span className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
-                            Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
-                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse" 
-                              : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
-                                ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                                : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                          }`}>
-                            {Math.max(0, Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))} Days Left
-                          </span>
-                        )}
+                        {(userPlan === "basic" ||
+                          userPlan === "premium" ||
+                          userPlan === "free") &&
+                          expiresAt && (
+                            <span
+                              className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                                Math.ceil(
+                                  (new Date(expiresAt).getTime() -
+                                    new Date().getTime()) /
+                                    (1000 * 3600 * 24),
+                                ) <= 3
+                                  ? "bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse"
+                                  : Math.ceil(
+                                        (new Date(expiresAt).getTime() -
+                                          new Date().getTime()) /
+                                          (1000 * 3600 * 24),
+                                      ) <= 7
+                                    ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                    : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              }`}
+                            >
+                              {Math.max(
+                                0,
+                                Math.ceil(
+                                  (new Date(expiresAt).getTime() -
+                                    new Date().getTime()) /
+                                    (1000 * 3600 * 24),
+                                ),
+                              )}{" "}
+                              Days Left
+                            </span>
+                          )}
                       </div>
                     </div>
                   )}
@@ -3296,36 +4126,78 @@ export default function App() {
 
                 {/* Profile Quick-Access Dropdown Panel (Absolute Popover) */}
                 {isProfileDropdownOpen && (
-                  <div className={`absolute bottom-14 ${isSidebarCollapsed ? "left-14" : "left-0 right-0"} w-56 bg-slate-950 border border-slate-850 rounded-xl shadow-2xl p-1.5 z-50 animate-fade-in`}>
+                  <div
+                    className={`absolute bottom-14 ${isSidebarCollapsed ? "left-14" : "left-0 right-0"} w-56 bg-slate-950 border border-slate-850 rounded-xl shadow-2xl p-1.5 z-50 animate-fade-in`}
+                  >
                     <div className="px-3 py-2 border-b border-slate-850/60 pb-2 mb-1.5">
-                      <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">QUICK METERS</p>
-                      <p className="text-xs font-extrabold text-slate-200 mt-0.5 truncate">{user.displayName || "User Profile"}</p>
-                      
-                      {(userPlan === "basic" || userPlan === "premium" || userPlan === "free") && expiresAt && (
-                        <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Time Remaining</span>
-                            <span className={`text-[10px] font-black ${
-                              Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
-                                ? "text-rose-400" 
-                                : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
-                                  ? "text-amber-400"
-                                  : "text-emerald-400"
-                            }`}>
-                              {Math.max(0, Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))} Days
-                            </span>
+                      <p className="text-[10px] font-black tracking-widest text-slate-500 uppercase">
+                        QUICK METERS
+                      </p>
+                      <p className="text-xs font-extrabold text-slate-200 mt-0.5 truncate">
+                        {user.displayName || "User Profile"}
+                      </p>
+
+                      {(userPlan === "basic" ||
+                        userPlan === "premium" ||
+                        userPlan === "free") &&
+                        expiresAt && (
+                          <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                                Time Remaining
+                              </span>
+                              <span
+                                className={`text-[10px] font-black ${
+                                  Math.ceil(
+                                    (new Date(expiresAt).getTime() -
+                                      new Date().getTime()) /
+                                      (1000 * 3600 * 24),
+                                  ) <= 3
+                                    ? "text-rose-400"
+                                    : Math.ceil(
+                                          (new Date(expiresAt).getTime() -
+                                            new Date().getTime()) /
+                                            (1000 * 3600 * 24),
+                                        ) <= 7
+                                      ? "text-amber-400"
+                                      : "text-emerald-400"
+                                }`}
+                              >
+                                {Math.max(
+                                  0,
+                                  Math.ceil(
+                                    (new Date(expiresAt).getTime() -
+                                      new Date().getTime()) /
+                                      (1000 * 3600 * 24),
+                                  ),
+                                )}{" "}
+                                Days
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-800 rounded-full h-1.5 mt-1 overflow-hidden">
+                              <div
+                                className={`h-1.5 rounded-full ${
+                                  Math.ceil(
+                                    (new Date(expiresAt).getTime() -
+                                      new Date().getTime()) /
+                                      (1000 * 3600 * 24),
+                                  ) <= 3
+                                    ? "bg-rose-500"
+                                    : Math.ceil(
+                                          (new Date(expiresAt).getTime() -
+                                            new Date().getTime()) /
+                                            (1000 * 3600 * 24),
+                                        ) <= 7
+                                      ? "bg-amber-500"
+                                      : "bg-emerald-500"
+                                }`}
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, (Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) / 30) * 100))}%`,
+                                }}
+                              ></div>
+                            </div>
                           </div>
-                          <div className="w-full bg-slate-800 rounded-full h-1.5 mt-1 overflow-hidden">
-                            <div className={`h-1.5 rounded-full ${
-                              Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 3 
-                                ? "bg-rose-500" 
-                                : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) <= 7
-                                  ? "bg-amber-500"
-                                  : "bg-emerald-500"
-                            }`} style={{ width: `${Math.min(100, Math.max(0, (Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)) / 30) * 100))}%` }}></div>
-                          </div>
-                        </div>
-                      )}
+                        )}
                     </div>
 
                     <button
@@ -3379,7 +4251,6 @@ export default function App() {
               </button>
             )}
           </div>
-
         </div>
       </aside>
 
@@ -3397,33 +4268,37 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1">
-            {isActive && countdownTime && (userPlan === "basic" || userPlan === "premium" || userPlan === "free") && (
-              <div 
-                onClick={() => {
-                  if (userPlan === "free") {
-                    setShowUpgrade(true);
-                  } else {
-                    setShowRenew(true);
-                  }
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black font-mono border cursor-pointer select-none transition-all mr-1.5 ${
-                  countdownTime.days <= 3 
-                    ? "bg-rose-500/10 text-rose-650 dark:text-rose-400 border-rose-500/25 animate-pulse" 
-                    : countdownTime.days <= 7
-                      ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/25"
-                      : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 border-emerald-500/25"
-                }`}
-                title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
-              >
-                <Clock className="w-3 h-3" />
-                <span>
-                  {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
-                  {String(countdownTime.hours).padStart(2, "0")}:
-                  {String(countdownTime.minutes).padStart(2, "0")}:
-                  {String(countdownTime.seconds).padStart(2, "0")}
-                </span>
-              </div>
-            )}
+            {isActive &&
+              countdownTime &&
+              (userPlan === "basic" ||
+                userPlan === "premium" ||
+                userPlan === "free") && (
+                <div
+                  onClick={() => {
+                    if (userPlan === "free") {
+                      setShowUpgrade(true);
+                    } else {
+                      setShowRenew(true);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black font-mono border cursor-pointer select-none transition-all mr-1.5 ${
+                    countdownTime.days <= 3
+                      ? "bg-rose-500/10 text-rose-650 dark:text-rose-400 border-rose-500/25 animate-pulse"
+                      : countdownTime.days <= 7
+                        ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/25"
+                        : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 border-emerald-500/25"
+                  }`}
+                  title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>
+                    {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
+                    {String(countdownTime.hours).padStart(2, "0")}:
+                    {String(countdownTime.minutes).padStart(2, "0")}:
+                    {String(countdownTime.seconds).padStart(2, "0")}
+                  </span>
+                </div>
+              )}
 
             {/* Mobile Theme Toggle Button */}
             <button
@@ -3448,49 +4323,59 @@ export default function App() {
             <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest font-mono">
               SYSTEM STATION
             </span>
-            <span className="text-slate-350 dark:text-slate-700 font-normal">•</span>
+            <span className="text-slate-350 dark:text-slate-700 font-normal">
+              •
+            </span>
             <span className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md">
-              {tabs.find(t => t.id === activeTab)?.label || "Dashboard"}
+              {tabs.find((t) => t.id === activeTab)?.label || "Dashboard"}
             </span>
           </div>
 
           <div className="flex items-center gap-3">
-            {isActive && countdownTime && (userPlan === "basic" || userPlan === "premium" || userPlan === "free") && (
-              <div 
-                onClick={() => {
-                  if (userPlan === "free") {
-                    setShowUpgrade(true);
-                  } else {
-                    setShowRenew(true);
-                  }
-                }}
-                className={`flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-black font-mono border cursor-pointer select-none transition-all hover:scale-102 ${
-                  countdownTime.days <= 3 
-                    ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 shadow-sm shadow-rose-500/5 animate-pulse" 
-                    : countdownTime.days <= 7
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 shadow-sm"
-                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm"
-                }`}
-                title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
-              >
-                <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                <span className="text-slate-500 dark:text-slate-400 font-bold tracking-normal mr-0.5">
-                  {userPlan === "free" ? "Trial Time Left:" : "Access Time Left:"}
-                </span>
-                <span className="tracking-tight text-slate-900 dark:text-white">
-                  {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
-                  {String(countdownTime.hours).padStart(2, "0")}:
-                  {String(countdownTime.minutes).padStart(2, "0")}:
-                  {String(countdownTime.seconds).padStart(2, "0")}
-                </span>
-              </div>
-            )}
+            {isActive &&
+              countdownTime &&
+              (userPlan === "basic" ||
+                userPlan === "premium" ||
+                userPlan === "free") && (
+                <div
+                  onClick={() => {
+                    if (userPlan === "free") {
+                      setShowUpgrade(true);
+                    } else {
+                      setShowRenew(true);
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-black font-mono border cursor-pointer select-none transition-all hover:scale-102 ${
+                    countdownTime.days <= 3
+                      ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30 shadow-sm shadow-rose-500/5 animate-pulse"
+                      : countdownTime.days <= 7
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 shadow-sm"
+                        : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm"
+                  }`}
+                  title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                >
+                  <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                  <span className="text-slate-500 dark:text-slate-400 font-bold tracking-normal mr-0.5">
+                    {userPlan === "free"
+                      ? "Trial Time Left:"
+                      : "Access Time Left:"}
+                  </span>
+                  <span className="tracking-tight text-slate-900 dark:text-white">
+                    {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
+                    {String(countdownTime.hours).padStart(2, "0")}:
+                    {String(countdownTime.minutes).padStart(2, "0")}:
+                    {String(countdownTime.seconds).padStart(2, "0")}
+                  </span>
+                </div>
+              )}
 
             {/* Desktop Theme Toggle */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
-              title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              title={
+                isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"
+              }
             >
               {isDarkMode ? (
                 <Sun className="w-4 h-4 text-amber-400" />
@@ -3503,44 +4388,50 @@ export default function App() {
 
         {/* Mobile secondary navigation bar */}
         <div className="md:hidden bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-2 sticky top-16 z-20 overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex gap-2 no-print backdrop-blur-md">
-          {tabs.filter(tab => {
-            if (isAdmin) return true;
-            const mod = systemModules.find(m => m.id === tab.id);
-            if (!mod) return true;
-            return mod.status !== "hidden";
-          }).map((tab) => {
-            const mod = systemModules.find(m => m.id === tab.id);
-            const isMaintenance = !isAdmin && mod?.status === "maintenance";
-            const isDisabled = !isAdmin && mod?.status === "disabled";
+          {tabs
+            .filter((tab) => {
+              if (isAdmin) return true;
+              const mod = systemModules.find((m) => m.id === tab.id);
+              if (!mod) return true;
+              return mod.status !== "hidden";
+            })
+            .map((tab) => {
+              const mod = systemModules.find((m) => m.id === tab.id);
+              const isMaintenance = !isAdmin && mod?.status === "maintenance";
+              const isDisabled = !isAdmin && mod?.status === "disabled";
 
-            const handleClick = () => {
-              if (isDisabled) {
-                alert(`Module Disabled\n\nThe ${mod?.name || tab.label} module has been disabled by the administrator.`);
-                return;
-              }
-              if (isMaintenance) {
-                alert(`Module Under Maintenance\n\nThe ${mod?.name || tab.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`);
-                return;
-              }
-              setActiveTab(tab.id as any);
-            };
+              const handleClick = () => {
+                if (isDisabled) {
+                  alert(
+                    `Module Disabled\n\nThe ${mod?.name || tab.label} module has been disabled by the administrator.`,
+                  );
+                  return;
+                }
+                if (isMaintenance) {
+                  alert(
+                    `Module Under Maintenance\n\nThe ${mod?.name || tab.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`,
+                  );
+                  return;
+                }
+                setActiveTab(tab.id as any);
+              };
 
-            return (
-              <button
-                key={tab.id}
-                onClick={handleClick}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                  activeTab === tab.id
-                    ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
-                    : (isMaintenance || isDisabled)
-                      ? "bg-slate-100 dark:bg-slate-800 text-slate-400 opacity-50 cursor-not-allowed border border-slate-200/20"
-                      : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
-                }`}
-              >
-                {tab.label} {isMaintenance && "⚠"} {isDisabled && "🔒"}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={tab.id}
+                  onClick={handleClick}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+                    activeTab === tab.id
+                      ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
+                      : isMaintenance || isDisabled
+                        ? "bg-slate-100 dark:bg-slate-800 text-slate-400 opacity-50 cursor-not-allowed border border-slate-200/20"
+                        : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700"
+                  }`}
+                >
+                  {tab.label} {isMaintenance && "⚠"} {isDisabled && "🔒"}
+                </button>
+              );
+            })}
         </div>
 
         {/* Scrollable Content Area */}
@@ -3549,15 +4440,33 @@ export default function App() {
           className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 w-full"
         >
           <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-8 pb-32">
-            
             {/* Expiration Notification Banner */}
             {(() => {
-              if (isActive && expiresAt && (userPlan === "basic" || userPlan === "premium" || userPlan === "free")) {
-                const daysLeft = countdownTime ? countdownTime.days : Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                const percent = Math.min(100, Math.max(0, (daysLeft / 30) * 100));
-                const planName = userPlan === "free" ? "Free Trial" : userPlan === "basic" ? "Basic" : "Premium";
+              if (
+                isActive &&
+                expiresAt &&
+                (userPlan === "basic" ||
+                  userPlan === "premium" ||
+                  userPlan === "free")
+              ) {
+                const daysLeft = countdownTime
+                  ? countdownTime.days
+                  : Math.ceil(
+                      (new Date(expiresAt).getTime() - new Date().getTime()) /
+                        (1000 * 3600 * 24),
+                    );
+                const percent = Math.min(
+                  100,
+                  Math.max(0, (daysLeft / 30) * 100),
+                );
+                const planName =
+                  userPlan === "free"
+                    ? "Free Trial"
+                    : userPlan === "basic"
+                      ? "Basic"
+                      : "Premium";
                 const isTrial = userPlan === "free";
-                
+
                 if (daysLeft <= 0) {
                   return (
                     <div className="w-full p-4 rounded-2xl flex items-center justify-between border shadow-sm bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/30">
@@ -3565,15 +4474,20 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse" />
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
-                            Your {planName} {isTrial ? "has ended" : "has expired"}!
+                            Your {planName}{" "}
+                            {isTrial ? "has ended" : "has expired"}!
                           </p>
                           <p className="text-xs text-rose-600 dark:text-rose-400">
-                            {isTrial ? "Upgrade to a premium plan to continue using professional electrical calculation engines." : "Renew your subscription to regain access to premium features and exports."}
+                            {isTrial
+                              ? "Upgrade to a premium plan to continue using professional electrical calculation engines."
+                              : "Renew your subscription to regain access to premium features and exports."}
                           </p>
                         </div>
                       </div>
                       <button
-                        onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
+                        onClick={() =>
+                          isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                        }
                         className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                       >
                         {isTrial ? "Upgrade Now" : "Renew Plan"}
@@ -3587,32 +4501,50 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse animate-bounce" />
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
-                            Your {planName} {isTrial ? "ends" : "expires"} in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                            Your {planName} {isTrial ? "ends" : "expires"} in{" "}
+                            {daysLeft} day{daysLeft > 1 ? "s" : ""}!
                           </p>
                           <p className="text-xs text-rose-600 dark:text-rose-400">
-                            Critical countdown: {isTrial ? "Upgrade to a premium plan to avoid losing workspace access." : "Renew immediately to avoid interruption."}
+                            Critical countdown:{" "}
+                            {isTrial
+                              ? "Upgrade to a premium plan to avoid losing workspace access."
+                              : "Renew immediately to avoid interruption."}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="hidden sm:flex flex-col items-end text-right font-mono">
-                          <span className="text-xxs text-rose-400 font-bold uppercase">Time Remaining</span>
+                          <span className="text-xxs text-rose-400 font-bold uppercase">
+                            Time Remaining
+                          </span>
                           {countdownTime ? (
                             <span className="text-sm font-black text-rose-600 dark:text-rose-450 flex items-center gap-1">
                               <span>{countdownTime.days}d</span>
                               <span className="animate-pulse">:</span>
-                              <span>{String(countdownTime.hours).padStart(2, "0")}h</span>
+                              <span>
+                                {String(countdownTime.hours).padStart(2, "0")}h
+                              </span>
                               <span className="animate-pulse">:</span>
-                              <span>{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                              <span>
+                                {String(countdownTime.minutes).padStart(2, "0")}
+                                m
+                              </span>
                               <span className="animate-pulse">:</span>
-                              <span>{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                              <span>
+                                {String(countdownTime.seconds).padStart(2, "0")}
+                                s
+                              </span>
                             </span>
                           ) : (
-                            <span className="text-sm font-bold text-rose-600 dark:text-rose-400">{daysLeft}d / 30d</span>
+                            <span className="text-sm font-bold text-rose-600 dark:text-rose-400">
+                              {daysLeft}d / 30d
+                            </span>
                           )}
                         </div>
                         <button
-                          onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
+                          onClick={() =>
+                            isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                          }
                           className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                         >
                           {isTrial ? "Upgrade Now" : "Renew Plan"}
@@ -3627,32 +4559,49 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-amber-600" />
                         <div>
                           <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                            Your {planName} {isTrial ? "ends" : "expires"} in {daysLeft} day{daysLeft > 1 ? "s" : ""}!
+                            Your {planName} {isTrial ? "ends" : "expires"} in{" "}
+                            {daysLeft} day{daysLeft > 1 ? "s" : ""}!
                           </p>
                           <p className="text-xs text-amber-600 dark:text-amber-400">
-                            {isTrial ? "Upgrade now to keep uninterrupted access to your professional suite." : "Renew now to keep uninterrupted access to your engineering tools."}
+                            {isTrial
+                              ? "Upgrade now to keep uninterrupted access to your professional suite."
+                              : "Renew now to keep uninterrupted access to your engineering tools."}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="hidden sm:flex flex-col items-end text-right font-mono">
-                          <span className="text-xxs text-amber-400 font-bold uppercase">Time Remaining</span>
+                          <span className="text-xxs text-amber-400 font-bold uppercase">
+                            Time Remaining
+                          </span>
                           {countdownTime ? (
                             <span className="text-sm font-black text-amber-600 dark:text-amber-400 flex items-center gap-1">
                               <span>{countdownTime.days}d</span>
                               <span className="animate-pulse">:</span>
-                              <span>{String(countdownTime.hours).padStart(2, "0")}h</span>
+                              <span>
+                                {String(countdownTime.hours).padStart(2, "0")}h
+                              </span>
                               <span className="animate-pulse">:</span>
-                              <span>{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                              <span>
+                                {String(countdownTime.minutes).padStart(2, "0")}
+                                m
+                              </span>
                               <span className="animate-pulse">:</span>
-                              <span>{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                              <span>
+                                {String(countdownTime.seconds).padStart(2, "0")}
+                                s
+                              </span>
                             </span>
                           ) : (
-                            <span className="text-sm font-bold text-amber-600 dark:text-amber-400">{daysLeft}d / 30d</span>
+                            <span className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                              {daysLeft}d / 30d
+                            </span>
                           )}
                         </div>
                         <button
-                          onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
+                          onClick={() =>
+                            isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                          }
                           className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-amber-500 hover:bg-amber-400 text-slate-900 cursor-pointer"
                         >
                           {isTrial ? "Upgrade Now" : "Renew Plan"}
@@ -3677,41 +4626,80 @@ export default function App() {
                           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                             {countdownTime ? (
                               <span className="flex items-center gap-1">
-                                <span>{isTrial ? "Remaining Trial Access Time:" : "Remaining Access Time:"}</span>
+                                <span>
+                                  {isTrial
+                                    ? "Remaining Trial Access Time:"
+                                    : "Remaining Access Time:"}
+                                </span>
                                 <strong className="font-mono text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-0.5 text-xxs">
                                   <span>{countdownTime.days}d</span>
                                   <span className="animate-pulse">:</span>
-                                  <span>{String(countdownTime.hours).padStart(2, "0")}h</span>
+                                  <span>
+                                    {String(countdownTime.hours).padStart(
+                                      2,
+                                      "0",
+                                    )}
+                                    h
+                                  </span>
                                   <span className="animate-pulse">:</span>
-                                  <span>{String(countdownTime.minutes).padStart(2, "0")}m</span>
+                                  <span>
+                                    {String(countdownTime.minutes).padStart(
+                                      2,
+                                      "0",
+                                    )}
+                                    m
+                                  </span>
                                   <span className="animate-pulse">:</span>
-                                  <span>{String(countdownTime.seconds).padStart(2, "0")}s</span>
+                                  <span>
+                                    {String(countdownTime.seconds).padStart(
+                                      2,
+                                      "0",
+                                    )}
+                                    s
+                                  </span>
                                 </strong>
                               </span>
                             ) : (
-                              <span>You have <strong>{daysLeft} days left</strong> in your current cycle.</span>
+                              <span>
+                                You have <strong>{daysLeft} days left</strong>{" "}
+                                in your current cycle.
+                              </span>
                             )}
-                            <span className="text-slate-300 dark:text-slate-700">•</span>
-                            <span className="font-mono text-[10px]">{isTrial ? "Trial Ends:" : "Expires:"} {new Date(expiresAt).toLocaleDateString()}</span>
+                            <span className="text-slate-300 dark:text-slate-700">
+                              •
+                            </span>
+                            <span className="font-mono text-[10px]">
+                              {isTrial ? "Trial Ends:" : "Expires:"}{" "}
+                              {new Date(expiresAt).toLocaleDateString()}
+                            </span>
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-4 w-full sm:w-auto max-w-xs shrink-0 self-end sm:self-center">
                         {/* Countdown progress bar */}
                         <div className="flex-1 space-y-1 min-w-[120px]">
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
-                            <span>{isTrial ? "TRIAL DAYS REMAINING" : "DAYS REMAINING"}</span>
+                            <span>
+                              {isTrial
+                                ? "TRIAL DAYS REMAINING"
+                                : "DAYS REMAINING"}
+                            </span>
                             {countdownTime ? (
-                              <span>{countdownTime.days}d {String(countdownTime.hours).padStart(2, "0")}h</span>
+                              <span>
+                                {countdownTime.days}d{" "}
+                                {String(countdownTime.hours).padStart(2, "0")}h
+                              </span>
                             ) : (
                               <span>{daysLeft}d / 30d</span>
                             )}
                           </div>
                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden border border-slate-200/30 dark:border-slate-750">
-                            <div 
+                            <div
                               className={`h-full rounded-full transition-all duration-500 ${
-                                isTrial ? "bg-gradient-to-r from-amber-500 to-yellow-500" : "bg-gradient-to-r from-emerald-500 to-teal-500"
+                                isTrial
+                                  ? "bg-gradient-to-r from-amber-500 to-yellow-500"
+                                  : "bg-gradient-to-r from-emerald-500 to-teal-500"
                               }`}
                               style={{ width: `${percent}%` }}
                             />
@@ -3719,10 +4707,12 @@ export default function App() {
                         </div>
 
                         <button
-                          onClick={() => isTrial ? setShowUpgrade(true) : setShowRenew(true)}
+                          onClick={() =>
+                            isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                          }
                           className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all duration-200 shadow-sm whitespace-nowrap cursor-pointer active:scale-98 ${
-                            isTrial 
-                              ? "bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950" 
+                            isTrial
+                              ? "bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950"
                               : "bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900"
                           }`}
                         >
@@ -3741,21 +4731,27 @@ export default function App() {
                 <div className="bg-yellow-50 p-6 rounded-full inline-block mb-4">
                   <AlertTriangle className="w-16 h-16 text-yellow-600" />
                 </div>
-                <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Module Under Maintenance</h1>
+                <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
+                  Module Under Maintenance
+                </h1>
                 <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                  {activeModuleStatus?.maintenanceMessage || "This module is currently down for scheduled maintenance and upgrades. We apologize for the inconvenience. For urgent inquiries, please contact your system administrator."}
+                  {activeModuleStatus?.maintenanceMessage ||
+                    "This module is currently down for scheduled maintenance and upgrades. We apologize for the inconvenience. For urgent inquiries, please contact your system administrator."}
                 </p>
                 {activeModuleStatus?.expectedCompletion && (
                   <div className="bg-white border border-gray-200 shadow-sm rounded-lg px-6 py-4 flex items-center space-x-3 mt-4">
                     <CheckCircle2 className="w-5 h-5 text-indigo-500" />
                     <span className="text-gray-700 font-medium">
-                      Expected Completion: <span className="text-gray-900 font-bold">{activeModuleStatus.expectedCompletion}</span>
+                      Expected Completion:{" "}
+                      <span className="text-gray-900 font-bold">
+                        {activeModuleStatus.expectedCompletion}
+                      </span>
                     </span>
                   </div>
                 )}
                 <div className="mt-8">
-                  <button 
-                    onClick={() => setActiveTab("dashboard")} 
+                  <button
+                    onClick={() => setActiveTab("dashboard")}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl shadow-lg transition-all font-medium"
                   >
                     Return to Dashboard
@@ -3766,7 +4762,13 @@ export default function App() {
 
             <div className={isMaintenanceMode ? "hidden" : "w-full"}>
               {/* Module Management Tab */}
-              <div className={activeTab === "module-management" && isAdmin ? "w-full" : "hidden"}>
+              <div
+                className={
+                  activeTab === "module-management" && isAdmin
+                    ? "w-full"
+                    : "hidden"
+                }
+              >
                 <ModuleManagement adminEmail={user?.email || undefined} />
               </div>
 
@@ -3834,16 +4836,26 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                     {/* Connected Load Schedule Telemetry */}
                     {getModuleStatus("schedule") !== "hidden" && (
-                      <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
-                        getModuleStatus("schedule") !== "active" ? "opacity-60" : ""
-                      }`}>
+                      <div
+                        className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                          getModuleStatus("schedule") !== "active"
+                            ? "opacity-60"
+                            : ""
+                        }`}
+                      >
                         {getModuleStatus("schedule") !== "active" && (
                           <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
                             <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
                               {getModuleStatus("schedule") === "disabled" ? (
-                                <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
+                                <>
+                                  <Lock className="w-3 h-3 text-rose-500" />{" "}
+                                  LOCKED
+                                </>
                               ) : (
-                                <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
+                                <>
+                                  <AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" />{" "}
+                                  MAINTENANCE
+                                </>
                               )}
                             </div>
                           </div>
@@ -3854,9 +4866,9 @@ export default function App() {
                               CONNECTED CAPACITY
                             </span>
                             <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                              {getModuleStatus("schedule") === "active" ? (
-                                `${(circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) / 1000).toFixed(2)} kVA`
-                              ) : "---"}
+                              {getModuleStatus("schedule") === "active"
+                                ? `${(circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0) / 1000).toFixed(2)} kVA`
+                                : "---"}
                             </h3>
                           </div>
                           <div className="p-3 bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
@@ -3866,7 +4878,9 @@ export default function App() {
 
                         <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                           <span className="font-bold text-slate-700 dark:text-slate-300">
-                            {getModuleStatus("schedule") === "active" ? `${circuits.length} Registered Loops` : "No Active Telemetry"}
+                            {getModuleStatus("schedule") === "active"
+                              ? `${circuits.length} Registered Loops`
+                              : "No Active Telemetry"}
                           </span>
                           {getModuleStatus("schedule") === "active" && (
                             <button
@@ -3881,333 +4895,446 @@ export default function App() {
                     )}
 
                     {/* Short Circuit Fault Adequacy */}
-                    {getModuleStatus("isc") !== "hidden" && (() => {
-                      const baseKVA = iscParams.transformerKVA || 500;
-                      const baseKV = (iscParams.transformerVoltage || 230) / 1000;
-                      
-                      const connectionMultiplier = 
-                        iscParams.transformerConnection === 'Open Delta (V-V)' ? 0.577 :
-                        iscParams.transformerConnection === 'Open Wye-Open Delta' ? 0.866 : 1.0;
+                    {getModuleStatus("isc") !== "hidden" &&
+                      (() => {
+                        const baseKVA = iscParams.transformerKVA || 500;
+                        const baseKV =
+                          (iscParams.transformerVoltage || 230) / 1000;
 
-                      // 1. Utility Impedance (pu)
-                      const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 250) * 1000);
+                        const connectionMultiplier =
+                          iscParams.transformerConnection === "Open Delta (V-V)"
+                            ? 0.577
+                            : iscParams.transformerConnection ===
+                                "Open Wye-Open Delta"
+                              ? 0.866
+                              : 1.0;
 
-                      // 2. Transformer Impedance (pu)
-                      const zTranspu = ((iscParams.transformerZ || 5) / 100) / connectionMultiplier;
+                        // 1. Utility Impedance (pu)
+                        const zUtilitypu =
+                          baseKVA /
+                          ((iscParams.utilityShortCircuitMVA || 250) * 1000);
 
-                      // 3. Feeder Impedance Estimate (Symmetrical pu)
-                      let feederR = 0.7 * ((iscParams.feederLength || 30) / 1000) / (iscParams.feederRuns || 1);
-                      let feederX = 0.08 * ((iscParams.feederLength || 30) / 1000) / (iscParams.feederRuns || 1);
-                      if (iscParams.feederSize) {
-                        const tableVals = WIRE_IMPEDANCE_TABLE[iscParams.feederSize.toString()];
-                        if (tableVals) {
-                          feederR = (tableVals.r * ((iscParams.feederLength || 30) / 1000)) / (iscParams.feederRuns || 1);
-                          feederX = (tableVals.x * ((iscParams.feederLength || 30) / 1000)) / (iscParams.feederRuns || 1);
+                        // 2. Transformer Impedance (pu)
+                        const zTranspu =
+                          (iscParams.transformerZ || 5) /
+                          100 /
+                          connectionMultiplier;
+
+                        // 3. Feeder Impedance Estimate (Symmetrical pu)
+                        let feederR =
+                          (0.7 * ((iscParams.feederLength || 30) / 1000)) /
+                          (iscParams.feederRuns || 1);
+                        let feederX =
+                          (0.08 * ((iscParams.feederLength || 30) / 1000)) /
+                          (iscParams.feederRuns || 1);
+                        if (iscParams.feederSize) {
+                          const tableVals =
+                            WIRE_IMPEDANCE_TABLE[
+                              iscParams.feederSize.toString()
+                            ];
+                          if (tableVals) {
+                            feederR =
+                              (tableVals.r *
+                                ((iscParams.feederLength || 30) / 1000)) /
+                              (iscParams.feederRuns || 1);
+                            feederX =
+                              (tableVals.x *
+                                ((iscParams.feederLength || 30) / 1000)) /
+                              (iscParams.feederRuns || 1);
+                          }
                         }
-                      }
-                      const feederZ = Math.sqrt(feederR*feederR + feederX*feederX);
-                      const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
+                        const feederZ = Math.sqrt(
+                          feederR * feederR + feederX * feederX,
+                        );
+                        const zFeederpu =
+                          (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
 
-                      const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-                      const iFullLoad = baseKVA / (1.732 * baseKV);
-                      
-                      // Symmetrical Short Circuit Current at Fault Point
-                      const iscFaultPointVal = iFullLoad / totalZpu;
-                      const iscKAIC = iscFaultPointVal / 1000;
-                      
-                      const panelLimitKAIC = parseFloat(panel.icRating) || 10;
-                      const scStatus = iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
+                        const totalZpu = zUtilitypu + zTranspu + zFeederpu;
+                        const iFullLoad = baseKVA / (1.732 * baseKV);
 
-                      return (
-                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
-                          getModuleStatus("isc") !== "active" ? "opacity-60" : ""
-                        }`}>
-                          {getModuleStatus("isc") !== "active" && (
-                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
-                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
-                                {getModuleStatus("isc") === "disabled" ? (
-                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
-                                ) : (
-                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
-                                )}
+                        // Symmetrical Short Circuit Current at Fault Point
+                        const iscFaultPointVal = iFullLoad / totalZpu;
+                        const iscKAIC = iscFaultPointVal / 1000;
+
+                        const panelLimitKAIC = parseFloat(panel.icRating) || 10;
+                        const scStatus =
+                          iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
+
+                        return (
+                          <div
+                            className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                              getModuleStatus("isc") !== "active"
+                                ? "opacity-60"
+                                : ""
+                            }`}
+                          >
+                            {getModuleStatus("isc") !== "active" && (
+                              <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                                <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                  {getModuleStatus("isc") === "disabled" ? (
+                                    <>
+                                      <Lock className="w-3 h-3 text-rose-500" />{" "}
+                                      LOCKED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" />{" "}
+                                      MAINTENANCE
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                  CALCULATED ISC
+                                </span>
+                                <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                  {getModuleStatus("isc") === "active"
+                                    ? `${iscKAIC.toFixed(2)} kA`
+                                    : "---"}
+                                </h3>
+                              </div>
+                              <div
+                                className={`p-3 rounded-xl shadow-sm transition-all ${
+                                  scStatus === "COMPLIANT"
+                                    ? "bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white"
+                                    : "bg-rose-50 dark:bg-rose-950/35 text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white"
+                                }`}
+                              >
+                                <ShieldAlert className="w-5 h-5" />
                               </div>
                             </div>
-                          )}
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                                CALCULATED ISC
-                              </span>
-                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {getModuleStatus("isc") === "active" ? `${iscKAIC.toFixed(2)} kA` : "---"}
-                              </h3>
-                            </div>
-                            <div
-                              className={`p-3 rounded-xl shadow-sm transition-all ${
-                                scStatus === "COMPLIANT"
-                                  ? "bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white"
-                                  : "bg-rose-50 dark:bg-rose-950/35 text-rose-600 dark:text-rose-400 group-hover:bg-rose-600 group-hover:text-white"
-                              }`}
-                            >
-                              <ShieldAlert className="w-5 h-5" />
-                            </div>
-                          </div>
 
-                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                            <span
-                              className={`font-extrabold flex items-center gap-1.5 ${
-                                scStatus === "COMPLIANT"
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-rose-600 dark:text-rose-400"
-                              }`}
-                            >
+                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                               <span
-                                className={`w-2 h-2 rounded-full ${scStatus === "COMPLIANT" ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`}
-                              />
-                              {getModuleStatus("isc") === "active" ? `${scStatus} Limit (${panelLimitKAIC}kA pf)` : "No Active Audit"}
-                            </span>
-                            {getModuleStatus("isc") === "active" && (
-                              <button
-                                onClick={() => setActiveTab("isc")}
-                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                className={`font-extrabold flex items-center gap-1.5 ${
+                                  scStatus === "COMPLIANT"
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-rose-600 dark:text-rose-400"
+                                }`}
                               >
-                                Audit <ArrowUpRight className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                <span
+                                  className={`w-2 h-2 rounded-full ${scStatus === "COMPLIANT" ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`}
+                                />
+                                {getModuleStatus("isc") === "active"
+                                  ? `${scStatus} Limit (${panelLimitKAIC}kA pf)`
+                                  : "No Active Audit"}
+                              </span>
+                              {getModuleStatus("isc") === "active" && (
+                                <button
+                                  onClick={() => setActiveTab("isc")}
+                                  className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                >
+                                  Audit <ArrowUpRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
+                        );
+                      })()}
 
                     {/* Voltage Drop Audit */}
-                    {getModuleStatus("vd") !== "hidden" && (() => {
-                      let maxVDPercent = 0;
-                      let vdCompliant = true;
+                    {getModuleStatus("vd") !== "hidden" &&
+                      (() => {
+                        let maxVDPercent = 0;
+                        let vdCompliant = true;
 
-                      vdCalculations.forEach((vd) => {
-                        const data =
-                          WIRE_IMPEDANCE_TABLE[vd.wireSize] ||
-                          WIRE_IMPEDANCE_TABLE["3.5"];
-                        const r = data ? data.r : 5.76;
-                        const factor = vd.systemType === "3PH" ? 1.732 : 2;
-                        const dropV = (factor * vd.loadA * vd.length * r) / 1000;
-                        const pct = (dropV / vd.voltage) * 100;
-                        
-                        if (!Number.isNaN(pct) && pct > maxVDPercent) {
-                          maxVDPercent = pct;
+                        vdCalculations.forEach((vd) => {
+                          const data =
+                            WIRE_IMPEDANCE_TABLE[vd.wireSize] ||
+                            WIRE_IMPEDANCE_TABLE["3.5"];
+                          const r = data ? data.r : 5.76;
+                          const factor = vd.systemType === "3PH" ? 1.732 : 2;
+                          const dropV =
+                            (factor * vd.loadA * vd.length * r) / 1000;
+                          const pct = (dropV / vd.voltage) * 100;
+
+                          if (!Number.isNaN(pct) && pct > maxVDPercent) {
+                            maxVDPercent = pct;
+                          }
+
+                          const isMainFeeder = vd.source === "main";
+                          const isSubPanelFeeder =
+                            uniqueSubPanels.some((sp) => sp.id === vd.source) ||
+                            uniqueSubPanels.some((ssp) => ssp.id === vd.source);
+                          const isFeeder =
+                            isMainFeeder ||
+                            isSubPanelFeeder ||
+                            vd.name.toLowerCase().includes("feeder");
+                          const limit = isFeeder ? 5.0 : 3.0;
+                          if (!Number.isNaN(pct) && pct > limit) {
+                            vdCompliant = false;
+                          }
+                        });
+                        if (vdCalculations.length === 0) {
+                          maxVDPercent = 1.15;
+                          vdCompliant = true;
                         }
 
-                        const isMainFeeder = vd.source === "main";
-                        const isSubPanelFeeder = uniqueSubPanels.some(sp => sp.id === vd.source) || uniqueSubPanels.some(ssp => ssp.id === vd.source);
-                        const isFeeder = isMainFeeder || isSubPanelFeeder || vd.name.toLowerCase().includes("feeder");
-                        const limit = isFeeder ? 5.0 : 3.0;
-                        if (!Number.isNaN(pct) && pct > limit) {
-                          vdCompliant = false;
-                        }
-                      });
-                      if (vdCalculations.length === 0) {
-                        maxVDPercent = 1.15;
-                        vdCompliant = true;
-                      }
-
-                      return (
-                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
-                          getModuleStatus("vd") !== "active" ? "opacity-60" : ""
-                        }`}>
-                          {getModuleStatus("vd") !== "active" && (
-                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
-                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
-                                {getModuleStatus("vd") === "disabled" ? (
-                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
-                                ) : (
-                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
-                                )}
+                        return (
+                          <div
+                            className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                              getModuleStatus("vd") !== "active"
+                                ? "opacity-60"
+                                : ""
+                            }`}
+                          >
+                            {getModuleStatus("vd") !== "active" && (
+                              <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                                <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                  {getModuleStatus("vd") === "disabled" ? (
+                                    <>
+                                      <Lock className="w-3 h-3 text-rose-500" />{" "}
+                                      LOCKED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" />{" "}
+                                      MAINTENANCE
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                  MAX VOLTAGE DROP
+                                </span>
+                                <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                  {getModuleStatus("vd") === "active"
+                                    ? `${maxVDPercent.toFixed(2)}%`
+                                    : "---"}
+                                </h3>
+                              </div>
+                              <div
+                                className={`p-3 rounded-xl shadow-sm transition-all ${
+                                  vdCompliant
+                                    ? "bg-green-50 dark:bg-emerald-950/35 text-green-600 dark:text-emerald-400 group-hover:bg-green-600 group-hover:text-white"
+                                    : "bg-amber-50 dark:bg-amber-950/35 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white"
+                                }`}
+                              >
+                                <Ruler className="w-5 h-5" />
                               </div>
                             </div>
-                          )}
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                                MAX VOLTAGE DROP
-                              </span>
-                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {getModuleStatus("vd") === "active" ? `${maxVDPercent.toFixed(2)}%` : "---"}
-                              </h3>
-                            </div>
-                            <div
-                              className={`p-3 rounded-xl shadow-sm transition-all ${
-                                vdCompliant
-                                  ? "bg-green-50 dark:bg-emerald-950/35 text-green-600 dark:text-emerald-400 group-hover:bg-green-600 group-hover:text-white"
-                                  : "bg-amber-50 dark:bg-amber-950/35 text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white"
-                              }`}
-                            >
-                              <Ruler className="w-5 h-5" />
-                            </div>
-                          </div>
 
-                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                            <span
-                              className={`font-extrabold flex items-center gap-1.5 ${
-                                vdCompliant
-                                  ? "text-green-600 dark:text-emerald-400"
-                                  : "text-amber-600 dark:text-amber-400 hover:text-amber-700"
-                              }`}
-                            >
+                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                               <span
-                                className={`w-2 h-2 rounded-full ${vdCompliant ? "bg-green-500" : "bg-amber-500 animate-pulse"}`}
-                              />
-                              {getModuleStatus("vd") === "active" ? (
-                                vdCompliant ? "PEC Compliant" : "Exceeds PEC Limit"
-                              ) : "No Active Evaluation"}
-                            </span>
-                            {getModuleStatus("vd") === "active" && (
-                              <button
-                                onClick={() => setActiveTab("vd")}
-                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                className={`font-extrabold flex items-center gap-1.5 ${
+                                  vdCompliant
+                                    ? "text-green-600 dark:text-emerald-400"
+                                    : "text-amber-600 dark:text-amber-400 hover:text-amber-700"
+                                }`}
                               >
-                                Evaluate <ArrowUpRight className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                <span
+                                  className={`w-2 h-2 rounded-full ${vdCompliant ? "bg-green-500" : "bg-amber-500 animate-pulse"}`}
+                                />
+                                {getModuleStatus("vd") === "active"
+                                  ? vdCompliant
+                                    ? "PEC Compliant"
+                                    : "Exceeds PEC Limit"
+                                  : "No Active Evaluation"}
+                              </span>
+                              {getModuleStatus("vd") === "active" && (
+                                <button
+                                  onClick={() => setActiveTab("vd")}
+                                  className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                >
+                                  Evaluate{" "}
+                                  <ArrowUpRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
+                        );
+                      })()}
 
                     {/* Recommended Transformer Capacity Card */}
-                    {getModuleStatus("transformer") !== "hidden" && (() => {
-                      const totalVA = circuits.reduce((sum, c) => sum + (c.loadVA || 0), 0);
-                      const totalKVA = totalVA / 1000;
-                      const demandKVA = totalKVA * transformerDemandFactor;
-                      const requiredKVA = transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
-                      
-                      const standardKVA = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
-                      const recommendedRating = standardKVA.find((s) => s >= requiredKVA) || standardKVA[standardKVA.length - 1];
-                      const actualLoadingPct = recommendedRating > 0 ? (demandKVA / recommendedRating) * 100 : 0;
-                      const isLoadedCompliant = actualLoadingPct <= transformerLoadingFactor * 100;
+                    {getModuleStatus("transformer") !== "hidden" &&
+                      (() => {
+                        const totalVA = circuits.reduce(
+                          (sum, c) => sum + (c.loadVA || 0),
+                          0,
+                        );
+                        const totalKVA = totalVA / 1000;
+                        const demandKVA = totalKVA * transformerDemandFactor;
+                        const requiredKVA =
+                          transformerLoadingFactor > 0
+                            ? demandKVA / transformerLoadingFactor
+                            : 0;
 
-                      return (
-                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
-                          getModuleStatus("transformer") !== "active" ? "opacity-60" : ""
-                        }`}>
-                          {getModuleStatus("transformer") !== "active" && (
-                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
-                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
-                                {getModuleStatus("transformer") === "disabled" ? (
-                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
-                                ) : (
-                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
-                                )}
+                        const standardKVA = [
+                          15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000,
+                          1500, 2000, 2500,
+                        ];
+                        const recommendedRating =
+                          standardKVA.find((s) => s >= requiredKVA) ||
+                          standardKVA[standardKVA.length - 1];
+                        const actualLoadingPct =
+                          recommendedRating > 0
+                            ? (demandKVA / recommendedRating) * 100
+                            : 0;
+                        const isLoadedCompliant =
+                          actualLoadingPct <= transformerLoadingFactor * 100;
+
+                        return (
+                          <div
+                            className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                              getModuleStatus("transformer") !== "active"
+                                ? "opacity-60"
+                                : ""
+                            }`}
+                          >
+                            {getModuleStatus("transformer") !== "active" && (
+                              <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                                <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                  {getModuleStatus("transformer") ===
+                                  "disabled" ? (
+                                    <>
+                                      <Lock className="w-3 h-3 text-rose-500" />{" "}
+                                      LOCKED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" />{" "}
+                                      MAINTENANCE
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                  RECOMMENDED TRANSFORMER
+                                </span>
+                                <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                  {getModuleStatus("transformer") === "active"
+                                    ? `${recommendedRating.toFixed(1)} kVA`
+                                    : "---"}
+                                </h3>
+                              </div>
+                              <div className="p-3 bg-teal-50 dark:bg-teal-950/35 text-teal-600 dark:text-teal-400 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
+                                <Zap className="w-5 h-5" />
                               </div>
                             </div>
-                          )}
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                                RECOMMENDED TRANSFORMER
-                              </span>
-                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {getModuleStatus("transformer") === "active" ? `${recommendedRating.toFixed(1)} kVA` : "---"}
-                              </h3>
-                            </div>
-                            <div className="p-3 bg-teal-50 dark:bg-teal-950/35 text-teal-600 dark:text-teal-400 rounded-xl group-hover:bg-teal-600 group-hover:text-white transition-all shadow-sm">
-                              <Zap className="w-5 h-5" />
-                            </div>
-                          </div>
 
-                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                            <span className="font-bold text-slate-700 dark:text-slate-300">
-                              {getModuleStatus("transformer") === "active" ? `${actualLoadingPct.toFixed(1)}% Loading Factor` : "No Active Sizing"}
-                            </span>
-                            {getModuleStatus("transformer") === "active" && (
-                              <button
-                                onClick={() => setActiveTab("transformer")}
-                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
-                              >
-                                Sizing <ArrowUpRight className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                              <span className="font-bold text-slate-700 dark:text-slate-300">
+                                {getModuleStatus("transformer") === "active"
+                                  ? `${actualLoadingPct.toFixed(1)}% Loading Factor`
+                                  : "No Active Sizing"}
+                              </span>
+                              {getModuleStatus("transformer") === "active" && (
+                                <button
+                                  onClick={() => setActiveTab("transformer")}
+                                  className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                >
+                                  Sizing{" "}
+                                  <ArrowUpRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
+                        );
+                      })()}
 
                     {/* Illumination target status */}
-                    {getModuleStatus("lighting") !== "hidden" && (() => {
-                      const illumArea =
-                        illumParams.inputMode === "area"
-                          ? illumParams.userArea
-                          : illumParams.roomWidth * illumParams.roomLength;
-                      const calculatedLux = Math.ceil(
-                        (illumParams.lumensPerFixture *
-                          (illumParams.coefficientOfUtilization || 0.6) *
-                          (illumParams.maintenanceFactor || 0.8)) /
-                          (illumArea || 20),
-                      );
-                      const isLCompliance =
-                        calculatedLux >= illumParams.targetLux;
+                    {getModuleStatus("lighting") !== "hidden" &&
+                      (() => {
+                        const illumArea =
+                          illumParams.inputMode === "area"
+                            ? illumParams.userArea
+                            : illumParams.roomWidth * illumParams.roomLength;
+                        const calculatedLux = Math.ceil(
+                          (illumParams.lumensPerFixture *
+                            (illumParams.coefficientOfUtilization || 0.6) *
+                            (illumParams.maintenanceFactor || 0.8)) /
+                            (illumArea || 20),
+                        );
+                        const isLCompliance =
+                          calculatedLux >= illumParams.targetLux;
 
-                      return (
-                        <div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
-                          getModuleStatus("lighting") !== "active" ? "opacity-60" : ""
-                        }`}>
-                          {getModuleStatus("lighting") !== "active" && (
-                            <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
-                              <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
-                                {getModuleStatus("lighting") === "disabled" ? (
-                                  <><Lock className="w-3 h-3 text-rose-500" /> LOCKED</>
-                                ) : (
-                                  <><AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" /> MAINTENANCE</>
-                                )}
+                        return (
+                          <div
+                            className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                              getModuleStatus("lighting") !== "active"
+                                ? "opacity-60"
+                                : ""
+                            }`}
+                          >
+                            {getModuleStatus("lighting") !== "active" && (
+                              <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
+                                <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
+                                  {getModuleStatus("lighting") ===
+                                  "disabled" ? (
+                                    <>
+                                      <Lock className="w-3 h-3 text-rose-500" />{" "}
+                                      LOCKED
+                                    </>
+                                  ) : (
+                                    <>
+                                      <AlertTriangle className="w-3 h-3 text-amber-500 animate-pulse" />{" "}
+                                      MAINTENANCE
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-start justify-between">
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                                  EST. ILLUMINATION
+                                </span>
+                                <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
+                                  {getModuleStatus("lighting") === "active"
+                                    ? `${calculatedLux || 0} Lux`
+                                    : "---"}
+                                </h3>
+                              </div>
+                              <div
+                                className={`p-3 rounded-xl shadow-sm transition-all ${
+                                  isLCompliance
+                                    ? "bg-yellow-50 dark:bg-yellow-950/35 text-yellow-600 dark:text-yellow-400 group-hover:bg-yellow-500 group-hover:text-white"
+                                    : "bg-orange-50 dark:bg-orange-950/35 text-orange-600 dark:text-orange-400 group-hover:bg-orange-600 group-hover:text-white"
+                                }`}
+                              >
+                                <Lightbulb className="w-5 h-5" />
                               </div>
                             </div>
-                          )}
-                          <div className="flex items-start justify-between">
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                                EST. ILLUMINATION
-                              </span>
-                              <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                                {getModuleStatus("lighting") === "active" ? `${calculatedLux || 0} Lux` : "---"}
-                              </h3>
-                            </div>
-                            <div
-                              className={`p-3 rounded-xl shadow-sm transition-all ${
-                                isLCompliance
-                                  ? "bg-yellow-50 dark:bg-yellow-950/35 text-yellow-600 dark:text-yellow-400 group-hover:bg-yellow-500 group-hover:text-white"
-                                  : "bg-orange-50 dark:bg-orange-950/35 text-orange-600 dark:text-orange-400 group-hover:bg-orange-600 group-hover:text-white"
-                              }`}
-                            >
-                              <Lightbulb className="w-5 h-5" />
-                            </div>
-                          </div>
 
-                          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                            <span
-                              className={`font-extrabold flex items-center gap-1.5 ${
-                                isLCompliance
-                                  ? "text-emerald-600 dark:text-emerald-200"
-                                  : "text-orange-600 dark:text-orange-300"
-                              }`}
-                            >
+                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                               <span
-                                className={`w-2 h-2 rounded-full ${isLCompliance ? "bg-emerald-500" : "bg-orange-500 animate-pulse"}`}
-                              />
-                              {getModuleStatus("lighting") === "active" ? (
-                                isLCompliance ? "Target Met" : "Low Illum"
-                              ) : "No Active Simulation"}
-                            </span>
-                            {getModuleStatus("lighting") === "active" && (
-                              <button
-                                onClick={() => setActiveTab("lighting")}
-                                className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                className={`font-extrabold flex items-center gap-1.5 ${
+                                  isLCompliance
+                                    ? "text-emerald-600 dark:text-emerald-200"
+                                    : "text-orange-600 dark:text-orange-300"
+                                }`}
                               >
-                                Simulate <ArrowUpRight className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                <span
+                                  className={`w-2 h-2 rounded-full ${isLCompliance ? "bg-emerald-500" : "bg-orange-500 animate-pulse"}`}
+                                />
+                                {getModuleStatus("lighting") === "active"
+                                  ? isLCompliance
+                                    ? "Target Met"
+                                    : "Low Illum"
+                                  : "No Active Simulation"}
+                              </span>
+                              {getModuleStatus("lighting") === "active" && (
+                                <button
+                                  onClick={() => setActiveTab("lighting")}
+                                  className="text-indigo-600 dark:text-indigo-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                >
+                                  Simulate{" "}
+                                  <ArrowUpRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })()}
+                        );
+                      })()}
                   </div>
 
                   {/* Sub-panels and System parameters side-by-side */}
@@ -4319,19 +5446,23 @@ export default function App() {
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
                                 <span className="flex items-center gap-1 text-slate-500">
                                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />{" "}
-                                  Lighting (<strong>{lightPct.toFixed(1)}%</strong>)
+                                  Lighting (
+                                  <strong>{lightPct.toFixed(1)}%</strong>)
                                 </span>
                                 <span className="flex items-center gap-1 text-slate-500">
                                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />{" "}
-                                  Outlets (<strong>{outletPct.toFixed(1)}%</strong>)
+                                  Outlets (
+                                  <strong>{outletPct.toFixed(1)}%</strong>)
                                 </span>
                                 <span className="flex items-center gap-1 text-slate-500">
                                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />{" "}
-                                  Motors/AC (<strong>{motorPct.toFixed(1)}%</strong>)
+                                  Motors/AC (
+                                  <strong>{motorPct.toFixed(1)}%</strong>)
                                 </span>
                                 <span className="flex items-center gap-1 text-slate-500">
                                   <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />{" "}
-                                  Others (<strong>{otherPct.toFixed(1)}%</strong>)
+                                  Others (
+                                  <strong>{otherPct.toFixed(1)}%</strong>)
                                 </span>
                               </div>
                             </div>
@@ -4342,15 +5473,28 @@ export default function App() {
 
                     {/* Interactive Real-Time Phase Balance Chart */}
                     {(() => {
-                      const { phaseLoads, phaseImbalance } = computePanelScheduleValues(panel, circuits);
+                      const { phaseLoads, phaseImbalance } =
+                        computePanelScheduleValues(panel, circuits);
                       const rKVA = (phaseLoads.R || 0) / 1000;
                       const yKVA = (phaseLoads.Y || 0) / 1000;
                       const bKVA = (phaseLoads.B || 0) / 1000;
 
                       const chartData = [
-                        { name: "Phase R", Load: parseFloat(rKVA.toFixed(2)), color: "#ef4444" },
-                        { name: "Phase Y", Load: parseFloat(yKVA.toFixed(2)), color: "#f59e0b" },
-                        { name: "Phase B", Load: parseFloat(bKVA.toFixed(2)), color: "#3b82f6" },
+                        {
+                          name: "Phase R",
+                          Load: parseFloat(rKVA.toFixed(2)),
+                          color: "#ef4444",
+                        },
+                        {
+                          name: "Phase Y",
+                          Load: parseFloat(yKVA.toFixed(2)),
+                          color: "#f59e0b",
+                        },
+                        {
+                          name: "Phase B",
+                          Load: parseFloat(bKVA.toFixed(2)),
+                          color: "#3b82f6",
+                        },
                       ];
 
                       return (
@@ -4363,39 +5507,69 @@ export default function App() {
                                   Phase Loading Balance
                                 </h4>
                               </div>
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
-                                phaseImbalance <= 15
-                                  ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400"
-                              }`}>
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                  phaseImbalance <= 15
+                                    ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400"
+                                    : "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400"
+                                }`}
+                              >
                                 {phaseImbalance.toFixed(2)}% Imbalance
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-400 leading-normal">
-                              Symmetrical current alignment per phase. Minimize imbalance to optimize feeder wire sizes and limit transformer temperature expansion under full load.
+                              Symmetrical current alignment per phase. Minimize
+                              imbalance to optimize feeder wire sizes and limit
+                              transformer temperature expansion under full load.
                             </p>
                           </div>
 
                           <div className="h-32 w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
-                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
-                                <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} unit="k" />
-                                <Tooltip 
-                                  cursor={{ fill: 'transparent' }}
-                                  contentStyle={{ 
-                                    background: '#1e293b', 
-                                    border: 'none', 
-                                    borderRadius: '8px', 
-                                    color: '#fff', 
-                                    fontSize: '10px', 
-                                    fontFamily: 'monospace' 
-                                  }} 
+                              <BarChart
+                                data={chartData}
+                                margin={{
+                                  top: 10,
+                                  right: 10,
+                                  left: -25,
+                                  bottom: 0,
+                                }}
+                              >
+                                <CartesianGrid
+                                  strokeDasharray="3 3"
+                                  vertical={false}
+                                  stroke="#f1f5f9"
+                                  className="dark:stroke-slate-800"
+                                />
+                                <XAxis
+                                  dataKey="name"
+                                  stroke="#94a3b8"
+                                  fontSize={10}
+                                  tickLine={false}
+                                />
+                                <YAxis
+                                  stroke="#94a3b8"
+                                  fontSize={10}
+                                  tickLine={false}
+                                  unit="k"
+                                />
+                                <Tooltip
+                                  cursor={{ fill: "transparent" }}
+                                  contentStyle={{
+                                    background: "#1e293b",
+                                    border: "none",
+                                    borderRadius: "8px",
+                                    color: "#fff",
+                                    fontSize: "10px",
+                                    fontFamily: "monospace",
+                                  }}
                                 />
                                 <Bar dataKey="Load" radius={[6, 6, 0, 0]}>
                                   {chartData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                    <Cell
+                                      key={`cell-${index}`}
+                                      fill={entry.color}
+                                    />
                                   ))}
                                 </Bar>
                               </BarChart>
@@ -4403,9 +5577,24 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 dark:border-slate-800 pt-3 text-slate-500">
-                            <span>R: <strong className="text-red-600 font-bold">{rKVA.toFixed(2)}k</strong></span>
-                            <span>Y: <strong className="text-amber-500 font-bold">{yKVA.toFixed(2)}k</strong></span>
-                            <span>B: <strong className="text-blue-500 font-bold">{bKVA.toFixed(2)}k</strong></span>
+                            <span>
+                              R:{" "}
+                              <strong className="text-red-600 font-bold">
+                                {rKVA.toFixed(2)}k
+                              </strong>
+                            </span>
+                            <span>
+                              Y:{" "}
+                              <strong className="text-amber-500 font-bold">
+                                {yKVA.toFixed(2)}k
+                              </strong>
+                            </span>
+                            <span>
+                              B:{" "}
+                              <strong className="text-blue-500 font-bold">
+                                {bKVA.toFixed(2)}k
+                              </strong>
+                            </span>
                           </div>
                         </div>
                       );
@@ -4492,14 +5681,38 @@ export default function App() {
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-4">
                       {[
-                        { id: "schedule", label: "Load Schedule", icon: <Layout className="w-5 h-5 text-indigo-500" /> },
-                        { id: "isc", label: "Short Circuit", icon: <ShieldAlert className="w-5 h-5 text-rose-500" /> },
-                        { id: "vd", label: "Voltage Drop", icon: <Ruler className="w-5 h-5 text-emerald-500" /> },
-                        { id: "lighting", label: "Illumination", icon: <Lightbulb className="w-5 h-5 text-yellow-500" /> },
-                        { id: "floor-plan", label: "Blueprint Preview", icon: <Map className="w-5 h-5 text-cyan-500" /> },
+                        {
+                          id: "schedule",
+                          label: "Load Schedule",
+                          icon: <Layout className="w-5 h-5 text-indigo-500" />,
+                        },
+                        {
+                          id: "isc",
+                          label: "Short Circuit",
+                          icon: (
+                            <ShieldAlert className="w-5 h-5 text-rose-500" />
+                          ),
+                        },
+                        {
+                          id: "vd",
+                          label: "Voltage Drop",
+                          icon: <Ruler className="w-5 h-5 text-emerald-500" />,
+                        },
+                        {
+                          id: "lighting",
+                          label: "Illumination",
+                          icon: (
+                            <Lightbulb className="w-5 h-5 text-yellow-500" />
+                          ),
+                        },
+                        {
+                          id: "floor-plan",
+                          label: "Blueprint Preview",
+                          icon: <Map className="w-5 h-5 text-cyan-500" />,
+                        },
                       ]
-                        .filter(btn => getModuleStatus(btn.id) !== "hidden")
-                        .map(btn => {
+                        .filter((btn) => getModuleStatus(btn.id) !== "hidden")
+                        .map((btn) => {
                           const status = getModuleStatus(btn.id);
                           const isActive = status === "active";
                           const isMaint = status === "maintenance";
@@ -4513,17 +5726,21 @@ export default function App() {
                                 if (isActive) setActiveTab(btn.id as any);
                               }}
                               className={`bg-white dark:bg-slate-800 border p-4 rounded-2xl shadow-sm text-center font-bold text-xs transition-all flex flex-col items-center gap-2 relative ${
-                                isActive 
-                                  ? "hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 border-slate-200/80 dark:border-slate-800 cursor-pointer text-slate-800 dark:text-slate-200" 
+                                isActive
+                                  ? "hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 border-slate-200/80 dark:border-slate-800 cursor-pointer text-slate-800 dark:text-slate-200"
                                   : "opacity-55 border-slate-100 dark:border-slate-900 cursor-not-allowed text-slate-400 dark:text-slate-600"
                               }`}
                             >
                               {btn.icon}
                               <span>{btn.label}</span>
                               {!isActive && (
-                                <span className={`absolute top-1.5 right-1.5 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-wider text-white ${
-                                  isDis ? "bg-rose-500" : "bg-amber-500 animate-pulse"
-                                }`}>
+                                <span
+                                  className={`absolute top-1.5 right-1.5 px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-wider text-white ${
+                                    isDis
+                                      ? "bg-rose-500"
+                                      : "bg-amber-500 animate-pulse"
+                                  }`}
+                                >
                                   {isDis ? "LOCKED" : "MAINT"}
                                 </span>
                               )}
@@ -4623,11 +5840,17 @@ export default function App() {
                         availableSubPanels={uniqueSubPanels}
                         iscParams={iscParams}
                         vdCalculations={vdCalculations}
-                        isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                        isPremium={
+                          userPlan === "premium" ||
+                          userPlan === "enterprise" ||
+                          isAdmin
+                        }
                         onRequestUpgrade={() => setShowUpgrade(true)}
                         isAdmin={isAdmin}
                         transformerPrimaryVoltage={transformerPrimaryVoltage}
-                        setTransformerPrimaryVoltage={setTransformerPrimaryVoltage}
+                        setTransformerPrimaryVoltage={
+                          setTransformerPrimaryVoltage
+                        }
                       />
                     )}
 
@@ -4639,20 +5862,23 @@ export default function App() {
 
                       let parentConn: Circuit | undefined = undefined;
                       let parentName = "";
-                      
+
                       // Check MDP first
                       parentConn = circuits.find(
-                        (c) => c.linkedSubPanelId === sp.id
+                        (c) => c.linkedSubPanelId === sp.id,
                       );
                       if (parentConn) {
                         parentName = panel.designation || "MDP";
                       } else {
                         // Check other subpanels
                         for (const otherSp of uniqueSubPanels) {
-                          const conn = otherSp.circuits.find(c => c.linkedSubPanelId === sp.id);
+                          const conn = otherSp.circuits.find(
+                            (c) => c.linkedSubPanelId === sp.id,
+                          );
                           if (conn) {
                             parentConn = conn;
-                            parentName = otherSp.panel.designation || "Sub-Panel";
+                            parentName =
+                              otherSp.panel.designation || "Sub-Panel";
                             break;
                           }
                         }
@@ -4679,7 +5905,13 @@ export default function App() {
                               });
                             }}
                             circuits={sp.circuits}
-                            setCircuits={(newCircuits) => handleSetSubPanelCircuits(index, sp.id, newCircuits)}
+                            setCircuits={(newCircuits) =>
+                              handleSetSubPanelCircuits(
+                                index,
+                                sp.id,
+                                newCircuits,
+                              )
+                            }
                             isSubPanel={true}
                             availableSubPanels={uniqueSubPanels}
                             onRemoveSubPanel={() => {
@@ -4696,29 +5928,46 @@ export default function App() {
                                         loadType: LoadType.SPARE,
                                         description: `${c.description || "Sub-Panel"} (Disconnected)`,
                                       }
-                                    : c
-                                )
+                                    : c,
+                                ),
                               );
                               setActiveScheduleTab("mdp");
                             }}
                             onDuplicateSubPanel={() => {
-                              setPanelToDuplicate({ id: sp.id, name: `${sp.panel.designation || "Subpanel"} (Copy)` });
-                              setDuplicateName(`${sp.panel.designation || "Subpanel"} (Copy)`);
+                              setPanelToDuplicate({
+                                id: sp.id,
+                                name: `${sp.panel.designation || "Subpanel"} (Copy)`,
+                              });
+                              setDuplicateName(
+                                `${sp.panel.designation || "Subpanel"} (Copy)`,
+                              );
                             }}
                             iscParams={iscParams}
-                            isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                            isPremium={
+                              userPlan === "premium" ||
+                              userPlan === "enterprise" ||
+                              isAdmin
+                            }
                             onRequestUpgrade={() => setShowUpgrade(true)}
                             isAdmin={isAdmin}
-                            transformerPrimaryVoltage={transformerPrimaryVoltage}
-                            setTransformerPrimaryVoltage={setTransformerPrimaryVoltage}
-                            parentMdpConnection={parentConn ? {
-                              circuitNo: parentConn.circuitNo,
-                              description: parentConn.description,
-                              mdpDesignation: parentName,
-                              circuitId: parentConn.id,
-                              feederSize: parentConn.wireSize,
-                              feederRuns: parentConn.quantity || 1
-                            } : undefined}
+                            transformerPrimaryVoltage={
+                              transformerPrimaryVoltage
+                            }
+                            setTransformerPrimaryVoltage={
+                              setTransformerPrimaryVoltage
+                            }
+                            parentMdpConnection={
+                              parentConn
+                                ? {
+                                    circuitNo: parentConn.circuitNo,
+                                    description: parentConn.description,
+                                    mdpDesignation: parentName,
+                                    circuitId: parentConn.id,
+                                    feederSize: parentConn.wireSize,
+                                    feederRuns: parentConn.quantity || 1,
+                                  }
+                                : undefined
+                            }
                             vdCalculations={vdCalculations}
                           />
 
@@ -4748,8 +5997,6 @@ export default function App() {
                         </React.Fragment>
                       );
                     })}
-
-
 
                     {/* Fallback Large "Add Subpanel" helper at the bottom ONLY if mdp is visible on screen */}
                     {!isExporting && activeScheduleTab === "mdp" && (
@@ -4801,12 +6048,16 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    
+
                     params={iscParams}
                     setParams={setIscParams}
                     source={iscSource}
                     setSource={setIscSource}
-                    isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                   />
                 </motion.div>
@@ -4834,10 +6085,14 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    
+
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
-                    isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     isExporting={isExporting}
                   />
@@ -4901,9 +6156,13 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    
+
                     iscParams={iscParams}
-                    isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     vdCalculations={vdCalculations}
                   />
@@ -4932,11 +6191,15 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-                    
+
                     iscParams={iscParams}
                     setIscParams={setIscParams}
                     vdCalculations={vdCalculations}
-                    isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     transformerPrimaryVoltage={transformerPrimaryVoltage}
                     transformerPowerFactor={transformerPowerFactor}
@@ -4994,19 +6257,19 @@ export default function App() {
               </div>
 
               {/* EGC Sizer Tab */}
-              <div
-                className={activeTab === "egc" ? "w-full" : "hidden"}
-              >
+              <div className={activeTab === "egc" ? "w-full" : "hidden"}>
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
-                  animate={
-                    activeTab === "egc" ? { opacity: 1, y: 0 } : {}
-                  }
+                  animate={activeTab === "egc" ? { opacity: 1, y: 0 } : {}}
                   transition={{ duration: 0.2 }}
                   className="w-full"
                 >
                   <EgcSizingCalculator
-                    isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
                   />
@@ -5036,7 +6299,11 @@ export default function App() {
                     setDemandFactor={setTransformerDemandFactor}
                     loadingFactor={transformerLoadingFactor}
                     setLoadingFactor={setTransformerLoadingFactor}
-                    isPremium={userPlan === "premium" || userPlan === "enterprise" || isAdmin}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
                   />
@@ -5044,10 +6311,21 @@ export default function App() {
               </div>
 
               {/* Verify Admin Tab */}
-              <div className={activeTab === "verify" || activeTab === "verify-registrations" ? "w-full" : "hidden"}>
+              <div
+                className={
+                  activeTab === "verify" || activeTab === "verify-registrations"
+                    ? "w-full"
+                    : "hidden"
+                }
+              >
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
-                  animate={activeTab === "verify" || activeTab === "verify-registrations" ? { opacity: 1, y: 0 } : {}}
+                  animate={
+                    activeTab === "verify" ||
+                    activeTab === "verify-registrations"
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
@@ -5062,11 +6340,17 @@ export default function App() {
               </div>
 
               {/* Billing Info Tab */}
-              <div className={activeTab === "billing" && isAdmin ? "w-full" : "hidden"}>
+              <div
+                className={
+                  activeTab === "billing" && isAdmin ? "w-full" : "hidden"
+                }
+              >
                 {isAdmin && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
-                    animate={activeTab === "billing" ? { opacity: 1, y: 0 } : {}}
+                    animate={
+                      activeTab === "billing" ? { opacity: 1, y: 0 } : {}
+                    }
                     transition={{ duration: 0.2 }}
                     className="w-full flex justify-center font-sans"
                   >
@@ -5076,7 +6360,9 @@ export default function App() {
                           Subscription Invoice & Billing Ledger
                         </h3>
                         <p className="text-xs text-amber-100 leading-relaxed font-semibold">
-                          View active platform subscriptions, download official PDF invoices, or export your receipts list to Excel sheets instantly.
+                          View active platform subscriptions, download official
+                          PDF invoices, or export your receipts list to Excel
+                          sheets instantly.
                         </p>
                       </div>
                       <InvoiceManager user={user} isAdminPanel={false} />
@@ -5188,48 +6474,70 @@ export default function App() {
                   {/* Modal Content */}
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Professional Credentials</p>
-                      
+                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">
+                        Professional Credentials
+                      </p>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Full Name</label>
-                          <input 
-                            type="text" 
-                            defaultValue={user.displayName || "Authorized Electrical Designer"} 
-                            className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-white font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                          <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                            Full Name
+                          </label>
+                          <input
+                            type="text"
+                            defaultValue={
+                              user.displayName ||
+                              "Authorized Electrical Designer"
+                            }
+                            className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-white font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500"
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">PRC EE License Number</label>
-                          <input 
-                            type="text" 
-                            placeholder="e.g. 0041529" 
-                            className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-white font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500" 
+                          <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                            PRC EE License Number
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 0041529"
+                            className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-white font-semibold transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Primary Account Email</label>
-                      <input 
-                        type="email" 
-                        disabled 
-                        value={user.email || ""} 
-                        className="w-full bg-slate-950/60 border border-slate-850 rounded-xl px-3 py-2 text-xs text-slate-400 font-semibold cursor-not-allowed" 
+                      <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                        Primary Account Email
+                      </label>
+                      <input
+                        type="email"
+                        disabled
+                        value={user.email || ""}
+                        className="w-full bg-slate-950/60 border border-slate-850 rounded-xl px-3 py-2 text-xs text-slate-400 font-semibold cursor-not-allowed"
                       />
                     </div>
 
                     <div className="bg-slate-950/40 p-3.5 rounded-2xl border border-slate-850/60 space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="text-xxs font-bold text-slate-400">Account Security ID:</span>
-                        <span className="text-xxs font-mono text-emerald-450 font-bold select-all truncate max-w-[200px]" title={user.uid}>{user.uid}</span>
+                        <span className="text-xxs font-bold text-slate-400">
+                          Account Security ID:
+                        </span>
+                        <span
+                          className="text-xxs font-mono text-emerald-450 font-bold select-all truncate max-w-[200px]"
+                          title={user.uid}
+                        >
+                          {user.uid}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-xxs font-bold text-slate-400">Database Connection Status:</span>
+                        <span className="text-xxs font-bold text-slate-400">
+                          Database Connection Status:
+                        </span>
                         <div className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                          <span className="text-xxs font-bold text-slate-200">Online & Encrypted</span>
+                          <span className="text-xxs font-bold text-slate-200">
+                            Online & Encrypted
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -5277,20 +6585,34 @@ export default function App() {
                   {/* Modal Content */}
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                     <div>
-                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">Subscription Tier</p>
+                      <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-3">
+                        Subscription Tier
+                      </p>
                       <div className="flex flex-col gap-2 p-3.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl">
                         <div className="flex items-start justify-between">
                           <div>
                             <p className="text-xs font-black text-amber-400 uppercase">
-                              {userPlan === "enterprise" ? "ENTERPRISE (LIFETIME)" : (userPlan === "premium" ? "PREMIUM (30 DAYS)" : (userPlan === "basic" ? "BASIC (30 DAYS)" : "FREE TRIAL TIER"))}
+                              {userPlan === "enterprise"
+                                ? "ENTERPRISE (LIFETIME)"
+                                : userPlan === "premium"
+                                  ? "PREMIUM (30 DAYS)"
+                                  : userPlan === "basic"
+                                    ? "BASIC (30 DAYS)"
+                                    : "FREE TRIAL TIER"}
                             </p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">Enterprise licenses unlock complete single-line CAD blueprints and bulk Word compiling.</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Enterprise licenses unlock complete single-line
+                              CAD blueprints and bulk Word compiling.
+                            </p>
                           </div>
                           {userPlan !== "enterprise" && (
                             <button
                               onClick={() => {
                                 setIsAccountSettingsOpen(false);
-                                if (userPlan === "basic" || userPlan === "premium") {
+                                if (
+                                  userPlan === "basic" ||
+                                  userPlan === "premium"
+                                ) {
                                   setShowRenew(true);
                                 } else {
                                   setShowUpgrade(true);
@@ -5298,49 +6620,86 @@ export default function App() {
                               }}
                               className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
                             >
-                              {userPlan === "premium" || userPlan === "basic" ? "Renew" : "Upgrade"}
+                              {userPlan === "premium" || userPlan === "basic"
+                                ? "Renew"
+                                : "Upgrade"}
                             </button>
                           )}
                         </div>
-                        {(userPlan === "basic" || userPlan === "premium") && expiresAt && (
-                          <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
-                            <div className="bg-slate-950/50 px-2 py-1 rounded">
-                              <span className="text-slate-500 mr-1">Activated:</span> {new Date(activatedAt || "").toLocaleDateString()}
+                        {(userPlan === "basic" || userPlan === "premium") &&
+                          expiresAt && (
+                            <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
+                              <div className="bg-slate-950/50 px-2 py-1 rounded">
+                                <span className="text-slate-500 mr-1">
+                                  Activated:
+                                </span>{" "}
+                                {new Date(
+                                  activatedAt || "",
+                                ).toLocaleDateString()}
+                              </div>
+                              <div className="bg-slate-950/50 px-2 py-1 rounded">
+                                <span className="text-slate-500 mr-1">
+                                  Expires:
+                                </span>{" "}
+                                {new Date(expiresAt).toLocaleDateString()}
+                              </div>
+                              <div
+                                className={`px-2 py-1 rounded font-bold ${
+                                  (new Date(expiresAt).getTime() -
+                                    new Date().getTime()) /
+                                    (1000 * 3600 * 24) <=
+                                  3
+                                    ? "text-rose-400 bg-rose-950/50"
+                                    : (new Date(expiresAt).getTime() -
+                                          new Date().getTime()) /
+                                          (1000 * 3600 * 24) <=
+                                        7
+                                      ? "text-amber-400 bg-amber-950/50"
+                                      : "text-emerald-400 bg-emerald-950/50"
+                                }`}
+                              >
+                                {Math.max(
+                                  0,
+                                  Math.ceil(
+                                    (new Date(expiresAt).getTime() -
+                                      new Date().getTime()) /
+                                      (1000 * 3600 * 24),
+                                  ),
+                                )}{" "}
+                                Days Left
+                              </div>
                             </div>
-                            <div className="bg-slate-950/50 px-2 py-1 rounded">
-                              <span className="text-slate-500 mr-1">Expires:</span> {new Date(expiresAt).toLocaleDateString()}
-                            </div>
-                            <div className={`px-2 py-1 rounded font-bold ${
-                              (new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 3 ? "text-rose-400 bg-rose-950/50" : 
-                              (new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24) <= 7 ? "text-amber-400 bg-amber-950/50" : 
-                              "text-emerald-400 bg-emerald-950/50"
-                            }`}>
-                              {Math.max(0, Math.ceil((new Date(expiresAt).getTime() - new Date().getTime()) / (1000 * 3600 * 24)))} Days Left
-                            </div>
-                          </div>
-                        )}
+                          )}
                       </div>
                     </div>
 
-                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">Design Codes & Physics Standard</p>
+                    <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1.5">
+                      Design Codes & Physics Standard
+                    </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Electrical Code Reference</label>
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                          Electrical Code Reference
+                        </label>
                         <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
                           <option>PEC 10th Edition (2017)</option>
                           <option>National Electrical Code (NEC 2020)</option>
                         </select>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Physics Frequency Rating</label>
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                          Physics Frequency Rating
+                        </label>
                         <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
                           <option>60 Cycles/Sec (60 Hz)</option>
                           <option>50 Cycles/Sec (50 Hz)</option>
                         </select>
                       </div>
-                      
+
                       <div className="space-y-1.5">
-                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Conductor Ampacity Temp</label>
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                          Conductor Ampacity Temp
+                        </label>
                         <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
                           <option>75°C (Recommended Standard)</option>
                           <option>90°C (Extended Rating)</option>
@@ -5348,7 +6707,9 @@ export default function App() {
                         </select>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">Maximum Allowed Voltage Drop</label>
+                        <label className="text-xxs font-black text-slate-400 uppercase tracking-wider block">
+                          Maximum Allowed Voltage Drop
+                        </label>
                         <select className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-semibold focus:outline-none focus:border-amber-500 cursor-pointer">
                           <option>3.00% (Branch Standard)</option>
                           <option>2.00% (Feeder Target)</option>

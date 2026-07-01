@@ -1,5 +1,15 @@
-import { PanelConfig, Circuit, LoadType, ShortCircuitParams, VoltageDropCalculation } from "../types";
-import { STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE, CONDUIT_LIBRARY } from "../constants";
+import {
+  PanelConfig,
+  Circuit,
+  LoadType,
+  ShortCircuitParams,
+  VoltageDropCalculation,
+} from "../types";
+import {
+  STANDARD_CB_RATINGS,
+  WIRE_IMPEDANCE_TABLE,
+  CONDUIT_LIBRARY,
+} from "../constants";
 import { getMotorFLC } from "./motorFLCHelper";
 import {
   sizeConductor,
@@ -8,16 +18,21 @@ import {
 } from "./pecAmpacityDatabase";
 import { findEgcSize } from "./exportEgcExports";
 
-let globalSubPanels: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }> = [];
+let globalSubPanels: Array<{
+  id: string;
+  panel: PanelConfig;
+  circuits: Circuit[];
+}> = [];
 
-export const setGlobalSubPanels = (panels: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }>) => {
+export const setGlobalSubPanels = (
+  panels: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }>,
+) => {
   globalSubPanels = panels;
 };
 
 export const getGlobalSubPanels = () => {
   return globalSubPanels;
 };
-
 
 export const isIdleSpareOrSpace = (cir: {
   loadType: LoadType;
@@ -71,11 +86,14 @@ export const getAdjustedWireForVoltageDrop = (
 ): number => {
   if (!length || length <= 0 || !loadA || loadA <= 0) return baseSize;
 
-  const SIZES = [2.0, 3.5, 5.5, 8.0, 14, 22, 30, 38, 50, 60, 80, 100, 125, 150, 175, 200, 250, 325, 375, 400, 500];
-  
-  let startIndex = SIZES.findIndex(s => Math.abs(s - baseSize) < 0.01);
+  const SIZES = [
+    2.0, 3.5, 5.5, 8.0, 14, 22, 30, 38, 50, 60, 80, 100, 125, 150, 175, 200,
+    250, 325, 375, 400, 500,
+  ];
+
+  let startIndex = SIZES.findIndex((s) => Math.abs(s - baseSize) < 0.01);
   if (startIndex === -1) {
-    startIndex = SIZES.findIndex(s => s >= baseSize);
+    startIndex = SIZES.findIndex((s) => s >= baseSize);
     if (startIndex === -1) {
       startIndex = 0;
     }
@@ -88,14 +106,18 @@ export const getAdjustedWireForVoltageDrop = (
     const sizeStr = size.toString();
     const data = WIRE_IMPEDANCE_TABLE[sizeStr] || { r: 5.76, x: 0.157 };
     let R = data.r;
-    
-    if (conduitType === "RSC" || conduitType === "IMC" || conduitType === "EMT") {
+
+    if (
+      conduitType === "RSC" ||
+      conduitType === "IMC" ||
+      conduitType === "EMT"
+    ) {
       R = R * 1.02; // Symmetrical magnetic conduits increase resistance slightly
     }
-    
+
     const vd = (factor * length * loadA * R) / 1000;
     const vdPercentage = (vd / voltage) * 100;
-    
+
     if (vdPercentage <= limit) {
       return size;
     }
@@ -150,11 +172,11 @@ export const getConduitSizeForWiresLocal = (
   const groundArea = THHN_WIRE_AREAS[groundSize] || groundSize * 2.5;
 
   const totalArea = phaseArea * activePhaseCount + groundArea;
-  const selectedType = conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
+  const selectedType =
+    conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
   const table = CONDUIT_LIBRARY[selectedType];
   const conduit =
-    table.find((c) => c.limit >= totalArea) ||
-    table[table.length - 1];
+    table.find((c) => c.limit >= totalArea) || table[table.length - 1];
   return conduit.size;
 };
 
@@ -184,18 +206,28 @@ export function extractHorsepowerFromDescription(desc: string): string | null {
 }
 
 export interface ParsedVoltageSystem {
-  vll: number;       // Line-to-Line voltage (e.g. 380, 480, 230)
+  vll: number; // Line-to-Line voltage (e.g. 380, 480, 230)
   vln: number | null; // Line-to-Neutral voltage (e.g. 225, 277, null)
   is3Phase: boolean; // boolean
   wireCount: number; // e.g. 2, 3, 4
 }
 
-export function parseSystemVoltage(sys: string | undefined | null): ParsedVoltageSystem {
-  const defaultSystem: ParsedVoltageSystem = { vll: 230, vln: null, is3Phase: false, wireCount: 2 };
+export function parseSystemVoltage(
+  sys: string | undefined | null,
+): ParsedVoltageSystem {
+  const defaultSystem: ParsedVoltageSystem = {
+    vll: 230,
+    vln: null,
+    is3Phase: false,
+    wireCount: 2,
+  };
   if (!sys) return defaultSystem;
 
   // Normalize representations: replace Ø with PH (or support both)
-  const normalized = sys.replace(/Ø/g, "PH").replace(/ø/g, "PH").replace(/\s+/g, "");
+  const normalized = sys
+    .replace(/Ø/g, "PH")
+    .replace(/ø/g, "PH")
+    .replace(/\s+/g, "");
 
   // Extract wire count
   let wireCount = 2;
@@ -242,10 +274,10 @@ export function parseSystemVoltage(sys: string | undefined | null): ParsedVoltag
 export function validateSubPanelConnection(
   parentSystem: string,
   childSystem: string,
-  childVoltage: number
+  childVoltage: number,
 ): {
   isValid: boolean;
-  connectionType: 'Line-to-Line' | 'Line-to-Neutral' | 'Three-Phase' | null;
+  connectionType: "Line-to-Line" | "Line-to-Neutral" | "Three-Phase" | null;
   reason?: string;
   providedVoltage?: number;
 } {
@@ -259,7 +291,7 @@ export function validateSubPanelConnection(
         isValid: false,
         connectionType: null,
         reason: `Cannot connect Three-Phase sub-panel to a Single-Phase parent system (${parentSystem}).`,
-        providedVoltage: undefined
+        providedVoltage: undefined,
       };
     }
     if (parent.vll !== childVoltage) {
@@ -267,13 +299,13 @@ export function validateSubPanelConnection(
         isValid: false,
         connectionType: null,
         reason: `Voltage mismatch: Parent provides ${parent.vll}V Line-to-Line for three-phase, but sub-panel expects ${childVoltage}V.`,
-        providedVoltage: parent.vll
+        providedVoltage: parent.vll,
       };
     }
     return {
       isValid: true,
-      connectionType: 'Three-Phase',
-      providedVoltage: parent.vll
+      connectionType: "Three-Phase",
+      providedVoltage: parent.vll,
     };
   }
 
@@ -285,24 +317,24 @@ export function validateSubPanelConnection(
     // If both are possible, dynamic fallback
     return {
       isValid: true,
-      connectionType: 'Line-to-Neutral',
-      providedVoltage: parent.vln!
+      connectionType: "Line-to-Neutral",
+      providedVoltage: parent.vln!,
     };
   }
 
   if (canBeLN) {
     return {
       isValid: true,
-      connectionType: 'Line-to-Neutral',
-      providedVoltage: parent.vln!
+      connectionType: "Line-to-Neutral",
+      providedVoltage: parent.vln!,
     };
   }
 
   if (canBeLL) {
     return {
       isValid: true,
-      connectionType: 'Line-to-Line',
-      providedVoltage: parent.vll
+      connectionType: "Line-to-Line",
+      providedVoltage: parent.vll,
     };
   }
 
@@ -318,7 +350,7 @@ export function validateSubPanelConnection(
     isValid: false,
     connectionType: null,
     reason,
-    providedVoltage: undefined
+    providedVoltage: undefined,
   };
 }
 
@@ -346,9 +378,12 @@ export const calculateCircuitValues = (
   vdCalculations?: VoltageDropCalculation[],
 ): Partial<Circuit> => {
   const c = { ...cParam };
-  const is3PhaseLoad = c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length === 3);
+  const is3PhaseLoad =
+    c.is3PhaseMarker !== undefined
+      ? c.is3PhaseMarker
+      : c.phases && c.phases.length === 3;
   let is3PhaseLoadFinal = is3PhaseLoad;
-  
+
   // If it's a subpanel load, override fields with values dynamically computed from the subpanel!
   if (
     (c.loadType === LoadType.SUB_PANEL ||
@@ -383,7 +418,7 @@ export const calculateCircuitValues = (
       const subVoltage = sp.panel.voltage || 230;
       const computedDemandAmp = subMainCurrent.baseAmp || 0;
 
-      if (c.subPanelReflectionMode === 'phase_loads') {
+      if (c.subPanelReflectionMode === "phase_loads") {
         c.reflectedPhaseLoads = {
           R: subExplicitPhaseVAs.R,
           Y: subExplicitPhaseVAs.Y,
@@ -413,8 +448,12 @@ export const calculateCircuitValues = (
 
       c.wattage = subTotalWattage;
       c.quantity = 1;
-      
-      const connValidation = validateSubPanelConnection(panel.system, sp.panel.system, sp.panel.voltage || 230);
+
+      const connValidation = validateSubPanelConnection(
+        panel.system,
+        sp.panel.system,
+        sp.panel.voltage || 230,
+      );
       let calculatedPoles = subMainFeeder.poles;
       if (connValidation.isValid && connValidation.connectionType) {
         if (connValidation.connectionType === "Three-Phase") {
@@ -492,7 +531,10 @@ export const calculateCircuitValues = (
       : Math.round((qty * w) / (pf === 0 ? 1 : pf));
 
   if (c.subLoads && c.subLoads.length > 0) {
-    const rawW = c.subLoads.reduce((sum, sl) => sum + sl.wattage * sl.quantity, 0);
+    const rawW = c.subLoads.reduce(
+      (sum, sl) => sum + sl.wattage * sl.quantity,
+      0,
+    );
     va = Math.round(rawW / (pf === 0 ? 1 : pf));
     qty = 1;
     w = rawW;
@@ -502,14 +544,16 @@ export const calculateCircuitValues = (
       c.subLoads.map((sl) => sl.description).join(", ") || "Multiple Loads";
   }
 
-  const isSubPanel = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
-  const defaultV = isSubPanel && c.voltage
-    ? c.voltage
-    : getPanelSystemVoltageFallback(
-        panel.system,
-        is3PhaseLoadFinal,
-        panel.connectionType,
-      );
+  const isSubPanel =
+    c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+  const defaultV =
+    isSubPanel && c.voltage
+      ? c.voltage
+      : getPanelSystemVoltageFallback(
+          panel.system,
+          is3PhaseLoadFinal,
+          panel.connectionType,
+        );
 
   const v = defaultV;
   c.voltage = v;
@@ -607,7 +651,7 @@ export const calculateCircuitValues = (
   // Enforce the 80% loading rule on all breakers uniformly (except sub-panel links and phase_loads mode which are synced directly)
   const skip80PercentRule =
     isSubPanelLink ||
-    c.subPanelReflectionMode === 'phase_loads' ||
+    c.subPanelReflectionMode === "phase_loads" ||
     c.loadType === LoadType.SUB_PANEL ||
     c.loadType === LoadType.SUB_SUB_PANEL;
 
@@ -631,14 +675,15 @@ export const calculateCircuitValues = (
             : 400;
 
   const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
-  const panelKaic = panel.icRating ? (parseFloat(panel.icRating) || 10) : 10;
+  const panelKaic = panel.icRating ? parseFloat(panel.icRating) || 10 : 10;
   const computedMcbKAIC = Math.max(baseCalculated, panelKaic);
-  
-  const mcbKAIC = c.kaicOverride !== undefined
-    ? c.kaicOverride
-    : isSubPanelLink && c.mcbKAIC
-      ? c.mcbKAIC
-      : computedMcbKAIC;
+
+  const mcbKAIC =
+    c.kaicOverride !== undefined
+      ? c.kaicOverride
+      : isSubPanelLink && c.mcbKAIC
+        ? c.mcbKAIC
+        : computedMcbKAIC;
 
   const wire = getWireForBreakerLocal(
     mcbAT,
@@ -652,10 +697,14 @@ export const calculateCircuitValues = (
 
   if (vdCalculations && (c.id || c.linkedSubPanelId)) {
     const calc = vdCalculations.find(
-      (v) => v.source === c.id || (c.linkedSubPanelId && v.source === c.linkedSubPanelId)
+      (v) =>
+        v.source === c.id ||
+        (c.linkedSubPanelId && v.source === c.linkedSubPanelId),
     );
     if (calc) {
-      const isFeeder = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+      const isFeeder =
+        c.loadType === LoadType.SUB_PANEL ||
+        c.loadType === LoadType.SUB_SUB_PANEL;
       const limit = isFeeder ? 5.0 : 3.0;
       const currentA = calc.loadA || Number(loadA.toFixed(2));
       baseWireSize = getAdjustedWireForVoltageDrop(
@@ -665,13 +714,15 @@ export const calculateCircuitValues = (
         c.voltage || panel.voltage || 230,
         is3PhaseLoad ? "3PH" : "1PH",
         limit,
-        c.conduitType || "PVC"
+        c.conduitType || "PVC",
       );
     }
   }
 
   const finalWireSize =
-    isSubPanelLink && c.wireSize ? c.wireSize : formatWireSizeLocal(baseWireSize);
+    isSubPanelLink && c.wireSize
+      ? c.wireSize
+      : formatWireSizeLocal(baseWireSize);
 
   const finalGroundSize =
     isSubPanelLink && c.groundSize
@@ -723,43 +774,45 @@ export const calculatePanelFault = (
   feederLength?: number,
   feederSize?: string,
   feederRuns?: number,
-  motorLoadVA: number = 0
+  motorLoadVA: number = 0,
 ): number => {
   if (!iscParams) return 10000; // 10 kA default if no short circuit params
-  
+
   let connectionMultiplier = 1.0;
   if (iscParams.transformerConnection?.includes("Open")) {
     connectionMultiplier = 0.866;
   }
-  
+
   const baseKVA = iscParams.transformerKVA || 500;
   let baseKV = (iscParams.transformerVoltage || 230) / 1000;
   if (baseKV === 0) {
     baseKV = panel.voltage ? panel.voltage / 1000 : 0.23;
   }
-  
-  const zUtilitypu = baseKVA / ((iscParams.utilityShortCircuitMVA || 500) * 1000);
-  const zTranspu = ((iscParams.transformerZ || 5) / 100) / connectionMultiplier;
-  
+
+  const zUtilitypu =
+    baseKVA / ((iscParams.utilityShortCircuitMVA || 500) * 1000);
+  const zTranspu = (iscParams.transformerZ || 5) / 100 / connectionMultiplier;
+
   let zFeederpu = 0;
   if (feederLength !== undefined && feederSize !== undefined) {
     const tableVals = WIRE_IMPEDANCE_TABLE[feederSize];
     const rPer1000m = tableVals?.r || 0.7; // default fallback if size not found
     const xPer1000m = tableVals?.x || 0.08;
     const runs = feederRuns || 1;
-    
+
     // total R and X for feeder in Ohms
     const feederR = (rPer1000m * (feederLength / 1000)) / runs;
     const feederX = (xPer1000m * (feederLength / 1000)) / runs;
     const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
-    zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
+    zFeederpu = (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
   }
-  
+
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;
   const iFullLoad = baseKVA / (1.732 * baseKV);
   const iscFaultPoint = iFullLoad / totalZpu;
-  
-  const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (1.732 * (baseKV * 1000))) * 4 : 0;
+
+  const motorContribution =
+    motorLoadVA > 0 ? (motorLoadVA / (1.732 * (baseKV * 1000))) * 4 : 0;
   return iscFaultPoint + motorContribution;
 };
 
@@ -770,8 +823,12 @@ export const computePanelScheduleValues = (
     faultCurrentA?: number;
     vdCalculations?: VoltageDropCalculation[];
     panelId?: string;
-    availableSubPanels?: Array<{ id: string; panel: PanelConfig; circuits: Circuit[] }>;
-  }
+    availableSubPanels?: Array<{
+      id: string;
+      panel: PanelConfig;
+      circuits: Circuit[];
+    }>;
+  },
 ) => {
   const systemVoltage = getSystemVoltage(p.system);
   const totalVA = c.reduce((sum, curr) => sum + curr.loadVA, 0);
@@ -794,8 +851,11 @@ export const computePanelScheduleValues = (
     if (phases.length === 1) {
       const ph = phases[0];
       let effectiveConnType = connectionType;
-      
-      if (cir.loadType === LoadType.SUB_PANEL || cir.loadType === LoadType.SUB_SUB_PANEL) {
+
+      if (
+        cir.loadType === LoadType.SUB_PANEL ||
+        cir.loadType === LoadType.SUB_SUB_PANEL
+      ) {
         effectiveConnType = cir.mcbP === 1 ? "Line-to-Neutral" : "Line-to-Line";
       }
 
@@ -814,28 +874,34 @@ export const computePanelScheduleValues = (
   c.forEach((cir) => {
     if (isIdleSpareOrSpace(cir)) return;
 
-    if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseLoads) {
+    if (
+      cir.subPanelReflectionMode === "phase_loads" &&
+      cir.reflectedPhaseLoads
+    ) {
       explicitPhaseVAs.R += cir.reflectedPhaseLoads.R;
       explicitPhaseVAs.Y += cir.reflectedPhaseLoads.Y;
       explicitPhaseVAs.B += cir.reflectedPhaseLoads.B;
       explicitPhaseVAs.threePhase += cir.reflectedPhaseLoads.ThreePhase;
-      
-      phaseLoads.R += cir.reflectedPhaseLoads.R + cir.reflectedPhaseLoads.ThreePhase / 3;
-      phaseLoads.Y += cir.reflectedPhaseLoads.Y + cir.reflectedPhaseLoads.ThreePhase / 3;
-      phaseLoads.B += cir.reflectedPhaseLoads.B + cir.reflectedPhaseLoads.ThreePhase / 3;
-      
-      phaseVAs.R += cir.reflectedPhaseLoads.R + cir.reflectedPhaseLoads.ThreePhase / 3;
-      phaseVAs.Y += cir.reflectedPhaseLoads.Y + cir.reflectedPhaseLoads.ThreePhase / 3;
-      phaseVAs.B += cir.reflectedPhaseLoads.B + cir.reflectedPhaseLoads.ThreePhase / 3;
-      
+
+      phaseLoads.R +=
+        cir.reflectedPhaseLoads.R + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseLoads.Y +=
+        cir.reflectedPhaseLoads.Y + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseLoads.B +=
+        cir.reflectedPhaseLoads.B + cir.reflectedPhaseLoads.ThreePhase / 3;
+
+      phaseVAs.R +=
+        cir.reflectedPhaseLoads.R + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseVAs.Y +=
+        cir.reflectedPhaseLoads.Y + cir.reflectedPhaseLoads.ThreePhase / 3;
+      phaseVAs.B +=
+        cir.reflectedPhaseLoads.B + cir.reflectedPhaseLoads.ThreePhase / 3;
+
       lightingReceptacleVA += cir.loadVA; // Just group it as continuous lighting/receptacle
     } else {
       const isMotor =
         cir.loadType === LoadType.AIR_CON || cir.loadType === LoadType.MOTOR;
-      const activeLines = getCircuitActiveLines(
-        cir,
-        p.connectionType,
-      );
+      const activeLines = getCircuitActiveLines(cir, p.connectionType);
 
       const perPhaseVA = cir.loadVA / (activeLines.length || 1);
 
@@ -891,10 +957,7 @@ export const computePanelScheduleValues = (
   c.forEach((cir) => {
     if (isIdleSpareOrSpace(cir)) return;
 
-    const activeLines = getCircuitActiveLines(
-      cir,
-      p.connectionType,
-    );
+    const activeLines = getCircuitActiveLines(cir, p.connectionType);
     const is3Phase = cir.phases && cir.phases.length === 3;
     let cirV =
       cir.voltage ||
@@ -907,11 +970,14 @@ export const computePanelScheduleValues = (
       cirV = cir.voltage || cirV;
     }
 
-    if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseLoads) {
+    if (
+      cir.subPanelReflectionMode === "phase_loads" &&
+      cir.reflectedPhaseLoads
+    ) {
       const is3PhaseMode = p.system.includes("3PH");
       const v3 = is3PhaseMode ? cirV * 1.732 : cirV;
       const v1 = cirV;
-      
+
       const ir = cir.reflectedPhaseLoads.R / v1;
       const iy = cir.reflectedPhaseLoads.Y / v1;
       const ib = cir.reflectedPhaseLoads.B / v1;
@@ -943,7 +1009,8 @@ export const computePanelScheduleValues = (
       } else {
         activeLines.forEach((ph) => {
           phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] += loadI;
-          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] += designI;
+          phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] +=
+            designI;
         });
       }
     }
@@ -956,30 +1023,26 @@ export const computePanelScheduleValues = (
   if (motorCircuits.length > 0) {
     let largestMotorCir = motorCircuits[0];
     motorCircuits.forEach((mc) => {
-      const mcIs3P = mc.is3PhaseMarker !== undefined ? mc.is3PhaseMarker : (mc.phases && mc.phases.length === 3);
-      const largestIs3P = largestMotorCir.is3PhaseMarker !== undefined ? largestMotorCir.is3PhaseMarker : (largestMotorCir.phases && largestMotorCir.phases.length === 3);
+      const mcIs3P =
+        mc.is3PhaseMarker !== undefined
+          ? mc.is3PhaseMarker
+          : mc.phases && mc.phases.length === 3;
+      const largestIs3P =
+        largestMotorCir.is3PhaseMarker !== undefined
+          ? largestMotorCir.is3PhaseMarker
+          : largestMotorCir.phases && largestMotorCir.phases.length === 3;
 
       const mcV =
         mc.voltage ||
-        getPanelSystemVoltageFallback(
-          p.system,
-          mcIs3P,
-          p.connectionType,
-        );
+        getPanelSystemVoltageFallback(p.system, mcIs3P, p.connectionType);
       const largestV =
         largestMotorCir.voltage ||
-        getPanelSystemVoltageFallback(
-          p.system,
-          largestIs3P,
-          p.connectionType,
-        );
+        getPanelSystemVoltageFallback(p.system, largestIs3P, p.connectionType);
 
-      const mcI =
-        mcIs3P ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
-      const largestI =
-        largestIs3P
-          ? largestMotorCir.loadVA / (largestV * 1.732)
-          : largestMotorCir.loadVA / largestV;
+      const mcI = mcIs3P ? mc.loadVA / (mcV * 1.732) : mc.loadVA / mcV;
+      const largestI = largestIs3P
+        ? largestMotorCir.loadVA / (largestV * 1.732)
+        : largestMotorCir.loadVA / largestV;
 
       if (mcI > largestI) {
         largestMotorCir = mc;
@@ -1035,13 +1098,16 @@ export const computePanelScheduleValues = (
   const phaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
   c.forEach((cir) => {
     if (isIdleSpareOrSpace(cir)) return;
-    
-    if (cir.subPanelReflectionMode === 'max_demand') {
+
+    if (cir.subPanelReflectionMode === "max_demand") {
       subPanelDemandAmps += cir.loadA;
     } else {
       internalConnectedVA += cir.loadVA;
-      
-      if (cir.subPanelReflectionMode === 'phase_loads' && cir.reflectedPhaseAmps) {
+
+      if (
+        cir.subPanelReflectionMode === "phase_loads" &&
+        cir.reflectedPhaseAmps
+      ) {
         phaseAmps.R += cir.reflectedPhaseAmps.R;
         phaseAmps.Y += cir.reflectedPhaseAmps.Y;
         phaseAmps.B += cir.reflectedPhaseAmps.B;
@@ -1074,14 +1140,9 @@ export const computePanelScheduleValues = (
     });
     globalHML = HML;
 
-    const totalAmpere = Math.max(
-      phaseAmps.R,
-      phaseAmps.Y,
-      phaseAmps.B,
-    );
+    const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
     internalDemandCurrent =
-      (totalAmpere * 1.732 * 0.8 + phaseAmps.threePhase + 0.25 * HML) *
-      1.25;
+      (totalAmpere * 1.732 * 0.8 + phaseAmps.threePhase + 0.25 * HML) * 1.25;
 
     maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
     maxDesignAmp = maxBaseAmp;
@@ -1155,7 +1216,8 @@ export const computePanelScheduleValues = (
 
   let baseWireSize = wire.size;
 
-  const selectedMainConduitType = p.mainConduitType || p.mainOverrides?.conduitType || "PVC";
+  const selectedMainConduitType =
+    p.mainConduitType || p.mainOverrides?.conduitType || "PVC";
 
   if (options?.vdCalculations) {
     const pId = options.panelId || "main";
@@ -1169,7 +1231,7 @@ export const computePanelScheduleValues = (
         p.voltage || 230,
         p.system.includes("3PH") ? "3PH" : "1PH",
         5.0, // Feeder/Main limit is 5%
-        selectedMainConduitType
+        selectedMainConduitType,
       );
     }
   }
@@ -1210,7 +1272,7 @@ export const computePanelScheduleValues = (
   if (options?.faultCurrentA) {
     const faultKA = options.faultCurrentA / 1000;
     const KAIC_RATINGS = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
-    kaic = KAIC_RATINGS.find(k => k >= faultKA) || 100;
+    kaic = KAIC_RATINGS.find((k) => k >= faultKA) || 100;
   }
   const cbAF =
     cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
@@ -1234,17 +1296,22 @@ export const computePanelScheduleValues = (
     if (p.mainOverrides.kaic) finalKaic = p.mainOverrides.kaic;
     if (p.mainOverrides.poles) finalPoles = p.mainOverrides.poles;
 
-    if (p.mainOverrides.wireSize) finalWireSize = Number(p.mainOverrides.wireSize);
+    if (p.mainOverrides.wireSize)
+      finalWireSize = Number(p.mainOverrides.wireSize);
     if (p.mainOverrides.wireRuns) finalWireRuns = p.mainOverrides.wireRuns;
-    if (p.mainOverrides.groundSize) finalGroundSize = p.mainOverrides.groundSize;
-    if (p.mainOverrides.conduitSize) finalConduitSize = p.mainOverrides.conduitSize;
-    if (p.mainOverrides.conduitType) finalConduitType = p.mainOverrides.conduitType;
+    if (p.mainOverrides.groundSize)
+      finalGroundSize = p.mainOverrides.groundSize;
+    if (p.mainOverrides.conduitSize)
+      finalConduitSize = p.mainOverrides.conduitSize;
+    if (p.mainOverrides.conduitType)
+      finalConduitType = p.mainOverrides.conduitType;
   }
 
   const mat = p.conductorMaterial || "Copper";
   const ins = p.insulationType || "THHN";
   const temp = (p.temperatureRating as any) || getTemperatureForInsulation(ins);
-  let finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
+  let finalWireAmpacity =
+    getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
 
   const maxPhaseLoad = Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B);
   const phaseImbalance =
@@ -1268,7 +1335,7 @@ export const computePanelScheduleValues = (
     baseAmp: maxBaseAmp,
     connectionType: p.connectionType || "Line-to-Line",
     internalDemandCurrent,
-    subPanelDemandAmps
+    subPanelDemandAmps,
   };
 
   return {

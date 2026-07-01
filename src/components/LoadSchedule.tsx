@@ -19,7 +19,7 @@ import {
   GripVertical,
   MoveVertical,
   Search,
-  RotateCcw
+  RotateCcw,
 } from "lucide-react";
 import {
   DndContext,
@@ -29,15 +29,15 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-} from '@dnd-kit/core';
+} from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Circuit,
   PanelConfig,
@@ -65,7 +65,17 @@ import {
 } from "../utils/pecAmpacityDatabase";
 import { SingleLineDiagram } from "./SingleLineDiagram";
 import LatexRenderer from "./LatexRenderer";
-import { calculateCircuitValues, getPanelSystemVoltageFallback, extractHorsepowerFromDescription, computePanelScheduleValues, formatWireSizeLocal, isIdleSpareOrSpace, calculatePanelFault, validateSubPanelConnection, parseSystemVoltage } from "../utils/computeEngine";
+import {
+  calculateCircuitValues,
+  getPanelSystemVoltageFallback,
+  extractHorsepowerFromDescription,
+  computePanelScheduleValues,
+  formatWireSizeLocal,
+  isIdleSpareOrSpace,
+  calculatePanelFault,
+  validateSubPanelConnection,
+  parseSystemVoltage,
+} from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
   saveThreePhaseFLCEntry,
@@ -75,7 +85,7 @@ import {
   SINGLE_PHASE_FLC_TABLE,
   parseHpToNumber,
   ThreePhaseFLCEntry,
-  getThreePhaseFLCColumn
+  getThreePhaseFLCColumn,
 } from "../utils/motorFLCHelper";
 
 export const INITIAL_CIRCUITS: Circuit[] = [
@@ -164,15 +174,34 @@ export interface LoadScheduleProps {
   iscParams?: ShortCircuitParams;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
-  parentMdpConnection?: { circuitNo: number; description: string; mdpDesignation: string; circuitId?: string; feederSize?: string; feederRuns?: number };
+  parentMdpConnection?: {
+    circuitNo: number;
+    description: string;
+    mdpDesignation: string;
+    circuitId?: string;
+    feederSize?: string;
+    feederRuns?: number;
+  };
   vdCalculations?: VoltageDropCalculation[];
   transformerPrimaryVoltage?: number;
   setTransformerPrimaryVoltage?: (val: number) => void;
 }
 
-const AmpsInput = ({ c, panel, is3P, onAmpsUpdate, disabled }: { c: Circuit; panel: PanelConfig; is3P: boolean; onAmpsUpdate: (newAmps: number) => void; disabled: boolean }) => {
+const AmpsInput = ({
+  c,
+  panel,
+  is3P,
+  onAmpsUpdate,
+  disabled,
+}: {
+  c: Circuit;
+  panel: PanelConfig;
+  is3P: boolean;
+  onAmpsUpdate: (newAmps: number) => void;
+  disabled: boolean;
+}) => {
   const [val, setVal] = React.useState(c.loadA.toFixed(2));
-  
+
   React.useEffect(() => {
     setVal(c.loadA.toFixed(2));
   }, [c.loadA]);
@@ -195,12 +224,12 @@ const AmpsInput = ({ c, panel, is3P, onAmpsUpdate, disabled }: { c: Circuit; pan
     <input
       type="number"
       step="0.01"
-      className={`w-16 bg-transparent text-center font-mono focus:outline-none focus:border-b focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${is3P ? 'text-indigo-600 dark:text-indigo-400' : ''}`}
+      className={`w-16 bg-transparent text-center font-mono focus:outline-none focus:border-b focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${is3P ? "text-indigo-600 dark:text-indigo-400" : ""}`}
       value={val}
       onChange={(e) => setVal(e.target.value)}
       onBlur={handleBlur}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') {
+        if (e.key === "Enter") {
           e.currentTarget.blur();
         }
       }}
@@ -449,8 +478,15 @@ const VerticalBusBarComponent: React.FC<{
   );
 };
 
-function SortableCircuitItem({ circuit, index }: { circuit: Circuit; index: number }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: circuit.id });
+function SortableCircuitItem({
+  circuit,
+  index,
+}: {
+  circuit: Circuit;
+  index: number;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: circuit.id });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -462,7 +498,11 @@ function SortableCircuitItem({ circuit, index }: { circuit: Circuit; index: numb
       style={style}
       className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm mb-2"
     >
-      <button {...attributes} {...listeners} className="text-slate-400 hover:text-slate-600 focus:outline-none cursor-grab active:cursor-grabbing">
+      <button
+        {...attributes}
+        {...listeners}
+        className="text-slate-400 hover:text-slate-600 focus:outline-none cursor-grab active:cursor-grabbing"
+      >
         <GripVertical className="w-5 h-5" />
       </button>
       <div className="flex-1 flex flex-col min-w-0">
@@ -470,7 +510,9 @@ function SortableCircuitItem({ circuit, index }: { circuit: Circuit; index: numb
           <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300 font-black text-xs px-2 py-0.5 rounded-full shrink-0">
             #{circuit.circuitNo}
           </span>
-          <span className="truncate">{circuit.description || "Unnamed Circuit"}</span>
+          <span className="truncate">
+            {circuit.description || "Unnamed Circuit"}
+          </span>
         </div>
         <div className="text-xs font-semibold text-slate-500 mt-0.5 truncate">
           {circuit.loadA}A Load • CB: {circuit.mcbAT}AT • {circuit.wireSize}mm²
@@ -501,21 +543,32 @@ export default function LoadSchedule({
   setTransformerPrimaryVoltage,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
-  const [customKaicCircuitIds, setCustomKaicCircuitIds] = useState<string[]>([]);
-  const standardKAICRatings = useMemo(() => [5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100], []);
+  const [customKaicCircuitIds, setCustomKaicCircuitIds] = useState<string[]>(
+    [],
+  );
+  const standardKAICRatings = useMemo(
+    () => [5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100],
+    [],
+  );
   const [showPresetsModal, setShowPresetsModal] = useState<boolean>(false);
   const [showRearrangeModal, setShowRearrangeModal] = useState<boolean>(false);
   const [selectedPresets, setSelectedPresets] = useState<any[]>([]);
-  
+
   // Search and Filter States for Presets
   const [presetSearch, setPresetSearch] = useState<string>("");
-  const [presetCategoryFilter, setPresetCategoryFilter] = useState<string>("All");
-  const [presetLoadTypeFilter, setPresetLoadTypeFilter] = useState<string>("All");
+  const [presetCategoryFilter, setPresetCategoryFilter] =
+    useState<string>("All");
+  const [presetLoadTypeFilter, setPresetLoadTypeFilter] =
+    useState<string>("All");
   const [presetPhaseFilter, setPresetPhaseFilter] = useState<string>("All");
   const [presetSortBy, setPresetSortBy] = useState<string>("Alphabetical");
   const [presetSortOrder, setPresetSortOrder] = useState<"asc" | "desc">("asc");
 
-  const [isCustomPrimaryVoltage, setIsCustomPrimaryVoltage] = useState<boolean>(![13800, 34500, 69000, 115000, 230000].includes(transformerPrimaryVoltage || 34500));
+  const [isCustomPrimaryVoltage, setIsCustomPrimaryVoltage] = useState<boolean>(
+    ![13800, 34500, 69000, 115000, 230000].includes(
+      transformerPrimaryVoltage || 34500,
+    ),
+  );
 
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
 
@@ -524,7 +577,7 @@ export default function LoadSchedule({
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -563,7 +616,9 @@ export default function LoadSchedule({
   };
 
   // FLC Library States
-  const [dbThreePhaseFLC, setDbThreePhaseFLC] = useState<ThreePhaseFLCEntry[]>([]);
+  const [dbThreePhaseFLC, setDbThreePhaseFLC] = useState<ThreePhaseFLCEntry[]>(
+    [],
+  );
   const [loadingFLC, setLoadingFLC] = useState<boolean>(false);
   const [showFLCAdminPanel, setShowFLCAdminPanel] = useState<boolean>(false);
 
@@ -572,7 +627,9 @@ export default function LoadSchedule({
     const defaultHps = INITIAL_THREE_PHASE_FLC_DATA.map((e) => e.hp);
     const singlePhaseHps = Object.keys(SINGLE_PHASE_FLC_TABLE);
     const fetchedHps = dbThreePhaseFLC.map((e) => e.hp);
-    const union = Array.from(new Set([...defaultHps, ...singlePhaseHps, ...fetchedHps]));
+    const union = Array.from(
+      new Set([...defaultHps, ...singlePhaseHps, ...fetchedHps]),
+    );
     return union.sort((a, b) => parseHpToNumber(a) - parseHpToNumber(b));
   }, [dbThreePhaseFLC]);
 
@@ -588,8 +645,11 @@ export default function LoadSchedule({
               let flcVal = 0;
               if (is3PH) {
                 const colName = getThreePhaseFLCColumn(panel.voltage);
-                const match = dbThreePhaseFLC.find(e => e.hp.trim() === hp.trim()) ||
-                              INITIAL_THREE_PHASE_FLC_DATA.find(e => e.hp.trim() === hp.trim());
+                const match =
+                  dbThreePhaseFLC.find((e) => e.hp.trim() === hp.trim()) ||
+                  INITIAL_THREE_PHASE_FLC_DATA.find(
+                    (e) => e.hp.trim() === hp.trim(),
+                  );
                 if (match) {
                   flcVal = match[colName] ?? 0;
                 }
@@ -618,34 +678,48 @@ export default function LoadSchedule({
   }, [dbThreePhaseFLC, panel.system, panel.voltage]);
 
   const filteredLoadPresets = useMemo(() => {
-    let result = dynamicLoadPresets.map(cat => ({...cat, items: [...cat.items]}));
+    let result = dynamicLoadPresets.map((cat) => ({
+      ...cat,
+      items: [...cat.items],
+    }));
 
     // 1. Category Filter
     if (presetCategoryFilter !== "All") {
-      result = result.filter(cat => cat.category === presetCategoryFilter);
+      result = result.filter((cat) => cat.category === presetCategoryFilter);
     }
 
     // Process items within remaining categories
-    result = result.map(cat => {
+    result = result.map((cat) => {
       let filteredItems = cat.items;
 
       // 2. Load Type Filter
       if (presetLoadTypeFilter !== "All") {
-        filteredItems = filteredItems.filter(item => {
-          if (presetLoadTypeFilter === "Lighting" && item.loadType === "L") return true;
-          if (presetLoadTypeFilter === "Receptacle" && item.loadType === "S") return true;
-          if (presetLoadTypeFilter === "Motor" && item.loadType === "M") return true;
-          if (presetLoadTypeFilter === "Air Conditioning" && item.loadType === "AC") return true;
-          if (presetLoadTypeFilter === "Appliance" && item.loadType === "A") return true;
-          if (presetLoadTypeFilter === "Other" && item.loadType === "O") return true;
+        filteredItems = filteredItems.filter((item) => {
+          if (presetLoadTypeFilter === "Lighting" && item.loadType === "L")
+            return true;
+          if (presetLoadTypeFilter === "Receptacle" && item.loadType === "S")
+            return true;
+          if (presetLoadTypeFilter === "Motor" && item.loadType === "M")
+            return true;
+          if (
+            presetLoadTypeFilter === "Air Conditioning" &&
+            item.loadType === "AC"
+          )
+            return true;
+          if (presetLoadTypeFilter === "Appliance" && item.loadType === "A")
+            return true;
+          if (presetLoadTypeFilter === "Other" && item.loadType === "O")
+            return true;
           return false;
         });
       }
 
       // 3. Phase Type Filter
       if (presetPhaseFilter !== "All") {
-        filteredItems = filteredItems.filter(item => {
-          const is3P = ((item.loadType === "M" || item.loadType === "AC") && panel.system.includes("3PH"));
+        filteredItems = filteredItems.filter((item) => {
+          const is3P =
+            (item.loadType === "M" || item.loadType === "AC") &&
+            panel.system.includes("3PH");
           if (presetPhaseFilter === "3 Phase" && is3P) return true;
           if (presetPhaseFilter === "1 Phase" && !is3P) return true;
           return false;
@@ -655,10 +729,11 @@ export default function LoadSchedule({
       // 4. Search Keyword Filter
       if (presetSearch.trim() !== "") {
         const query = presetSearch.toLowerCase();
-        filteredItems = filteredItems.filter(item => 
-          item.description.toLowerCase().includes(query) ||
-          item.label.toLowerCase().includes(query) ||
-          cat.category.toLowerCase().includes(query)
+        filteredItems = filteredItems.filter(
+          (item) =>
+            item.description.toLowerCase().includes(query) ||
+            item.label.toLowerCase().includes(query) ||
+            cat.category.toLowerCase().includes(query),
         );
       }
 
@@ -677,8 +752,17 @@ export default function LoadSchedule({
     });
 
     // Remove empty categories
-    return result.filter(cat => cat.items.length > 0);
-  }, [dynamicLoadPresets, presetSearch, presetCategoryFilter, presetLoadTypeFilter, presetPhaseFilter, presetSortBy, presetSortOrder, panel.system]);
+    return result.filter((cat) => cat.items.length > 0);
+  }, [
+    dynamicLoadPresets,
+    presetSearch,
+    presetCategoryFilter,
+    presetLoadTypeFilter,
+    presetPhaseFilter,
+    presetSortBy,
+    presetSortOrder,
+    panel.system,
+  ]);
 
   // Load FLC values from Firestore
   useEffect(() => {
@@ -689,15 +773,17 @@ export default function LoadSchedule({
         // Prevent Firestore from blocking the app for 10 seconds if offline
         const data = await Promise.race([
           getThreePhaseFLCDatabaseList(),
-          new Promise<ThreePhaseFLCEntry[]>((_, reject) => 
-            setTimeout(() => reject(new Error("Firestore timeout")), 3000)
-          )
+          new Promise<ThreePhaseFLCEntry[]>((_, reject) =>
+            setTimeout(() => reject(new Error("Firestore timeout")), 3000),
+          ),
         ]);
         if (active) {
           setDbThreePhaseFLC(data);
         }
       } catch (err) {
-        console.warn("Using offline fallback static data table for FLC lookup.");
+        console.warn(
+          "Using offline fallback static data table for FLC lookup.",
+        );
         if (active) {
           setDbThreePhaseFLC(INITIAL_THREE_PHASE_FLC_DATA);
         }
@@ -747,7 +833,7 @@ export default function LoadSchedule({
       designAmpacity,
       panel.conductorMaterial || "Copper",
       panel.insulationType || "THHN",
-      panel.temperatureRating as any
+      panel.temperatureRating as any,
     );
   };
 
@@ -767,11 +853,14 @@ export default function LoadSchedule({
     groundSizeString: string,
     poles: number,
     systemName: string,
-    conduitType: string = "PVC"
+    conduitType: string = "PVC",
   ): string => {
     // poles is 1, 2, or 3
     let activePhaseCount = poles === 1 ? 2 : poles; // 1P branch has Phase + Neutral (2 wires)
-    if (poles === 3 && (systemName.includes("4W") || systemName.includes("5W"))) {
+    if (
+      poles === 3 &&
+      (systemName.includes("4W") || systemName.includes("5W"))
+    ) {
       activePhaseCount = 4; // 3 phases + 1 neutral (4 wires)
     }
 
@@ -780,11 +869,11 @@ export default function LoadSchedule({
     const groundArea = THHN_WIRE_AREAS[groundSize] || groundSize * 2.5;
 
     const totalArea = phaseArea * activePhaseCount + groundArea;
-    const selectedType = conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
+    const selectedType =
+      conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
     const table = CONDUIT_LIBRARY[selectedType];
     const conduit =
-      table.find((c) => c.limit >= totalArea) ||
-      table[table.length - 1];
+      table.find((c) => c.limit >= totalArea) || table[table.length - 1];
     return conduit.size;
   };
 
@@ -851,7 +940,10 @@ export default function LoadSchedule({
       circuits.length > 0
         ? Math.max(...circuits.map((c) => c.circuitNo)) + 1
         : 1;
-    const is3P = ((item.loadType === LoadType.MOTOR || item.loadType === LoadType.AIR_CON) && panel.system.includes("3PH"));
+    const is3P =
+      (item.loadType === LoadType.MOTOR ||
+        item.loadType === LoadType.AIR_CON) &&
+      panel.system.includes("3PH");
     const base: Partial<Circuit> = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
@@ -887,7 +979,10 @@ export default function LoadSchedule({
 
     const totalVA = subLoads.reduce((sum, sl) => sum + sl.wattage, 0);
 
-    const is3P = ((selectedPresets[0].loadType === LoadType.MOTOR || selectedPresets[0].loadType === LoadType.AIR_CON) && panel.system.includes("3PH"));
+    const is3P =
+      (selectedPresets[0].loadType === LoadType.MOTOR ||
+        selectedPresets[0].loadType === LoadType.AIR_CON) &&
+      panel.system.includes("3PH");
     const base: Partial<Circuit> = {
       id: crypto.randomUUID(),
       circuitNo: newNo,
@@ -909,8 +1004,15 @@ export default function LoadSchedule({
     setSelectedPresets([]);
   };
 
-  const handleAmpsUpdate = (id: string, newAmps: number, c: Circuit, is3P: boolean) => {
-    const v = c.voltage || getPanelSystemVoltageFallback(panel.system, is3P, panel.connectionType);
+  const handleAmpsUpdate = (
+    id: string,
+    newAmps: number,
+    c: Circuit,
+    is3P: boolean,
+  ) => {
+    const v =
+      c.voltage ||
+      getPanelSystemVoltageFallback(panel.system, is3P, panel.connectionType);
     const newVA = Math.round(is3P ? newAmps * v * 1.732 : newAmps * v);
     const qty = c.quantity || 1;
     const pf = c.pf !== undefined ? c.pf : 1.0;
@@ -968,10 +1070,13 @@ export default function LoadSchedule({
   const phaseLoads = useMemo(() => {
     const loads = { R: 0, Y: 0, B: 0 };
     circuits.forEach((c) => {
-      if (c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseLoads) {
-        loads.R += c.reflectedPhaseLoads.R + c.reflectedPhaseLoads.ThreePhase / 3;
-        loads.Y += c.reflectedPhaseLoads.Y + c.reflectedPhaseLoads.ThreePhase / 3;
-        loads.B += c.reflectedPhaseLoads.B + c.reflectedPhaseLoads.ThreePhase / 3;
+      if (c.subPanelReflectionMode === "phase_loads" && c.reflectedPhaseLoads) {
+        loads.R +=
+          c.reflectedPhaseLoads.R + c.reflectedPhaseLoads.ThreePhase / 3;
+        loads.Y +=
+          c.reflectedPhaseLoads.Y + c.reflectedPhaseLoads.ThreePhase / 3;
+        loads.B +=
+          c.reflectedPhaseLoads.B + c.reflectedPhaseLoads.ThreePhase / 3;
       } else {
         c.phases.forEach((p) => {
           loads[p as keyof typeof loads] += c.loadVA / (c.phases.length || 1);
@@ -992,7 +1097,7 @@ export default function LoadSchedule({
   const phaseAmps = useMemo(() => {
     const amps = { R: 0, Y: 0, B: 0, threePhase: 0 };
     circuits.forEach((c) => {
-      if (c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps) {
+      if (c.subPanelReflectionMode === "phase_loads" && c.reflectedPhaseAmps) {
         amps.R += c.reflectedPhaseAmps.R;
         amps.Y += c.reflectedPhaseAmps.Y;
         amps.B += c.reflectedPhaseAmps.B;
@@ -1009,7 +1114,10 @@ export default function LoadSchedule({
   }, [circuits]);
 
   const { maxDemandDetails, mainCurrent } = useMemo(() => {
-    return computePanelScheduleValues(panel, circuits, { vdCalculations, panelId: panel.designation || "main" });
+    return computePanelScheduleValues(panel, circuits, {
+      vdCalculations,
+      panelId: panel.designation || "main",
+    });
   }, [circuits, panel, vdCalculations]);
 
   const mainFeeder = useMemo(() => {
@@ -1020,11 +1128,14 @@ export default function LoadSchedule({
     const maxBranchAT = Math.max(0, ...circuits.map((c) => c.mcbAT));
     let calculatedCb =
       STANDARD_CB_RATINGS.find(
-        (r) => r * 0.8 >= mainCurrent.baseAmp && r >= Math.max(designAmp, mainCurrent.baseAmp),
+        (r) =>
+          r * 0.8 >= mainCurrent.baseAmp &&
+          r >= Math.max(designAmp, mainCurrent.baseAmp),
       ) || 100;
 
     if (calculatedCb < maxBranchAT) {
-      calculatedCb = STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
+      calculatedCb =
+        STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
     }
 
     while (calculatedCb * 0.8 < mainCurrent.baseAmp) {
@@ -1049,13 +1160,14 @@ export default function LoadSchedule({
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
     const wire = getWireForBreaker(cb, designAmp);
     const groundSize = getGroundWireForWireSize(wire.size, cb);
-    const selectedMainConduitType = panel.mainConduitType || panel.mainOverrides?.conduitType || "PVC";
+    const selectedMainConduitType =
+      panel.mainConduitType || panel.mainOverrides?.conduitType || "PVC";
     const conduitSize = getConduitSizeForWires(
       wire.size,
       groundSize,
       poles,
       panel.system,
-      selectedMainConduitType
+      selectedMainConduitType,
     );
 
     const branchTypeCounts = circuits.reduce(
@@ -1083,29 +1195,45 @@ export default function LoadSchedule({
     if (iscParams) {
       if (!isSubPanel && !isSubSubPanel) {
         // MDP
-        faultCurrentA = calculatePanelFault(panel, iscParams, undefined, undefined, undefined, 0);
+        faultCurrentA = calculatePanelFault(
+          panel,
+          iscParams,
+          undefined,
+          undefined,
+          undefined,
+          0,
+        );
       } else if (parentMdpConnection && parentMdpConnection.circuitId) {
         // Sub-panels
-        const vd = vdCalculations?.find(v => v.source === parentMdpConnection.circuitId);
+        const vd = vdCalculations?.find(
+          (v) => v.source === parentMdpConnection.circuitId,
+        );
         const feederLen = vd?.length || iscParams.feederLength || 10;
-        const motorVA = circuits.reduce((acc, curr) => (curr.loadType === LoadType.MOTOR || curr.loadType === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0);
+        const motorVA = circuits.reduce(
+          (acc, curr) =>
+            curr.loadType === LoadType.MOTOR ||
+            curr.loadType === LoadType.AIR_CON
+              ? acc + (curr.loadVA || 0)
+              : acc,
+          0,
+        );
         faultCurrentA = calculatePanelFault(
-          panel, 
-          iscParams, 
-          feederLen, 
-          parentMdpConnection.feederSize, 
-          parentMdpConnection.feederRuns, 
-          motorVA
+          panel,
+          iscParams,
+          feederLen,
+          parentMdpConnection.feederSize,
+          parentMdpConnection.feederRuns,
+          motorVA,
         );
       }
     }
-    
+
     const defaultKaic = cb > 100 ? 18 : 10;
     let kaic = defaultKaic;
     if (faultCurrentA) {
       const faultKA = faultCurrentA / 1000;
       const KAIC_RATINGS = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
-      kaic = KAIC_RATINGS.find(k => k >= faultKA) || 100;
+      kaic = KAIC_RATINGS.find((k) => k >= faultKA) || 100;
     }
     const af =
       cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
@@ -1115,7 +1243,7 @@ export default function LoadSchedule({
     let finalType = type;
     let finalKaic = kaic;
     let finalPoles = poles;
-    
+
     let finalWireSize = wire.size;
     let finalWireRuns = wire.runs;
     let finalGroundSize = groundSize;
@@ -1123,33 +1251,47 @@ export default function LoadSchedule({
     let finalConduitType = selectedMainConduitType;
 
     if (panel.mainOverrides?.isOverrideEnabled) {
-      if (panel.mainOverrides.breakerAT) finalCb = panel.mainOverrides.breakerAT;
-      if (panel.mainOverrides.breakerAF) finalAf = panel.mainOverrides.breakerAF;
-      if (panel.mainOverrides.breakerType) finalType = panel.mainOverrides.breakerType as MCBType;
+      if (panel.mainOverrides.breakerAT)
+        finalCb = panel.mainOverrides.breakerAT;
+      if (panel.mainOverrides.breakerAF)
+        finalAf = panel.mainOverrides.breakerAF;
+      if (panel.mainOverrides.breakerType)
+        finalType = panel.mainOverrides.breakerType as MCBType;
       if (panel.mainOverrides.kaic) finalKaic = panel.mainOverrides.kaic;
       if (panel.mainOverrides.poles) finalPoles = panel.mainOverrides.poles;
 
-      if (panel.mainOverrides.wireSize) finalWireSize = Number(panel.mainOverrides.wireSize);
-      if (panel.mainOverrides.wireRuns) finalWireRuns = panel.mainOverrides.wireRuns;
-      if (panel.mainOverrides.groundSize) finalGroundSize = panel.mainOverrides.groundSize;
-      if (panel.mainOverrides.conduitSize) finalConduitSize = panel.mainOverrides.conduitSize;
-      if (panel.mainOverrides.conduitType) finalConduitType = panel.mainOverrides.conduitType;
+      if (panel.mainOverrides.wireSize)
+        finalWireSize = Number(panel.mainOverrides.wireSize);
+      if (panel.mainOverrides.wireRuns)
+        finalWireRuns = panel.mainOverrides.wireRuns;
+      if (panel.mainOverrides.groundSize)
+        finalGroundSize = panel.mainOverrides.groundSize;
+      if (panel.mainOverrides.conduitSize)
+        finalConduitSize = panel.mainOverrides.conduitSize;
+      if (panel.mainOverrides.conduitType)
+        finalConduitType = panel.mainOverrides.conduitType;
     }
 
     const mat = panel.conductorMaterial || "Copper";
     const ins = panel.insulationType || "THHN";
-    const temp = (panel.temperatureRating as any) || getTemperatureForInsulation(ins);
-    let finalWireAmpacity = getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
+    const temp =
+      (panel.temperatureRating as any) || getTemperatureForInsulation(ins);
+    let finalWireAmpacity =
+      getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
 
-    return { 
-      wire: { size: finalWireSize, ampacity: finalWireAmpacity, runs: finalWireRuns }, 
-      groundSize: finalGroundSize, 
-      cb: finalCb, 
-      conduitSize: finalConduitSize, 
+    return {
+      wire: {
+        size: finalWireSize,
+        ampacity: finalWireAmpacity,
+        runs: finalWireRuns,
+      },
+      groundSize: finalGroundSize,
+      cb: finalCb,
+      conduitSize: finalConduitSize,
       conduitType: finalConduitType,
-      poles: finalPoles, 
-      type: finalType, 
-      kaic: finalKaic, 
+      poles: finalPoles,
+      type: finalType,
+      kaic: finalKaic,
       af: finalAf,
       raw: {
         wireSize: wire.size,
@@ -1157,39 +1299,49 @@ export default function LoadSchedule({
         type: type,
         kaic: kaic,
         designAmp: designAmp,
-        faultCurrentA: faultCurrentA
-      }
+        faultCurrentA: faultCurrentA,
+      },
     };
-  }, [mainCurrent, circuits, panel, iscParams, isSubPanel, isSubSubPanel, parentMdpConnection, vdCalculations]);
+  }, [
+    mainCurrent,
+    circuits,
+    panel,
+    iscParams,
+    isSubPanel,
+    isSubSubPanel,
+    parentMdpConnection,
+    vdCalculations,
+  ]);
 
   useEffect(() => {
     if (!circuits || circuits.length === 0) return;
-    
+
     // Evaluate if any branch circuit needs an automatic kAIC upgrade
     const targetKaic = mainFeeder.kaic;
-    
+
     let changed = false;
     const nextCircuits = circuits.map((c) => {
       // Spaces/spares/idle skip check
       if (isIdleSpareOrSpace(c)) return c;
-      
+
       const mcbAT = c.mcbAT || 15;
       const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
       const autoCalculated = Math.max(baseCalculated, targetKaic);
-      
-      const desiredKaic = c.kaicOverride !== undefined ? c.kaicOverride : autoCalculated;
-      
+
+      const desiredKaic =
+        c.kaicOverride !== undefined ? c.kaicOverride : autoCalculated;
+
       if (c.mcbKAIC !== desiredKaic || c.mcbKAICCalculated !== autoCalculated) {
         changed = true;
         return {
           ...c,
           mcbKAIC: desiredKaic,
-          mcbKAICCalculated: autoCalculated
+          mcbKAICCalculated: autoCalculated,
         };
       }
       return c;
     });
-    
+
     if (changed) {
       setCircuits(nextCircuits);
     }
@@ -1249,13 +1401,18 @@ export default function LoadSchedule({
                 Three-Phase Motor FLC Library (Table 4.30.14.4)
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Manage, customize, and add motor Full-Load Current ratings. Overrides are instantly applied to all sizing calculations.
+                Manage, customize, and add motor Full-Load Current ratings.
+                Overrides are instantly applied to all sizing calculations.
               </p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={async () => {
-                  if (confirm("Are you sure you want to reset the FLC library to standard PEC 2017 Table 4.30.14.4 values? This will overwrite your custom modifications.")) {
+                  if (
+                    confirm(
+                      "Are you sure you want to reset the FLC library to standard PEC 2017 Table 4.30.14.4 values? This will overwrite your custom modifications.",
+                    )
+                  ) {
                     setLoadingFLC(true);
                     try {
                       await seedThreePhaseFLCBackup();
@@ -1287,7 +1444,9 @@ export default function LoadSchedule({
             <div className="flex items-center justify-center py-10">
               <div className="flex flex-col items-center gap-2">
                 <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 font-sans">Syncing with Firestore Library...</span>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 font-sans">
+                  Syncing with Firestore Library...
+                </span>
               </div>
             </div>
           )}
@@ -1308,12 +1467,24 @@ export default function LoadSchedule({
                       if (!hp) return;
                       const entry: any = {
                         hp,
-                        v115: parseFloat(formData.get("v115")?.toString() || "0") || 0,
-                        v200: parseFloat(formData.get("v200")?.toString() || "0") || 0,
-                        v208: parseFloat(formData.get("v208")?.toString() || "0") || 0,
-                        v230: parseFloat(formData.get("v230")?.toString() || "0") || 0,
-                        v460: parseFloat(formData.get("v460")?.toString() || "0") || 0,
-                        v575: parseFloat(formData.get("v575")?.toString() || "0") || 0,
+                        v115:
+                          parseFloat(formData.get("v115")?.toString() || "0") ||
+                          0,
+                        v200:
+                          parseFloat(formData.get("v200")?.toString() || "0") ||
+                          0,
+                        v208:
+                          parseFloat(formData.get("v208")?.toString() || "0") ||
+                          0,
+                        v230:
+                          parseFloat(formData.get("v230")?.toString() || "0") ||
+                          0,
+                        v460:
+                          parseFloat(formData.get("v460")?.toString() || "0") ||
+                          0,
+                        v575:
+                          parseFloat(formData.get("v575")?.toString() || "0") ||
+                          0,
                       };
                       setLoadingFLC(true);
                       try {
@@ -1330,35 +1501,93 @@ export default function LoadSchedule({
                     className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 items-end"
                   >
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">HP (e.g., "1.25" or "10")</label>
-                      <input name="hp" required placeholder="HP" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        HP (e.g., "1.25" or "10")
+                      </label>
+                      <input
+                        name="hp"
+                        required
+                        placeholder="HP"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">115V (A)</label>
-                      <input name="v115" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        115V (A)
+                      </label>
+                      <input
+                        name="v115"
+                        type="number"
+                        step="0.1"
+                        defaultValue="0"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">200V (A)</label>
-                      <input name="v200" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        200V (A)
+                      </label>
+                      <input
+                        name="v200"
+                        type="number"
+                        step="0.1"
+                        defaultValue="0"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">208V (A)</label>
-                      <input name="v208" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        208V (A)
+                      </label>
+                      <input
+                        name="v208"
+                        type="number"
+                        step="0.1"
+                        defaultValue="0"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">230V (A)</label>
-                      <input name="v230" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        230V (A)
+                      </label>
+                      <input
+                        name="v230"
+                        type="number"
+                        step="0.1"
+                        defaultValue="0"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">460V (A)</label>
-                      <input name="v460" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        460V (A)
+                      </label>
+                      <input
+                        name="v460"
+                        type="number"
+                        step="0.1"
+                        defaultValue="0"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">575V (A)</label>
-                      <input name="v575" type="number" step="0.1" defaultValue="0" className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs" />
+                      <label className="text-[10px] font-bold text-slate-500 block mb-0.5">
+                        575V (A)
+                      </label>
+                      <input
+                        name="v575"
+                        type="number"
+                        step="0.1"
+                        defaultValue="0"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg text-xs"
+                      />
                     </div>
                     <div className="col-span-2 sm:col-span-1">
-                      <button type="submit" className="w-full py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer transition-colors shadow-xs">
+                      <button
+                        type="submit"
+                        className="w-full py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer transition-colors shadow-xs"
+                      >
                         Add Entry
                       </button>
                     </div>
@@ -1378,16 +1607,28 @@ export default function LoadSchedule({
                       <th className="px-3 py-2.5">230V</th>
                       <th className="px-3 py-2.5">460V</th>
                       <th className="px-3 py-2.5">575V</th>
-                      {isAdmin && <th className="px-4 py-2.5 text-right">Actions</th>}
+                      {isAdmin && (
+                        <th className="px-4 py-2.5 text-right">Actions</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                    {(dbThreePhaseFLC.length > 0 ? dbThreePhaseFLC : INITIAL_THREE_PHASE_FLC_DATA)
+                    {(dbThreePhaseFLC.length > 0
+                      ? dbThreePhaseFLC
+                      : INITIAL_THREE_PHASE_FLC_DATA
+                    )
                       .slice()
-                      .sort((a, b) => parseHpToNumber(a.hp) - parseHpToNumber(b.hp))
+                      .sort(
+                        (a, b) => parseHpToNumber(a.hp) - parseHpToNumber(b.hp),
+                      )
                       .map((entry) => (
-                        <tr key={entry.hp} className="hover:bg-slate-50/55 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="px-4 py-2 font-black text-indigo-600 dark:text-indigo-400">{entry.hp} HP</td>
+                        <tr
+                          key={entry.hp}
+                          className="hover:bg-slate-50/55 dark:hover:bg-slate-800/30 transition-colors"
+                        >
+                          <td className="px-4 py-2 font-black text-indigo-600 dark:text-indigo-400">
+                            {entry.hp} HP
+                          </td>
                           <td className="px-3 py-2">
                             <input
                               type="number"
@@ -1399,7 +1640,11 @@ export default function LoadSchedule({
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...entry, v115: val };
-                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                setDbThreePhaseFLC((prev) =>
+                                  prev.map((x) =>
+                                    x.hp === entry.hp ? updated : x,
+                                  ),
+                                );
                                 await saveThreePhaseFLCEntry(updated);
                               }}
                             />
@@ -1415,7 +1660,11 @@ export default function LoadSchedule({
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...entry, v200: val };
-                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                setDbThreePhaseFLC((prev) =>
+                                  prev.map((x) =>
+                                    x.hp === entry.hp ? updated : x,
+                                  ),
+                                );
                                 await saveThreePhaseFLCEntry(updated);
                               }}
                             />
@@ -1431,7 +1680,11 @@ export default function LoadSchedule({
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...entry, v208: val };
-                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                setDbThreePhaseFLC((prev) =>
+                                  prev.map((x) =>
+                                    x.hp === entry.hp ? updated : x,
+                                  ),
+                                );
                                 await saveThreePhaseFLCEntry(updated);
                               }}
                             />
@@ -1447,7 +1700,11 @@ export default function LoadSchedule({
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...entry, v230: val };
-                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                setDbThreePhaseFLC((prev) =>
+                                  prev.map((x) =>
+                                    x.hp === entry.hp ? updated : x,
+                                  ),
+                                );
                                 await saveThreePhaseFLCEntry(updated);
                               }}
                             />
@@ -1463,7 +1720,11 @@ export default function LoadSchedule({
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...entry, v460: val };
-                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                setDbThreePhaseFLC((prev) =>
+                                  prev.map((x) =>
+                                    x.hp === entry.hp ? updated : x,
+                                  ),
+                                );
                                 await saveThreePhaseFLCEntry(updated);
                               }}
                             />
@@ -1479,7 +1740,11 @@ export default function LoadSchedule({
                                 if (!isAdmin) return;
                                 const val = parseFloat(e.target.value) || 0;
                                 const updated = { ...entry, v575: val };
-                                setDbThreePhaseFLC((prev) => prev.map((x) => (x.hp === entry.hp ? updated : x)));
+                                setDbThreePhaseFLC((prev) =>
+                                  prev.map((x) =>
+                                    x.hp === entry.hp ? updated : x,
+                                  ),
+                                );
                                 await saveThreePhaseFLCEntry(updated);
                               }}
                             />
@@ -1489,11 +1754,16 @@ export default function LoadSchedule({
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  if (confirm(`Remove custom horsepower entry "${entry.hp} HP" from the library?`)) {
+                                  if (
+                                    confirm(
+                                      `Remove custom horsepower entry "${entry.hp} HP" from the library?`,
+                                    )
+                                  ) {
                                     setLoadingFLC(true);
                                     try {
                                       await deleteThreePhaseFLCEntry(entry.hp);
-                                      const fresh = await getThreePhaseFLCDatabaseList();
+                                      const fresh =
+                                        await getThreePhaseFLCDatabaseList();
                                       setDbThreePhaseFLC(fresh);
                                     } catch (err) {
                                       alert("Error deleting entry: " + err);
@@ -1537,7 +1807,9 @@ export default function LoadSchedule({
               className="px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-950/50 rounded-lg flex items-center gap-1.5 transition-colors border border-emerald-200 dark:border-emerald-800 cursor-pointer shadow-2xs mr-2"
               title="Open Three-Phase Motor Full-Load Current Library (Table 4.30.14.4)"
             >
-              <span>{showFLCAdminPanel ? "Hide FLC Library" : "Manage FLC Library"}</span>
+              <span>
+                {showFLCAdminPanel ? "Hide FLC Library" : "Manage FLC Library"}
+              </span>
             </button>
             {isSubPanel && onDuplicateSubPanel && (
               <button
@@ -1618,7 +1890,9 @@ export default function LoadSchedule({
             </label>
             <select
               value={panel.projectType || "Residential"}
-              onChange={(e) => setPanel({ ...panel, projectType: e.target.value })}
+              onChange={(e) =>
+                setPanel({ ...panel, projectType: e.target.value })
+              }
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
               <option value="Residential">Residential</option>
@@ -1701,7 +1975,11 @@ export default function LoadSchedule({
             </label>
             <div className="flex gap-2">
               <select
-                value={isCustomPrimaryVoltage ? "custom" : (transformerPrimaryVoltage || 34500)}
+                value={
+                  isCustomPrimaryVoltage
+                    ? "custom"
+                    : transformerPrimaryVoltage || 34500
+                }
                 onChange={(e) => {
                   if (e.target.value === "custom") {
                     setIsCustomPrimaryVoltage(true);
@@ -1737,7 +2015,9 @@ export default function LoadSchedule({
                     placeholder="Voltage (V)"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <span className="text-slate-400 dark:text-slate-500 text-xs font-bold">V</span>
+                    <span className="text-slate-400 dark:text-slate-500 text-xs font-bold">
+                      V
+                    </span>
                   </div>
                 </div>
               )}
@@ -1760,7 +2040,9 @@ export default function LoadSchedule({
                 });
                 setCircuits((prevCircuits) =>
                   prevCircuits.map((cir) => {
-                    const isAcuOrMotor = cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON;
+                    const isAcuOrMotor =
+                      cir.loadType === LoadType.MOTOR ||
+                      cir.loadType === LoadType.AIR_CON;
                     if (isAcuOrMotor) {
                       return {
                         ...cir,
@@ -1769,43 +2051,71 @@ export default function LoadSchedule({
                       };
                     }
                     return cir;
-                  })
+                  }),
                 );
               }}
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              <optgroup label="Single-Phase (1PH) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+              <optgroup
+                label="Single-Phase (1PH) Systems"
+                className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500"
+              >
                 {Object.keys(SYSTEM_VOLTAGES)
                   .filter((s) => s.includes("1PH"))
                   .map((s) => (
-                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                    <option
+                      key={s}
+                      value={s}
+                      className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900"
+                    >
                       {s}
                     </option>
                   ))}
               </optgroup>
-              <optgroup label="Three-Phase, 5-Wire (3PH, 5W) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+              <optgroup
+                label="Three-Phase, 5-Wire (3PH, 5W) Systems"
+                className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500"
+              >
                 {Object.keys(SYSTEM_VOLTAGES)
                   .filter((s) => s.includes("3PH") && s.includes("5W"))
                   .map((s) => (
-                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                    <option
+                      key={s}
+                      value={s}
+                      className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900"
+                    >
                       {s}
                     </option>
                   ))}
               </optgroup>
-              <optgroup label="Three-Phase, 4-Wire (3PH, 4W) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+              <optgroup
+                label="Three-Phase, 4-Wire (3PH, 4W) Systems"
+                className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500"
+              >
                 {Object.keys(SYSTEM_VOLTAGES)
                   .filter((s) => s.includes("3PH") && s.includes("4W"))
                   .map((s) => (
-                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                    <option
+                      key={s}
+                      value={s}
+                      className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900"
+                    >
                       {s}
                     </option>
                   ))}
               </optgroup>
-              <optgroup label="Three-Phase, 3-Wire (3PH, 3W) Systems" className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500">
+              <optgroup
+                label="Three-Phase, 3-Wire (3PH, 3W) Systems"
+                className="bg-white dark:bg-slate-900 text-xs font-bold text-slate-400 dark:text-slate-500"
+              >
                 {Object.keys(SYSTEM_VOLTAGES)
                   .filter((s) => s.includes("3PH") && s.includes("3W"))
                   .map((s) => (
-                    <option key={s} value={s} className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900">
+                    <option
+                      key={s}
+                      value={s}
+                      className="font-normal text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900"
+                    >
                       {s}
                     </option>
                   ))}
@@ -1915,8 +2225,18 @@ export default function LoadSchedule({
               }
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              <option value="Copper" className="dark:bg-slate-900 dark:text-slate-100">Copper (Cu)</option>
-              <option value="Aluminum" className="dark:bg-slate-900 dark:text-slate-100">Aluminum (Al)</option>
+              <option
+                value="Copper"
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                Copper (Cu)
+              </option>
+              <option
+                value="Aluminum"
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                Aluminum (Al)
+              </option>
             </select>
           </div>
           <div className="space-y-1.5">
@@ -1931,16 +2251,22 @@ export default function LoadSchedule({
                 setPanel({
                   ...panel,
                   insulationType: insulation,
-                  temperatureRating: autoTemp
+                  temperatureRating: autoTemp,
                 });
               }}
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              <optgroup label="60°C Insulation Rated" className="dark:bg-slate-900 font-semibold text-slate-500">
+              <optgroup
+                label="60°C Insulation Rated"
+                className="dark:bg-slate-900 font-semibold text-slate-500"
+              >
                 <option value="TW">TW</option>
                 <option value="UF">UF</option>
               </optgroup>
-              <optgroup label="75°C Insulation Rated" className="dark:bg-slate-900 font-semibold text-slate-500">
+              <optgroup
+                label="75°C Insulation Rated"
+                className="dark:bg-slate-900 font-semibold text-slate-500"
+              >
                 <option value="RHW">RHW</option>
                 <option value="THHW">THHW</option>
                 <option value="THW">THW</option>
@@ -1949,7 +2275,10 @@ export default function LoadSchedule({
                 <option value="USE">USE</option>
                 <option value="ZW">ZW</option>
               </optgroup>
-              <optgroup label="90°C Insulation Rated" className="dark:bg-slate-900 font-semibold text-slate-500">
+              <optgroup
+                label="90°C Insulation Rated"
+                className="dark:bg-slate-900 font-semibold text-slate-500"
+              >
                 <option value="THHN">THHN</option>
                 <option value="THWN-2">THWN-2</option>
                 <option value="THW-2">THW-2</option>
@@ -1979,17 +2308,36 @@ export default function LoadSchedule({
                 const val = e.target.value;
                 setPanel({
                   ...panel,
-                  temperatureRating: val ? (Number(val) as any) : undefined
+                  temperatureRating: val ? (Number(val) as any) : undefined,
                 });
               }}
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              <option value="" className="dark:bg-slate-900 dark:text-slate-100">
-                Auto ({getTemperatureForInsulation(panel.insulationType || "THHN")}°C)
+              <option
+                value=""
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                Auto (
+                {getTemperatureForInsulation(panel.insulationType || "THHN")}°C)
               </option>
-              <option value="60" className="dark:bg-slate-900 dark:text-slate-100">60°C</option>
-              <option value="75" className="dark:bg-slate-900 dark:text-slate-100">75°C</option>
-              <option value="90" className="dark:bg-slate-900 dark:text-slate-100">90°C</option>
+              <option
+                value="60"
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                60°C
+              </option>
+              <option
+                value="75"
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                75°C
+              </option>
+              <option
+                value="90"
+                className="dark:bg-slate-900 dark:text-slate-100"
+              >
+                90°C
+              </option>
             </select>
           </div>
           <div className="space-y-1.5">
@@ -2039,26 +2387,29 @@ export default function LoadSchedule({
                 Engineering Overrides
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Manually override system-calculated values. The system will retain these values but mark them as user-defined.
+                Manually override system-calculated values. The system will
+                retain these values but mark them as user-defined.
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                className="sr-only peer" 
+              <input
+                type="checkbox"
+                className="sr-only peer"
                 checked={panel.mainOverrides?.isOverrideEnabled || false}
                 onChange={(e) => {
-                  setPanel(prev => ({
+                  setPanel((prev) => ({
                     ...prev,
                     mainOverrides: {
                       ...(prev.mainOverrides || {}),
-                      isOverrideEnabled: e.target.checked
-                    }
+                      isOverrideEnabled: e.target.checked,
+                    },
                   }));
                 }}
               />
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-amber-500"></div>
-              <span className="ml-3 text-sm font-medium text-slate-700 dark:text-slate-300">Enable Overrides</span>
+              <span className="ml-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+                Enable Overrides
+              </span>
             </label>
           </div>
 
@@ -2070,19 +2421,25 @@ export default function LoadSchedule({
                 </label>
                 <select
                   value={panel.mainOverrides.breakerAT || ""}
-                  onChange={(e) => setPanel(prev => ({
-                    ...prev,
-                    mainOverrides: {
-                      ...prev.mainOverrides,
-                      breakerAT: e.target.value ? Number(e.target.value) : undefined,
-                      isOverrideEnabled: true
-                    }
-                  }))}
+                  onChange={(e) =>
+                    setPanel((prev) => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        breakerAT: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                        isOverrideEnabled: true,
+                      },
+                    }))
+                  }
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                 >
                   <option value="">Auto ({mainFeeder.raw.cb} AT)</option>
-                  {STANDARD_CB_RATINGS.map(r => (
-                    <option key={r} value={r}>{r} AT</option>
+                  {STANDARD_CB_RATINGS.map((r) => (
+                    <option key={r} value={r}>
+                      {r} AT
+                    </option>
                   ))}
                 </select>
               </div>
@@ -2094,36 +2451,56 @@ export default function LoadSchedule({
                 <div className="flex gap-2">
                   <select
                     value={panel.mainOverrides.wireRuns || ""}
-                    onChange={(e) => setPanel(prev => ({
-                      ...prev,
-                      mainOverrides: {
-                        ...prev.mainOverrides,
-                        wireRuns: e.target.value ? Number(e.target.value) : undefined,
-                        isOverrideEnabled: true
-                      }
-                    }))}
+                    onChange={(e) =>
+                      setPanel((prev) => ({
+                        ...prev,
+                        mainOverrides: {
+                          ...prev.mainOverrides,
+                          wireRuns: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                          isOverrideEnabled: true,
+                        },
+                      }))
+                    }
                     className="w-1/3 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                   >
-                    <option value="">Auto ({mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}x` : '1x'})</option>
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map(r => (
-                      <option key={r} value={r}>{r}x Sets</option>
+                    <option value="">
+                      Auto (
+                      {mainFeeder.wire.runs > 1
+                        ? `${mainFeeder.wire.runs}x`
+                        : "1x"}
+                      )
+                    </option>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((r) => (
+                      <option key={r} value={r}>
+                        {r}x Sets
+                      </option>
                     ))}
                   </select>
                   <select
                     value={panel.mainOverrides.wireSize || ""}
-                    onChange={(e) => setPanel(prev => ({
-                      ...prev,
-                      mainOverrides: {
-                        ...prev.mainOverrides,
-                        wireSize: e.target.value ? Number(e.target.value) : undefined,
-                        isOverrideEnabled: true
-                      }
-                    }))}
+                    onChange={(e) =>
+                      setPanel((prev) => ({
+                        ...prev,
+                        mainOverrides: {
+                          ...prev.mainOverrides,
+                          wireSize: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                          isOverrideEnabled: true,
+                        },
+                      }))
+                    }
                     className="w-2/3 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                   >
-                    <option value="">Auto ({formatWireSize(mainFeeder.raw.wireSize)})</option>
-                    {PEC_AMPACITY_TABLE.map(w => (
-                      <option key={w.size} value={w.size}>{formatWireSize(w.size)} mm²</option>
+                    <option value="">
+                      Auto ({formatWireSize(mainFeeder.raw.wireSize)})
+                    </option>
+                    {PEC_AMPACITY_TABLE.map((w) => (
+                      <option key={w.size} value={w.size}>
+                        {formatWireSize(w.size)} mm²
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -2135,19 +2512,23 @@ export default function LoadSchedule({
                 </label>
                 <select
                   value={panel.mainOverrides.breakerType || ""}
-                  onChange={(e) => setPanel(prev => ({
-                    ...prev,
-                    mainOverrides: {
-                      ...prev.mainOverrides,
-                      breakerType: e.target.value || undefined,
-                      isOverrideEnabled: true
-                    }
-                  }))}
+                  onChange={(e) =>
+                    setPanel((prev) => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        breakerType: e.target.value || undefined,
+                        isOverrideEnabled: true,
+                      },
+                    }))
+                  }
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                 >
                   <option value="">Auto ({mainFeeder.raw.type})</option>
-                  {Object.values(MCBType).map(t => (
-                    <option key={t} value={t}>{t}</option>
+                  {Object.values(MCBType).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -2158,20 +2539,28 @@ export default function LoadSchedule({
                 </label>
                 <select
                   value={panel.mainOverrides.kaic || ""}
-                  onChange={(e) => setPanel(prev => ({
-                    ...prev,
-                    mainOverrides: {
-                      ...prev.mainOverrides,
-                      kaic: e.target.value ? Number(e.target.value) : undefined,
-                      isOverrideEnabled: true
-                    }
-                  }))}
+                  onChange={(e) =>
+                    setPanel((prev) => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        kaic: e.target.value
+                          ? Number(e.target.value)
+                          : undefined,
+                        isOverrideEnabled: true,
+                      },
+                    }))
+                  }
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                 >
                   <option value="">Auto ({mainFeeder.raw.kaic} kAIC)</option>
-                  {[5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100].map(k => (
-                    <option key={k} value={k}>{k} kAIC</option>
-                  ))}
+                  {[5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100].map(
+                    (k) => (
+                      <option key={k} value={k}>
+                        {k} kAIC
+                      </option>
+                    ),
+                  )}
                 </select>
               </div>
 
@@ -2181,17 +2570,21 @@ export default function LoadSchedule({
                 </label>
                 <select
                   value={panel.mainOverrides.conduitType || ""}
-                  onChange={(e) => setPanel(prev => ({
-                    ...prev,
-                    mainOverrides: {
-                      ...prev.mainOverrides,
-                      conduitType: e.target.value || undefined,
-                      isOverrideEnabled: true
-                    }
-                  }))}
+                  onChange={(e) =>
+                    setPanel((prev) => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        conduitType: e.target.value || undefined,
+                        isOverrideEnabled: true,
+                      },
+                    }))
+                  }
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                 >
-                  <option value="">Auto ({panel.mainConduitType || "PVC"})</option>
+                  <option value="">
+                    Auto ({panel.mainConduitType || "PVC"})
+                  </option>
                   <option value="PVC">PVC</option>
                   <option value="EMT">EMT</option>
                   <option value="IMC">IMC</option>
@@ -2205,19 +2598,23 @@ export default function LoadSchedule({
                 </label>
                 <select
                   value={panel.mainOverrides.conduitSize || ""}
-                  onChange={(e) => setPanel(prev => ({
-                    ...prev,
-                    mainOverrides: {
-                      ...prev.mainOverrides,
-                      conduitSize: e.target.value || undefined,
-                      isOverrideEnabled: true
-                    }
-                  }))}
+                  onChange={(e) =>
+                    setPanel((prev) => ({
+                      ...prev,
+                      mainOverrides: {
+                        ...prev.mainOverrides,
+                        conduitSize: e.target.value || undefined,
+                        isOverrideEnabled: true,
+                      },
+                    }))
+                  }
                   className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                 >
                   <option value="">Auto ({mainFeeder.conduitSize})</option>
-                  {CONDUIT_SIZES.map(s => (
-                    <option key={s} value={s}>{s}</option>
+                  {CONDUIT_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -2231,46 +2628,77 @@ export default function LoadSchedule({
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
               <div className="space-y-1 bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-400 font-medium">Selected Assembly</span>
+                <span className="text-slate-400 font-medium">
+                  Selected Assembly
+                </span>
                 <p className="font-bold text-slate-800 dark:text-slate-200">
-                  {mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}x parallel runs of ` : ""}
-                  {formatWireSize(mainFeeder.wire.size)} mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"})
+                  {mainFeeder.wire.runs > 1
+                    ? `${mainFeeder.wire.runs}x parallel runs of `
+                    : ""}
+                  {formatWireSize(mainFeeder.wire.size)} mm²{" "}
+                  {panel.insulationType || "THHN"} (
+                  {panel.conductorMaterial || "Copper"})
                 </p>
                 <div className="flex justify-between mt-1 pt-1 border-t border-slate-100 dark:border-slate-800/50 text-slate-500">
                   <span>PEC Allowable Ampacity:</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{mainFeeder.wire.ampacity} A</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {mainFeeder.wire.ampacity} A
+                  </span>
                 </div>
                 <div className="flex justify-between text-slate-500">
                   <span>Temperature Column:</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{panel.temperatureRating || getTemperatureForInsulation(panel.insulationType || "THHN")}°C</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {panel.temperatureRating ||
+                      getTemperatureForInsulation(
+                        panel.insulationType || "THHN",
+                      )}
+                    °C
+                  </span>
                 </div>
               </div>
 
               <div className="space-y-2 bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-400 font-medium">Required Benchmarks</span>
+                <span className="text-slate-400 font-medium">
+                  Required Benchmarks
+                </span>
                 <div className="space-y-1.5 text-slate-600 dark:text-slate-400">
                   <div className="flex items-center justify-between">
-                    <span>Design Load ({mainFeeder.raw.designAmp?.toFixed(1)} A):</span>
+                    <span>
+                      Design Load ({mainFeeder.raw.designAmp?.toFixed(1)} A):
+                    </span>
                     {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">PASSED</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">
+                        PASSED
+                      </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">UNDERSIZED</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">
+                        UNDERSIZED
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Breaker AT Limit ({mainFeeder.cb} A):</span>
                     {mainFeeder.wire.ampacity >= mainFeeder.cb ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">PASSED</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">
+                        PASSED
+                      </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">FAIL (AT PROTECTION)</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">
+                        FAIL (AT PROTECTION)
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
                     <span>kAIC Interruption ({mainFeeder.kaic} kA):</span>
-                    {mainFeeder.kaic >= (mainFeeder.raw.faultCurrentA || 0) / 1000 ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">PASSED</span>
+                    {mainFeeder.kaic >=
+                    (mainFeeder.raw.faultCurrentA || 0) / 1000 ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 font-bold">
+                        PASSED
+                      </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">INSUFFICIENT kAIC</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400 font-bold">
+                        INSUFFICIENT kAIC
+                      </span>
                     )}
                   </div>
                 </div>
@@ -2280,12 +2708,24 @@ export default function LoadSchedule({
             {/* Warn user with detailed explanations and suggestions */}
             {mainFeeder.kaic < (mainFeeder.raw.faultCurrentA || 0) / 1000 && (
               <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded-lg flex items-start gap-2.5 text-red-800 dark:text-red-400 text-xs text-left">
-                <span className="font-extrabold text-base leading-none">🚨</span>
+                <span className="font-extrabold text-base leading-none">
+                  🚨
+                </span>
                 <div>
-                  <p className="font-bold">CRITICAL SHORT CIRCUIT RISK: Insufficient kAIC Rating</p>
+                  <p className="font-bold">
+                    CRITICAL SHORT CIRCUIT RISK: Insufficient kAIC Rating
+                  </p>
                   <p className="mt-0.5 opacity-90">
-                    The chosen or overridden short circuit capability (<strong>{mainFeeder.kaic} kAIC</strong>) is LESS than the calculated available fault current of <strong>{((mainFeeder.raw.faultCurrentA || 0) / 1000).toFixed(2)} kA</strong> at this node. This poses a severe failure risk under short circuit conditions.
-                    Ensure the main breaker's interrupting rating is correctly verified.
+                    The chosen or overridden short circuit capability (
+                    <strong>{mainFeeder.kaic} kAIC</strong>) is LESS than the
+                    calculated available fault current of{" "}
+                    <strong>
+                      {((mainFeeder.raw.faultCurrentA || 0) / 1000).toFixed(2)}{" "}
+                      kA
+                    </strong>{" "}
+                    at this node. This poses a severe failure risk under short
+                    circuit conditions. Ensure the main breaker's interrupting
+                    rating is correctly verified.
                   </p>
                 </div>
               </div>
@@ -2293,40 +2733,65 @@ export default function LoadSchedule({
 
             {mainFeeder.wire.ampacity < mainFeeder.raw.designAmp && (
               <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
-                <span className="font-extrabold text-base leading-none">⚠️</span>
+                <span className="font-extrabold text-base leading-none">
+                  ⚠️
+                </span>
                 <div>
-                  <p className="font-bold">CONFORMANCE WARNING: Conductor Ampacity is Insufficient</p>
+                  <p className="font-bold">
+                    CONFORMANCE WARNING: Conductor Ampacity is Insufficient
+                  </p>
                   <p className="mt-0.5 opacity-90">
-                    The chosen conductor assembly has a combined allowable ampacity of <strong>{mainFeeder.wire.ampacity} A</strong> under PEC 2017 Table 3.10.2.6(B)(16), which is less than the calculated peak design loads of <strong>{mainFeeder.raw.designAmp?.toFixed(1)} A</strong>.
-                    Please select a larger conductor size or increase parallel runs.
+                    The chosen conductor assembly has a combined allowable
+                    ampacity of <strong>{mainFeeder.wire.ampacity} A</strong>{" "}
+                    under PEC 2017 Table 3.10.2.6(B)(16), which is less than the
+                    calculated peak design loads of{" "}
+                    <strong>{mainFeeder.raw.designAmp?.toFixed(1)} A</strong>.
+                    Please select a larger conductor size or increase parallel
+                    runs.
                   </p>
                 </div>
               </div>
             )}
 
-            {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp && mainFeeder.wire.ampacity < mainFeeder.cb && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-105 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
-                <span className="font-extrabold text-base leading-none">⚠️</span>
-                <div>
-                  <p className="font-bold">PEC 2017 CODE COMPLIANCE EXCEPTION: Overcurrent Setting Mismatch</p>
-                  <p className="mt-0.5 opacity-90">
-                    Although the conductor matches raw continuous load requirements, the overcurrent protective device rating (<strong>{mainFeeder.cb} AT</strong>) exceeds the conductor ampacity of <strong>{mainFeeder.wire.ampacity} A</strong>. Under PEC 2.40 rule series, wire ampacity must safely match or exceed the overcurrent setting.
-                  </p>
+            {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp &&
+              mainFeeder.wire.ampacity < mainFeeder.cb && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-105 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
+                  <span className="font-extrabold text-base leading-none">
+                    ⚠️
+                  </span>
+                  <div>
+                    <p className="font-bold">
+                      PEC 2017 CODE COMPLIANCE EXCEPTION: Overcurrent Setting
+                      Mismatch
+                    </p>
+                    <p className="mt-0.5 opacity-90">
+                      Although the conductor matches raw continuous load
+                      requirements, the overcurrent protective device rating (
+                      <strong>{mainFeeder.cb} AT</strong>) exceeds the conductor
+                      ampacity of <strong>{mainFeeder.wire.ampacity} A</strong>.
+                      Under PEC 2.40 rule series, wire ampacity must safely
+                      match or exceed the overcurrent setting.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp && mainFeeder.wire.ampacity >= mainFeeder.cb && (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/20 rounded-lg flex items-start gap-2.5 text-emerald-800 dark:text-emerald-400 text-xs text-left">
-                <span className="font-extrabold text-base leading-none">✓</span>
-                <div>
-                  <p className="font-bold">PEC 2017 COMPLIANT</p>
-                  <p className="mt-0.5 opacity-90">
-                    Sized accurately per PEC Table 3.10.2.6(B)(16) at ambient temperature 30°C in raceway. Safety boundaries validated green.
-                  </p>
+            {mainFeeder.wire.ampacity >= mainFeeder.raw.designAmp &&
+              mainFeeder.wire.ampacity >= mainFeeder.cb && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/20 rounded-lg flex items-start gap-2.5 text-emerald-800 dark:text-emerald-400 text-xs text-left">
+                  <span className="font-extrabold text-base leading-none">
+                    ✓
+                  </span>
+                  <div>
+                    <p className="font-bold">PEC 2017 COMPLIANT</p>
+                    <p className="mt-0.5 opacity-90">
+                      Sized accurately per PEC Table 3.10.2.6(B)(16) at ambient
+                      temperature 30°C in raceway. Safety boundaries validated
+                      green.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
         </div>
       </section>
@@ -2345,13 +2810,21 @@ export default function LoadSchedule({
                 {isSubPanel && parentMdpConnection && (
                   <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/40 rounded-xl no-print">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Linked to {parentMdpConnection.mdpDesignation} (Circuit {parentMdpConnection.circuitNo}: {parentMdpConnection.description})</span>
+                    <span>
+                      Linked to {parentMdpConnection.mdpDesignation} (Circuit{" "}
+                      {parentMdpConnection.circuitNo}:{" "}
+                      {parentMdpConnection.description})
+                    </span>
                   </div>
                 )}
                 {isSubPanel && !parentMdpConnection && (
                   <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-250 dark:border-amber-900/40 rounded-xl no-print">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                    <span>{isSubSubPanel ? "Independent Sub-Sub Panel (Not Connected)" : "Independent Sub-Panel (Not Connected to MDP)"}</span>
+                    <span>
+                      {isSubSubPanel
+                        ? "Independent Sub-Sub Panel (Not Connected)"
+                        : "Independent Sub-Panel (Not Connected to MDP)"}
+                    </span>
                   </div>
                 )}
               </div>
@@ -2567,7 +3040,8 @@ export default function LoadSchedule({
                             const nextType = e.target.value as LoadType;
                             let fallbackSubId = c.linkedSubPanelId;
                             if (
-                              (nextType === LoadType.SUB_PANEL || nextType === LoadType.SUB_SUB_PANEL) &&
+                              (nextType === LoadType.SUB_PANEL ||
+                                nextType === LoadType.SUB_SUB_PANEL) &&
                               !fallbackSubId &&
                               availableSubPanels?.length
                             ) {
@@ -2587,7 +3061,10 @@ export default function LoadSchedule({
                               loadType: nextType,
                               linkedSubPanelId: fallbackSubId,
                             };
-                            if (nextType === LoadType.MOTOR && panel.system.includes("3PH")) {
+                            if (
+                              nextType === LoadType.MOTOR &&
+                              panel.system.includes("3PH")
+                            ) {
                               updates.phases = ["R", "Y", "B"];
                             }
                             updateCircuit(c.id, updates);
@@ -2602,16 +3079,17 @@ export default function LoadSchedule({
                               return code !== "SUBSUB";
                             })
                             .map((code) => (
-                            <option
-                              key={code}
-                              value={code}
-                              className="dark:bg-slate-900 dark:text-slate-100"
-                            >
-                              {code}
-                            </option>
-                          ))}
+                              <option
+                                key={code}
+                                value={code}
+                                className="dark:bg-slate-900 dark:text-slate-100"
+                              >
+                                {code}
+                              </option>
+                            ))}
                         </select>
-                        {c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? (
+                        {c.loadType === LoadType.SUB_PANEL ||
+                        c.loadType === LoadType.SUB_SUB_PANEL ? (
                           <div className="flex-1 flex flex-col gap-1 min-w-0">
                             <select
                               value={c.linkedSubPanelId || ""}
@@ -2627,7 +3105,10 @@ export default function LoadSchedule({
                                 disabled
                                 className="dark:bg-slate-900 dark:text-slate-100"
                               >
-                                Select {c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel"}
+                                Select{" "}
+                                {c.loadType === LoadType.SUB_SUB_PANEL
+                                  ? "Sub-Sub Panel"
+                                  : "Sub-Panel"}
                               </option>
                               {availableSubPanels?.map((sp) => (
                                 <option
@@ -2635,86 +3116,146 @@ export default function LoadSchedule({
                                   value={sp.id}
                                   className="dark:bg-slate-900 dark:text-slate-100"
                                 >
-                                  {sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Unnamed Sub-Sub Panel" : "Unnamed Sub-Panel")}
+                                  {sp.panel.designation ||
+                                    (c.loadType === LoadType.SUB_SUB_PANEL
+                                      ? "Unnamed Sub-Sub Panel"
+                                      : "Unnamed Sub-Panel")}
                                 </option>
                               ))}
                             </select>
 
-                             {panel.system.includes("3PH") && c.linkedSubPanelId && (
-                               <select
-                                 value={c.subPanelReflectionMode || "max_demand"}
-                                 onChange={(e) => updateCircuit(c.id, { subPanelReflectionMode: e.target.value as 'max_demand' | 'phase_loads' })}
-                                 className="mt-1 p-1 text-[10px] bg-slate-100 dark:bg-slate-800 border-0 rounded font-bold text-slate-700 dark:text-slate-300 w-full no-print"
-                               >
-                                 <option value="max_demand">Reflect Max Demand Current</option>
-                                 <option value="phase_loads">Reflect Phase Loads Directly</option>
-                               </select>
-                             )}
+                            {panel.system.includes("3PH") &&
+                              c.linkedSubPanelId && (
+                                <select
+                                  value={
+                                    c.subPanelReflectionMode || "max_demand"
+                                  }
+                                  onChange={(e) =>
+                                    updateCircuit(c.id, {
+                                      subPanelReflectionMode: e.target.value as
+                                        "max_demand" | "phase_loads",
+                                    })
+                                  }
+                                  className="mt-1 p-1 text-[10px] bg-slate-100 dark:bg-slate-800 border-0 rounded font-bold text-slate-700 dark:text-slate-300 w-full no-print"
+                                >
+                                  <option value="max_demand">
+                                    Reflect Max Demand Current
+                                  </option>
+                                  <option value="phase_loads">
+                                    Reflect Phase Loads Directly
+                                  </option>
+                                </select>
+                              )}
 
-                             {/* Connection Sync & Discrepancy Warnings */}
-                             {c.linkedSubPanelId ? (() => {
-                               const sp = availableSubPanels?.find(s => s.id === c.linkedSubPanelId);
-                               if (sp) {
-                                 const validation = validateSubPanelConnection(
-                                   panel.system,
-                                   sp.panel.system,
-                                   sp.panel.voltage || 230
-                                 );
+                            {/* Connection Sync & Discrepancy Warnings */}
+                            {c.linkedSubPanelId ? (
+                              (() => {
+                                const sp = availableSubPanels?.find(
+                                  (s) => s.id === c.linkedSubPanelId,
+                                );
+                                if (sp) {
+                                  const validation = validateSubPanelConnection(
+                                    panel.system,
+                                    sp.panel.system,
+                                    sp.panel.voltage || 230,
+                                  );
 
-                                 const isInvalidConnection = !validation.isValid;
-                                 const providedVoltage = validation.providedVoltage || null;
-                                 const isVoltageIncompatible = !validation.isValid;
-                                 const isVoltageMismatch = !isInvalidConnection && c.voltage !== sp.panel.voltage;
+                                  const isInvalidConnection =
+                                    !validation.isValid;
+                                  const providedVoltage =
+                                    validation.providedVoltage || null;
+                                  const isVoltageIncompatible =
+                                    !validation.isValid;
+                                  const isVoltageMismatch =
+                                    !isInvalidConnection &&
+                                    c.voltage !== sp.panel.voltage;
 
-                                 const { totalVA: subTotalVA, mainFeeder: subMainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, { vdCalculations, panelId: sp.id });
-                                 const isDesignationMismatch = c.description !== (sp.panel.designation || (c.loadType === LoadType.SUB_SUB_PANEL ? "Sub-Sub Panel" : "Sub-Panel"));
-                                 const isBreakerMismatch = c.mcbAT !== subMainFeeder.cb;
-                                 const isWireSizeMismatch = c.wireSize !== formatWireSizeLocal(subMainFeeder.wire.size);
+                                  const {
+                                    totalVA: subTotalVA,
+                                    mainFeeder: subMainFeeder,
+                                  } = computePanelScheduleValues(
+                                    sp.panel,
+                                    sp.circuits,
+                                    { vdCalculations, panelId: sp.id },
+                                  );
+                                  const isDesignationMismatch =
+                                    c.description !==
+                                    (sp.panel.designation ||
+                                      (c.loadType === LoadType.SUB_SUB_PANEL
+                                        ? "Sub-Sub Panel"
+                                        : "Sub-Panel"));
+                                  const isBreakerMismatch =
+                                    c.mcbAT !== subMainFeeder.cb;
+                                  const isWireSizeMismatch =
+                                    c.wireSize !==
+                                    formatWireSizeLocal(
+                                      subMainFeeder.wire.size,
+                                    );
 
-                                 if (isInvalidConnection || isVoltageIncompatible) {
-                                   return (
-                                     <div className="flex flex-col gap-1 mt-1 no-print">
-                                       <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit">
-                                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                                         <span>Invalid Connection</span>
-                                       </div>
-                                       <span className="text-[8px] text-rose-500 font-semibold pl-1 leading-tight max-w-xs">
-                                         {validation.reason || `Parent system (${panel.system}) cannot derive the required sub-panel voltage.`}
-                                       </span>
-                                     </div>
-                                   );
-                                 }
+                                  if (
+                                    isInvalidConnection ||
+                                    isVoltageIncompatible
+                                  ) {
+                                    return (
+                                      <div className="flex flex-col gap-1 mt-1 no-print">
+                                        <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                          <span>Invalid Connection</span>
+                                        </div>
+                                        <span className="text-[8px] text-rose-500 font-semibold pl-1 leading-tight max-w-xs">
+                                          {validation.reason ||
+                                            `Parent system (${panel.system}) cannot derive the required sub-panel voltage.`}
+                                        </span>
+                                      </div>
+                                    );
+                                  }
 
-                                 if (isVoltageMismatch || isDesignationMismatch || isBreakerMismatch || isWireSizeMismatch) {
-                                   const reasons = [];
-                                   if (isVoltageMismatch) reasons.push("Voltage Mismatch");
-                                   if (isDesignationMismatch) reasons.push("Name Mismatch");
-                                   if (isBreakerMismatch) reasons.push(`Breaker Mismatch (${c.mcbAT}AT vs ${subMainFeeder.cb}AT)`);
-                                   if (isWireSizeMismatch) reasons.push(`Wire size Mismatch (${c.wireSize} vs ${formatWireSizeLocal(subMainFeeder.wire.size)} mm²)`);
-                                   
-                                   return (
-                                     <div className="flex flex-col gap-1 mt-1 no-print">
-                                       <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit">
-                                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                                         <span>Discrepancy: Mismatch!</span>
-                                       </div>
-                                       <span className="text-[8px] text-rose-500 font-semibold pl-1 leading-tight max-w-xs">{reasons.join(", ")}</span>
-                                     </div>
-                                   );
-                                 }
-                                 return (
-                                   <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 dark:text-emerald-450 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-950/50 w-fit no-print">
-                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                     <span>Sync Active</span>
-                                   </div>
-                                 );
-                               }
-                               return (
-                                 <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-500 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/40 w-fit no-print">
-                                   <span>Sub-Panel Board Deleted or Lost</span>
-                                 </div>
-                               );
-                             })() : (
+                                  if (
+                                    isVoltageMismatch ||
+                                    isDesignationMismatch ||
+                                    isBreakerMismatch ||
+                                    isWireSizeMismatch
+                                  ) {
+                                    const reasons = [];
+                                    if (isVoltageMismatch)
+                                      reasons.push("Voltage Mismatch");
+                                    if (isDesignationMismatch)
+                                      reasons.push("Name Mismatch");
+                                    if (isBreakerMismatch)
+                                      reasons.push(
+                                        `Breaker Mismatch (${c.mcbAT}AT vs ${subMainFeeder.cb}AT)`,
+                                      );
+                                    if (isWireSizeMismatch)
+                                      reasons.push(
+                                        `Wire size Mismatch (${c.wireSize} vs ${formatWireSizeLocal(subMainFeeder.wire.size)} mm²)`,
+                                      );
+
+                                    return (
+                                      <div className="flex flex-col gap-1 mt-1 no-print">
+                                        <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-600 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-950/50 w-fit">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                          <span>Discrepancy: Mismatch!</span>
+                                        </div>
+                                        <span className="text-[8px] text-rose-500 font-semibold pl-1 leading-tight max-w-xs">
+                                          {reasons.join(", ")}
+                                        </span>
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-emerald-600 dark:text-emerald-450 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-950/50 w-fit no-print">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      <span>Sync Active</span>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-rose-500 dark:text-rose-450 bg-rose-50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-900/40 w-fit no-print">
+                                    <span>Sub-Panel Board Deleted or Lost</span>
+                                  </div>
+                                );
+                              })()
+                            ) : (
                               <div className="flex items-center gap-1 mt-1 text-[9px] uppercase tracking-wider font-extrabold text-amber-600 dark:text-amber-450 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-950/50 w-fit no-print">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                                 <span>Pending connection</span>
@@ -2800,18 +3341,34 @@ export default function LoadSchedule({
                               )}
                             </div>
                             {c.loadType === LoadType.MOTOR && (
-                              <div className="flex items-center gap-2 mt-1.5 no-print" onClick={(e) => e.stopPropagation()}>
-                                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">HP:</span>
+                              <div
+                                className="flex items-center gap-2 mt-1.5 no-print"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">
+                                  HP:
+                                </span>
                                 <select
                                   value={c.motorHP || ""}
                                   onChange={(e) => {
-                                    updateCircuit(c.id, { motorHP: e.target.value });
+                                    updateCircuit(c.id, {
+                                      motorHP: e.target.value,
+                                    });
                                   }}
                                   className="p-1 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-[11px] font-bold text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer"
                                 >
-                                  <option value="" className="dark:bg-slate-900 dark:text-slate-100">-- Select HP --</option>
+                                  <option
+                                    value=""
+                                    className="dark:bg-slate-900 dark:text-slate-100"
+                                  >
+                                    -- Select HP --
+                                  </option>
                                   {hpOptions.map((hpVal) => (
-                                    <option key={hpVal} value={hpVal} className="dark:bg-slate-900 dark:text-slate-100">
+                                    <option
+                                      key={hpVal}
+                                      value={hpVal}
+                                      className="dark:bg-slate-900 dark:text-slate-100"
+                                    >
                                       {hpVal} HP
                                     </option>
                                   ))}
@@ -2872,10 +3429,16 @@ export default function LoadSchedule({
                       ) : (
                         <input
                           type="number"
-                          readOnly={c.loadType === LoadType.MOTOR && !!c.motorHP}
+                          readOnly={
+                            c.loadType === LoadType.MOTOR && !!c.motorHP
+                          }
                           className={`w-16 max-w-full mx-auto bg-transparent text-center font-mono text-slate-800 dark:text-slate-100 focus:outline-none ${c.loadType === LoadType.MOTOR && !!c.motorHP ? "text-slate-400 dark:text-slate-500 font-bold" : ""}`}
                           value={c.wattage || 0}
-                          title={c.loadType === LoadType.MOTOR && !!c.motorHP ? "Calculated automatically from FLC" : ""}
+                          title={
+                            c.loadType === LoadType.MOTOR && !!c.motorHP
+                              ? "Calculated automatically from FLC"
+                              : ""
+                          }
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               wattage: parseInt(e.target.value) || 0,
@@ -2966,14 +3529,16 @@ export default function LoadSchedule({
                     <td className="px-1 py-3 text-center">
                       {isSpace ? (
                         "-"
-                      ) : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseLoads ? (
+                      ) : c.subPanelReflectionMode === "phase_loads" &&
+                        c.reflectedPhaseLoads ? (
                         <div className="flex gap-0.5 justify-center flex-wrap">
                           {["R", "Y", "B", "3Ø"].map((p) => {
                             const isActive =
                               (p === "R" && c.reflectedPhaseLoads!.R > 0) ||
                               (p === "Y" && c.reflectedPhaseLoads!.Y > 0) ||
                               (p === "B" && c.reflectedPhaseLoads!.B > 0) ||
-                              (p === "3Ø" && c.reflectedPhaseLoads!.ThreePhase > 0);
+                              (p === "3Ø" &&
+                                c.reflectedPhaseLoads!.ThreePhase > 0);
                             if (!isActive) return null;
                             return (
                               <span
@@ -3007,7 +3572,7 @@ export default function LoadSchedule({
                                   });
                                 } else {
                                   // Single phase selection replaces other phases to ensure it's reflected correctly
-                                  updateCircuit(c.id, { 
+                                  updateCircuit(c.id, {
                                     phases: [p as Phase],
                                     is3PhaseMarker: false,
                                   });
@@ -3037,45 +3602,152 @@ export default function LoadSchedule({
                     {panel.system.includes("3PH") ? (
                       <>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-red-600 print:text-slate-900">
-                          {isSpace
-                            ? "-"
-                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
-                              ? c.reflectedPhaseAmps.R > 0 ? c.reflectedPhaseAmps.R.toFixed(2) : "-"
-                              : c.phases.includes("R") && c.phases.length < 3
-                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
-                                : "-"}
+                          {isSpace ? (
+                            "-"
+                          ) : c.subPanelReflectionMode === "phase_loads" &&
+                            c.reflectedPhaseAmps ? (
+                            c.reflectedPhaseAmps.R > 0 ? (
+                              c.reflectedPhaseAmps.R.toFixed(2)
+                            ) : (
+                              "-"
+                            )
+                          ) : c.phases.includes("R") && c.phases.length < 3 ? (
+                            <AmpsInput
+                              c={c}
+                              panel={panel}
+                              is3P={c.is3PhaseMarker ?? false}
+                              disabled={
+                                c.loadType === LoadType.SUB_PANEL ||
+                                c.loadType === LoadType.SUB_SUB_PANEL
+                              }
+                              onAmpsUpdate={(newAmps) =>
+                                handleAmpsUpdate(
+                                  c.id,
+                                  newAmps,
+                                  c,
+                                  c.is3PhaseMarker ?? false,
+                                )
+                              }
+                            />
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-yellow-600 print:text-slate-900">
-                          {isSpace
-                            ? "-"
-                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
-                              ? c.reflectedPhaseAmps.Y > 0 ? c.reflectedPhaseAmps.Y.toFixed(2) : "-"
-                              : c.phases.includes("Y") && c.phases.length < 3
-                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
-                                : "-"}
+                          {isSpace ? (
+                            "-"
+                          ) : c.subPanelReflectionMode === "phase_loads" &&
+                            c.reflectedPhaseAmps ? (
+                            c.reflectedPhaseAmps.Y > 0 ? (
+                              c.reflectedPhaseAmps.Y.toFixed(2)
+                            ) : (
+                              "-"
+                            )
+                          ) : c.phases.includes("Y") && c.phases.length < 3 ? (
+                            <AmpsInput
+                              c={c}
+                              panel={panel}
+                              is3P={c.is3PhaseMarker ?? false}
+                              disabled={
+                                c.loadType === LoadType.SUB_PANEL ||
+                                c.loadType === LoadType.SUB_SUB_PANEL
+                              }
+                              onAmpsUpdate={(newAmps) =>
+                                handleAmpsUpdate(
+                                  c.id,
+                                  newAmps,
+                                  c,
+                                  c.is3PhaseMarker ?? false,
+                                )
+                              }
+                            />
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-blue-600 print:text-slate-900">
-                          {isSpace
-                            ? "-"
-                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
-                              ? c.reflectedPhaseAmps.B > 0 ? c.reflectedPhaseAmps.B.toFixed(2) : "-"
-                              : c.phases.includes("B") && c.phases.length < 3
-                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? false)} />
-                                : "-"}
+                          {isSpace ? (
+                            "-"
+                          ) : c.subPanelReflectionMode === "phase_loads" &&
+                            c.reflectedPhaseAmps ? (
+                            c.reflectedPhaseAmps.B > 0 ? (
+                              c.reflectedPhaseAmps.B.toFixed(2)
+                            ) : (
+                              "-"
+                            )
+                          ) : c.phases.includes("B") && c.phases.length < 3 ? (
+                            <AmpsInput
+                              c={c}
+                              panel={panel}
+                              is3P={c.is3PhaseMarker ?? false}
+                              disabled={
+                                c.loadType === LoadType.SUB_PANEL ||
+                                c.loadType === LoadType.SUB_SUB_PANEL
+                              }
+                              onAmpsUpdate={(newAmps) =>
+                                handleAmpsUpdate(
+                                  c.id,
+                                  newAmps,
+                                  c,
+                                  c.is3PhaseMarker ?? false,
+                                )
+                              }
+                            />
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-indigo-600 print:text-slate-900">
-                          {isSpace
-                            ? "-"
-                            : c.subPanelReflectionMode === 'phase_loads' && c.reflectedPhaseAmps
-                              ? c.reflectedPhaseAmps.ThreePhase > 0 ? c.reflectedPhaseAmps.ThreePhase.toFixed(2) : "-"
-                              : c.phases.length === 3
-                                ? <AmpsInput c={c} panel={panel} is3P={c.is3PhaseMarker ?? true} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, c.is3PhaseMarker ?? true)} />
-                                : "-"}
+                          {isSpace ? (
+                            "-"
+                          ) : c.subPanelReflectionMode === "phase_loads" &&
+                            c.reflectedPhaseAmps ? (
+                            c.reflectedPhaseAmps.ThreePhase > 0 ? (
+                              c.reflectedPhaseAmps.ThreePhase.toFixed(2)
+                            ) : (
+                              "-"
+                            )
+                          ) : c.phases.length === 3 ? (
+                            <AmpsInput
+                              c={c}
+                              panel={panel}
+                              is3P={c.is3PhaseMarker ?? true}
+                              disabled={
+                                c.loadType === LoadType.SUB_PANEL ||
+                                c.loadType === LoadType.SUB_SUB_PANEL
+                              }
+                              onAmpsUpdate={(newAmps) =>
+                                handleAmpsUpdate(
+                                  c.id,
+                                  newAmps,
+                                  c,
+                                  c.is3PhaseMarker ?? true,
+                                )
+                              }
+                            />
+                          ) : (
+                            "-"
+                          )}
                         </td>
                       </>
                     ) : (
                       <td className="px-1 py-3 text-center font-mono font-bold truncate">
-                        {isSpace ? "-" : <AmpsInput c={c} panel={panel} is3P={false} disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL} onAmpsUpdate={(newAmps) => handleAmpsUpdate(c.id, newAmps, c, false)} />}
+                        {isSpace ? (
+                          "-"
+                        ) : (
+                          <AmpsInput
+                            c={c}
+                            panel={panel}
+                            is3P={false}
+                            disabled={
+                              c.loadType === LoadType.SUB_PANEL ||
+                              c.loadType === LoadType.SUB_SUB_PANEL
+                            }
+                            onAmpsUpdate={(newAmps) =>
+                              handleAmpsUpdate(c.id, newAmps, c, false)
+                            }
+                          />
+                        )}
                       </td>
                     )}
                     <td className="px-1 py-3 text-center">
@@ -3084,7 +3756,10 @@ export default function LoadSchedule({
                       ) : (
                         <select
                           value={c.mcbAT || ""}
-                          disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL}
+                          disabled={
+                            c.loadType === LoadType.SUB_PANEL ||
+                            c.loadType === LoadType.SUB_SUB_PANEL
+                          }
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbAT: parseInt(e.target.value),
@@ -3113,7 +3788,10 @@ export default function LoadSchedule({
                       ) : (
                         <select
                           value={c.mcbP || ""}
-                          disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL}
+                          disabled={
+                            c.loadType === LoadType.SUB_PANEL ||
+                            c.loadType === LoadType.SUB_SUB_PANEL
+                          }
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbP: parseInt(e.target.value),
@@ -3138,24 +3816,34 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <div className="flex flex-col items-center justify-center gap-1">
-                          {customKaicCircuitIds.includes(c.id) || (c.kaicOverride !== undefined && !standardKAICRatings.includes(c.kaicOverride)) ? (
+                          {customKaicCircuitIds.includes(c.id) ||
+                          (c.kaicOverride !== undefined &&
+                            !standardKAICRatings.includes(c.kaicOverride)) ? (
                             <div className="flex items-center gap-1 justify-center">
                               <input
                                 type="number"
                                 value={c.kaicOverride ?? ""}
                                 placeholder={String(c.mcbKAICCalculated ?? 10)}
                                 onChange={(e) => {
-                                  const val = e.target.value ? Number(e.target.value) : undefined;
+                                  const val = e.target.value
+                                    ? Number(e.target.value)
+                                    : undefined;
                                   updateCircuit(c.id, { kaicOverride: val });
                                 }}
                                 className="w-14 bg-white dark:bg-slate-800 text-center text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                 style={{ fontSize: tableFontSize - 2 }}
                               />
-                              <span className="text-xxs text-slate-500 dark:text-slate-400 shrink-0">kA</span>
+                              <span className="text-xxs text-slate-500 dark:text-slate-400 shrink-0">
+                                kA
+                              </span>
                               <button
                                 onClick={() => {
-                                  updateCircuit(c.id, { kaicOverride: undefined });
-                                  setCustomKaicCircuitIds(prev => prev.filter(id => id !== c.id));
+                                  updateCircuit(c.id, {
+                                    kaicOverride: undefined,
+                                  });
+                                  setCustomKaicCircuitIds((prev) =>
+                                    prev.filter((id) => id !== c.id),
+                                  );
                                 }}
                                 className="text-slate-400 hover:text-indigo-600 p-0.5 transition-colors no-print shrink-0"
                                 title="Reset to calculated"
@@ -3166,27 +3854,44 @@ export default function LoadSchedule({
                           ) : (
                             <div className="flex items-center gap-1 justify-center">
                               <select
-                                value={c.kaicOverride === undefined ? "auto" : String(c.kaicOverride)}
+                                value={
+                                  c.kaicOverride === undefined
+                                    ? "auto"
+                                    : String(c.kaicOverride)
+                                }
                                 onChange={(e) => {
                                   const val = e.target.value;
                                   if (val === "auto") {
-                                    updateCircuit(c.id, { kaicOverride: undefined });
+                                    updateCircuit(c.id, {
+                                      kaicOverride: undefined,
+                                    });
                                   } else if (val === "custom") {
-                                    setCustomKaicCircuitIds(prev => [...prev, c.id]);
-                                    updateCircuit(c.id, { kaicOverride: c.mcbKAICCalculated ?? 10 });
+                                    setCustomKaicCircuitIds((prev) => [
+                                      ...prev,
+                                      c.id,
+                                    ]);
+                                    updateCircuit(c.id, {
+                                      kaicOverride: c.mcbKAICCalculated ?? 10,
+                                    });
                                   } else {
-                                    updateCircuit(c.id, { kaicOverride: Number(val) });
+                                    updateCircuit(c.id, {
+                                      kaicOverride: Number(val),
+                                    });
                                   }
                                 }}
                                 className={`bg-transparent text-center font-bold appearance-none cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-800 rounded px-1 py-0.5 dark:bg-slate-900 ${
-                                  c.kaicOverride !== undefined 
-                                    ? "text-amber-600 dark:text-amber-400 font-extrabold bg-amber-50 dark:bg-amber-950/20 px-1.5 rounded border-amber-200 dark:border-amber-900/40" 
+                                  c.kaicOverride !== undefined
+                                    ? "text-amber-600 dark:text-amber-400 font-extrabold bg-amber-50 dark:bg-amber-950/20 px-1.5 rounded border-amber-200 dark:border-amber-900/40"
                                     : "text-slate-500 dark:text-slate-400"
                                 }`}
                                 style={{ fontSize: tableFontSize - 1 }}
                               >
-                                <option value="auto" className="dark:bg-slate-900 dark:text-slate-100 font-normal">
-                                  {c.mcbKAICCalculated ?? c.mcbKAIC ?? 10} (Auto)
+                                <option
+                                  value="auto"
+                                  className="dark:bg-slate-900 dark:text-slate-100 font-normal"
+                                >
+                                  {c.mcbKAICCalculated ?? c.mcbKAIC ?? 10}{" "}
+                                  (Auto)
                                 </option>
                                 {standardKAICRatings.map((rating) => (
                                   <option
@@ -3197,16 +3902,23 @@ export default function LoadSchedule({
                                     {rating} kA
                                   </option>
                                 ))}
-                                <option value="custom" className="dark:bg-slate-900 dark:text-slate-100 italic">
+                                <option
+                                  value="custom"
+                                  className="dark:bg-slate-900 dark:text-slate-100 italic"
+                                >
                                   Custom...
                                 </option>
                               </select>
-                              
+
                               {c.kaicOverride !== undefined && (
                                 <button
                                   onClick={() => {
-                                    updateCircuit(c.id, { kaicOverride: undefined });
-                                    setCustomKaicCircuitIds(prev => prev.filter(id => id !== c.id));
+                                    updateCircuit(c.id, {
+                                      kaicOverride: undefined,
+                                    });
+                                    setCustomKaicCircuitIds((prev) =>
+                                      prev.filter((id) => id !== c.id),
+                                    );
                                   }}
                                   className="text-amber-500 hover:text-indigo-600 p-0.5 ml-0.5 no-print shrink-0"
                                   title="Manually Overridden. Click to Reset to Calculated"
@@ -3225,13 +3937,16 @@ export default function LoadSchedule({
                       ) : (
                         <select
                           value={c.mcbType || ""}
-                          disabled={c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL}
+                          disabled={
+                            c.loadType === LoadType.SUB_PANEL ||
+                            c.loadType === LoadType.SUB_SUB_PANEL
+                          }
                           onChange={(e) =>
                             updateCircuit(c.id, {
                               mcbType: e.target.value as MCBType,
                             })
                           }
-                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? 'text-slate-400 dark:text-slate-500' : ''}`}
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none cursor-pointer w-24 max-w-full mx-auto truncate dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
                           style={{ fontSize: tableFontSize - 2 }}
                         >
                           {Object.values(MCBType).map((t) => (
@@ -3255,12 +3970,18 @@ export default function LoadSchedule({
                             <div className="flex items-center justify-center gap-1">
                               <select
                                 value={c.wireSets || 1}
-                                onChange={(e) => updateCircuit(c.id, { wireSets: Number(e.target.value) })}
-                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none ${(!c.wireSets || c.wireSets === 1) ? "print:hidden" : ""}`}
+                                onChange={(e) =>
+                                  updateCircuit(c.id, {
+                                    wireSets: Number(e.target.value),
+                                  })
+                                }
+                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none ${!c.wireSets || c.wireSets === 1 ? "print:hidden" : ""}`}
                                 title="Number of Cable Sets"
                               >
-                                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
-                                  <option key={n} value={n}>{n > 1 ? `${n} Sets of` : ''}</option>
+                                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                                  <option key={n} value={n}>
+                                    {n > 1 ? `${n} Sets of` : ""}
+                                  </option>
                                 ))}
                               </select>
                               <span>
@@ -3373,25 +4094,38 @@ export default function LoadSchedule({
                       {mainFeeder.wire.runs > 1
                         ? `${mainFeeder.wire.runs} sets of `
                         : ""}
-                      {formatWireSize(mainFeeder.wire.size)}mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"}),{" "}
+                      {formatWireSize(mainFeeder.wire.size)}mm²{" "}
+                      {panel.insulationType || "THHN"} (
+                      {panel.conductorMaterial || "Copper"}),{" "}
                       {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize}{" "}
                       {mainFeeder.conduitType || "PVC"}
-                      {panel.mainOverrides?.isOverrideEnabled && panel.mainOverrides.wireSize ? " (Manual)" : ""}
+                      {panel.mainOverrides?.isOverrideEnabled &&
+                      panel.mainOverrides.wireSize
+                        ? " (Manual)"
+                        : ""}
                     </span>
                     <span className="flex items-center gap-1 flex-wrap justify-end">
-                      <span>Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF, {mainFeeder.poles}P, </span>
+                      <span>
+                        Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF,{" "}
+                        {mainFeeder.poles}P,{" "}
+                      </span>
                       <span className="inline-flex items-center gap-0.5">
                         <select
-                          value={panel.mainOverrides?.kaic === undefined ? "auto" : String(panel.mainOverrides.kaic)}
+                          value={
+                            panel.mainOverrides?.kaic === undefined
+                              ? "auto"
+                              : String(panel.mainOverrides.kaic)
+                          }
                           onChange={(e) => {
                             const val = e.target.value;
                             setPanel((prev) => ({
                               ...prev,
                               mainOverrides: {
-                                isOverrideEnabled: prev.mainOverrides?.isOverrideEnabled ?? true,
+                                isOverrideEnabled:
+                                  prev.mainOverrides?.isOverrideEnabled ?? true,
                                 ...(prev.mainOverrides || {}),
                                 kaic: val === "auto" ? undefined : Number(val),
-                              }
+                              },
                             }));
                           }}
                           className={`bg-slate-100 dark:bg-slate-800 font-bold border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 rounded px-1.5 py-0.5 text-xs cursor-pointer select-none ${
@@ -3420,10 +4154,12 @@ export default function LoadSchedule({
                               setPanel((prev) => ({
                                 ...prev,
                                 mainOverrides: {
-                                  isOverrideEnabled: prev.mainOverrides?.isOverrideEnabled ?? false,
+                                  isOverrideEnabled:
+                                    prev.mainOverrides?.isOverrideEnabled ??
+                                    false,
                                   ...(prev.mainOverrides || {}),
-                                  kaic: undefined
-                                }
+                                  kaic: undefined,
+                                },
                               }));
                             }}
                             className="text-amber-500 hover:text-indigo-500 p-0.5 no-print shrink-0"
@@ -3434,12 +4170,19 @@ export default function LoadSchedule({
                         )}
                       </span>
                       <span> kAIC, {mainFeeder.type}</span>
-                      {panel.mainOverrides?.isOverrideEnabled && (panel.mainOverrides.breakerAT || panel.mainOverrides.kaic || panel.mainOverrides.breakerType) ? " (Manual)" : ""}
+                      {panel.mainOverrides?.isOverrideEnabled &&
+                      (panel.mainOverrides.breakerAT ||
+                        panel.mainOverrides.kaic ||
+                        panel.mainOverrides.breakerType)
+                        ? " (Manual)"
+                        : ""}
                     </span>
                     {panel.system.includes("3PH") && (
                       <span
                         className={
-                          phaseImbalance > 15 ? "text-red-400" : "text-green-400"
+                          phaseImbalance > 15
+                            ? "text-red-400"
+                            : "text-green-400"
                         }
                       >
                         Phase Imbalance: {phaseImbalance.toFixed(1)}%
@@ -3569,11 +4312,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} \\\\
-  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
-  &= \\left[ ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
-  &= ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
-  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ""} \\\\
+  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
+  &= \\left[ ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
+  &= ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
+  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
   &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -3586,7 +4329,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
@@ -3603,7 +4346,9 @@ export default function LoadSchedule({
                     Mathematical Formula (3-Phase LaTeX)
                   </h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex={`\\text{Max Demand Current (3}\\Phi\\text{)} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''}`} />
+                    <LatexRenderer
+                      tex={`\\text{Max Demand Current (3}\\Phi\\text{)} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ""}`}
+                    />
                   </div>
                 </div>
 
@@ -3617,16 +4362,16 @@ export default function LoadSchedule({
                       <span>Phase currents (Line values):</span>
                       <span className="font-mono text-xs">
                         {maxDemandDetails.connectionType === "Line-to-Line"
-                           ? "AB"
-                           : "AN"}{" "}
+                          ? "AB"
+                          : "AN"}{" "}
                         = {(maxDemandDetails.phaseR || 0).toFixed(2)} A,{" "}
                         {maxDemandDetails.connectionType === "Line-to-Line"
-                           ? "BC"
-                           : "BN"}{" "}
+                          ? "BC"
+                          : "BN"}{" "}
                         = {(maxDemandDetails.phaseY || 0).toFixed(2)} A,{" "}
                         {maxDemandDetails.connectionType === "Line-to-Line"
-                           ? "CA"
-                           : "CN"}{" "}
+                          ? "CA"
+                          : "CN"}{" "}
                         = {(maxDemandDetails.phaseB || 0).toFixed(2)} A
                       </span>
                     </p>
@@ -3664,7 +4409,10 @@ export default function LoadSchedule({
                           <span className="font-mono">I_subpanels</span>):
                         </span>
                         <span className="font-bold text-slate-800 dark:text-white">
-                          {(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A
+                          {(maxDemandDetails.subPanelDemandAmps || 0).toFixed(
+                            2,
+                          )}{" "}
+                          A
                         </span>
                       </p>
                     ) : null}
@@ -3679,11 +4427,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} \\\\
-  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
-  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
-  &= ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8) + (maxDemandDetails.total3Phase || 0) + (0.25 * (maxDemandDetails.HML || 0))).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
-  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} \\\\
+  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ""} \\\\
+  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
+  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
+  &= ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
+  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
   &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -3692,8 +4440,8 @@ export default function LoadSchedule({
                   <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">
                       Includes 80% demand factor on line currents + separate
-                      3-phase and 25% HML, adjusted by a 1.25 system-wide safety factor.
-
+                      3-phase and 25% HML, adjusted by a 1.25 system-wide safety
+                      factor.
                     </span>
                     <button
                       onClick={() => {
@@ -3740,7 +4488,10 @@ export default function LoadSchedule({
                 <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400 no-print" />
                 Legend & Technical Reference Notes
               </h4>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Conformity criteria defined under the Philippine Electrical Code (PEC) Part 1 2017 Edition</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                Conformity criteria defined under the Philippine Electrical Code
+                (PEC) Part 1 2017 Edition
+              </p>
             </div>
             <span className="text-[10px] font-mono tracking-widest text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 px-2 py-1 rounded-md self-start md:self-auto">
               PEC-2017-CH2-DRAFT
@@ -3759,8 +4510,13 @@ export default function LoadSchedule({
                     L / LO
                   </span>
                   <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Lighting Outlets</p>
-                    <p className="text-[10px] text-slate-400">100VA per active lamp outlet / fixed luminaire strap (PEC 2.20.2.3(C))</p>
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                      Lighting Outlets
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      100VA per active lamp outlet / fixed luminaire strap (PEC
+                      2.20.2.3(C))
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -3768,8 +4524,13 @@ export default function LoadSchedule({
                     S / CO
                   </span>
                   <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Convenience Outlets</p>
-                    <p className="text-[10px] text-slate-400">Duplex receptacle rated at 180VA per simplex / strap assembly (PEC 2.20.2.3(I))</p>
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                      Convenience Outlets
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Duplex receptacle rated at 180VA per simplex / strap
+                      assembly (PEC 2.20.2.3(I))
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -3777,8 +4538,13 @@ export default function LoadSchedule({
                     ACU
                   </span>
                   <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Air Conditioning Units</p>
-                    <p className="text-[10px] text-slate-400">Hermetic refrigerant motor-compressors sized at 125% FLC (PEC Article 4.40)</p>
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                      Air Conditioning Units
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Hermetic refrigerant motor-compressors sized at 125% FLC
+                      (PEC Article 4.40)
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -3786,8 +4552,13 @@ export default function LoadSchedule({
                     M / WP
                   </span>
                   <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Motors / Pumps</p>
-                    <p className="text-[10px] text-slate-400">Continuous motor loads sized per FLC values in PEC Tables 4.30 (largest motor @ 125%)</p>
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                      Motors / Pumps
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Continuous motor loads sized per FLC values in PEC Tables
+                      4.30 (largest motor @ 125%)
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -3795,8 +4566,13 @@ export default function LoadSchedule({
                     WH / RE
                   </span>
                   <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Water Heaters & Ranges</p>
-                    <p className="text-[10px] text-slate-400">Fixed appliances rated at nameplate VA. Range demand factor PEC Table 2.20.3.16</p>
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                      Water Heaters & Ranges
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Fixed appliances rated at nameplate VA. Range demand
+                      factor PEC Table 2.20.3.16
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-2">
@@ -3804,8 +4580,13 @@ export default function LoadSchedule({
                     SP/SPAC
                   </span>
                   <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">Spare & Space</p>
-                    <p className="text-[10px] text-slate-400">Spare (active overcurrent protector) or Space (empty enclosure bus physical slot)</p>
+                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                      Spare & Space
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Spare (active overcurrent protector) or Space (empty
+                      enclosure bus physical slot)
+                    </p>
                   </div>
                 </div>
               </div>
@@ -3818,16 +4599,33 @@ export default function LoadSchedule({
               </h5>
               <div className="space-y-3 font-sans text-[11px] leading-relaxed">
                 <p className="bg-slate-50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                  ⚡ <strong>Wiring Medium:</strong> {panel.conductorMaterial || "Copper"} conductors with type {panel.insulationType || "THHN"}/{panel.insulationType === "THW" ? "THW" : "THWN-2"} thermoplastic jackets, rated for 90°C dry / 75°C wet operating conditions.
+                  ⚡ <strong>Wiring Medium:</strong>{" "}
+                  {panel.conductorMaterial || "Copper"} conductors with type{" "}
+                  {panel.insulationType || "THHN"}/
+                  {panel.insulationType === "THW" ? "THW" : "THWN-2"}{" "}
+                  thermoplastic jackets, rated for 90°C dry / 75°C wet operating
+                  conditions.
                 </p>
                 <p>
-                  📏 <strong>Minimum Wire Sizes:</strong> Branch circuits feeding lighting loads must use a minimum wire size of <strong>2.0mm²</strong> (14 AWG) copper. Power and general convenience outlet circuits must use at least <strong>3.5mm²</strong> (12 AWG) copper.
+                  📏 <strong>Minimum Wire Sizes:</strong> Branch circuits
+                  feeding lighting loads must use a minimum wire size of{" "}
+                  <strong>2.0mm²</strong> (14 AWG) copper. Power and general
+                  convenience outlet circuits must use at least{" "}
+                  <strong>3.5mm²</strong> (12 AWG) copper.
                 </p>
                 <p>
-                  📂 <strong>Conduit Specification:</strong> Thick-wall Schedule 40 PVC, Electrical Metallic Tubing (EMT), or Rigid Steel Conduit (RSC). Standard cross-sectional fill ratio must not exceed <strong>40%</strong> for three or more conductors (PEC Chapter 9, Tabular limits).
+                  📂 <strong>Conduit Specification:</strong> Thick-wall Schedule
+                  40 PVC, Electrical Metallic Tubing (EMT), or Rigid Steel
+                  Conduit (RSC). Standard cross-sectional fill ratio must not
+                  exceed <strong>40%</strong> for three or more conductors (PEC
+                  Chapter 9, Tabular limits).
                 </p>
                 <p>
-                  📉 <strong>Voltage Drop Limitations:</strong> Recommended maximum voltage drop on branch circuits is <strong>3%</strong>, and <strong>3%</strong> on feeder lines, with a maximum cumulative voltage drop of <strong>5%</strong> for overall system efficiency (PEC Part 1, FPN 2.10.1.19 & 2.15.1.2).
+                  📉 <strong>Voltage Drop Limitations:</strong> Recommended
+                  maximum voltage drop on branch circuits is <strong>3%</strong>
+                  , and <strong>3%</strong> on feeder lines, with a maximum
+                  cumulative voltage drop of <strong>5%</strong> for overall
+                  system efficiency (PEC Part 1, FPN 2.10.1.19 & 2.15.1.2).
                 </p>
               </div>
             </div>
@@ -3839,16 +4637,31 @@ export default function LoadSchedule({
               </h5>
               <div className="space-y-3 font-sans text-[11px] leading-relaxed">
                 <p>
-                  🛡️ <strong>Overcurrent Protection:</strong> Sized according to load type: continuous loads are rated at <strong>125%</strong> of nominal ampacity, plus <strong>100%</strong> of non-continuous loads (PEC 2.15.1.3). Breakers utilize standard molded-case inverse-time principles.
+                  🛡️ <strong>Overcurrent Protection:</strong> Sized according to
+                  load type: continuous loads are rated at <strong>125%</strong>{" "}
+                  of nominal ampacity, plus <strong>100%</strong> of
+                  non-continuous loads (PEC 2.15.1.3). Breakers utilize standard
+                  molded-case inverse-time principles.
                 </p>
                 <p>
-                  🌱 <strong>Equipment Grounding Conductor (EGC):</strong> High-conductivity copper grounding conductor installed in all power conduits, sized per PEC Table 2.50.6.13 corresponding to circuit breaker rating. Conductor must remain insulated and color-coded Green or bare.
+                  🌱 <strong>Equipment Grounding Conductor (EGC):</strong>{" "}
+                  High-conductivity copper grounding conductor installed in all
+                  power conduits, sized per PEC Table 2.50.6.13 corresponding to
+                  circuit breaker rating. Conductor must remain insulated and
+                  color-coded Green or bare.
                 </p>
                 <p>
-                  🔌 <strong>Service Grounding Electrode Conductor (GEC):</strong> Serves as main reference link to grounding rod / grid array. Sized per service entrance size in strict conformance with PEC Table 2.50.3.17.
+                  🔌{" "}
+                  <strong>Service Grounding Electrode Conductor (GEC):</strong>{" "}
+                  Serves as main reference link to grounding rod / grid array.
+                  Sized per service entrance size in strict conformance with PEC
+                  Table 2.50.3.17.
                 </p>
                 <p className="bg-slate-50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 text-[10px]">
-                  ⚖️ <strong>Dynamic Phase Balancing:</strong> Symmetrical balance must be maintained across Phase Line R, Y, and B. Target total imbalance is ideally <strong>&lt; 15%</strong> to minimize circulating neural currents and reduce feeder heat.
+                  ⚖️ <strong>Dynamic Phase Balancing:</strong> Symmetrical
+                  balance must be maintained across Phase Line R, Y, and B.
+                  Target total imbalance is ideally <strong>&lt; 15%</strong> to
+                  minimize circulating neural currents and reduce feeder heat.
                 </p>
               </div>
             </div>
@@ -3950,10 +4763,15 @@ export default function LoadSchedule({
                 {mainFeeder.wire.runs > 1
                   ? `${mainFeeder.wire.runs} sets of `
                   : ""}
-                {formatWireSize(mainFeeder.wire.size)} mm² {panel.insulationType || "THHN"} ({panel.conductorMaterial || "Copper"}) (Ampacity:{" "}
+                {formatWireSize(mainFeeder.wire.size)} mm²{" "}
+                {panel.insulationType || "THHN"} (
+                {panel.conductorMaterial || "Copper"}) (Ampacity:{" "}
                 {mainFeeder.wire.ampacity} A)
               </span>
-              <span>Selected Main Conduit: {mainFeeder.conduitSize} {mainFeeder.conduitType || "PVC"}</span>
+              <span>
+                Selected Main Conduit: {mainFeeder.conduitSize}{" "}
+                {mainFeeder.conduitType || "PVC"}
+              </span>
             </div>
           </div>
 
@@ -3963,9 +4781,9 @@ export default function LoadSchedule({
                 4. Phase Balancing Check
               </h3>
               <p className="mb-2">
-                For a well-designed electrical panel, the loads across the phases
-                (R, Y, B) should be evenly distributed to prevent neutral current
-                overload.
+                For a well-designed electrical panel, the loads across the
+                phases (R, Y, B) should be evenly distributed to prevent neutral
+                current overload.
               </p>
               <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
                 <span>Max Phase Load = Max(Load_R, Load_Y, Load_B)</span>
@@ -3997,7 +4815,7 @@ export default function LoadSchedule({
           )}
         </div>
       </section>
-      
+
       {/* Rearrange Circuits Modal */}
       {showRearrangeModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 no-print">
@@ -4013,7 +4831,8 @@ export default function LoadSchedule({
                   Rearrange Circuits
                 </h2>
                 <p className="text-sm font-medium text-slate-500 mt-1">
-                  Drag and drop to easily reorder your circuits. Sequence numbers are updated automatically.
+                  Drag and drop to easily reorder your circuits. Sequence
+                  numbers are updated automatically.
                 </p>
               </div>
               <button
@@ -4025,13 +4844,13 @@ export default function LoadSchedule({
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 bg-slate-50 dark:bg-slate-950">
-              <DndContext 
+              <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragEnd={handleDragEnd}
               >
-                <SortableContext 
-                  items={circuits.map(c => c.id)}
+                <SortableContext
+                  items={circuits.map((c) => c.id)}
                   strategy={verticalListSortingStrategy}
                 >
                   {circuits.map((c, index) => (
@@ -4040,7 +4859,7 @@ export default function LoadSchedule({
                 </SortableContext>
               </DndContext>
             </div>
-            
+
             <div className="p-6 border-t border-slate-100 dark:border-slate-800 shrink-0 flex justify-end">
               <button
                 onClick={() => setShowRearrangeModal(false)}
@@ -4069,7 +4888,11 @@ export default function LoadSchedule({
                 </h2>
                 <div className="flex items-center gap-4">
                   <span className="text-sm font-bold text-slate-500 bg-white px-3 py-1 rounded border shadow-sm">
-                    {filteredLoadPresets.reduce((sum, cat) => sum + cat.items.length, 0)} items found
+                    {filteredLoadPresets.reduce(
+                      (sum, cat) => sum + cat.items.length,
+                      0,
+                    )}{" "}
+                    items found
                   </span>
                   <button
                     onClick={() => {
@@ -4115,8 +4938,10 @@ export default function LoadSchedule({
                     className="w-full text-xs font-bold px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white shadow-sm"
                   >
                     <option value="All">All Categories</option>
-                    {dynamicLoadPresets.map(cat => (
-                      <option key={cat.category} value={cat.category}>{cat.category}</option>
+                    {dynamicLoadPresets.map((cat) => (
+                      <option key={cat.category} value={cat.category}>
+                        {cat.category}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -4160,9 +4985,15 @@ export default function LoadSchedule({
                     <option value="Wattage">Sort: Wattage</option>
                   </select>
                   <button
-                    onClick={() => setPresetSortOrder(prev => prev === "asc" ? "desc" : "asc")}
+                    onClick={() =>
+                      setPresetSortOrder((prev) =>
+                        prev === "asc" ? "desc" : "asc",
+                      )
+                    }
                     className="px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 shadow-sm transition"
-                    title={presetSortOrder === "asc" ? "Ascending" : "Descending"}
+                    title={
+                      presetSortOrder === "asc" ? "Ascending" : "Descending"
+                    }
                   >
                     {presetSortOrder === "asc" ? "↑" : "↓"}
                   </button>
@@ -4175,43 +5006,25 @@ export default function LoadSchedule({
                 <div className="col-span-1 md:col-span-2 text-center py-12 text-slate-500 font-bold">
                   No matching loads found. Try clearing your filters.
                 </div>
-              ) : filteredLoadPresets.map((category, catIdx) => (
-                <div
-                  key={catIdx}
-                  className="bg-slate-50 rounded-xl p-5 border border-slate-200"
-                >
-                  <h3 className="font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 flex justify-between items-end">
-                    {category.category}
-                  </h3>
-                  <div className="flex flex-col gap-2">
-                    {category.items.map((item, itemIdx) => {
-                      const isSelected = selectedPresets.some(
-                        (p) => p.description === item.description,
-                      );
-                      return (
-                        <button
-                          key={itemIdx}
-                          onClick={() => {
-                            if (selectedPresets.length > 0) {
-                              if (isSelected) {
-                                setSelectedPresets(
-                                  selectedPresets.filter(
-                                    (p) => p.description !== item.description,
-                                  ),
-                                );
-                              } else {
-                                setSelectedPresets([...selectedPresets, item]);
-                              }
-                            } else {
-                              addCircuitFromPreset(item);
-                            }
-                          }}
-                          className={`group flex justify-between items-center p-3 rounded-lg border transition-all text-left ${isSelected ? "bg-indigo-50 border-indigo-500 shadow-sm" : "bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md"}`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
+              ) : (
+                filteredLoadPresets.map((category, catIdx) => (
+                  <div
+                    key={catIdx}
+                    className="bg-slate-50 rounded-xl p-5 border border-slate-200"
+                  >
+                    <h3 className="font-bold text-slate-800 mb-4 border-b border-slate-200 pb-2 flex justify-between items-end">
+                      {category.category}
+                    </h3>
+                    <div className="flex flex-col gap-2">
+                      {category.items.map((item, itemIdx) => {
+                        const isSelected = selectedPresets.some(
+                          (p) => p.description === item.description,
+                        );
+                        return (
+                          <button
+                            key={itemIdx}
+                            onClick={() => {
+                              if (selectedPresets.length > 0) {
                                 if (isSelected) {
                                   setSelectedPresets(
                                     selectedPresets.filter(
@@ -4224,50 +5037,74 @@ export default function LoadSchedule({
                                     item,
                                   ]);
                                 }
-                              }}
-                              className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center cursor-pointer shrink-0 ${isSelected ? "bg-indigo-600 border-indigo-600" : "border-slate-300 hover:border-indigo-500"}`}
-                            >
-                              {isSelected && (
-                                <svg
-                                  className="w-3 h-3 text-white"
-                                  fill="none"
-                                  viewBox="0 0 24 24"
-                                  stroke="currentColor"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={3}
-                                    d="M5 13l4 4L19 7"
-                                  />
-                                </svg>
-                              )}
-                            </div>
-                            <div className="flex flex-col">
-                              <span
-                                className={`font-bold ${isSelected ? "text-indigo-800" : "text-slate-700 group-hover:text-indigo-700"}`}
+                              } else {
+                                addCircuitFromPreset(item);
+                              }
+                            }}
+                            className={`group flex justify-between items-center p-3 rounded-lg border transition-all text-left ${isSelected ? "bg-indigo-50 border-indigo-500 shadow-sm" : "bg-white border-slate-200 hover:border-indigo-400 hover:shadow-md"}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isSelected) {
+                                    setSelectedPresets(
+                                      selectedPresets.filter(
+                                        (p) =>
+                                          p.description !== item.description,
+                                      ),
+                                    );
+                                  } else {
+                                    setSelectedPresets([
+                                      ...selectedPresets,
+                                      item,
+                                    ]);
+                                  }
+                                }}
+                                className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center cursor-pointer shrink-0 ${isSelected ? "bg-indigo-600 border-indigo-600" : "border-slate-300 hover:border-indigo-500"}`}
                               >
-                                {item.description}
+                                {isSelected && (
+                                  <svg
+                                    className="w-3 h-3 text-white"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={3}
+                                      d="M5 13l4 4L19 7"
+                                    />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="flex flex-col">
+                                <span
+                                  className={`font-bold ${isSelected ? "text-indigo-800" : "text-slate-700 group-hover:text-indigo-700"}`}
+                                >
+                                  {item.description}
+                                </span>
+                                <span className="text-xs text-slate-500 font-mono mt-1">
+                                  {item.label}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="bg-slate-100 text-slate-600 text-xs font-black px-2 py-1 rounded">
+                                {item.loadType}
                               </span>
-                              <span className="text-xs text-slate-500 font-mono mt-1">
-                                {item.label}
+                              <span className="bg-indigo-50 text-indigo-700 text-sm font-black px-3 py-1 rounded w-16 text-center">
+                                {item.wattage}W
                               </span>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="bg-slate-100 text-slate-600 text-xs font-black px-2 py-1 rounded">
-                              {item.loadType}
-                            </span>
-                            <span className="bg-indigo-50 text-indigo-700 text-sm font-black px-3 py-1 rounded w-16 text-center">
-                              {item.wattage}W
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
             {selectedPresets.length > 0 ? (
               <div className="p-4 border-t border-indigo-100 shrink-0 flex items-center justify-between bg-indigo-50/50">
