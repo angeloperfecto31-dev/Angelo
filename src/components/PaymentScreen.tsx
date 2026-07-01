@@ -133,6 +133,7 @@ export default function PaymentScreen({
   const DEFAULT_UPGRADE_FEATURES = "Full Word File Report Generation\nPremium Support Access";
 
   // Dynamic Pricing State
+  const [isPricingLoaded, setIsPricingLoaded] = useState(false);
   const [pricingSettings, setPricingSettings] = useState({
     basicPrice: 999,
     premiumPrice: 1499,
@@ -427,6 +428,7 @@ export default function PaymentScreen({
             enablePayMongo,
             enableMaya,
           });
+          setIsPricingLoaded(true);
 
           // Prefill admin panels only on first load, to prevent overwriting active admin edits
           if (!hasLoadedPricingInputs.current) {
@@ -470,6 +472,7 @@ export default function PaymentScreen({
             enablePayMongo: true,
             enableMaya: true,
           });
+          setIsPricingLoaded(true);
 
           if (isAdminUser) {
             try {
@@ -2728,6 +2731,15 @@ export default function PaymentScreen({
       setAdminStatusMsg("Error exporting Financial Report (Word): " + err.message);
     }
   };
+
+  if (!isPricingLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans items-center">
+        <div className="w-8 h-8 rounded-full border-4 border-slate-200 border-t-indigo-600 animate-spin mb-4"></div>
+        <p className="text-sm font-semibold text-slate-500 animate-pulse">Loading secure payment options...</p>
+      </div>
+    );
+  }
 
   const showAdminDashboard = (forceAdmin || isAdminMode) && isAdminUser;
 
