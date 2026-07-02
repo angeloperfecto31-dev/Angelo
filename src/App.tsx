@@ -537,9 +537,9 @@ export default function App() {
   const [activeMdpId, setActiveMdpId] = useState<string>("mdp-1");
 
   const activeMdp = useMemo(() => mdps.find((m) => m.id === activeMdpId) || mdps[0], [mdps, activeMdpId]);
-  const panel = activeMdp.panel;
-  const circuits = activeMdp.circuits;
-  const subPanels = activeMdp.subPanels;
+  const panel = activeMdp.panel || INITIAL_PANEL;
+  const circuits = activeMdp.circuits || [];
+  const subPanels = activeMdp.subPanels || [];
 
   const setPanel = useCallback((val: React.SetStateAction<PanelConfig>) => {
     setMdps((prev) => prev.map((m) => {
