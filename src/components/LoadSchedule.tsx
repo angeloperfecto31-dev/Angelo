@@ -3058,16 +3058,25 @@ export default function LoadSchedule({
                               fallbackSubId =
                                 availableSubPanels[targetIndex].id;
                             }
+                            const is3P =
+                              (nextType === LoadType.MOTOR ||
+                                nextType === LoadType.AIR_CON) &&
+                              panel.system.includes("3PH");
+
                             const updates: Partial<Circuit> = {
                               loadType: nextType,
                               linkedSubPanelId: fallbackSubId,
+                              phases: is3P ? ["R", "Y", "B"] : ["R"],
+                              is3PhaseMarker: is3P,
                             };
-                            if (
-                              nextType === LoadType.MOTOR &&
-                              panel.system.includes("3PH")
-                            ) {
-                              updates.phases = ["R", "Y", "B"];
+                            
+                            const isSpaceOrEmpty = !c.description || c.description.toUpperCase() === "SPACE";
+                            const isPreviousCode = Object.values(DESCRIPTION_CODES).includes(c.description || "");
+                            
+                            if (isSpaceOrEmpty || isPreviousCode) {
+                              updates.description = (DESCRIPTION_CODES as Record<string, string>)[nextType] || nextType;
                             }
+                            
                             updateCircuit(c.id, updates);
                           }}
                           className="p-0.5 bg-slate-100 dark:bg-slate-800 border-0 rounded uppercase font-black no-print shrink-0 text-slate-800 dark:text-slate-100"

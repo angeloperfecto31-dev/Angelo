@@ -451,7 +451,6 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<
     | "dashboard"
-    | "mdp-management"
     | "schedule"
     | "isc"
     | "vd"
@@ -1748,13 +1747,6 @@ export default function App() {
       icon: Gauge,
       color: "text-blue-600",
       bg: "bg-blue-50",
-    },
-    {
-      id: "mdp-management",
-      label: "Source & MDPs",
-      icon: Zap,
-      color: "text-orange-600",
-      bg: "bg-orange-50",
     },
     {
       id: "schedule",
@@ -3526,12 +3518,6 @@ export default function App() {
                     requiresPremium: false,
                   },
                   {
-                    id: "mdp-management",
-                    label: "Source & MDPs",
-                    icon: Zap,
-                    requiresPremium: false,
-                  },
-                  {
                     id: "schedule",
                     label: "Load Schedule",
                     icon: Layout,
@@ -4944,62 +4930,7 @@ export default function App() {
                   </div>
 
                   {/* Bento Grid: Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-                    {/* MDP & Source Telemetry */}
-                    {getModuleStatus("mdp-management") !== "hidden" && (
-                      <div
-                        className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
-                          getModuleStatus("mdp-management") !== "active"
-                            ? "opacity-60"
-                            : ""
-                        }`}
-                      >
-                        {getModuleStatus("mdp-management") !== "active" && (
-                          <div className="absolute inset-0 bg-slate-950/5 dark:bg-slate-950/25 backdrop-blur-[1px] flex flex-col items-center justify-center p-4 text-center z-10 select-none pointer-events-none">
-                            <div className="bg-slate-900/90 border border-slate-800 text-white rounded-lg px-2.5 py-1 text-[10px] font-black flex items-center gap-1.5 shadow-md">
-                              <Lock className="w-3 h-3 text-amber-400" />
-                              {getModuleStatus("mdp-management") === "disabled" ? (
-                                <span>MODULE DISABLED</span>
-                              ) : (
-                                <span>MAINTENANCE MODE</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
-                              SOURCE ARCHITECTURE
-                            </span>
-                            <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
-                              {getModuleStatus("mdp-management") === "active"
-                                ? `${mdps.length} MDPs`
-                                : "---"}
-                            </h3>
-                          </div>
-                          <div className="p-3 bg-orange-50 dark:bg-slate-800 text-orange-600 dark:text-orange-400 rounded-xl group-hover:bg-orange-600 group-hover:text-white transition-all shadow-sm">
-                            <Zap className="w-5 h-5" />
-                          </div>
-                        </div>
-
-                        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                          <span className="font-bold text-slate-700 dark:text-slate-300">
-                            {getModuleStatus("mdp-management") === "active"
-                              ? `${mainSource.systemVoltage}V, ${mainSource.systemFrequency}Hz`
-                              : "No Active Telemetry"}
-                          </span>
-                          {getModuleStatus("mdp-management") === "active" && (
-                            <button
-                              onClick={() => setActiveTab("mdp-management")}
-                              className="text-orange-600 dark:text-orange-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
-                            >
-                              Configure <ArrowUpRight className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {/* Connected Load Schedule Telemetry */}
                     {getModuleStatus("schedule") !== "hidden" && (
                       <div
@@ -5918,28 +5849,6 @@ export default function App() {
                 </motion.div>
               </div>
 
-              {/* MDP Management Tab */}
-              <div
-                className={
-                  activeTab === "mdp-management" ? "w-full animate-fade" : "hidden"
-                }
-              >
-                <motion.div
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={activeTab === "mdp-management" ? { opacity: 1, y: 0 } : {}}
-                  transition={{ duration: 0.2 }}
-                >
-                  <PanelManagement
-                    mainSource={mainSource}
-                    setMainSource={setMainSource}
-                    mdps={mdps}
-                    setMdps={setMdps}
-                    activeMdpId={activeMdpId}
-                    setActiveMdpId={setActiveMdpId}
-                  />
-                </motion.div>
-              </div>
-
               {/* Load Schedule Tab */}
               <div
                 className={
@@ -6340,53 +6249,19 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
-                  {(() => {
-                    const synthesizedSldPanel: PanelConfig = {
-                      ...INITIAL_PANEL,
-                      designation: "MAIN SWITCHGEAR",
-                      voltage: mainSource.systemVoltage,
-                      frequency: mainSource.systemFrequency,
-                      system: mainSource.phaseConfiguration,
-                      transformerConnection: mainSource.transformerConnection,
-                      icRating: `${mainSource.availableFaultCurrent}kAIC`,
-                    };
-
-                    const synthesizedSldSubPanels = mdps.flatMap((mdp) => [
-                      { id: mdp.id, panel: mdp.panel, circuits: mdp.circuits },
-                      ...mdp.subPanels
-                    ]);
-
-                    const rawSynthesizedCircuits: Circuit[] = mdps.map((mdp, i) => ({
-                      ...getFreshInitialCircuits()[0],
-                      id: `mdp-feeder-${mdp.id}`,
-                      circuitNo: (i * 2) + 1,
-                      description: mdp.panel.designation || `MDP-${i + 1}`,
-                      loadType: LoadType.SUB_PANEL, // LoadType.SUB_PANEL
-                      subPanelReflectionMode: "max_demand",
-                      linkedSubPanelId: mdp.id,
-                      poles: mainSource.phaseConfiguration.includes("3PH") ? 3 : 2,
-                    }));
-
-                    const synthesizedSldCircuits = rawSynthesizedCircuits.map(c => 
-                      calculateCircuitValues(c, synthesizedSldPanel, synthesizedSldSubPanels, vdCalculations) as Circuit
-                    );
-
-                    return (
-                      <SystemSLD
-                        panel={synthesizedSldPanel}
-                        circuits={synthesizedSldCircuits}
-                        subPanels={synthesizedSldSubPanels}
-                        iscParams={iscParams}
-                        isPremium={
-                          userPlan === "premium" ||
-                          userPlan === "enterprise" ||
-                          isAdmin
-                        }
-                        onRequestUpgrade={() => setShowUpgrade(true)}
-                        vdCalculations={vdCalculations}
-                      />
-                    );
-                  })()}
+                  <SystemSLD
+                    panel={panel}
+                    circuits={circuits}
+                    subPanels={subPanels}
+                    iscParams={iscParams}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                    vdCalculations={vdCalculations}
+                  />
                 </motion.div>
               </div>
 
@@ -6408,59 +6283,25 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
-                  {(() => {
-                    const synthesizedSldPanel: PanelConfig = {
-                      ...INITIAL_PANEL,
-                      designation: "MAIN SWITCHGEAR",
-                      voltage: mainSource.systemVoltage,
-                      frequency: mainSource.systemFrequency,
-                      system: mainSource.phaseConfiguration,
-                      transformerConnection: mainSource.transformerConnection,
-                      icRating: `${mainSource.availableFaultCurrent}kAIC`,
-                    };
-
-                    const synthesizedSldSubPanels = mdps.flatMap((mdp) => [
-                      { id: mdp.id, panel: mdp.panel, circuits: mdp.circuits },
-                      ...mdp.subPanels
-                    ]);
-
-                    const rawSynthesizedCircuits: Circuit[] = mdps.map((mdp, i) => ({
-                      ...getFreshInitialCircuits()[0],
-                      id: `mdp-feeder-${mdp.id}`,
-                      circuitNo: (i * 2) + 1,
-                      description: mdp.panel.designation || `MDP-${i + 1}`,
-                      loadType: LoadType.SUB_PANEL, // LoadType.SUB_PANEL
-                      subPanelReflectionMode: "max_demand",
-                      linkedSubPanelId: mdp.id,
-                      poles: mainSource.phaseConfiguration.includes("3PH") ? 3 : 2,
-                    }));
-
-                    const synthesizedSldCircuits = rawSynthesizedCircuits.map(c => 
-                      calculateCircuitValues(c, synthesizedSldPanel, synthesizedSldSubPanels, vdCalculations) as Circuit
-                    );
-
-                    return (
-                      <PowerSystemAnalysis
-                        panel={synthesizedSldPanel}
-                        circuits={synthesizedSldCircuits}
-                        subPanels={synthesizedSldSubPanels}
-                        iscParams={iscParams}
-                        setIscParams={setIscParams}
-                        vdCalculations={vdCalculations}
-                        isPremium={
-                          userPlan === "premium" ||
-                          userPlan === "enterprise" ||
-                          isAdmin
-                        }
-                        onRequestUpgrade={() => setShowUpgrade(true)}
-                        transformerPrimaryVoltage={transformerPrimaryVoltage}
-                        transformerPowerFactor={transformerPowerFactor}
-                        transformerDemandFactor={transformerDemandFactor}
-                        transformerLoadingFactor={transformerLoadingFactor}
-                        user={user}
-                      />
-                    );
-                  })()}
+                  <PowerSystemAnalysis
+                    panel={panel}
+                    circuits={circuits}
+                    subPanels={subPanels}
+                    iscParams={iscParams}
+                    setIscParams={setIscParams}
+                    vdCalculations={vdCalculations}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                    transformerPrimaryVoltage={transformerPrimaryVoltage}
+                    transformerPowerFactor={transformerPowerFactor}
+                    transformerDemandFactor={transformerDemandFactor}
+                    transformerLoadingFactor={transformerLoadingFactor}
+                    user={user}
+                  />
                 </motion.div>
               </div>
 

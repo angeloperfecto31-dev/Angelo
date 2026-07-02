@@ -781,6 +781,7 @@ export const INITIAL_ILLUMINATION_PARAMS: IlluminationParams = {
 };
 
 export const DESCRIPTION_CODES = {
+  L: 'Lighting',
   S: 'Socket Outlets',
   AC: 'Air Conditioning',
   M: 'Motors / Pumps',
