@@ -6359,7 +6359,7 @@ export default function App() {
                       id: `mdp-feeder-${mdp.id}`,
                       circuitNo: (i * 2) + 1,
                       description: mdp.panel.designation || `MDP-${i + 1}`,
-                      loadType: 9, // LoadType.SUB_PANEL = 9
+                      loadType: LoadType.SUB_PANEL, // LoadType.SUB_PANEL
                       subPanelReflectionMode: "max_demand",
                       linkedSubPanelId: mdp.id,
                       poles: mainSource.phaseConfiguration.includes("3PH") ? 3 : 2,
@@ -6427,7 +6427,7 @@ export default function App() {
                       id: `mdp-feeder-${mdp.id}`,
                       circuitNo: (i * 2) + 1,
                       description: mdp.panel.designation || `MDP-${i + 1}`,
-                      loadType: 9, // LoadType.SUB_PANEL
+                      loadType: LoadType.SUB_PANEL, // LoadType.SUB_PANEL
                       subPanelReflectionMode: "max_demand",
                       linkedSubPanelId: mdp.id,
                       poles: mainSource.phaseConfiguration.includes("3PH") ? 3 : 2,

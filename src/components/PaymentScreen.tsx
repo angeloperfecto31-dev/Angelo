@@ -866,6 +866,22 @@ export default function PaymentScreen({
               });
             }
           }
+
+          // Auto-correction for Free Trial expiration
+          if (uData && uData.freeTrialStatus === "used" && uData.expiresAt) {
+            const expires = new Date(uData.expiresAt);
+            if (new Date() >= expires) {
+              console.warn(`[Free Trial Expiration]: Detected expired free trial for user (${uData.email || u.uid}). Correcting permanently...`);
+              const userRef = doc(db, "users", snapDoc.id);
+              setDoc(userRef, {
+                isActive: false,
+                freeTrialStatus: "expired",
+                paymentStatus: "unpaid"
+              }, { merge: true }).catch((err) => {
+                console.error(`[Free Trial Expiration Error] Failed to correct user ${snapDoc.id}:`, err);
+              });
+            }
+          }
         });
         setAllUsers(usersList);
       },
@@ -1488,7 +1504,7 @@ export default function PaymentScreen({
     } else if (adminFilter === "lifetime") {
       if (u.isActive !== true || u.plan !== "enterprise") return false;
     } else if (adminFilter === "free_trial") {
-      if (u.paymentStatus !== "free_trial") return false;
+      if (u.paymentStatus !== "free_trial" && !["expired", "used", "pending", "approved"].includes(u.freeTrialStatus)) return false;
     } else if (adminFilter === "unpaid") {
       if (u.isActive === true || u.paymentStatus === "pending_verification") return false;
     }
@@ -2871,7 +2887,7 @@ export default function PaymentScreen({
                   </thead>
                   <tbody>
                     {allUsers
-                      .filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus))
+                      .filter(u => ["pending", "approved", "rejected", "used", "expired"].includes(u.freeTrialStatus))
                       .sort((a, b) => new Date(b.trialRequestedAt || 0).getTime() - new Date(a.trialRequestedAt || 0).getTime())
                       .map(u => (
                       <tr key={u.uid} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
@@ -2889,6 +2905,7 @@ export default function PaymentScreen({
                           <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${
                             u.freeTrialStatus === "pending" ? "bg-yellow-100 text-yellow-800" :
                             u.freeTrialStatus === "approved" ? "bg-green-100 text-green-800" :
+                            u.freeTrialStatus === "used" ? "bg-blue-100 text-blue-800" :
                             "bg-red-100 text-red-800"
                           }`}>
                             {u.freeTrialStatus}
@@ -2926,7 +2943,7 @@ export default function PaymentScreen({
                         </td>
                       </tr>
                     ))}
-                    {allUsers.filter(u => ["pending", "approved", "rejected"].includes(u.freeTrialStatus)).length === 0 && (
+                    {allUsers.filter(u => ["pending", "approved", "rejected", "used", "expired"].includes(u.freeTrialStatus)).length === 0 && (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-slate-500 text-sm">
                           No free trial requests found.
@@ -4309,10 +4326,17 @@ export default function PaymentScreen({
                             {/* STATUS COLUMN */}
                             <td className="px-5 py-3">
                               {isUserActive ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
-                                  Active Paid
-                                </span>
+                                u.paymentStatus === "free_trial" || finance.planStr === "free" ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse" />
+                                    Active Trial
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" />
+                                    Active Paid
+                                  </span>
+                                )
                               ) : isPending ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200/50 shadow-sm animate-pulse">
                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
@@ -4322,6 +4346,11 @@ export default function PaymentScreen({
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-250 shadow-sm animate-pulse font-extrabold">
                                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-bounce" />
                                   🚩 Audit Discrepancy
+                                </span>
+                              ) : u.freeTrialStatus === "expired" ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-250 shadow-sm font-extrabold">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                  ❌ Expired Trial
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200/60 shadow-sm">
@@ -5302,6 +5331,18 @@ export default function PaymentScreen({
                 {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {startingTrial ? "Starting Trial..." : "Start 1-Hour Free Trial"}
               </button>
+            </div>
+          )}
+
+          {!isUpgrade && userProfile?.freeTrialStatus === "expired" && (
+            <div className="mb-6 bg-rose-50 border border-rose-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
+              <AlertCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-black text-rose-800 mb-1">Free Trial Expired</h3>
+                <p className="text-sm text-rose-700 leading-relaxed">
+                  Your 1-hour free trial has expired. Please select a subscription plan below to continue using the application.
+                </p>
+              </div>
             </div>
           )}
 
