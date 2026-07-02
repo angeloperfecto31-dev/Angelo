@@ -79,7 +79,6 @@ import {
 } from "./constants";
 import { ProjectData, MainSourceConfig, MdpData } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
-import { PanelManagement } from "./components/PanelManagement";
 import { exportToWord } from "./utils/exportWord";
 import { syncHierarchyData } from "./utils/hierarchyEngine";
 import {
