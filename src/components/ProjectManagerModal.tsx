@@ -187,7 +187,9 @@ export default function ProjectManagerModal({
         project: finalName
       }
     };
-    const newId = crypto.randomUUID();
+    const newId = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newProject: SavedProject = {
       id: newId,
       name: finalName,

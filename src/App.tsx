@@ -116,12 +116,18 @@ import {
   onSnapshot as onFirestoreSnapshot,
 } from "firebase/firestore";
 
+export const safeUUID = () => {
+  return typeof crypto !== 'undefined' && crypto.randomUUID 
+    ? crypto.randomUUID() 
+    : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
 export const getFreshInitialCircuits = (): Circuit[] => {
   return INITIAL_CIRCUITS.map((c) => ({
     ...c,
-    id: crypto.randomUUID(),
+    id: safeUUID(),
     subLoads: c.subLoads
-      ? c.subLoads.map((sl) => ({ ...sl, id: crypto.randomUUID() }))
+      ? c.subLoads.map((sl) => ({ ...sl, id: safeUUID() }))
       : undefined,
   }));
 };
@@ -906,7 +912,7 @@ export default function App() {
             } else {
               changed = true;
               updatedCalcs.push({
-                id: crypto.randomUUID(),
+                id: safeUUID(),
                 source: c.id,
                 name: branchName,
                 loadA: c.loadA,
@@ -1417,11 +1423,11 @@ export default function App() {
     // Ensure accurate sizing by passing older circuits through the current compute engine.
     const seenCircuitIds = new Set<string>();
 
-    const migratedSubSubPanels = (data.subPanels || []).map((sp) => {
+    const migratedSubSubPanels = (data.subSubPanels || []).map((sp) => {
       const updatedCircuits = sp.circuits.map((c) => {
         let uniqueId = c.id;
         if (seenCircuitIds.has(uniqueId)) {
-          uniqueId = crypto.randomUUID();
+          uniqueId = safeUUID();
         }
         seenCircuitIds.add(uniqueId);
 
@@ -1465,7 +1471,7 @@ export default function App() {
       const updatedCircuits = sp.circuits.map((c) => {
         let uniqueId = c.id;
         if (seenCircuitIds.has(uniqueId)) {
-          uniqueId = crypto.randomUUID();
+          uniqueId = safeUUID();
         }
         seenCircuitIds.add(uniqueId);
 
@@ -1513,7 +1519,7 @@ export default function App() {
     const migratedCircuits = data.circuits.map((c) => {
       let uniqueId = c.id;
       if (seenCircuitIds.has(uniqueId)) {
-        uniqueId = crypto.randomUUID();
+        uniqueId = safeUUID();
       }
       seenCircuitIds.add(uniqueId);
 
@@ -1563,15 +1569,19 @@ export default function App() {
     };
 
     if (data.mdps && data.mdps.length > 0) {
-      setMdps(data.mdps);
-      setActiveMdpId(data.mdps[0].id);
+      const migratedMdps = data.mdps.map(mdp => {
+        const mergedSubPanels = [...(mdp.subPanels || []), ...(mdp.subSubPanels || [])];
+        const { subSubPanels, ...rest } = mdp;
+        return { ...rest, subPanels: mergedSubPanels };
+      });
+      setMdps(migratedMdps);
+      setActiveMdpId(migratedMdps[0].id);
     } else {
       setMdps([{
         id: "mdp-1",
         panel: loadedPanel,
         circuits: migratedCircuits,
-        subPanels: migratedSubPanels,
-        subSubPanels: data.subSubPanels
+        subPanels: [...migratedSubPanels, ...migratedSubSubPanels]
       }]);
       setActiveMdpId("mdp-1");
     }
@@ -5983,7 +5993,7 @@ export default function App() {
                         <div className="flex items-center gap-2 ml-auto">
                           <button
                             onClick={() => {
-                              const newId = crypto.randomUUID();
+                              const newId = safeUUID();
                               setSubPanels((prev) => [
                                 ...prev,
                                 {
@@ -6150,7 +6160,7 @@ export default function App() {
                           {!isExporting && activeScheduleTab === sp.id && (
                             <button
                               onClick={() => {
-                                const newId = crypto.randomUUID();
+                                const newId = safeUUID();
                                 setSubPanels((prev) => [
                                   ...prev,
                                   {
@@ -6178,7 +6188,7 @@ export default function App() {
                     {!isExporting && activeScheduleTab === "mdp" && (
                       <button
                         onClick={() => {
-                          const newId = crypto.randomUUID();
+                          const newId = safeUUID();
                           setSubPanels((prev) => [
                             ...prev,
                             {
