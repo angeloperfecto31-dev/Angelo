@@ -2087,7 +2087,7 @@ export const exportToCAD = (
         ? "SPACE"
         : isSpare
           ? "SPARE"
-          : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize} mm² THHN / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
+          : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize} mm² ${cir.wireType || "THHN"} / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
       
       const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
       b.addText(

@@ -877,7 +877,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           createCell(cir.loadVA?.toString() || "0"),
           createCell(ampsContent),
           createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${cir.mcbP || 2}P`),
-          createCell(isSpace ? "-" : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize || '3.5'} mm² THHN`),
+          createCell(isSpace ? "-" : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize || '3.5'} mm² ${cir.wireType || 'THHN'}`),
           createCell(isSpace ? "-" : `${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
         ]
       }));

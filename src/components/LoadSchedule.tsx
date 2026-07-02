@@ -59,6 +59,7 @@ import {
 } from "../constants";
 import {
   PEC_AMPACITY_TABLE,
+  INSULATION_TEMPERATURE_MAP,
   getConductorAmpacity,
   getTemperatureForInsulation,
   sizeConductor,
@@ -4001,7 +4002,23 @@ export default function LoadSchedule({
                                   </option>
                                 ))}
                               </select>
-                              <span>{c.wireType}</span>
+                              <select
+                                value={c.wireTypeOverride || ""}
+                                onChange={(e) =>
+                                  updateCircuit(c.id, {
+                                    wireTypeOverride: e.target.value || undefined,
+                                  })
+                                }
+                                className={`bg-transparent font-bold tracking-tight cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.wireTypeOverride ? "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50" : "text-slate-800 dark:text-slate-200 border border-transparent"}`}
+                                title={c.wireTypeOverride ? `System Calculated: ${c.calculatedWireType}` : "System Calculated Wire Type"}
+                              >
+                                <option value="">Auto ({c.calculatedWireType || c.wireType})</option>
+                                {Object.keys(INSULATION_TEMPERATURE_MAP).sort().map((type) => (
+                                  <option key={type} value={type}>
+                                    {type}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
                             <span className="text-slate-500 dark:text-slate-400 text-xxs flex items-center gap-1 justify-center whitespace-nowrap">
                               <select

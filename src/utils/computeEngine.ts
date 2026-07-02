@@ -685,12 +685,15 @@ export const calculateCircuitValues = (
         ? c.mcbKAIC
         : computedMcbKAIC;
 
+  const calculatedWireTypeStr = panel.insulationType || "THHN";
+  const finalWireType = c.wireTypeOverride || calculatedWireTypeStr;
+
   const wire = getWireForBreakerLocal(
     mcbAT,
     designLoadA,
     panel.conductorMaterial || "Copper",
-    panel.insulationType || "THHN",
-    panel.temperatureRating as any,
+    finalWireType,
+    c.wireTypeOverride ? undefined : (panel.temperatureRating as any),
   );
 
   let baseWireSize = wire.size;
@@ -765,6 +768,8 @@ export const calculateCircuitValues = (
     mcbType: c.mcbType || ("Bolt-on" as any),
     wireSize: finalWireSize,
     calculatedWireSize: calculatedWireSizeStr,
+    wireType: finalWireType,
+    calculatedWireType: calculatedWireTypeStr,
     groundSize: finalGroundSize,
     calculatedGroundSize: calculatedGroundSizeStr,
     conduitSize: finalConduitSize,

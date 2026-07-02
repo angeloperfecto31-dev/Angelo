@@ -51,6 +51,8 @@ export interface Circuit {
   mcbType: MCBType;
   wireSize: string; // mm² (final size)
   wireType: string;
+  wireTypeOverride?: string; // User-selected wire type override
+  calculatedWireType?: string; // System recommended wire type
   wireSizeOverride?: string; // User-selected wire size override
   calculatedWireSize?: string; // System recommended wire size
   groundSize: string; // mm² (final size)
