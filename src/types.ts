@@ -49,11 +49,18 @@ export interface Circuit {
   kaicOverride?: number;
   mcbKAICCalculated?: number;
   mcbType: MCBType;
-  wireSize: string; // mm²
+  wireSize: string; // mm² (final size)
   wireType: string;
-  groundSize: string; // mm²
-  conduitSize: string; // mm
+  wireSizeOverride?: string; // User-selected wire size override
+  calculatedWireSize?: string; // System recommended wire size
+  groundSize: string; // mm² (final size)
+  groundSizeOverride?: string; // User-selected ground size override
+  calculatedGroundSize?: string; // System recommended ground size
+  conduitSize: string; // mm (final size)
+  conduitSizeOverride?: string; // User-selected conduit size override
+  calculatedConduitSize?: string; // System recommended conduit size
   conduitType: string;
+  conduitTypeOverride?: string;
   loadType: LoadType;
   quantity: number;
   wattage: number;

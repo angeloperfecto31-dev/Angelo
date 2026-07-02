@@ -719,35 +719,37 @@ export const calculateCircuitValues = (
     }
   }
 
-  const finalWireSize =
-    isSubPanelLink && c.wireSize
-      ? c.wireSize
-      : formatWireSizeLocal(baseWireSize);
+  const calcBaseWireSize = c.wireSizeOverride ? parseFloat(c.wireSizeOverride) || baseWireSize : baseWireSize;
 
-  const finalGroundSize =
-    isSubPanelLink && c.groundSize
-      ? c.groundSize
-      : getGroundWireForWireSizeLocal(
-          baseWireSize,
-          mcbAT,
-          panel.conductorMaterial || "Copper",
-        );
+  const calculatedWireSizeStr = isSubPanelLink && c.wireSize
+    ? c.wireSize
+    : formatWireSizeLocal(baseWireSize);
 
-  const finalConduitType = c.conduitType || "PVC";
-  const finalConduitSize =
-    isSubPanelLink && c.conduitSize
-      ? c.conduitSize
-      : getConduitSizeForWiresLocal(
-          baseWireSize,
-          getGroundWireForWireSizeLocal(
-            baseWireSize,
-            mcbAT,
-            panel.conductorMaterial || "Copper",
-          ),
-          mcbP,
-          panel.system,
-          finalConduitType,
-        );
+  const finalWireSize = c.wireSizeOverride || calculatedWireSizeStr;
+
+  const calculatedGroundSizeStr = isSubPanelLink && c.groundSize
+    ? c.groundSize
+    : getGroundWireForWireSizeLocal(
+        calcBaseWireSize,
+        mcbAT,
+        panel.conductorMaterial || "Copper",
+      );
+
+  const finalGroundSize = c.groundSizeOverride || calculatedGroundSizeStr;
+
+  const finalConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
+  
+  const calculatedConduitSizeStr = isSubPanelLink && c.conduitSize
+    ? c.conduitSize
+    : getConduitSizeForWiresLocal(
+        calcBaseWireSize,
+        finalGroundSize,
+        mcbP,
+        panel.system,
+        finalConduitType,
+      );
+
+  const finalConduitSize = c.conduitSizeOverride || calculatedConduitSizeStr;
 
   return {
     ...c,
@@ -762,8 +764,11 @@ export const calculateCircuitValues = (
     kaicOverride: c.kaicOverride,
     mcbType: c.mcbType || ("Bolt-on" as any),
     wireSize: finalWireSize,
+    calculatedWireSize: calculatedWireSizeStr,
     groundSize: finalGroundSize,
+    calculatedGroundSize: calculatedGroundSizeStr,
     conduitSize: finalConduitSize,
+    calculatedConduitSize: calculatedConduitSizeStr,
     conduitType: finalConduitType,
   };
 };

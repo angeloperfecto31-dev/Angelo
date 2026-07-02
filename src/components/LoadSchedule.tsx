@@ -3984,25 +3984,76 @@ export default function LoadSchedule({
                                   </option>
                                 ))}
                               </select>
-                              <span>
-                                {c.wireSize}mm² {c.wireType}
-                              </span>
-                            </div>
-                            <span className="text-slate-500 dark:text-slate-400 text-xxs flex items-center gap-1 justify-center whitespace-nowrap">
-                              {c.groundSize}mm² GND in {c.conduitSize}
                               <select
-                                value={c.conduitType || "PVC"}
+                                value={c.wireSizeOverride || ""}
                                 onChange={(e) =>
                                   updateCircuit(c.id, {
+                                    wireSizeOverride: e.target.value || undefined,
+                                  })
+                                }
+                                className={`bg-transparent font-bold font-mono tracking-tight cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.wireSizeOverride ? (parseFloat(c.wireSizeOverride) < parseFloat(c.calculatedWireSize || c.wireSize) ? "text-rose-600 dark:text-rose-400 border border-rose-200 bg-rose-50" : "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50") : "text-slate-800 dark:text-slate-200 border border-transparent"}`}
+                                title={c.wireSizeOverride ? (parseFloat(c.wireSizeOverride) < parseFloat(c.calculatedWireSize || c.wireSize) ? `⚠️ Undersized! System Calculated: ${c.calculatedWireSize}mm²` : `System Calculated: ${c.calculatedWireSize}mm²`) : "System Calculated Wire Size"}
+                              >
+                                <option value="">Auto ({c.calculatedWireSize || c.wireSize}mm²)</option>
+                                {PEC_AMPACITY_TABLE.map((w) => (
+                                  <option key={w.size} value={w.size.toString()}>
+                                    {w.size}mm² {c.calculatedWireSize && parseFloat(w.size.toString()) < parseFloat(c.calculatedWireSize) ? "⚠️" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              <span>{c.wireType}</span>
+                            </div>
+                            <span className="text-slate-500 dark:text-slate-400 text-xxs flex items-center gap-1 justify-center whitespace-nowrap">
+                              <select
+                                value={c.groundSizeOverride || ""}
+                                onChange={(e) =>
+                                  updateCircuit(c.id, {
+                                    groundSizeOverride: e.target.value || undefined,
+                                  })
+                                }
+                                className={`bg-transparent font-semibold font-sans cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xxs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.groundSizeOverride ? (parseFloat(c.groundSizeOverride) < parseFloat(c.calculatedGroundSize || c.groundSize) ? "text-rose-600 dark:text-rose-400 border border-rose-200 bg-rose-50" : "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50") : "text-slate-500 dark:text-slate-400 border border-transparent"}`}
+                                title={c.groundSizeOverride ? (parseFloat(c.groundSizeOverride) < parseFloat(c.calculatedGroundSize || c.groundSize) ? `⚠️ Undersized! System Calculated: ${c.calculatedGroundSize}mm²` : `System Calculated: ${c.calculatedGroundSize}mm²`) : "System Calculated Ground Size"}
+                              >
+                                <option value="">Auto ({c.calculatedGroundSize || c.groundSize}mm²)</option>
+                                {PEC_AMPACITY_TABLE.map((w) => (
+                                  <option key={w.size} value={w.size.toString()}>
+                                    {w.size}mm² {c.calculatedGroundSize && parseFloat(w.size.toString()) < parseFloat(c.calculatedGroundSize) ? "⚠️" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              GND in 
+                              <select
+                                value={c.conduitSizeOverride || ""}
+                                onChange={(e) =>
+                                  updateCircuit(c.id, {
+                                    conduitSizeOverride: e.target.value || undefined,
+                                  })
+                                }
+                                className={`bg-transparent font-semibold font-sans cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xxs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.conduitSizeOverride ? (parseInt(c.conduitSizeOverride) < parseInt(c.calculatedConduitSize || c.conduitSize) ? "text-rose-600 dark:text-rose-400 border border-rose-200 bg-rose-50" : "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50") : "text-slate-500 dark:text-slate-400 border border-transparent"}`}
+                                title={c.conduitSizeOverride ? (parseInt(c.conduitSizeOverride) < parseInt(c.calculatedConduitSize || c.conduitSize) ? `⚠️ Undersized! System Calculated: ${c.calculatedConduitSize}` : `System Calculated: ${c.calculatedConduitSize}`) : "System Calculated Conduit Size"}
+                              >
+                                <option value="">Auto ({c.calculatedConduitSize || c.conduitSize})</option>
+                                {CONDUIT_SIZES.map((size) => (
+                                  <option key={size} value={size}>
+                                    {size} {c.calculatedConduitSize && parseInt(size) < parseInt(c.calculatedConduitSize) ? "⚠️" : ""}
+                                  </option>
+                                ))}
+                              </select>
+                              <select
+                                value={c.conduitTypeOverride || c.conduitType || "PVC"}
+                                onChange={(e) =>
+                                  updateCircuit(c.id, {
+                                    conduitTypeOverride: e.target.value,
                                     conduitType: e.target.value,
                                   })
                                 }
-                                className="bg-slate-100 dark:bg-slate-800 text-slate-705 dark:text-slate-300 font-semibold border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-xxs cursor-pointer hover:bg-slate-200 print:appearance-none print:bg-transparent print:border-none print:p-0 font-sans"
+                                className={`bg-transparent font-semibold font-sans cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xxs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.conduitTypeOverride ? "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50" : "text-slate-705 dark:text-slate-300 border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"}`}
                               >
-                                <option value="PVC">PVC</option>
-                                <option value="EMT">EMT</option>
-                                <option value="IMC">IMC</option>
-                                <option value="RSC">RSC</option>
+                                {Object.keys(CONDUIT_LIBRARY).map((type) => (
+                                  <option key={type} value={type}>
+                                    {type}
+                                  </option>
+                                ))}
                               </select>
                             </span>
                           </div>
