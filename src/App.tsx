@@ -1388,6 +1388,8 @@ export default function App() {
 
   const handleLoadProject = (projectId: string, data: ProjectData) => {
     setCurrentProjectId(projectId);
+    
+    const currentPanel = data.panel || INITIAL_PANEL;
 
     // Normalize short circuit params
     const normalizedIscParams = { ...data.iscParams };
@@ -1424,7 +1426,7 @@ export default function App() {
     const seenCircuitIds = new Set<string>();
 
     const migratedSubSubPanels = (data.subSubPanels || []).map((sp) => {
-      const updatedCircuits = sp.circuits.map((c) => {
+      const updatedCircuits = (sp.circuits || []).map((c) => {
         let uniqueId = c.id;
         if (seenCircuitIds.has(uniqueId)) {
           uniqueId = safeUUID();
@@ -1468,7 +1470,7 @@ export default function App() {
     });
 
     const migratedSubPanels = (data.subPanels || []).map((sp) => {
-      const updatedCircuits = sp.circuits.map((c) => {
+      const updatedCircuits = (sp.circuits || []).map((c) => {
         let uniqueId = c.id;
         if (seenCircuitIds.has(uniqueId)) {
           uniqueId = safeUUID();
@@ -1516,7 +1518,7 @@ export default function App() {
       };
     });
 
-    const migratedCircuits = data.circuits.map((c) => {
+    const migratedCircuits = (data.circuits || []).map((c) => {
       let uniqueId = c.id;
       if (seenCircuitIds.has(uniqueId)) {
         uniqueId = safeUUID();
@@ -1528,7 +1530,7 @@ export default function App() {
         id: uniqueId,
         ...calculateCircuitValues(
           c,
-          data.panel,
+          currentPanel,
           migratedSubPanels,
           data.vdCalculations,
         ),
@@ -1536,12 +1538,12 @@ export default function App() {
     }) as Circuit[];
 
     const { mainFeeder: mainFeederData } = computePanelScheduleValues(
-      data.panel,
+      currentPanel,
       migratedCircuits,
       { vdCalculations: data.vdCalculations, panelId: "main" },
     );
 
-    let tc = data.panel.transformerConnection;
+    let tc = currentPanel.transformerConnection;
     if (tc === "Delta-Wye") tc = "Delta-Wye (Δ-Y)";
     else if (tc === "Wye (Star)") tc = "Wye (Star) Connection";
     else if (tc === "Delta") tc = "Delta Connection";
@@ -1549,22 +1551,22 @@ export default function App() {
     else tc = tc;
 
     const loadedPanel = {
-      ...data.panel,
+      ...currentPanel,
       transformerConnection: tc,
       mainBreakerAT:
-        data.panel.mainOverrides?.isOverrideEnabled &&
-        data.panel.mainOverrides.breakerAT
-          ? data.panel.mainOverrides.breakerAT
+        currentPanel.mainOverrides?.isOverrideEnabled &&
+        currentPanel.mainOverrides.breakerAT
+          ? currentPanel.mainOverrides.breakerAT
           : mainFeederData.cb,
       mainBreakerAF:
-        data.panel.mainOverrides?.isOverrideEnabled &&
-        data.panel.mainOverrides.breakerAF
-          ? data.panel.mainOverrides.breakerAF
+        currentPanel.mainOverrides?.isOverrideEnabled &&
+        currentPanel.mainOverrides.breakerAF
+          ? currentPanel.mainOverrides.breakerAF
           : mainFeederData.af,
       icRating:
-        data.panel.mainOverrides?.isOverrideEnabled &&
-        data.panel.mainOverrides.kaic
-          ? `${data.panel.mainOverrides.kaic}kAIC`
+        currentPanel.mainOverrides?.isOverrideEnabled &&
+        currentPanel.mainOverrides.kaic
+          ? `${currentPanel.mainOverrides.kaic}kAIC`
           : `${mainFeederData.kaic}kAIC`,
     };
 
@@ -1590,13 +1592,13 @@ export default function App() {
       setMainSource(data.mainSource);
     } else {
       setMainSource({
-        systemVoltage: data.panel.voltage,
-        systemFrequency: data.panel.frequency,
-        phaseConfiguration: data.panel.system,
+        systemVoltage: currentPanel.voltage,
+        systemFrequency: currentPanel.frequency,
+        phaseConfiguration: currentPanel.system,
         transformerConnection: tc || "N/A",
         availableFaultCurrent: data.iscParams?.utilityShortCircuitMVA || 10,
         sourceCapacity: 500,
-        utilityProvider: data.panel.utilityProvider || "Utility",
+        utilityProvider: currentPanel.utilityProvider || "Utility",
       });
     }
 
@@ -1605,7 +1607,7 @@ export default function App() {
       // Re-evaluate calculation based on source
       if (vd.source === "main") {
         const { mainCurrent, mainFeeder } = computePanelScheduleValues(
-          data.panel,
+          currentPanel,
           migratedCircuits,
         );
         return {
@@ -1613,8 +1615,8 @@ export default function App() {
           loadA: Number(mainCurrent.baseAmp.toFixed(2)),
           wireSize: mainFeeder.wire.size.toString(),
           wireSets: mainFeeder.wire.runs || 1,
-          voltage: data.panel.voltage,
-          systemType: (data.panel.system.includes("3PH") ? "3PH" : "1PH") as
+          voltage: currentPanel.voltage,
+          systemType: (currentPanel.system.includes("3PH") ? "3PH" : "1PH") as
             "1PH" | "3PH",
         };
       } else if (vd.source !== "custom") {

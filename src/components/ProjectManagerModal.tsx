@@ -47,7 +47,7 @@ export default function ProjectManagerModal({
   const [filterType, setFilterType] = useState<string>("All");
 
   const filteredProjects = projects
-    .filter(p => filterType === "All" || p.data.panel?.projectType === filterType)
+    .filter(p => filterType === "All" || p.data?.panel?.projectType === filterType)
     .sort((a, b) => b.lastModified - a.lastModified);
 
   useEffect(() => {
@@ -331,7 +331,7 @@ export default function ProjectManagerModal({
                     <div>
                       <h4 className={`font-bold flex items-center gap-2 ${currentProjectId === p.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-white'}`}>
                         {p.name}
-                        {p.data.panel?.projectType && (
+                        {p.data?.panel?.projectType && (
                           <span className="text-[9px] uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                             {p.data.panel.projectType}
                           </span>
@@ -343,7 +343,7 @@ export default function ProjectManagerModal({
                            Last modified: {new Date(p.lastModified).toLocaleString()}
                          </p>
                          <p className="text-xs text-slate-400 mt-1 font-medium bg-slate-100 dark:bg-slate-700/50 px-2 rounded-md">
-                           {p.data.circuits?.length || 0} Circuits {p.data.subPanels && p.data.subPanels.length > 0 ? `• ${p.data.subPanels.length} Sub-Panels` : ''}
+                           {p.data?.circuits?.length || 0} Circuits {p.data?.subPanels && p.data.subPanels.length > 0 ? `• ${p.data.subPanels.length} Sub-Panels` : ''}
                          </p>
                       </div>
                     </div>
