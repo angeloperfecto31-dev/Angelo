@@ -49,6 +49,9 @@ export interface VoltageDropCalcProps {
   onRequestUpgrade?: () => void;
   isExporting?: boolean;
   transformerPrimaryVoltage?: number;
+  iscParams?: any;
+  setIscParams?: React.Dispatch<React.SetStateAction<any>>;
+  setTransformerPrimaryVoltage?: (v: number) => void;
 }
 
 export default function VoltageDropCalc({
@@ -62,6 +65,9 @@ export default function VoltageDropCalc({
   onRequestUpgrade,
   isExporting = false,
   transformerPrimaryVoltage = 34500,
+  iscParams,
+  setIscParams,
+  setTransformerPrimaryVoltage,
 }: VoltageDropCalcProps) {
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({ main: true });
   const [searchQuery, setSearchQuery] = useState("");
@@ -433,7 +439,9 @@ export default function VoltageDropCalc({
       initialY: 180,
       data: {
         voltage: panel.voltage,
-        system: panel.system
+        system: panel.system,
+        primaryVoltage: iscParams?.primaryVoltage ?? transformerPrimaryVoltage ?? 13800,
+        transformerZ: iscParams?.transformerZ ?? 5.0,
       }
     });
 
@@ -539,7 +547,7 @@ export default function VoltageDropCalc({
     });
 
     return nodes;
-  }, [panel, circuits, allSubPanels, activeCalculations, panelGroups]);
+  }, [panel, circuits, allSubPanels, activeCalculations, panelGroups, transformerPrimaryVoltage, iscParams]);
 
   const positionsMap = useMemo(() => {
     const map: Record<string, { x: number; y: number }> = {};
@@ -1356,9 +1364,9 @@ export default function VoltageDropCalc({
                               color: "#475569",
                               fontWeight: "700"
                             }}>
-                              <p style={{ margin: 0 }}>Primary: <span style={{ color: "#1E293B" }}>13.8 kV</span></p>
+                              <p style={{ margin: 0 }}>Primary: <span style={{ color: "#1E293B" }}>{node.data.primaryVoltage >= 1000 ? `${(node.data.primaryVoltage / 1000).toFixed(1)} kV` : `${node.data.primaryVoltage} V`}</span></p>
                               <p style={{ margin: 0 }}>Secondary: <span style={{ color: "#1E293B" }}>{node.data.voltage} V</span></p>
-                              <p style={{ margin: 0 }}>Impedance: <span style={{ color: "#1E293B" }}>5.75% Z</span></p>
+                              <p style={{ margin: 0 }}>Impedance: <span style={{ color: "#1E293B" }}>{node.data.transformerZ}% Z</span></p>
                             </div>
                           </div>
                         </foreignObject>
@@ -1716,17 +1724,81 @@ export default function VoltageDropCalc({
 
                       {selectedElement.node.type === "transformer" && (
                         <>
-                          <div className="flex justify-between">
-                            <span>Utility Primary:</span>
-                            <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">13,800 V</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Secondary Output:</span>
-                            <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">{selectedElement.node.data.voltage} V</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Transformer Phasing:</span>
-                            <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">{selectedElement.node.data.system}</span>
+                          <div className="space-y-3 pt-1">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Utility Primary (Volts)</label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={selectedElement.node.data.primaryVoltage !== undefined ? selectedElement.node.data.primaryVoltage : (transformerPrimaryVoltage || 13800)}
+                                  onChange={(e) => {
+                                    const newVal = Math.max(1, Number(e.target.value));
+                                    if (setTransformerPrimaryVoltage) {
+                                      setTransformerPrimaryVoltage(newVal);
+                                    }
+                                    if (setIscParams) {
+                                      setIscParams((prev: any) => ({ ...prev, primaryVoltage: newVal }));
+                                    }
+                                    setSelectedElement((prev: any) => ({
+                                      ...prev,
+                                      node: {
+                                        ...prev.node,
+                                        data: {
+                                          ...prev.node.data,
+                                          primaryVoltage: newVal
+                                        }
+                                      }
+                                    }));
+                                  }}
+                                  className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <span className="absolute right-3 top-2.5 text-[9px] uppercase tracking-wider text-slate-400 font-bold pointer-events-none">
+                                  V
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Transformer Impedance (%Z)</label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={selectedElement.node.data.transformerZ !== undefined ? selectedElement.node.data.transformerZ : (iscParams?.transformerZ ?? 5.0)}
+                                  onChange={(e) => {
+                                    const newVal = Math.max(0.01, Number(e.target.value));
+                                    if (setIscParams) {
+                                      setIscParams((prev: any) => ({ ...prev, transformerZ: newVal }));
+                                    }
+                                    setSelectedElement((prev: any) => ({
+                                      ...prev,
+                                      node: {
+                                        ...prev.node,
+                                        data: {
+                                          ...prev.node.data,
+                                          transformerZ: newVal
+                                        }
+                                      }
+                                    }));
+                                  }}
+                                  className="w-full px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <span className="absolute right-3 top-2.5 text-[9px] uppercase tracking-wider text-slate-400 font-bold pointer-events-none">
+                                  % Z
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800/60 space-y-2">
+                              <div className="flex justify-between">
+                                <span>Secondary Output:</span>
+                                <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">{selectedElement.node.data.voltage} V</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Transformer Phasing:</span>
+                                <span className="text-slate-900 dark:text-slate-100 font-mono font-bold">{selectedElement.node.data.system}</span>
+                              </div>
+                            </div>
                           </div>
                         </>
                       )}

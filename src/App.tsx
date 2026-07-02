@@ -6181,9 +6181,12 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
-
                     calculations={vdCalculations}
                     setCalculations={setVdCalculations}
+                    iscParams={iscParams}
+                    setIscParams={setIscParams}
+                    transformerPrimaryVoltage={transformerPrimaryVoltage}
+                    setTransformerPrimaryVoltage={setTransformerPrimaryVoltage}
                     isPremium={
                       userPlan === "premium" ||
                       userPlan === "enterprise" ||
