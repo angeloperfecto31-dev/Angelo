@@ -87,6 +87,7 @@ export interface Circuit {
   subLoads?: SubLoad[];
   motorHP?: string;
   motorFLC?: number;
+  isLocked?: boolean;
 }
 
 export interface PanelConfig {

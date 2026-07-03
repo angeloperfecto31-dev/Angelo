@@ -20,6 +20,11 @@ import {
   MoveVertical,
   Search,
   RotateCcw,
+  Lock,
+  Unlock,
+  Sparkles,
+  RefreshCw,
+  Scale,
 } from "lucide-react";
 import {
   DndContext,
@@ -572,6 +577,130 @@ export default function LoadSchedule({
   );
 
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
+
+  const [showBalancer, setShowBalancer] = useState<boolean>(true);
+
+  const autoBalancePhases = () => {
+    if (!panel.system.includes("3PH")) return;
+
+    const updatedCircuits = circuits.map((c) => ({ ...c }));
+    const fixedLoads = { R: 0, Y: 0, B: 0 };
+    const unlockedSinglePhaseCircuits: Circuit[] = [];
+
+    updatedCircuits.forEach((c) => {
+      if (c.phases.length === 3 || c.is3PhaseMarker) {
+        fixedLoads.R += c.loadVA / 3;
+        fixedLoads.Y += c.loadVA / 3;
+        fixedLoads.B += c.loadVA / 3;
+      } else if (c.isLocked) {
+        c.phases.forEach((p) => {
+          if (p === "R" || p === "Y" || p === "B") {
+            fixedLoads[p as keyof typeof fixedLoads] += c.loadVA;
+          }
+        });
+      } else if (c.phases.length === 1) {
+        unlockedSinglePhaseCircuits.push(c);
+      } else {
+        c.phases.forEach((p) => {
+          if (p === "R" || p === "Y" || p === "B") {
+            fixedLoads[p as keyof typeof fixedLoads] += c.loadVA / (c.phases.length || 1);
+          }
+        });
+      }
+    });
+
+    unlockedSinglePhaseCircuits.sort((a, b) => (b.loadVA || 0) - (a.loadVA || 0));
+    const currentLoads = { ...fixedLoads };
+
+    unlockedSinglePhaseCircuits.forEach((c) => {
+      let bestPhase: Phase = "R";
+      let minLoad = currentLoads.R;
+
+      if (currentLoads.Y < minLoad) {
+        bestPhase = "Y";
+        minLoad = currentLoads.Y;
+      }
+      if (currentLoads.B < minLoad) {
+        bestPhase = "B";
+        minLoad = currentLoads.B;
+      }
+
+      c.phases = [bestPhase];
+      currentLoads[bestPhase] += c.loadVA;
+    });
+
+    let improved = true;
+    let passes = 0;
+    while (improved && passes < 15) {
+      improved = false;
+      passes++;
+
+      for (let i = 0; i < unlockedSinglePhaseCircuits.length; i++) {
+        const c = unlockedSinglePhaseCircuits[i];
+        const currentPhase = c.phases[0];
+        const phasesToTry: Phase[] = ["R", "Y", "B"].filter((p) => p !== currentPhase) as Phase[];
+
+        for (const targetPhase of phasesToTry) {
+          const nextLoads = { ...currentLoads };
+          nextLoads[currentPhase] -= c.loadVA;
+          nextLoads[targetPhase] += c.loadVA;
+
+          const currentMax = Math.max(currentLoads.R, currentLoads.Y, currentLoads.B);
+          const currentMin = Math.min(currentLoads.R, currentLoads.Y, currentLoads.B);
+          const currentDiff = currentMax - currentMin;
+
+          const nextMax = Math.max(nextLoads.R, nextLoads.Y, nextLoads.B);
+          const nextMin = Math.min(nextLoads.R, nextLoads.Y, nextLoads.B);
+          const nextDiff = nextMax - nextMin;
+
+          if (nextDiff < currentDiff) {
+            c.phases = [targetPhase];
+            currentLoads[currentPhase] -= c.loadVA;
+            currentLoads[targetPhase] += c.loadVA;
+            improved = true;
+            break;
+          }
+        }
+      }
+
+      for (let i = 0; i < unlockedSinglePhaseCircuits.length; i++) {
+        for (let j = i + 1; j < unlockedSinglePhaseCircuits.length; j++) {
+          const c1 = unlockedSinglePhaseCircuits[i];
+          const c2 = unlockedSinglePhaseCircuits[j];
+          const p1 = c1.phases[0];
+          const p2 = c2.phases[0];
+
+          if (p1 !== p2) {
+            const nextLoads = { ...currentLoads };
+            nextLoads[p1] = nextLoads[p1] - c1.loadVA + c2.loadVA;
+            nextLoads[p2] = nextLoads[p2] - c2.loadVA + c1.loadVA;
+
+            const currentMax = Math.max(currentLoads.R, currentLoads.Y, currentLoads.B);
+            const currentMin = Math.min(currentLoads.R, currentLoads.Y, currentLoads.B);
+            const currentDiff = currentMax - currentMin;
+
+            const nextMax = Math.max(nextLoads.R, nextLoads.Y, nextLoads.B);
+            const nextMin = Math.min(nextLoads.R, nextLoads.Y, nextLoads.B);
+            const nextDiff = nextMax - nextMin;
+
+            if (nextDiff < currentDiff) {
+              c1.phases = [p2];
+              c2.phases = [p1];
+              currentLoads[p1] = nextLoads[p1];
+              currentLoads[p2] = nextLoads[p2];
+              improved = true;
+            }
+          }
+        }
+      }
+    }
+
+    const finalCircuits = updatedCircuits.map((c) => {
+      return { ...c, ...calculateCircuit(c) } as Circuit;
+    });
+
+    setCircuits(finalCircuits);
+  };
 
   // Drag and Drop Sensors
   const sensors = useSensors(
@@ -2797,8 +2926,445 @@ export default function LoadSchedule({
         </div>
       </section>
 
+      {/* 3-Phase Load Balancer & Optimizer Section */}
+      {panel.system.includes("3PH") ? (
+        <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden no-print transition-all">
+          <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-600 dark:text-indigo-400">
+                <Scale className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <span>3-Phase Load Balancer & Optimizer</span>
+                  <span className="text-[10px] uppercase font-black tracking-wider bg-indigo-100 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded text-indigo-700 dark:text-indigo-400">
+                    PEC Compliant
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Optimize phase balancing across Phase A, B, and C to reduce neutral currents and transformer heat.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+              <button
+                onClick={autoBalancePhases}
+                className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-200 dark:shadow-none hover:scale-[1.02] cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Auto Balance Load
+              </button>
+              <button
+                onClick={() => setShowBalancer(!showBalancer)}
+                className="flex-1 md:flex-initial px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                {showBalancer ? "Collapse Panel" : "Expand Panel"}
+              </button>
+            </div>
+          </div>
+
+          {showBalancer && (
+            <div className="p-6 space-y-6">
+              {/* Top Section: Visualization & Compliance Gauges */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* 1. Bar Chart Visualizer */}
+                <div className="lg:col-span-6 bg-slate-50 dark:bg-slate-900/60 rounded-xl p-5 border border-slate-100 dark:border-slate-800/60 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                      Interactive Phase Load Visualizer (VA)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mb-4">
+                      Loads are color-coded: Red (A/R), Yellow/Amber (B/Y), Blue (C/B).
+                    </p>
+                  </div>
+
+                  <div className="h-44 flex items-end justify-around relative pt-6 px-4">
+                    {/* Horizontal Average Line */}
+                    {Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0 && (
+                      <div
+                        className="absolute left-0 right-0 border-t-2 border-dashed border-indigo-400 dark:border-indigo-500/50 z-10"
+                        style={{
+                          bottom: `${Math.min(
+                            100,
+                            (((phaseLoads.R + phaseLoads.Y + phaseLoads.B) / 3) /
+                              Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) *
+                              100
+                          )}%`,
+                        }}
+                      >
+                        <span className="absolute -top-4 right-2 text-[9px] font-bold text-indigo-500 dark:text-indigo-400 bg-slate-50 dark:bg-slate-900 px-1 py-0.5 rounded shadow-2xs border border-indigo-100 dark:border-indigo-950">
+                          Avg: {((phaseLoads.R + phaseLoads.Y + phaseLoads.B) / 3).toFixed(0)} VA
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Phase A/R Bar */}
+                    <div className="flex flex-col items-center w-1/4 h-full justify-end z-20 group relative">
+                      <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-950 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-bold tracking-wider z-50">
+                        {phaseLoads.R.toLocaleString()} VA
+                      </div>
+                      <div
+                        className="w-12 bg-red-500 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
+                        style={{
+                          height: `${Math.max(
+                            5,
+                            Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0
+                              ? (phaseLoads.R / Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) * 100
+                              : 0
+                          )}%`,
+                        }}
+                      >
+                        <span className="text-[10px] font-extrabold text-white mb-2 rotate-0">
+                          {Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0
+                            ? `${((phaseLoads.R / Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) * 100).toFixed(0)}%`
+                            : "0%"}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-2">
+                        Phase A (R)
+                      </span>
+                    </div>
+
+                    {/* Phase B/Y Bar */}
+                    <div className="flex flex-col items-center w-1/4 h-full justify-end z-20 group relative">
+                      <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-950 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-bold tracking-wider z-50">
+                        {phaseLoads.Y.toLocaleString()} VA
+                      </div>
+                      <div
+                        className="w-12 bg-amber-400 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
+                        style={{
+                          height: `${Math.max(
+                            5,
+                            Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0
+                              ? (phaseLoads.Y / Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) * 100
+                              : 0
+                          )}%`,
+                        }}
+                      >
+                        <span className="text-[10px] font-extrabold text-slate-900 mb-2 rotate-0">
+                          {Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0
+                            ? `${((phaseLoads.Y / Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) * 100).toFixed(0)}%`
+                            : "0%"}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-2">
+                        Phase B (Y)
+                      </span>
+                    </div>
+
+                    {/* Phase C/B Bar */}
+                    <div className="flex flex-col items-center w-1/4 h-full justify-end z-20 group relative">
+                      <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-950 text-white text-[10px] px-1.5 py-0.5 rounded shadow font-bold tracking-wider z-50">
+                        {phaseLoads.B.toLocaleString()} VA
+                      </div>
+                      <div
+                        className="w-12 bg-blue-500 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
+                        style={{
+                          height: `${Math.max(
+                            5,
+                            Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0
+                              ? (phaseLoads.B / Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) * 100
+                              : 0
+                          )}%`,
+                        }}
+                      >
+                        <span className="text-[10px] font-extrabold text-white mb-2 rotate-0">
+                          {Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B) > 0
+                            ? `${((phaseLoads.B / Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B)) * 100).toFixed(0)}%`
+                            : "0%"}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 mt-2">
+                        Phase C (B)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Compliance Status Gauge */}
+                <div className="lg:col-span-6 bg-slate-50 dark:bg-slate-900/60 rounded-xl p-5 border border-slate-100 dark:border-slate-800/60 flex flex-col justify-between space-y-4">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                      PEC Phase Balance Compliance
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      {(() => {
+                        const getImbalanceRating = (imb: number) => {
+                          if (imb <= 5) {
+                            return {
+                              label: "Excellent",
+                              color: "text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/30 dark:border-emerald-900/50",
+                              indicator: "bg-emerald-500",
+                              compliance: "✔ Balanced",
+                              message: "The system phase distribution is highly optimized and fully complies with PEC recommendations. No adjustments are needed."
+                            };
+                          } else if (imb <= 10) {
+                            return {
+                              label: "Acceptable",
+                              color: "text-amber-700 bg-amber-50 border-amber-250 dark:text-amber-400 dark:bg-amber-950/20 dark:border-amber-900/50",
+                              indicator: "bg-amber-500",
+                              compliance: "⚠ Slightly Unbalanced",
+                              message: "The phase loading is slightly unbalanced but within acceptable operational boundaries (5-10%). Running the automatic balancer can optimize this further."
+                            };
+                          } else {
+                            return {
+                              label: "Unbalanced",
+                              color: "text-rose-700 bg-rose-50 border-rose-250 dark:text-rose-400 dark:bg-rose-950/20 dark:border-rose-900/50",
+                              indicator: "bg-rose-500",
+                              compliance: "❌ Excessively Unbalanced",
+                              message: "The phase load imbalance exceeds the recommended 10% limit under PEC guidelines. This can cause elevated neutral currents, voltage instability, and transformer heating. Run the Auto Balancer now to correct this."
+                            };
+                          }
+                        };
+                        const rating = getImbalanceRating(phaseImbalance);
+                        return (
+                          <div className="flex flex-col gap-2 w-full">
+                            <span className={`text-base font-extrabold px-3 py-1.5 rounded-xl border flex items-center gap-2 w-fit ${rating.color}`}>
+                              <span className={`w-2.5 h-2.5 rounded-full ${rating.indicator}`} />
+                              {rating.label} ({phaseImbalance.toFixed(1)}% Imbalance)
+                            </span>
+                            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-lg text-xs text-left">
+                              <p className="font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wide">
+                                {rating.compliance}
+                              </p>
+                              <p className="text-slate-500 mt-1 leading-relaxed">
+                                {rating.message}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
+                      DYNAMIC ANALYSIS & ADJUSTMENT ADVICE
+                    </h4>
+                    <p className="text-[11px] text-indigo-600 dark:text-indigo-400 italic bg-indigo-50/40 dark:bg-indigo-950/20 px-3 py-2 rounded-lg border border-indigo-100/30">
+                      {(() => {
+                        if (phaseImbalance <= 5) {
+                          return "The phase load distribution is optimally balanced. All single-phase loads are evenly distributed across R, Y, and B phases.";
+                        }
+                        
+                        const phases = [
+                          { name: "Phase A (Phase R)", val: phaseLoads.R },
+                          { name: "Phase B (Phase Y)", val: phaseLoads.Y },
+                          { name: "Phase C (Phase B)", val: phaseLoads.B },
+                        ];
+                        phases.sort((a, b) => b.val - a.val);
+                        const highest = phases[0];
+                        const lowest = phases[2];
+                        
+                        return `The highest loaded phase is ${highest.name} with ${highest.val.toLocaleString()} VA, and the lowest loaded phase is ${lowest.name} with ${lowest.val.toLocaleString()} VA. Running the automatic balancer will shift single-phase loads from ${highest.name} to ${lowest.name} to minimize this gap.`;
+                      })()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Middle Section: Real-Time Load Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                    Total Connected Load
+                  </span>
+                  <p className="text-lg font-black text-slate-800 dark:text-slate-150 mt-1">
+                    {(phaseLoads.R + phaseLoads.Y + phaseLoads.B).toLocaleString()} <span className="text-[10px] font-bold">VA</span>
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                    Total Demand Load
+                  </span>
+                  <p className="text-lg font-black text-slate-800 dark:text-slate-150 mt-1">
+                    {(mainCurrent.baseAmp * (maxDemandDetails.systemVoltage || 230) * (panel.system.includes("3PH") ? 1.732 : 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px] font-bold">VA</span>
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                    Demand Current (Line)
+                  </span>
+                  <p className="text-lg font-black text-slate-800 dark:text-slate-150 mt-1">
+                    {mainCurrent.baseAmp.toFixed(1)} <span className="text-[10px] font-bold">A</span>
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                    Avg Phase Loading
+                  </span>
+                  <p className="text-lg font-black text-slate-800 dark:text-slate-150 mt-1">
+                    {((phaseLoads.R + phaseLoads.Y + phaseLoads.B) / 3).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px] font-bold">VA</span>
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                    Max / Min Phase VA
+                  </span>
+                  <p className="text-sm font-black text-slate-800 dark:text-slate-150 mt-1.5 truncate">
+                    {Math.max(phaseLoads.R, phaseLoads.Y, phaseLoads.B).toLocaleString(undefined, { maximumFractionDigits: 0 })} / {Math.min(phaseLoads.R, phaseLoads.Y, phaseLoads.B).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">
+                    Max / Min Current
+                  </span>
+                  <p className="text-sm font-black text-slate-800 dark:text-slate-150 mt-1.5">
+                    {Math.max(phaseAmps.R + phaseAmps.threePhase, phaseAmps.Y + phaseAmps.threePhase, phaseAmps.B + phaseAmps.threePhase).toFixed(1)}A / {Math.min(phaseAmps.R + phaseAmps.threePhase, phaseAmps.Y + phaseAmps.threePhase, phaseAmps.B + phaseAmps.threePhase).toFixed(1)}A
+                  </p>
+                </div>
+              </div>
+
+              {/* Bottom Section: Single-Phase Circuits List & Overrides */}
+              <div className="border border-slate-150 dark:border-slate-800 rounded-xl overflow-hidden">
+                <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-150 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Single-Phase Circuits Manager
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Change phase assignments or lock circuits so they are skipped by the Auto-Balancer heuristic.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const updated = circuits.map(c => {
+                          if (c.phases.length === 1) {
+                            return { ...c, isLocked: true };
+                          }
+                          return c;
+                        });
+                        setCircuits(updated);
+                      }}
+                      className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    >
+                      Lock All
+                    </button>
+                    <button
+                      onClick={() => {
+                        const updated = circuits.map(c => {
+                          if (c.phases.length === 1) {
+                            return { ...c, isLocked: false };
+                          }
+                          return c;
+                        });
+                        setCircuits(updated);
+                      }}
+                      className="px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    >
+                      Unlock All
+                    </button>
+                    <span className="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                      {circuits.filter(c => c.phases.length === 1 && c.isLocked).length} of{" "}
+                      {circuits.filter(c => c.phases.length === 1).length} Locked
+                    </span>
+                  </div>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                  {circuits.filter(c => c.phases.length === 1).map((c) => (
+                    <div key={c.id} className="p-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 flex items-center justify-between gap-4 text-xs">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="font-extrabold text-indigo-600 w-6 text-center font-mono">
+                          #{c.circuitNo}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                            {c.description || "SPACE"}
+                          </p>
+                          <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            {c.loadVA.toLocaleString()} VA • {c.loadA.toFixed(2)} A
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 shrink-0">
+                        {/* Phase Selector Button Group */}
+                        <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                          {(["R", "Y", "B"] as Phase[]).map((p) => {
+                            const isSelected = c.phases.includes(p);
+                            return (
+                              <button
+                                key={p}
+                                onClick={() => {
+                                  updateCircuit(c.id, {
+                                    phases: [p],
+                                    is3PhaseMarker: false,
+                                  });
+                                }}
+                                className={`w-7 h-6 rounded font-extrabold text-[10px] flex items-center justify-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? p === "R"
+                                      ? "bg-red-500 text-white shadow-sm"
+                                      : p === "Y"
+                                        ? "bg-yellow-400 text-slate-900 shadow-sm"
+                                        : "bg-blue-500 text-white shadow-sm"
+                                    : "text-slate-400 dark:text-slate-500 hover:bg-slate-250 dark:hover:bg-slate-700"
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Lock Button */}
+                        <button
+                          onClick={() => {
+                            updateCircuit(c.id, {
+                              isLocked: !c.isLocked,
+                            });
+                          }}
+                          className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                            c.isLocked
+                              ? "bg-amber-50 dark:bg-amber-950/20 text-amber-500 border-amber-200 dark:border-amber-900"
+                              : "bg-white dark:bg-slate-800 text-slate-300 hover:text-slate-500 border-slate-200 dark:border-slate-700"
+                          }`}
+                          title={c.isLocked ? "Unlocks circuit phase assignment for auto-balancing" : "Locks circuit phase assignment"}
+                        >
+                          {c.isLocked ? (
+                            <Lock className="w-3.5 h-3.5 fill-amber-500/10" />
+                          ) : (
+                            <Unlock className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {circuits.filter(c => c.phases.length === 1).length === 0 && (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      No single-phase circuits available in this board schedule to rebalance.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : (
+        /* Show info card for 1-Phase System */
+        <section className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 no-print">
+          <div className="flex items-start gap-3 text-slate-500 text-xs text-left">
+            <Info className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-bold text-slate-700 dark:text-slate-300">3-Phase Load Balancer Active Status</p>
+              <p className="mt-0.5 opacity-80 leading-relaxed text-slate-500">
+                The current panel board configuration utilizes a 1-Phase (Single Phase) connection topology. The 3-Phase load balancer, automatic packing heuristic, and phase-lock features are active only on 3-Phase system designs (e.g. 3PH / 230V / 3-Wire or 4-Wire configurations).
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden panel-container print:rounded-none">
-        <div className="p-8 border-b-2 border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between gap-8 bg-slate-50/50 dark:bg-slate-900/50 print:bg-white print:py-4">
+        <div className="p-8 border-b-2 border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between gap-8 bg-slate-50/50 dark:bg-slate-900/50 print:bg-white print:py-4 font-sans">
           <div className="flex items-start gap-4">
             <div className="no-print p-3 bg-indigo-600 rounded-lg">
               <FileText className="w-6 h-6 text-white" />
@@ -3570,42 +4136,65 @@ export default function LoadSchedule({
                           })}
                         </div>
                       ) : (
-                        <div className="flex gap-0.5 justify-center flex-wrap">
-                          {["R", "Y", "B", "3Ø"].map((p) => (
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <div className="flex gap-0.5 justify-center flex-wrap">
+                            {["R", "Y", "B", "3Ø"].map((p) => (
+                              <button
+                                key={p}
+                                onClick={() => {
+                                  if (p === "3Ø") {
+                                    updateCircuit(c.id, {
+                                      phases: ["R", "Y", "B"],
+                                      is3PhaseMarker: true,
+                                    });
+                                  } else {
+                                    // Single phase selection replaces other phases to ensure it's reflected correctly
+                                    updateCircuit(c.id, {
+                                      phases: [p as Phase],
+                                      is3PhaseMarker: false,
+                                    });
+                                  }
+                                }}
+                                className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                                  p === "3Ø" && c.phases.length === 3
+                                    ? "bg-indigo-600 text-white"
+                                    : p !== "3Ø" &&
+                                        c.phases.includes(p as Phase) &&
+                                        c.phases.length === 1
+                                      ? p === "R"
+                                        ? "bg-red-600 text-white"
+                                        : p === "Y"
+                                          ? "bg-yellow-400 text-black"
+                                          : "bg-blue-600 text-white"
+                                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                } ${!panel.system.includes("3PH") && p !== "R" ? "hidden" : ""}`}
+                                style={{ fontSize: tableFontSize - 4 }}
+                              >
+                                {p}
+                              </button>
+                            ))}
+                          </div>
+                          {panel.system.includes("3PH") && c.phases.length === 1 && (
                             <button
-                              key={p}
                               onClick={() => {
-                                if (p === "3Ø") {
-                                  updateCircuit(c.id, {
-                                    phases: ["R", "Y", "B"],
-                                    is3PhaseMarker: true,
-                                  });
-                                } else {
-                                  // Single phase selection replaces other phases to ensure it's reflected correctly
-                                  updateCircuit(c.id, {
-                                    phases: [p as Phase],
-                                    is3PhaseMarker: false,
-                                  });
-                                }
+                                updateCircuit(c.id, {
+                                  isLocked: !c.isLocked,
+                                });
                               }}
-                              className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
-                                p === "3Ø" && c.phases.length === 3
-                                  ? "bg-indigo-600 text-white"
-                                  : p !== "3Ø" &&
-                                      c.phases.includes(p as Phase) &&
-                                      c.phases.length === 1
-                                    ? p === "R"
-                                      ? "bg-red-600 text-white"
-                                      : p === "Y"
-                                        ? "bg-yellow-400 text-black"
-                                        : "bg-blue-600 text-white"
-                                    : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
-                              } ${!panel.system.includes("3PH") && p !== "R" ? "hidden" : ""}`}
-                              style={{ fontSize: tableFontSize - 4 }}
+                              className={`p-1 rounded transition-colors no-print shrink-0 ${
+                                c.isLocked
+                                  ? "text-amber-500 hover:text-amber-600 bg-amber-50 dark:bg-amber-950/20"
+                                  : "text-slate-300 dark:text-slate-600 hover:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              }`}
+                              title={c.isLocked ? "Circuit locked to this phase during auto-balancing" : "Lock phase for auto-balancing"}
                             >
-                              {p}
+                              {c.isLocked ? (
+                                <Lock className="w-3.5 h-3.5 fill-amber-500/10" />
+                              ) : (
+                                <Unlock className="w-3.5 h-3.5" />
+                              )}
                             </button>
-                          ))}
+                          )}
                         </div>
                       )}
                     </td>
