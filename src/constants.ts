@@ -94,7 +94,26 @@ export const INITIAL_SHORT_CIRCUIT_PARAMS: ShortCircuitParams = {
   feederLength: 10,
   feederSize: '30',
   feederRuns: 1,
-  conductorType: 'Copper'
+  conductorType: 'Copper',
+  connectionType: 'Series',
+  parallelTransformersCount: 1,
+  parallelTransformersZMatch: true,
+  parallelTransformerskVAMatch: true,
+  parallelTransformersVoltageMatch: true,
+  parallelTransformersPhaseMatch: true,
+  parallelTransformersFreqMatch: true,
+  parallelTransformersVectorMatch: true,
+  parallelTransformersRating: 100,
+  parallelTransformersZ: 5,
+  parallelFeedersCount: 1,
+  parallelFeedersSizeMatch: true,
+  parallelFeedersLengthMatch: true,
+  parallelFeedersMaterialMatch: true,
+  parallelFeedersInsulationMatch: true,
+  parallelFeedersCustomSizes: ['30', '30'],
+  parallelFeedersCustomLengths: [10, 10],
+  parallelFeedersCustomMaterials: ['Copper', 'Copper'],
+  parallelFeedersCustomInsulations: ['THHN', 'THHN']
 };
 
 export const INITIAL_VOLTAGE_DROP_CALCULATIONS: VoltageDropCalculation[] = [

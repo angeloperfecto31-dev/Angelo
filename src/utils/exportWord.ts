@@ -25,7 +25,7 @@ import {
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
-import { computePanelScheduleValues, getPanelSystemVoltageFallback } from './computeEngine';
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance } from './computeEngine';
 
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
 function getMathSymbol(macro: string): string {
@@ -1000,9 +1000,9 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     conductorType: 'Copper'
   };
 
-  const baseKVA = params.transformerKVA;
-  const baseKV = params.transformerVoltage / 1000;
-  const zUtilitypu = baseKVA / (params.utilityShortCircuitMVA * 1000);
+  const baseKVA = params.transformerKVA || 500;
+  const baseKV = (params.transformerVoltage || 230) / 1000;
+  const zUtilitypu = baseKVA / ((params.utilityShortCircuitMVA || 500) * 1000);
   
   let connectionMultiplier = 1.0;
   let groundFaultFactor = 1.0;
@@ -1017,30 +1017,63 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     groundFaultFactor = 1.25; 
   }
   
-  const zTranspu = (params.transformerZ / 100) / connectionMultiplier;
+  let zTranspu = (params.transformerZ / 100) / connectionMultiplier;
+  let totalTransformerKVA = baseKVA;
+  const ptCount = params.parallelTransformersCount || 1;
+  const ptZMatch = params.parallelTransformersZMatch !== false;
+  const ptkVAMatch = params.parallelTransformerskVAMatch !== false;
 
-  // Feeder attenuation resistances matching typical standards
-  let feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
-  let feederX = 0.08 * (params.feederLength / 1000) / (params.feederRuns || 1);
-  if (params.feederSize) {
-    const tableVals = WIRE_IMPEDANCE_TABLE[params.feederSize.toString()];
-    if (tableVals) {
-      feederR = (tableVals.r * (params.feederLength / 1000)) / (params.feederRuns || 1);
-      feederX = (tableVals.x * (params.feederLength / 1000)) / (params.feederRuns || 1);
+  if (ptCount > 1) {
+    if (ptZMatch && ptkVAMatch) {
+      zTranspu = zTranspu / ptCount;
+      totalTransformerKVA = baseKVA * ptCount;
+    } else {
+      const z1pu = zTranspu;
+      const t2Rating = params.parallelTransformersRating || 100;
+      const t2Z = params.parallelTransformersZ || 5;
+      const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
+      
+      const y1 = 1 / z1pu;
+      const y2 = (ptCount - 1) / z2pu;
+      zTranspu = 1 / (y1 + y2);
+      totalTransformerKVA = baseKVA + (ptCount - 1) * t2Rating;
     }
   }
-  const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
+
+  // Feeder attenuation resistances matching typical standards
+  const feederRuns = params.feederRuns || 1;
+  const condType = params.conductorType || 'Copper';
+  const connType = params.connectionType || 'Series';
+
+  const eqFeeder = calculateEquivalentFeederImpedance(
+    params.feederLength || 10,
+    params.feederSize || '30',
+    feederRuns,
+    condType,
+    connType,
+    params.parallelFeedersSizeMatch !== false,
+    params.parallelFeedersLengthMatch !== false,
+    params.parallelFeedersMaterialMatch !== false,
+    params.parallelFeedersCustomSizes,
+    params.parallelFeedersCustomLengths,
+    params.parallelFeedersCustomMaterials,
+  );
+
+  const feederR = eqFeeder.r;
+  const feederX = eqFeeder.x;
+  const feederZ = eqFeeder.z;
   const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
 
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = params.transformerKVA / (1.732 * (params.transformerVoltage / 1000));
+  const iFullLoad = totalTransformerKVA / (1.732 * baseKV);
+  const iFullLoadBase = baseKVA / (1.732 * baseKV);
 
-  const iscMainBreaker = iFullLoad / (zUtilitypu + zTranspu);
-  const iscFaultPoint = iFullLoad / totalZpu;
+  const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
+  const iscFaultPoint = iFullLoadBase / totalZpu;
 
   // Subtransient motor feedback contribution computation (4 * standard full load current)
   const scMotorLoadVA = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
-  const motorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (1.732 * params.transformerVoltage)) * 4 : 0;
+  const motorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (1.732 * (params.transformerVoltage || 230))) * 4 : 0;
   
   const combinedSymmetricalCurrent = iscFaultPoint + motorContribution;
   const combinedAsymmetricalCurrent = combinedSymmetricalCurrent * 1.25;
@@ -1071,19 +1104,34 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     ]
   });
 
+  const tableRows = [
+    new TableRow({ children: scInputHeaders }),
+    createSCInputRow("Utility Source Short Circuit MVA Rating", params.utilityShortCircuitMVA?.toString() || "500", "MVA", false),
+    createSCInputRow("Substation Primary Line Voltage", params.primaryVoltage?.toString() || "34,500", "Volts", true),
+    createSCInputRow("Substation Secondary Rated Voltage", params.transformerVoltage?.toString() || "230", "Volts", false),
+    createSCInputRow("Transformer 1 Solid Power Rating", baseKVA.toString(), "kVA", true),
+    createSCInputRow("Transformer 1 Reactance Rating (%Z)", (params.transformerZ || 5.0).toString(), "% Impedance", false)
+  ];
+
+  if (ptCount > 1) {
+    tableRows.push(
+      createSCInputRow("Parallel Transformers Count", ptCount.toString(), "Units", true),
+      createSCInputRow("Parallel Transformer 2+ Sizing", (params.parallelTransformersRating || 100).toString(), "kVA", false),
+      createSCInputRow("Parallel Transformer 2+ %Z", (params.parallelTransformersZ || 5.0).toString(), "% Impedance", true),
+      createSCInputRow("Combined Transformer Bank Sizing", totalTransformerKVA.toString(), "kVA", false)
+    );
+  }
+
+  tableRows.push(
+    createSCInputRow("Feeder Connection Architecture", connType, "Topology", true),
+    createSCInputRow("Active Main Feeder Conductor Size", (params.feederSize || "30").toString(), "mm² THHN", false),
+    createSCInputRow("Active Main Feeder Conductor Length", (params.feederLength || 10).toString(), "Meters", true),
+    createSCInputRow("Conductor Multi-runs in Parallel", feederRuns.toString(), "Runs", false)
+  );
+
   docChildren.push(new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [
-      new TableRow({ children: scInputHeaders }),
-      createSCInputRow("Utility Source Short Circuit MVA Rating", params.utilityShortCircuitMVA?.toString() || "500", "MVA", false),
-      createSCInputRow("Substation Primary Line Voltage", params.primaryVoltage?.toString() || "34,500", "Volts", true),
-      createSCInputRow("Substation Secondary Rated Voltage", params.transformerVoltage?.toString() || "230", "Volts", false),
-      createSCInputRow("Transformer Solid Power Rating", params.transformerKVA?.toString() || "100", "kVA", true),
-      createSCInputRow("Transformer Reactance Rating (%Z)", params.transformerZ?.toString() || "5.0", "% Impedance", false),
-      createSCInputRow("Active Main Feeder Conductor Size", params.feederSize?.toString() || "30", "mm² THHN", true),
-      createSCInputRow("Active Main Feeder Conductor Length", params.feederLength?.toString() || "10", "Meters", false),
-      createSCInputRow("Conductor Multi-runs in Parallel", params.feederRuns?.toString() || "1", "Runs", true)
-    ],
+    rows: tableRows,
     borders: {
       top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
       bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
@@ -1096,17 +1144,17 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`C. Step-by-Step Per-Unit Impedance & Symmetrical Calculations`),
     
-    createParagraph(`1. Transformer Full Load Amperes ($I_{\\text{FLA}}$):`),
-    createFormulaCallout(`I_{\\text{FLA}} = \\frac{S_{\\text{trans, kVA}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}} = \\frac{${baseKVA} \\times 1000}{${params.transformerVoltage} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}`),
+    createParagraph(`1. Transformer Full Load Amperes ($I_{\\text{FLA}}$) - Based on total combined bank rating (${totalTransformerKVA} kVA):`),
+    createFormulaCallout(`I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}} = \\frac{${totalTransformerKVA} \\times 1000}{${params.transformerVoltage || 230} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}`),
     
     createParagraph(`2. Utility Source Grid Impedance ($Z_{\\text{util, pu}}$):`),
-    createFormulaCallout(`Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}`),
+    createFormulaCallout(`Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA || 500} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}`),
     
-    createParagraph(`3. Transformer Inductive Impedance ($Z_{\\text{trans, pu}}$) - Connection factor applied: ${connectionMultiplier}:`),
-    createFormulaCallout(`Z_{\\text{trans, pu}} = \\frac{(\\%Z_{\\text{transformer}} / 100)}{\\text{ConnectionMultiplier}} = \\frac{(${params.transformerZ}\\% / 100)}{${connectionMultiplier}} = ${zTranspu.toFixed(6)}\\text{ pr. u.}`),
+    createParagraph(`3. Combined Transformer Inductive Impedance ($Z_{\\text{trans, pu}}$) ${ptCount > 1 ? `incorporating ${ptCount} parallel banks (${ptZMatch && ptkVAMatch ? 'Matched' : 'Unbalanced'})` : ''}:`),
+    createFormulaCallout(`Z_{\\text{trans, pu}} = ${zTranspu.toFixed(6)}\\text{ pr. u.}`),
     
-    createParagraph(`4. Feeder Conductor Ohmic Impedance Sizing decay ($Z_{\\text{feeder}}$):`),
-    createFormulaCallout(`Z_{\\text{feeder}} = R + jX = ${feederR.toFixed(5)} + j${feederX.toFixed(5)}\\,\\Omega \\implies |Z_{\\text{feeder}}| = ${feederZ.toFixed(5)}\\,\\Omega`),
+    createParagraph(`4. Feeder Conductor Ohmic Impedance Sizing decay ($Z_{\\text{feeder}}$) - Connection: ${connType}, Runs: ${feederRuns}:`),
+    createFormulaCallout(`|Z_{\\text{feeder}}| = ${feederZ.toFixed(5)}\\,\\Omega \\quad (R = ${feederR.toFixed(5)}\\,\\Omega, \\, X = ${feederX.toFixed(5)}\\,\\Omega)`),
     
     createParagraph(`   Converting ohmic impedance into per-unit equivalent format:`),
     createFormulaCallout(`Z_{\\text{feeder, pu}} = Z_{\\text{feeder, } \\Omega} \\times \\frac{S_{\\text{base, kVA}} / 1000}{V_{\\text{base, kV}}^2} = ${zFeederpu.toFixed(6)}\\text{ pr. u.}`),
@@ -1118,10 +1166,10 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     createSubHeader(`D. Ultimate Symmetrical and Asymmetrical Fault Current Results`),
     
     createParagraph(`• Symmetrical Fault Current at Transformer Terminals ($I_{\\text{sc, Main}}$):`),
-    createFormulaCallout(`I_{\\text{sc, Main}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{util, pu}} + Z_{\\text{trans, pu}}} = \\frac{${iFullLoad.toFixed(2)}}{${zUtilitypu.toFixed(6)} + ${zTranspu.toFixed(6)}} = ${iscMainBreaker.toFixed(2)}\\text{ A}`),
+    createFormulaCallout(`I_{\\text{sc, Main}} = \\frac{I_{\\text{FLA, base}}}{Z_{\\text{util, pu}} + Z_{\\text{trans, pu}}} = \\frac{${iFullLoadBase.toFixed(2)}}{${zUtilitypu.toFixed(6)} + ${zTranspu.toFixed(6)}} = ${iscMainBreaker.toFixed(2)}\\text{ A}`),
     
     createParagraph(`• Symmetrical Fault Current at Distribution Panelboard Terminals ($I_{\\text{sc, Panel}}$):`),
-    createFormulaCallout(`I_{\\text{sc, Panel}} = \\frac{I_{\\text{FLA}}}{Z_{\\text{total, pu}}} = \\frac{${iFullLoad.toFixed(2)}}{${totalZpu.toFixed(6)}} = ${iscFaultPoint.toFixed(2)}\\text{ A}`),
+    createFormulaCallout(`I_{\\text{sc, Panel}} = \\frac{I_{\\text{FLA, base}}}{Z_{\\text{total, pu}}} = \\frac{${iFullLoadBase.toFixed(2)}}{${totalZpu.toFixed(6)}} = ${iscFaultPoint.toFixed(2)}\\text{ A}`),
     
     createParagraph(`• Combined synchronous symmetrical fault current incorporating rotating motor feedback ($I_{\\text{sc, sym}}$):`),
     createFormulaCallout(`I_{\\text{sc, sym}} = I_{\\text{sc, Panel}} + I_{\\text{motor}} = ${iscFaultPoint.toFixed(2)} + ${motorContribution.toFixed(2)} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A}`),

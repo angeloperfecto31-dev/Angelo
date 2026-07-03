@@ -778,6 +778,99 @@ export const calculateCircuitValues = (
   };
 };
 
+export const calculateEquivalentFeederImpedance = (
+  length: number,
+  size: string,
+  runs: number,
+  conductorType: 'Copper' | 'Aluminum',
+  connectionType: 'Series' | 'Parallel' = 'Series',
+  sizeMatch: boolean = true,
+  lengthMatch: boolean = true,
+  materialMatch: boolean = true,
+  customSizes?: string[],
+  customLengths?: number[],
+  customMaterials?: string[],
+) => {
+  const numRuns = runs > 1 ? runs : 1;
+
+  if (connectionType === 'Series') {
+    let totalR = 0;
+    let totalX = 0;
+    for (let i = 0; i < numRuns; i++) {
+      const currentSize = (!sizeMatch && customSizes?.[i]) ? customSizes[i] : size;
+      const currentLength = (!lengthMatch && customLengths?.[i]) ? customLengths[i] : length;
+      const currentMat = (!materialMatch && customMaterials?.[i]) ? customMaterials[i] : conductorType;
+
+      const tableVal = WIRE_IMPEDANCE_TABLE[currentSize] || WIRE_IMPEDANCE_TABLE['30'] || { r: 0.587, x: 0.135 };
+      let r = (tableVal.r * currentLength) / 1000;
+      if (currentMat === 'Aluminum') {
+        r *= 1.64;
+      }
+      const x = (tableVal.x * currentLength) / 1000;
+      totalR += r;
+      totalX += x;
+    }
+    return {
+      r: totalR,
+      x: totalX,
+      z: Math.sqrt(totalR * totalR + totalX * totalX),
+      paths: Array.from({ length: numRuns }).map((_, i) => ({
+        r: totalR / numRuns,
+        x: totalX / numRuns,
+        z: Math.sqrt(totalR * totalR + totalX * totalX) / numRuns,
+        share: 1 / numRuns
+      }))
+    };
+  } else {
+    let sumG = 0;
+    let sumB = 0;
+    const paths: Array<{ r: number; x: number; z: number; share: number }> = [];
+
+    for (let i = 0; i < numRuns; i++) {
+      const currentSize = (!sizeMatch && customSizes?.[i]) ? customSizes[i] : size;
+      const currentLength = (!lengthMatch && customLengths?.[i]) ? customLengths[i] : length;
+      const currentMat = (!materialMatch && customMaterials?.[i]) ? customMaterials[i] : conductorType;
+
+      const tableVal = WIRE_IMPEDANCE_TABLE[currentSize] || WIRE_IMPEDANCE_TABLE['30'] || { r: 0.587, x: 0.135 };
+      let r = (tableVal.r * currentLength) / 1000;
+      if (currentMat === 'Aluminum') {
+        r *= 1.64;
+      }
+      const x = (tableVal.x * currentLength) / 1000;
+      const zSq = r * r + x * x;
+      const z = Math.sqrt(zSq);
+
+      const g = r / zSq;
+      const b = -x / zSq;
+      sumG += g;
+      sumB += b;
+
+      paths.push({ r, x, z, share: 0 });
+    }
+
+    const denom = sumG * sumG + sumB * sumB;
+    const eqR = denom > 0 ? sumG / denom : 0.001;
+    const eqX = denom > 0 ? -sumB / denom : 0.001;
+    const eqZ = Math.sqrt(eqR * eqR + eqX * eqX);
+
+    let totalAdmittance = 0;
+    paths.forEach(p => {
+      totalAdmittance += p.z > 0 ? 1 / p.z : 0;
+    });
+
+    paths.forEach(p => {
+      p.share = totalAdmittance > 0 ? (p.z > 0 ? (1 / p.z) / totalAdmittance : 0) : (1 / numRuns);
+    });
+
+    return {
+      r: eqR,
+      x: eqX,
+      z: eqZ,
+      paths,
+    };
+  }
+};
+
 export const calculatePanelFault = (
   panel: PanelConfig,
   iscParams?: ShortCircuitParams,
@@ -801,20 +894,50 @@ export const calculatePanelFault = (
 
   const zUtilitypu =
     baseKVA / ((iscParams.utilityShortCircuitMVA || 500) * 1000);
-  const zTranspu = (iscParams.transformerZ || 5) / 100 / connectionMultiplier;
+  
+  let zTranspu = (iscParams.transformerZ || 5) / 100 / connectionMultiplier;
+
+  // Support Parallel Transformers
+  if (iscParams.parallelTransformersCount && iscParams.parallelTransformersCount > 1) {
+    const ptCount = iscParams.parallelTransformersCount;
+    const ptZMatch = iscParams.parallelTransformersZMatch !== false;
+    const ptkVAMatch = iscParams.parallelTransformerskVAMatch !== false;
+
+    if (ptZMatch && ptkVAMatch) {
+      zTranspu = zTranspu / ptCount;
+    } else {
+      const z1pu = zTranspu;
+      const t2Rating = iscParams.parallelTransformersRating || 100;
+      const t2Z = iscParams.parallelTransformersZ || 5;
+      const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
+      
+      const y1 = 1 / z1pu;
+      const y2 = (ptCount - 1) / z2pu;
+      zTranspu = 1 / (y1 + y2);
+    }
+  }
 
   let zFeederpu = 0;
   if (feederLength !== undefined && feederSize !== undefined) {
-    const tableVals = WIRE_IMPEDANCE_TABLE[feederSize];
-    const rPer1000m = tableVals?.r || 0.7; // default fallback if size not found
-    const xPer1000m = tableVals?.x || 0.08;
-    const runs = feederRuns || 1;
+    const runs = feederRuns || iscParams.feederRuns || 1;
+    const condType = iscParams.conductorType || 'Copper';
+    const connType = iscParams.connectionType || 'Series';
 
-    // total R and X for feeder in Ohms
-    const feederR = (rPer1000m * (feederLength / 1000)) / runs;
-    const feederX = (xPer1000m * (feederLength / 1000)) / runs;
-    const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
-    zFeederpu = (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
+    const eqFeeder = calculateEquivalentFeederImpedance(
+      feederLength,
+      feederSize,
+      runs,
+      condType,
+      connType,
+      iscParams.parallelFeedersSizeMatch !== false,
+      iscParams.parallelFeedersLengthMatch !== false,
+      iscParams.parallelFeedersMaterialMatch !== false,
+      iscParams.parallelFeedersCustomSizes,
+      iscParams.parallelFeedersCustomLengths,
+      iscParams.parallelFeedersCustomMaterials,
+    );
+
+    zFeederpu = (eqFeeder.z * (baseKVA / 1000)) / (baseKV * baseKV);
   }
 
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;

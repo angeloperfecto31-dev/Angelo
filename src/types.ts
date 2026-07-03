@@ -141,6 +141,27 @@ export interface ShortCircuitParams {
   feederSize: string; // mm²
   feederRuns: number;
   conductorType: 'Copper' | 'Aluminum';
+  isFeederRunsCustomized?: boolean;
+  isFeederSizeCustomized?: boolean;
+  connectionType?: 'Series' | 'Parallel';
+  parallelTransformersCount?: number;
+  parallelTransformersZMatch?: boolean;
+  parallelTransformerskVAMatch?: boolean;
+  parallelTransformersVoltageMatch?: boolean;
+  parallelTransformersPhaseMatch?: boolean;
+  parallelTransformersFreqMatch?: boolean;
+  parallelTransformersVectorMatch?: boolean;
+  parallelTransformersRating?: number;
+  parallelTransformersZ?: number;
+  parallelFeedersCount?: number;
+  parallelFeedersSizeMatch?: boolean;
+  parallelFeedersLengthMatch?: boolean;
+  parallelFeedersMaterialMatch?: boolean;
+  parallelFeedersInsulationMatch?: boolean;
+  parallelFeedersCustomSizes?: string[];
+  parallelFeedersCustomLengths?: number[];
+  parallelFeedersCustomMaterials?: string[];
+  parallelFeedersCustomInsulations?: string[];
 }
 
 export interface VoltageDropCalculation {

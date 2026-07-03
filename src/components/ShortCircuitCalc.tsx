@@ -3,7 +3,7 @@ import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } 
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { exportToCAD } from '../utils/exportDxf';
-import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace } from '../utils/computeEngine';
+import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance } from '../utils/computeEngine';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -180,44 +180,123 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     }
 
     // 1. Utility Isc
-    const baseKVA = params.transformerKVA;
-    const baseKV = params.transformerVoltage / 1000;
-    const zUtilitypu = baseKVA / (params.utilityShortCircuitMVA * 1000);
+    const baseKVA = params.transformerKVA || 500;
+    const baseKV = (params.transformerVoltage || 230) / 1000;
+    const zUtilitypu = baseKVA / ((params.utilityShortCircuitMVA || 500) * 1000);
     
-    // 2. Transformer Isc
-    // Open Delta banks have varying per-unit impedances; assuming baseKVA is bank KVA.
-    const zTranspu = (params.transformerZ / 100) / connectionMultiplier;
+    // 2. Transformer Impedance & Parallel Support
+    let zTranspu = (params.transformerZ || 5) / 100 / connectionMultiplier;
+    let totalTransformerKVA = baseKVA;
+    let transformer2Share = 0;
+    let transformer1Share = 100;
+    const ptCount = params.parallelTransformersCount || 1;
 
-    // 3. Feeder Impedance Estimate (Simplified pu)
-    let feederR = 0.7 * (params.feederLength / 1000) / (params.feederRuns || 1);
-    let feederX = 0.08 * (params.feederLength / 1000) / (params.feederRuns || 1);
-    
-    if (params.feederSize) {
-      const tableVals = WIRE_IMPEDANCE_TABLE[params.feederSize.toString()];
-      if (tableVals) {
-        feederR = (tableVals.r * (params.feederLength / 1000)) / (params.feederRuns || 1);
-        feederX = (tableVals.x * (params.feederLength / 1000)) / (params.feederRuns || 1);
+    if (ptCount > 1) {
+      const ptZMatch = params.parallelTransformersZMatch !== false;
+      const ptkVAMatch = params.parallelTransformerskVAMatch !== false;
+
+      if (ptZMatch && ptkVAMatch) {
+        zTranspu = zTranspu / ptCount;
+        totalTransformerKVA = baseKVA * ptCount;
+        transformer1Share = 100 / ptCount;
+        transformer2Share = 100 / ptCount;
+      } else {
+        const z1pu = zTranspu;
+        const t2Rating = params.parallelTransformersRating || 100;
+        const t2Z = params.parallelTransformersZ || 5;
+        const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
+        
+        const y1 = 1 / z1pu;
+        const y2 = (ptCount - 1) / z2pu;
+        zTranspu = 1 / (y1 + y2);
+        totalTransformerKVA = baseKVA + (ptCount - 1) * t2Rating;
+
+        const s1_z1 = baseKVA / (params.transformerZ || 5);
+        const s2_z2 = t2Rating / t2Z;
+        const totalAdmittance = s1_z1 + (ptCount - 1) * s2_z2;
+        
+        transformer1Share = totalAdmittance > 0 ? (s1_z1 / totalAdmittance) * 100 : 50;
+        transformer2Share = totalAdmittance > 0 ? (s2_z2 / totalAdmittance) * 100 : 50;
       }
     }
 
-    const feederZ = Math.sqrt(feederR*feederR + feederX*feederX);
+    // 3. Feeder Impedance Estimate (Series vs Parallel)
+    const runs = params.feederRuns || 1;
+    const condType = params.conductorType || 'Copper';
+    const connType = params.connectionType || 'Series';
+
+    const eqFeeder = calculateEquivalentFeederImpedance(
+      params.feederLength || 10,
+      params.feederSize || '30',
+      runs,
+      condType,
+      connType,
+      params.parallelFeedersSizeMatch !== false,
+      params.parallelFeedersLengthMatch !== false,
+      params.parallelFeedersMaterialMatch !== false,
+      params.parallelFeedersCustomSizes,
+      params.parallelFeedersCustomLengths,
+      params.parallelFeedersCustomMaterials,
+    );
+
+    const feederR = eqFeeder.r;
+    const feederX = eqFeeder.x;
+    const feederZ = eqFeeder.z;
     const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
 
     const totalZpu = zUtilitypu + zTranspu + zFeederpu;
     
-    const iFullLoad = params.transformerKVA / (1.732 * (params.transformerVoltage / 1000));
+    // FLA based on combined capacity
+    const iFullLoad = totalTransformerKVA / (1.732 * baseKV);
+    const iFullLoadBase = baseKVA / (1.732 * baseKV); // base FLA for pu
     
     // Isc at different points
-    // Max Symmetrical Short Circuit Current
-    const iscMainBreaker = iFullLoad / (zUtilitypu + zTranspu);
-    const iscFaultPoint = iFullLoad / totalZpu;
+    const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
+    const iscFaultPoint = iFullLoadBase / totalZpu;
 
-    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (1.732 * params.transformerVoltage)) * 4 : 0;
-    
+    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (1.732 * (params.transformerVoltage || 230))) * 4 : 0;
     const multiplier = 1 / totalZpu;
 
     // Fault 1 (HV side or Primary Service Entrance)
-    const fault1Isc = (params.utilityShortCircuitMVA * 1000000) / (1.732 * params.primaryVoltage);
+    const fault1Isc = ((params.utilityShortCircuitMVA || 500) * 1000000) / (1.732 * (params.primaryVoltage || 34500));
+
+    // Validations & Safety Warnings
+    const warnings: string[] = [];
+    if (ptCount > 1) {
+      if (params.parallelTransformersVoltageMatch === false) {
+        warnings.push("CRITICAL: Secondary voltage mismatch detected. Paralleling is prohibited due to risk of destructive circulating currents.");
+      }
+      if (params.parallelTransformersPhaseMatch === false) {
+        warnings.push("CRITICAL: Different phase configurations. Paralleling will cause a catastrophic phase-to-phase short circuit.");
+      }
+      if (params.parallelTransformersFreqMatch === false) {
+        warnings.push("CRITICAL: Different operating frequencies cannot be paralleled.");
+      }
+      if (params.parallelTransformersVectorMatch === false) {
+        warnings.push("WARNING: Vector group mismatch. This will result in high circulating currents through neutral/ground.");
+      }
+      // Overloaded transformer check
+      const t1ActualLoad = (transformer1Share / 100) * totalTransformerKVA;
+      const t2ActualLoad = (transformer2Share / 100) * totalTransformerKVA;
+      if (t1ActualLoad > baseKVA) {
+        warnings.push(`WARNING: Transformer 1 is overloaded (${((t1ActualLoad / baseKVA) * 100).toFixed(0)}% of rating) due to mismatched impedances.`);
+      }
+      if (t2ActualLoad > (params.parallelTransformersRating || 100)) {
+        warnings.push(`WARNING: Transformer 2 is overloaded (${((t2ActualLoad / (params.parallelTransformersRating || 100)) * 100).toFixed(0)}% of rating) due to mismatched impedances.`);
+      }
+    }
+
+    if (runs > 1 && connType === 'Parallel') {
+      if (params.parallelFeedersSizeMatch === false) {
+        warnings.push("WARNING: Unequal parallel conductor sizes detected. Smaller cables may carry excessive current, leading to overheating.");
+      }
+      if (params.parallelFeedersLengthMatch === false) {
+        warnings.push("WARNING: Unequal lengths in parallel conductors will cause impedance mismatch, leading to unequal current distribution.");
+      }
+      if (params.parallelFeedersMaterialMatch === false) {
+        warnings.push("WARNING: Mixed Copper/Aluminum conductors in parallel. Standard engineering codes prohibit this due to differing resistance coefficients.");
+      }
+    }
 
     return {
       fla: iFullLoad.toFixed(2),
@@ -236,7 +315,12 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       iscFault2: iscMainBreaker.toFixed(2),
       iscFault3: (iscFaultPoint + motorContribution).toFixed(2),
       connectionMultiplier: connectionMultiplier.toFixed(3),
-      groundFaultFactor: groundFaultFactor.toFixed(2)
+      groundFaultFactor: groundFaultFactor.toFixed(2),
+      totalTransformerKVA,
+      transformer1Share,
+      transformer2Share,
+      eqFeeder,
+      warnings
     };
   }, [params, motorLoadVA]);
 
@@ -436,13 +520,55 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
   const passedDevicesCount = kaicValidationData.filter(d => d.status === "PASS").length;
   const failedDevicesCount = kaicValidationData.filter(d => d.status === "FAIL").length;
 
+  const handleCustomSizeChange = (index: number, val: string) => {
+    const sizes = [...(params.parallelFeedersCustomSizes || [])];
+    sizes[index] = val;
+    setParams({ ...params, parallelFeedersCustomSizes: sizes });
+  };
+  const handleCustomLengthChange = (index: number, val: number) => {
+    const lengths = [...(params.parallelFeedersCustomLengths || [])];
+    lengths[index] = val;
+    setParams({ ...params, parallelFeedersCustomLengths: lengths });
+  };
+  const handleCustomMaterialChange = (index: number, val: 'Copper' | 'Aluminum') => {
+    const mats = [...(params.parallelFeedersCustomMaterials || [])];
+    mats[index] = val;
+    setParams({ ...params, parallelFeedersCustomMaterials: mats });
+  };
+
   return (
     <div className="w-full max-w-full space-y-6">
       <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 overflow-hidden no-print">
-        <div className="flex items-center gap-2 mb-6">
-          <ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-400" />
-          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-sans">Calculation Parameters</h2>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-sans">Calculation Parameters</h2>
+          </div>
+          {/* Connection Type Config */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setParams({ ...params, connectionType: 'Series' })}
+              className={`px-3 py-1.5 rounded-lg text-xxs font-black tracking-wider uppercase transition-all ${
+                (params.connectionType || 'Series') === 'Series'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-black'
+                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 font-semibold'
+              }`}
+            >
+              Series Connection
+            </button>
+            <button
+              onClick={() => setParams({ ...params, connectionType: 'Parallel' })}
+              className={`px-3 py-1.5 rounded-lg text-xxs font-black tracking-wider uppercase transition-all ${
+                params.connectionType === 'Parallel'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-black'
+                  : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 font-semibold'
+              }`}
+            >
+              Parallel Connection
+            </button>
+          </div>
         </div>
+
         <div className="flex flex-col gap-6">
           {circuits && panel && (
             <div className="space-y-1.5 p-4 bg-red-50/50 dark:bg-red-950/25 rounded-xl border border-red-100 dark:border-red-900/40">
@@ -454,6 +580,12 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                   setSource(val);
                   if (val === 'custom') {
                     setParams(INITIAL_SHORT_CIRCUIT_PARAMS);
+                  } else if (val === 'auto') {
+                    setParams(p => ({
+                      ...p,
+                      isFeederRunsCustomized: false,
+                      isFeederSizeCustomized: false
+                    }));
                   }
                 }} 
                 className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-900 dark:text-red-200 font-medium font-sans mt-2 shadow-sm focus:outline-none"
@@ -513,7 +645,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                 <div className="space-y-1.5 flex gap-2">
                   <div className="flex-1">
                      <label className="text-xs font-bold text-slate-400 uppercase">Size(mm²)</label>
-                     <select value={params.feederSize} onChange={e => setParams({...params, feederSize: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
+                     <select value={params.feederSize} onChange={e => setParams({...params, feederSize: e.target.value, isFeederSizeCustomized: true})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none">
                         {['2.0', '3.5', '5.5', '8.0', '14', '22', '30', '38', '50', '60', '80', '100', '125', '150', '200', '250', '325', '400', '500'].map(s => <option key={s} value={s} className="dark:bg-slate-900 dark:text-slate-100">{s}</option>)}
                      </select>
                   </div>
@@ -526,10 +658,258 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                   </div>
                   <div className="w-16">
                      <label className="text-xs font-bold text-slate-400 uppercase">Runs</label>
-                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value), isFeederRunsCustomized: true})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                   </div>
                 </div>
           </div>
+
+          {/* ADVANCED PARALLEL CONFIGURATION SECTION */}
+          {((params.connectionType === 'Parallel') || (params.feederRuns && params.feederRuns > 1)) && (
+            <div className="border-t border-slate-100 dark:border-slate-800 pt-6 space-y-6">
+              <h4 className="text-xxs font-black tracking-widest text-slate-400 uppercase">
+                Parallel Configuration & Compatibility Verification
+              </h4>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 1. Parallel Transformers Panel */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-800/80 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Operating Parallel Transformers
+                    </span>
+                    <select
+                      value={params.parallelTransformersCount || 1}
+                      onChange={e => setParams({ ...params, parallelTransformersCount: parseInt(e.target.value) })}
+                      className="px-2 py-1 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-sm font-semibold text-slate-800 dark:text-slate-200 outline-none"
+                    >
+                      <option value="1">1 (Single Transformer)</option>
+                      <option value="2">2 (Operating in Parallel)</option>
+                      <option value="3">3 (Operating in Parallel)</option>
+                      <option value="4">4 (Operating in Parallel)</option>
+                    </select>
+                  </div>
+
+                  {(params.parallelTransformersCount || 1) > 1 && (
+                    <div className="space-y-4 animate-fade-in text-xs">
+                      {/* Matching toggle */}
+                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/40 pb-2">
+                        <span className="text-slate-500 font-medium">Match Transformer 1 Impedance & kVA</span>
+                        <input
+                          type="checkbox"
+                          checked={params.parallelTransformersZMatch !== false && params.parallelTransformerskVAMatch !== false}
+                          onChange={e => setParams({
+                            ...params,
+                            parallelTransformersZMatch: e.target.checked,
+                            parallelTransformerskVAMatch: e.target.checked
+                          })}
+                          className="w-4 h-4 text-red-600 border-slate-250 rounded focus:ring-red-500"
+                        />
+                      </div>
+
+                      {/* Custom inputs if not matching */}
+                      {!(params.parallelTransformersZMatch !== false && params.parallelTransformerskVAMatch !== false) && (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Tx 2+ Rating (kVA)</label>
+                            <input
+                              type="number"
+                              value={params.parallelTransformersRating || 100}
+                              onChange={e => setParams({ ...params, parallelTransformersRating: parseFloat(e.target.value) })}
+                              className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Tx 2+ Impedance (%Z)</label>
+                            <input
+                              type="number"
+                              value={params.parallelTransformersZ || 5}
+                              onChange={e => setParams({ ...params, parallelTransformersZ: parseFloat(e.target.value) })}
+                              className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Compatibility Checkboxes (Toggle to false to trigger violations!) */}
+                      <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                          Compatibility Guardrails
+                        </span>
+                        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-400">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={params.parallelTransformersVoltageMatch !== false}
+                              onChange={e => setParams({ ...params, parallelTransformersVoltageMatch: e.target.checked })}
+                              className="w-3.5 h-3.5 text-red-600"
+                            />
+                            <span>Identical Voltages</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={params.parallelTransformersPhaseMatch !== false}
+                              onChange={e => setParams({ ...params, parallelTransformersPhaseMatch: e.target.checked })}
+                              className="w-3.5 h-3.5 text-red-600"
+                            />
+                            <span>Phase Angle Match</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={params.parallelTransformersFreqMatch !== false}
+                              onChange={e => setParams({ ...params, parallelTransformersFreqMatch: e.target.checked })}
+                              className="w-3.5 h-3.5 text-red-600"
+                            />
+                            <span>Same Frequency</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={params.parallelTransformersVectorMatch !== false}
+                              onChange={e => setParams({ ...params, parallelTransformersVectorMatch: e.target.checked })}
+                              className="w-3.5 h-3.5 text-red-600"
+                            />
+                            <span>Vector Group Match</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Load sharing read-out */}
+                      <div className="p-2.5 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-amber-800 dark:text-amber-300">
+                        <span className="font-bold block mb-0.5">Transformer Load Distribution:</span>
+                        <div className="font-mono text-xxs flex justify-between">
+                          <span>Transformer 1 ({params.transformerKVA} kVA):</span>
+                          <span className="font-bold">{calculation.transformer1Share?.toFixed(1)}% share</span>
+                        </div>
+                        <div className="font-mono text-xxs flex justify-between mt-1">
+                          <span>Transformer 2+ ({params.parallelTransformersCount || 1 > 1 ? (params.parallelTransformersCount || 1) - 1 : 0}x {params.parallelTransformersRating || 100} kVA):</span>
+                          <span className="font-bold">{(calculation.transformer2Share * ((params.parallelTransformersCount || 2) - 1))?.toFixed(1)}% share</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Parallel Feeders Panel */}
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-800/80 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/40 pb-2">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Parallel Feeder Conductor Details
+                    </span>
+                    <span className="text-xxs font-black bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400 px-1.5 py-0.5 rounded uppercase">
+                      {params.feederRuns || 1} Runs in Parallel
+                    </span>
+                  </div>
+
+                  {parseInt(params.feederRuns?.toString() || '1') > 1 && (
+                    <div className="space-y-4 text-xs">
+                      {/* Feeder matches checkboxes */}
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-400">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={params.parallelFeedersSizeMatch !== false}
+                            onChange={e => setParams({ ...params, parallelFeedersSizeMatch: e.target.checked })}
+                            className="w-3.5 h-3.5 text-red-600"
+                          />
+                          <span>Match Cable Sizes</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={params.parallelFeedersLengthMatch !== false}
+                            onChange={e => setParams({ ...params, parallelFeedersLengthMatch: e.target.checked })}
+                            className="w-3.5 h-3.5 text-red-600"
+                          />
+                          <span>Match Cable Lengths</span>
+                        </label>
+                      </div>
+
+                      {/* Mismatched Cable Editor */}
+                      {((params.parallelFeedersSizeMatch === false) || (params.parallelFeedersLengthMatch === false)) && (
+                        <div className="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
+                            Unequal Conductor Sizing Editor (Set Per Run)
+                          </span>
+                          <div className="max-h-36 overflow-y-auto space-y-2.5 pr-1">
+                            {Array.from({ length: Math.min(params.feederRuns || 1, 4) }).map((_, rIdx) => {
+                              const size = (params.parallelFeedersCustomSizes?.[rIdx]) || params.feederSize || '30';
+                              const len = (params.parallelFeedersCustomLengths?.[rIdx]) || params.feederLength || 10;
+                              const share = calculation.eqFeeder?.paths?.[rIdx]?.share || (1 / (params.feederRuns || 1));
+
+                              return (
+                                <div key={rIdx} className="flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded border border-slate-150 dark:border-slate-800">
+                                  <span className="font-bold text-slate-500 font-mono text-[10px]"># {rIdx + 1}</span>
+                                  {params.parallelFeedersSizeMatch === false && (
+                                    <div className="flex-1">
+                                      <select
+                                        value={size}
+                                        onChange={e => handleCustomSizeChange(rIdx, e.target.value)}
+                                        className="w-full px-1.5 py-0.5 text-xxs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-mono outline-none"
+                                      >
+                                        {['2.0', '3.5', '5.5', '8.0', '14', '22', '30', '38', '50', '60', '80', '100', '125', '150', '200', '250', '325', '400', '500'].map(s => (
+                                          <option key={s} value={s}>{s} mm²</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                  {params.parallelFeedersLengthMatch === false && (
+                                    <div className="w-16">
+                                      <input
+                                        type="number"
+                                        value={len}
+                                        onChange={e => handleCustomLengthChange(rIdx, parseFloat(e.target.value) || 10)}
+                                        className="w-full px-1.5 py-0.5 text-xxs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded font-mono text-center outline-none"
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="text-[10px] font-mono text-slate-500 font-bold ml-auto shrink-0 bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
+                                    {(share * 100).toFixed(1)}% Current Share
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Fast calculations summary */}
+                      <div className="p-2 bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/30 rounded text-[11px] text-emerald-800 dark:text-emerald-300">
+                        <span className="font-bold block mb-0.5">Equivalent Parallel Impedance:</span>
+                        <div className="font-mono text-xxs flex justify-between">
+                          <span>Resistance (R):</span>
+                          <span>{calculation.eqFeeder?.r?.toFixed(5)} Ω</span>
+                        </div>
+                        <div className="font-mono text-xxs flex justify-between">
+                          <span>Reactance (X):</span>
+                          <span>{calculation.eqFeeder?.x?.toFixed(5)} Ω</span>
+                        </div>
+                        <div className="font-mono text-xxs flex justify-between font-bold border-t border-emerald-200/40 dark:border-emerald-900/40 mt-1 pt-1">
+                          <span>Total Impedance (Z):</span>
+                          <span>{calculation.eqFeeder?.z?.toFixed(5)} Ω</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DYNAMIC SAFETY WARNING BANNER */}
+          {calculation.warnings && calculation.warnings.length > 0 && (
+            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl p-4 space-y-1.5 animate-fade-in">
+              <span className="text-[10px] font-black tracking-widest text-red-600 uppercase block">
+                PEC Electrical Violations & Safety Advisories ({calculation.warnings.length})
+              </span>
+              <ul className="list-disc list-inside space-y-1 text-xs text-red-700 dark:text-red-400 font-medium leading-relaxed">
+                {calculation.warnings.map((w, idx) => (
+                  <li key={idx}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </section>
 

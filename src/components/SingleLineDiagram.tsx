@@ -9,9 +9,10 @@ interface SingleLineDiagramProps {
   panelRows: any[];
   formatWireSize: (size: number) => number | string;
   isSubPanel?: boolean;
+  iscParams?: any;
 }
 
-export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, xOffset = 0, yOffset = 0 }) => {
+export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, xOffset = 0, yOffset = 0 }) => {
   // SVG Dimensions Calculation
   const startY = 320;
   const rowHeight = 60;
@@ -74,14 +75,48 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <text x="250" y="115" className="sld-text" textAnchor="end">60Hz</text>
           <text x="250" y="75" className="sld-text" textAnchor="end">CONNECTED TO MDP</text>
         </>
-      ) : (
-        <>
-          <path d="M 230,80 L 270,100 L 230,120 Z" className="sld-line" fill="none" />
-          <text x="215" y="75" className="sld-text font-bold" textAnchor="end">POWER TRANSFORMER</text>
-          <text x="215" y="95" className="sld-text font-semibold" textAnchor="end">{recommendedTransformerKVA} kVA, {voltage}V, {phaseText}</text>
-          <text x="215" y="115" className="sld-text text-slate-500" textAnchor="end">60Hz Utility Power</text>
-        </>
-      )}
+      ) : (() => {
+        const ptCount = iscParams?.parallelTransformersCount || 1;
+        const ptZMatch = iscParams?.parallelTransformersZMatch !== false;
+        const ptkVAMatch = iscParams?.parallelTransformerskVAMatch !== false;
+        const baseKVA = iscParams?.transformerKVA || recommendedTransformerKVA || 500;
+        const pt2Rating = iscParams?.parallelTransformersRating || 100;
+        const totalKVA = ptCount > 1 
+          ? (ptZMatch && ptkVAMatch ? baseKVA * ptCount : baseKVA + (ptCount - 1) * pt2Rating)
+          : baseKVA;
+
+        return (
+          <>
+            {/* Draw parallel transformer triangles if count > 1 */}
+            {ptCount > 1 ? (
+              <>
+                {/* Secondary offset triangle to represent parallel banks */}
+                <path d="M 235,75 L 275,95 L 235,115 Z" className="sld-line stroke-sky-500" strokeWidth="2.5" fill="none" opacity="0.65" />
+                <path d="M 225,85 L 265,105 L 225,125 Z" className="sld-line stroke-red-600" strokeWidth="2.5" fill="none" />
+                <text x="210" y="70" className="sld-text font-bold text-red-600 fill-red-600" textAnchor="end">
+                  {ptCount}x PARALLEL POWER TRANSFORMERS
+                </text>
+                <text x="210" y="88" className="sld-text font-semibold fill-slate-800 dark:fill-slate-100" textAnchor="end">
+                  Total Capacity: {totalKVA} kVA
+                </text>
+                <text x="210" y="104" className="sld-text font-medium fill-slate-500" style={{ fontSize: '11px' }} textAnchor="end">
+                  {ptZMatch && ptkVAMatch ? "Matched Impedance Sharing" : "Unbalanced Impedance Sharing"}
+                </text>
+                <text x="210" y="120" className="sld-text fill-slate-500" style={{ fontSize: '11px' }} textAnchor="end">
+                  Tx1: {baseKVA} kVA ({iscParams?.transformerZ || 5}%) | Tx2+: {pt2Rating} kVA ({iscParams?.parallelTransformersZ || 5}%)
+                </text>
+              </>
+            ) : (
+              <>
+                <path d="M 230,80 L 270,100 L 230,120 Z" className="sld-line" fill="none" strokeWidth="2" />
+                <text x="215" y="75" className="sld-text font-bold" textAnchor="end">POWER TRANSFORMER</text>
+                <text x="215" y="95" className="sld-text font-semibold" textAnchor="end">{baseKVA} kVA, {voltage}V, {phaseText}</text>
+                <text x="215" y="115" className="sld-text text-slate-500" textAnchor="end">60Hz Utility Power</text>
+              </>
+            )}
+          </>
+        );
+      })()}
 
       {/* Top Feed Wire */}
       <line x1="270" y1="100" x2="400" y2="100" className="sld-line" />
@@ -91,9 +126,14 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
          <line x1="400" y1="100" x2="400" y2="120" className="sld-line" />
       )}
       
-      {/* Feed Text */}
-      <text x="410" y="70" className="sld-text">
-         <tspan x="410" dy="0">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² {panel.insulationType || 'THHN'} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'} +</tspan>
+      {/* Feed Text with Series/Parallel and runs details */}
+      <text x="410" y="65" className="sld-text">
+         {iscParams?.connectionType === 'Parallel' && (mainFeeder.wire.runs || 1) > 1 ? (
+           <tspan x="410" dy="0" className="fill-emerald-600 font-black text-xxs tracking-wider">[PARALLEL FEEDER CONNECTION]</tspan>
+         ) : (
+           <tspan x="410" dy="0" className="fill-slate-400 font-bold text-xxs tracking-wider">[SERIES FEEDER CONNECTION]</tspan>
+         )}
+         <tspan x="410" dy="18">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² {panel.insulationType || 'THHN'} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'} +</tspan>
          <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² {panel.insulationType || 'THHN'}(G) IN</tspan>
          <tspan x="410" dy="20">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}-` : ''}{mainFeeder.conduitSize.toUpperCase()}Ø {(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT</tspan>
       </text>

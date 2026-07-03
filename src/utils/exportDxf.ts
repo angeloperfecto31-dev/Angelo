@@ -7,7 +7,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace } from "./computeEngine";
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance } from "./computeEngine";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -1115,6 +1115,18 @@ export const exportToCAD = (
     feederSize: "3.5",
     feederRuns: getRunsBySystemLocal(panel.system),
     conductorType: "Copper",
+    connectionType: "Series",
+    parallelTransformersCount: 1,
+    parallelTransformersZMatch: true,
+    parallelTransformerskVAMatch: true,
+    parallelTransformersRating: 100,
+    parallelTransformersZ: 5,
+    parallelFeedersSizeMatch: true,
+    parallelFeedersLengthMatch: true,
+    parallelFeedersMaterialMatch: true,
+    parallelFeedersCustomSizes: [],
+    parallelFeedersCustomLengths: [],
+    parallelFeedersCustomMaterials: [],
   };
 
   const scParams = {
@@ -1128,6 +1140,18 @@ export const exportToCAD = (
     feederSize: iscParams?.feederSize ?? defaultScParams.feederSize,
     feederRuns: iscParams?.feederRuns ?? defaultScParams.feederRuns,
     conductorType: iscParams?.conductorType ?? defaultScParams.conductorType,
+    connectionType: iscParams?.connectionType ?? defaultScParams.connectionType,
+    parallelTransformersCount: iscParams?.parallelTransformersCount ?? defaultScParams.parallelTransformersCount,
+    parallelTransformersZMatch: iscParams?.parallelTransformersZMatch ?? defaultScParams.parallelTransformersZMatch,
+    parallelTransformerskVAMatch: iscParams?.parallelTransformerskVAMatch ?? defaultScParams.parallelTransformerskVAMatch,
+    parallelTransformersRating: iscParams?.parallelTransformersRating ?? defaultScParams.parallelTransformersRating,
+    parallelTransformersZ: iscParams?.parallelTransformersZ ?? defaultScParams.parallelTransformersZ,
+    parallelFeedersSizeMatch: iscParams?.parallelFeedersSizeMatch ?? defaultScParams.parallelFeedersSizeMatch,
+    parallelFeedersLengthMatch: iscParams?.parallelFeedersLengthMatch ?? defaultScParams.parallelFeedersLengthMatch,
+    parallelFeedersMaterialMatch: iscParams?.parallelFeedersMaterialMatch ?? defaultScParams.parallelFeedersMaterialMatch,
+    parallelFeedersCustomSizes: iscParams?.parallelFeedersCustomSizes ?? defaultScParams.parallelFeedersCustomSizes,
+    parallelFeedersCustomLengths: iscParams?.parallelFeedersCustomLengths ?? defaultScParams.parallelFeedersCustomLengths,
+    parallelFeedersCustomMaterials: iscParams?.parallelFeedersCustomMaterials ?? defaultScParams.parallelFeedersCustomMaterials,
   };
 
   let connectionMultiplier = 1.0;
@@ -1149,30 +1173,59 @@ export const exportToCAD = (
   const baseKVA = scParams.transformerKVA;
   const baseKV = scParams.transformerVoltage / 1000;
   const zUtilitypu = baseKVA / (scParams.utilityShortCircuitMVA * 1000);
-  const zTranspu = scParams.transformerZ / 100 / connectionMultiplier;
+  
+  let zTranspu = scParams.transformerZ / 100 / connectionMultiplier;
+  let totalTransformerKVA = baseKVA;
+  const ptCount = scParams.parallelTransformersCount || 1;
+  const ptZMatch = scParams.parallelTransformersZMatch !== false;
+  const ptkVAMatch = scParams.parallelTransformerskVAMatch !== false;
 
-  let feederR =
-    (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-  let feederX =
-    (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-    
-  if (scParams.feederSize) {
-    const tableVals = WIRE_IMPEDANCE_TABLE[scParams.feederSize.toString()];
-    if (tableVals) {
-      feederR = (tableVals.r * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-      feederX = (tableVals.x * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+  if (ptCount > 1) {
+    if (ptZMatch && ptkVAMatch) {
+      zTranspu = zTranspu / ptCount;
+      totalTransformerKVA = baseKVA * ptCount;
+    } else {
+      const z1pu = zTranspu;
+      const t2Rating = scParams.parallelTransformersRating || 100;
+      const t2Z = scParams.parallelTransformersZ || 5;
+      const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
+      
+      const y1 = 1 / z1pu;
+      const y2 = (ptCount - 1) / z2pu;
+      zTranspu = 1 / (y1 + y2);
+      totalTransformerKVA = baseKVA + (ptCount - 1) * t2Rating;
     }
   }
 
-  const feederZ = Math.sqrt(feederR * feederR + feederX * feederX);
+  const feederRuns = scParams.feederRuns || 1;
+  const condType = scParams.conductorType || "Copper";
+  const connType = scParams.connectionType || "Series";
+
+  const eqFeeder = calculateEquivalentFeederImpedance(
+    scParams.feederLength || 10,
+    scParams.feederSize || "3.5",
+    feederRuns,
+    condType as "Copper" | "Aluminum",
+    connType as "Series" | "Parallel",
+    scParams.parallelFeedersSizeMatch !== false,
+    scParams.parallelFeedersLengthMatch !== false,
+    scParams.parallelFeedersMaterialMatch !== false,
+    scParams.parallelFeedersCustomSizes,
+    scParams.parallelFeedersCustomLengths,
+    scParams.parallelFeedersCustomMaterials,
+  );
+
+  const feederR = eqFeeder.r;
+  const feederX = eqFeeder.x;
+  const feederZ = eqFeeder.z;
   const zFeederpu = (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
 
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad =
-    scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
+  const iFullLoad = totalTransformerKVA / (1.732 * baseKV);
+  const iFullLoadBase = baseKVA / (1.732 * baseKV);
 
-  const iscMainBreaker = iFullLoad / (zUtilitypu + zTranspu);
-  const iscFaultPoint = iFullLoad / totalZpu;
+  const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
+  const iscFaultPoint = iFullLoadBase / totalZpu;
 
   const motorLoadVA = circuits
     .filter(
@@ -4050,34 +4103,62 @@ export const exportToCAD = (
     ty -= labelH;
 
     // Compute Short Circuit values matching Excel EXACTLY
-    const excelBaseKVA = scParams.transformerKVA;
-    const excelBaseKV = scParams.transformerVoltage / 1000;
-    const excelZUtilitypu = excelBaseKVA / (scParams.utilityShortCircuitMVA * 1000);
-    const excelZTranspu = scParams.transformerZ / 100;
+    const excelBaseKVA = scParams.transformerKVA || 100;
+    const excelBaseKV = (scParams.transformerVoltage || 230) / 1000;
+    const excelZUtilitypu = excelBaseKVA / ((scParams.utilityShortCircuitMVA || 500) * 1000);
+    
+    let excelZTranspu = (scParams.transformerZ || 5) / 100 / connectionMultiplier;
+    let excelTotalTransformerKVA = excelBaseKVA;
+    const ptCount = scParams.parallelTransformersCount || 1;
+    const ptZMatch = scParams.parallelTransformersZMatch !== false;
+    const ptkVAMatch = scParams.parallelTransformerskVAMatch !== false;
 
-    let excelFeederR =
-      (0.7 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-    let excelFeederX =
-      (0.08 * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-      
-    if (scParams.feederSize) {
-      const tableVals = WIRE_IMPEDANCE_TABLE[scParams.feederSize.toString()];
-      if (tableVals) {
-        excelFeederR = (tableVals.r * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
-        excelFeederX = (tableVals.x * (scParams.feederLength / 1000)) / (scParams.feederRuns || 1);
+    if (ptCount > 1) {
+      if (ptZMatch && ptkVAMatch) {
+        excelZTranspu = excelZTranspu / ptCount;
+        excelTotalTransformerKVA = excelBaseKVA * ptCount;
+      } else {
+        const z1pu = excelZTranspu;
+        const t2Rating = scParams.parallelTransformersRating || 100;
+        const t2Z = scParams.parallelTransformersZ || 5;
+        const z2pu = ((t2Z / 100) / connectionMultiplier) * (excelBaseKVA / t2Rating);
+        
+        const y1 = 1 / z1pu;
+        const y2 = (ptCount - 1) / z2pu;
+        excelZTranspu = 1 / (y1 + y2);
+        excelTotalTransformerKVA = excelBaseKVA + (ptCount - 1) * t2Rating;
       }
     }
 
-    const excelFeederZ = Math.sqrt(excelFeederR * excelFeederR + excelFeederX * excelFeederX);
-    const excelZFeederpu =
-      (excelFeederZ * (excelBaseKVA / 1000)) / (excelBaseKV * excelBaseKV);
+    const feederRuns = scParams.feederRuns || 1;
+    const condType = scParams.conductorType || "Copper";
+    const connType = scParams.connectionType || "Series";
+
+    const eqFeeder = calculateEquivalentFeederImpedance(
+      scParams.feederLength || 10,
+      scParams.feederSize || "3.5",
+      feederRuns,
+      condType as "Copper" | "Aluminum",
+      connType as "Series" | "Parallel",
+      scParams.parallelFeedersSizeMatch !== false,
+      scParams.parallelFeedersLengthMatch !== false,
+      scParams.parallelFeedersMaterialMatch !== false,
+      scParams.parallelFeedersCustomSizes,
+      scParams.parallelFeedersCustomLengths,
+      scParams.parallelFeedersCustomMaterials,
+    );
+
+    const excelFeederR = eqFeeder.r;
+    const excelFeederX = eqFeeder.x;
+    const excelFeederZ = eqFeeder.z;
+    const excelZFeederpu = (excelFeederZ * (excelBaseKVA / 1000)) / (excelBaseKV * excelBaseKV);
 
     const excelTotalZpu = excelZUtilitypu + excelZTranspu + excelZFeederpu;
-    const excelIFullLoad =
-      scParams.transformerKVA / (1.732 * (scParams.transformerVoltage / 1000));
+    const excelIFullLoad = excelTotalTransformerKVA / (1.732 * excelBaseKV);
+    const excelIFullLoadBase = excelBaseKVA / (1.732 * excelBaseKV);
 
-    const excelIscMainBreaker = excelIFullLoad / (excelZUtilitypu + excelZTranspu);
-    const excelIscFaultPoint = excelIFullLoad / excelTotalZpu;
+    const excelIscMainBreaker = excelIFullLoadBase / (excelZUtilitypu + excelZTranspu);
+    const excelIscFaultPoint = excelIFullLoadBase / excelTotalZpu;
 
     const excelMotorLoadVA = circuits
       .filter(
@@ -4086,7 +4167,7 @@ export const exportToCAD = (
       .reduce((sum, c) => sum + c.loadVA, 0);
     const excelMotorContribution =
       excelMotorLoadVA > 0
-        ? (excelMotorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
+        ? (excelMotorLoadVA / (1.732 * (scParams.transformerVoltage || 230))) * 4
         : 0;
 
     const excelCombinedSymmetricalCurrent = excelIscFaultPoint + excelMotorContribution;
@@ -4095,17 +4176,32 @@ export const exportToCAD = (
 
     const scRows: { label: string; val: string | number; unit: string; isSection?: boolean }[] = [
       { label: "INPUT DESIGN PARAMETERS", val: "", unit: "", isSection: true },
-      { label: "Utility Short Circuit Strength", val: scParams.utilityShortCircuitMVA, unit: "MVAsc" },
-      { label: "Primary Bus Voltage (HV)", val: scParams.primaryVoltage, unit: "Volts" },
-      { label: "Secondary Rated Bus Voltage (LV)", val: scParams.transformerVoltage, unit: "Volts" },
-      { label: "Transformer Sizing Capacity", val: scParams.transformerKVA, unit: "kVA" },
-      { label: "Transformer Percent Impedance (%Z)", val: scParams.transformerZ, unit: "%" },
-      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize, unit: "mm² THHN" },
-      { label: "Feeder Distance Length", val: scParams.feederLength, unit: "Meters" },
-      { label: "Parallel Feeder Conductors", val: scParams.feederRuns, unit: "Runs" },
-      { label: "Active Conductor Metal Type", val: scParams.conductorType, unit: "Copper/Aluminum" },
+      { label: "Utility Short Circuit Strength", val: scParams.utilityShortCircuitMVA || 500, unit: "MVAsc" },
+      { label: "Primary Bus Voltage (HV)", val: scParams.primaryVoltage || 34500, unit: "Volts" },
+      { label: "Secondary Rated Bus Voltage (LV)", val: scParams.transformerVoltage || 230, unit: "Volts" },
+      { label: "Transformer 1 Sizing Capacity", val: excelBaseKVA, unit: "kVA" },
+      { label: "Transformer 1 Percent Impedance (%Z)", val: scParams.transformerZ || 5, unit: "%" },
+    ];
 
-      { label: "PER-UNIT IMPEDANCES (BASE S SYSTEM = " + scParams.transformerKVA + " kVA)", val: "", unit: "", isSection: true },
+    if (ptCount > 1) {
+      scRows.push(
+        { label: "Parallel Transformers Count", val: ptCount, unit: "Units" },
+        { label: "Parallel Transformer 2+ Sizing", val: scParams.parallelTransformersRating || 100, unit: "kVA" },
+        { label: "Parallel Transformer 2+ %Z", val: scParams.parallelTransformersZ || 5, unit: "%" },
+        { label: "Combined Transformer Capacity", val: excelTotalTransformerKVA, unit: "kVA" }
+      );
+    }
+
+    scRows.push(
+      { label: "Feeder Connection Architecture", val: connType, unit: "Topology" },
+      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize || "3.5", unit: "mm² THHN" },
+      { label: "Feeder Distance Length", val: scParams.feederLength || 10, unit: "Meters" },
+      { label: "Parallel Feeder Conductors", val: feederRuns, unit: "Runs" },
+      { label: "Active Conductor Metal Type", val: scParams.conductorType || "Copper", unit: "Copper/Aluminum" },
+      { label: "Transformer Connection", val: scParams.transformerConnection || "Delta-Wye (D-Y)", unit: "Configuration" },
+      { label: "Ground Fault Factor applied", val: groundFaultFactor.toFixed(2), unit: "Multiplier" },
+
+      { label: "PER-UNIT IMPEDANCES (BASE S SYSTEM = " + excelBaseKVA + " kVA)", val: "", unit: "", isSection: true },
       { label: "Transformer Full Load Current (FLA)", val: excelIFullLoad.toFixed(2), unit: "Amperes" },
       { label: "Utility Grid Impedance (Z-utility)", val: excelZUtilitypu.toFixed(6), unit: "pu" },
       { label: "Transformer Leakage Impedance (Z-transformer)", val: excelZTranspu.toFixed(6), unit: "pu" },
@@ -4123,7 +4219,7 @@ export const exportToCAD = (
       { label: "Factored Asymmetrical Fault Current (Isc asym)", val: excelCombinedAsymmetricalCurrent.toFixed(2), unit: "Amps" },
       { label: "Ultimate Fault Breaking Intensity Assessment", val: excelBreakingkAIC.toFixed(2), unit: "kAIC" },
       { label: "Interrupting Protection Level Class", val: excelBreakingkAIC > 22 ? "35 kAIC Required" : excelBreakingkAIC > 10 ? "22 kAIC" : "10 kAIC", unit: "" }
-    ];
+    );
 
     scRows.forEach((row) => {
       if (row.isSection) {

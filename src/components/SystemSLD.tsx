@@ -662,6 +662,7 @@ export default function SystemSLD({
                 panelRows={mdpRows}
                 formatWireSize={formatWireSize}
                 isSubPanel={false}
+                iscParams={iscParams}
                 xOffset={MdpXOffset}
                 yOffset={50}
               />
@@ -957,6 +958,7 @@ export default function SystemSLD({
                     panelRows={mdpRows}
                     formatWireSize={formatWireSize}
                     isSubPanel={false}
+                    iscParams={iscParams}
                     xOffset={MdpXOffset}
                     yOffset={50}
                   />
