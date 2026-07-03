@@ -3868,12 +3868,12 @@ export default function PaymentScreen({
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
                   Pending Approval
                 </span>
-                <div className="p-2 bg-amber-50 text-amber-655 rounded-xl group-hover:bg-amber-100 transition-colors">
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-xl group-hover:bg-amber-100 transition-colors">
                   <Clock className="w-4 h-4 text-amber-500" />
                 </div>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
-                <span className={`text-3xl font-black tracking-tight font-sans ${allUsers.filter((u) => u.paymentStatus === "pending_verification").length > 0 ? "text-amber-550" : "text-slate-900"}`}>
+                <span className={`text-3xl font-black tracking-tight font-sans ${allUsers.filter((u) => u.paymentStatus === "pending_verification").length > 0 ? "text-amber-500" : "text-slate-900"}`}>
                   {allUsers.filter((u) => u.paymentStatus === "pending_verification").length}
                 </span>
                 {allUsers.filter((u) => u.paymentStatus === "pending_verification").length > 0 ? (
@@ -3928,7 +3928,7 @@ export default function PaymentScreen({
                 <span className="text-3xl font-black text-indigo-600 tracking-tight font-sans font-extrabold">
                   {allUsers.filter((u) => u.isActive === true).length}
                 </span>
-                <span className="text-[10px] font-bold text-indigo-605 bg-indigo-50 px-1.5 py-0.5 rounded text-indigo-750 font-black">
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-black">
                   100% Secure
                 </span>
               </div>
@@ -4005,9 +4005,9 @@ export default function PaymentScreen({
                 {/* Word Financial Report with icon */}
                 <button
                   onClick={handleExportFinancialReportWord}
-                  className="px-4 py-2.5 bg-indigo-550 hover:bg-indigo-600 active:bg-indigo-750 text-white font-extrabold uppercase tracking-wider rounded-xl transition-all shadow-[0_4px_12px_rgba(79,70,229,0.15)] hover:shadow-[0_6px_16px_rgba(79,70,229,0.25)] active:scale-[0.98] flex items-center gap-2 text-xxs cursor-pointer"
+                  className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm active:scale-[0.98] flex items-center gap-2 hover:shadow text-xxs cursor-pointer"
                 >
-                  <FileText className="w-3.5 h-3.5" />
+                  <FileText className="w-3.5 h-3.5 text-indigo-600" />
                   Word Financial Report
                 </button>
 
@@ -4299,13 +4299,13 @@ export default function PaymentScreen({
                             <td className="px-5 py-3">
                               <div className="flex flex-col items-start gap-1">
                                 {finance.planStr === "enterprise" ? (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-indigo-550/10 text-indigo-700 border border-indigo-255/15 rounded-md flex items-center gap-1 shadow-sm">
-                                    <Sparkles className="w-2.5 h-2.5 text-indigo-650" />
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/40 rounded-md flex items-center gap-1 shadow-sm">
+                                    <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
                                     Enterprise
                                   </span>
                                 ) : finance.planStr === "premium" ? (
-                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-purple-550/10 text-purple-700 border border-purple-255/15 rounded-md flex items-center gap-1 shadow-sm">
-                                    <Sparkles className="w-2.5 h-2.5 text-purple-650" />
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/40 rounded-md flex items-center gap-1 shadow-sm">
+                                    <Sparkles className="w-2.5 h-2.5 text-purple-600" />
                                     Premium Pro
                                   </span>
                                 ) : finance.planStr === "free" ? (

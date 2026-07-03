@@ -383,7 +383,7 @@ export default function EgcSizingCalculator({ isPremium = false, onRequestUpgrad
                 <Sparkles className="w-3.5 h-3.5" />
                 Sizing Calculation Result
               </span>
-              <span className="px-2 py-0.5 text-[10px] bg-indigo-550/30 text-indigo-300 rounded border border-indigo-550/30">
+              <span className="px-2 py-0.5 text-[10px] bg-indigo-500/30 text-indigo-300 rounded border border-indigo-500/30">
                 PEC 2017 Part 1
               </span>
             </div>
