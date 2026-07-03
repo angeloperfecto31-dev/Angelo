@@ -467,6 +467,8 @@ export default function App() {
     | "module-management"
   >("dashboard");
 
+  const [showGroundingInfo, setShowGroundingInfo] = useState(false);
+
   const [systemModules, setSystemModules] =
     useState<SystemModule[]>(DEFAULT_MODULES);
 
@@ -5054,14 +5056,15 @@ export default function App() {
                     {/* Short Circuit Fault Adequacy */}
                     {getModuleStatus("isc") !== "hidden" &&
                       (() => {
-                        const baseKVA = iscParams.transformerKVA || 500;
+                        const params = iscParams || INITIAL_SHORT_CIRCUIT_PARAMS;
+                        const baseKVA = params.transformerKVA || 500;
                         const baseKV =
-                          (iscParams.transformerVoltage || 230) / 1000;
+                          (params.transformerVoltage || 230) / 1000;
 
                         const connectionMultiplier =
-                          iscParams.transformerConnection === "Open Delta (V-V)"
+                          params.transformerConnection === "Open Delta (V-V)"
                             ? 0.577
-                            : iscParams.transformerConnection ===
+                            : params.transformerConnection ===
                                 "Open Wye-Open Delta"
                               ? 0.866
                               : 1.0;
@@ -5069,53 +5072,56 @@ export default function App() {
                         // 1. Utility Impedance (pu)
                         const zUtilitypu =
                           baseKVA /
-                          ((iscParams.utilityShortCircuitMVA || 250) * 1000);
+                          ((params.utilityShortCircuitMVA || 250) * 1000);
 
                         // 2. Transformer Impedance (pu)
                         const zTranspu =
-                          (iscParams.transformerZ || 5) /
+                          (params.transformerZ || 5) /
                           100 /
                           connectionMultiplier;
 
                         // 3. Feeder Impedance Estimate (Symmetrical pu)
                         let feederR =
-                          (0.7 * ((iscParams.feederLength || 30) / 1000)) /
-                          (iscParams.feederRuns || 1);
+                          (0.7 * ((params.feederLength || 30) / 1000)) /
+                          (params.feederRuns || 1);
                         let feederX =
-                          (0.08 * ((iscParams.feederLength || 30) / 1000)) /
-                          (iscParams.feederRuns || 1);
-                        if (iscParams.feederSize) {
+                          (0.08 * ((params.feederLength || 30) / 1000)) /
+                          (params.feederRuns || 1);
+                        if (params.feederSize) {
                           const tableVals =
                             WIRE_IMPEDANCE_TABLE[
-                              iscParams.feederSize.toString()
+                              params.feederSize.toString()
                             ];
                           if (tableVals) {
                             feederR =
                               (tableVals.r *
-                                ((iscParams.feederLength || 30) / 1000)) /
-                              (iscParams.feederRuns || 1);
+                                ((params.feederLength || 30) / 1000)) /
+                              (params.feederRuns || 1);
                             feederX =
                               (tableVals.x *
-                                ((iscParams.feederLength || 30) / 1000)) /
-                              (iscParams.feederRuns || 1);
+                                ((params.feederLength || 30) / 1000)) /
+                              (params.feederRuns || 1);
                           }
                         }
                         const feederZ = Math.sqrt(
                           feederR * feederR + feederX * feederX,
                         );
                         const zFeederpu =
-                          (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
+                          baseKV > 0
+                            ? (feederZ * (baseKVA / 1000)) / (baseKV * baseKV)
+                            : 0;
 
                         const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-                        const iFullLoad = baseKVA / (1.732 * baseKV);
+                        const iFullLoad = baseKV > 0 ? baseKVA / (1.732 * baseKV) : 0;
 
                         // Symmetrical Short Circuit Current at Fault Point
-                        const iscFaultPointVal = iFullLoad / totalZpu;
+                        const iscFaultPointVal = totalZpu > 0 ? iFullLoad / totalZpu : 0;
                         const iscKAIC = iscFaultPointVal / 1000;
+                        const iscKAICVal = Number.isFinite(iscKAIC) && !Number.isNaN(iscKAIC) ? iscKAIC : 0;
 
                         const panelLimitKAIC = parseFloat(panel.icRating) || 10;
                         const scStatus =
-                          iscKAIC <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
+                          iscKAICVal <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
 
                         return (
                           <div
@@ -5149,7 +5155,7 @@ export default function App() {
                                 </span>
                                 <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
                                   {getModuleStatus("isc") === "active"
-                                    ? `${iscKAIC.toFixed(2)} kA`
+                                    ? `${iscKAICVal.toFixed(2)} kA`
                                     : "---"}
                                 </h3>
                               </div>
@@ -5198,37 +5204,39 @@ export default function App() {
                         let maxVDPercent = 0;
                         let vdCompliant = true;
 
-                        vdCalculations.forEach((vd) => {
+                        (vdCalculations || []).forEach((vd) => {
+                          if (!vd) return;
                           const data =
                             WIRE_IMPEDANCE_TABLE[vd.wireSize] ||
                             WIRE_IMPEDANCE_TABLE["3.5"];
                           const r = data ? data.r : 5.76;
                           const factor = vd.systemType === "3PH" ? 1.732 : 2;
                           const dropV =
-                            (factor * vd.loadA * vd.length * r) / 1000;
-                          const pct = (dropV / vd.voltage) * 100;
+                            (factor * (vd.loadA || 0) * (vd.length || 0) * r) / 1000;
+                          const pct = (vd.voltage && vd.voltage > 0) ? (dropV / vd.voltage) * 100 : 0;
 
-                          if (!Number.isNaN(pct) && pct > maxVDPercent) {
+                          if (!Number.isNaN(pct) && Number.isFinite(pct) && pct > maxVDPercent) {
                             maxVDPercent = pct;
                           }
 
                           const isMainFeeder = vd.source === "main";
                           const isSubPanelFeeder =
-                            uniqueSubPanels.some((sp) => sp.id === vd.source) ||
-                            uniqueSubPanels.some((ssp) => ssp.id === vd.source);
+                            (uniqueSubPanels || []).some((sp) => sp && sp.id === vd.source);
                           const isFeeder =
                             isMainFeeder ||
                             isSubPanelFeeder ||
-                            vd.name.toLowerCase().includes("feeder");
+                            (vd.name || "").toLowerCase().includes("feeder");
                           const limit = isFeeder ? 5.0 : 3.0;
                           if (!Number.isNaN(pct) && pct > limit) {
                             vdCompliant = false;
                           }
                         });
-                        if (vdCalculations.length === 0) {
+                        if (!vdCalculations || vdCalculations.length === 0) {
                           maxVDPercent = 1.15;
                           vdCompliant = true;
                         }
+
+                        const displayVDPercent = Number.isFinite(maxVDPercent) && !Number.isNaN(maxVDPercent) ? maxVDPercent : 0;
 
                         return (
                           <div
@@ -5262,7 +5270,7 @@ export default function App() {
                                 </span>
                                 <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-mono">
                                   {getModuleStatus("vd") === "active"
-                                    ? `${maxVDPercent.toFixed(2)}%`
+                                    ? `${displayVDPercent.toFixed(2)}%`
                                     : "---"}
                                 </h3>
                               </div>
@@ -5810,20 +5818,32 @@ export default function App() {
                         </ul>
                       </div>
 
-                      <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950/40 rounded-2xl p-4 flex items-center justify-between text-xs mt-4">
-                        <span className="text-indigo-950 dark:text-indigo-200 font-bold">
-                          Standard Grounding sizes?
-                        </span>
-                        <button
-                          onClick={() =>
-                            alert(
-                              "Grounding Wire size according to PEC Table 2.50.6.13 requires a minimum 2.0 mm² for 15A loads and 3.5 mm² ground for 20A branch loads.",
-                            )
-                          }
-                          className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
-                        >
-                          View Table
-                        </button>
+                      <div className="space-y-3 mt-4">
+                        <div className="bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-950/40 rounded-2xl p-4 flex items-center justify-between text-xs">
+                          <span className="text-indigo-950 dark:text-indigo-200 font-bold">
+                            Standard Grounding sizes?
+                          </span>
+                          <button
+                            onClick={() => setShowGroundingInfo(!showGroundingInfo)}
+                            className="px-3 py-1 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors shrink-0"
+                          >
+                            {showGroundingInfo ? "Hide Table" : "View Table"}
+                          </button>
+                        </div>
+                        {showGroundingInfo && (
+                          <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl text-[11px] text-slate-600 dark:text-slate-300 space-y-2 animate-fade">
+                            <h5 className="font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wider text-[10px]">
+                              PEC Table 2.50.6.13 grounding requirements:
+                            </h5>
+                            <p>
+                              Grounding Wire size requires a minimum of{" "}
+                              <strong className="text-indigo-600 dark:text-indigo-400 font-bold">2.0 mm²</strong>{" "}
+                              for 15A branch circuits and{" "}
+                              <strong className="text-indigo-600 dark:text-indigo-400 font-bold">3.5 mm²</strong>{" "}
+                              ground for 20A branch loads.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
