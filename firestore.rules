@@ -56,6 +56,7 @@ service cloud.firestore {
         && (!("last_modified_by" in data) || data.last_modified_by == null || data.last_modified_by is string)
         && (!("modified_at" in data) || data.modified_at == null || data.modified_at is string)
         && (!("freeTrialStatus" in data) || data.freeTrialStatus == null || data.freeTrialStatus is string)
+        && (!("freeTrialUsed" in data) || data.freeTrialUsed == null || data.freeTrialUsed is bool)
         && (!("trialRequestedAt" in data) || data.trialRequestedAt == null || data.trialRequestedAt is string)
         && (!("pendingVerification" in data) || data.pendingVerification == null || (
              data.pendingVerification.senderName is string && data.pendingVerification.senderName.size() <= 128 &&
@@ -208,9 +209,11 @@ service cloud.firestore {
             // Action 3: Free Trial Request and Activation
             (
               // User requests free trial
-              (incoming().freeTrialStatus == "pending" && existing().freeTrialStatus == "eligible" && incoming().isActive == existing().isActive) ||
+              (incoming().freeTrialStatus == "pending" && (existing().freeTrialStatus == "eligible" || !("freeTrialStatus" in existing()) || existing().freeTrialStatus == null) && incoming().isActive == existing().isActive) ||
               // User starts approved free trial
-              (incoming().freeTrialStatus == "used" && existing().freeTrialStatus == "approved" && incoming().paymentStatus == "free_trial" && incoming().isActive == true)
+              ((incoming().freeTrialStatus == "active" || incoming().freeTrialStatus == "used") && existing().freeTrialStatus == "approved" && incoming().paymentStatus == "free_trial" && incoming().isActive == true) ||
+              // User's free trial expires
+              (incoming().freeTrialStatus == "expired" && (existing().freeTrialStatus == "active" || existing().freeTrialStatus == "used") && incoming().paymentStatus == "unpaid" && incoming().isActive == false)
             )
           )
         )
