@@ -128,6 +128,8 @@ export default function PaymentScreen({
   const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
   const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions" | "free_trials">("verifications");
+  const [trialSearchQuery, setTrialSearchQuery] = useState("");
+  const [trialStatusFilter, setTrialStatusFilter] = useState("all");
 
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
@@ -262,6 +264,19 @@ export default function PaymentScreen({
             const expires = new Date(data.expiresAt);
             if (new Date() >= expires) {
               isExpired = true;
+              // If it's a free trial that just expired, update in DB
+              if (data.freeTrialStatus === "active" || data.freeTrialStatus === "used") {
+                console.warn(`[Free Trial Expiration Session Check]: Trial expired. Updating in database.`);
+                const userRef = doc(db, "users", user.uid);
+                setDoc(userRef, {
+                  isActive: false,
+                  freeTrialStatus: "expired",
+                  freeTrialUsed: true,
+                  paymentStatus: "unpaid"
+                }, { merge: true }).catch((err) => {
+                  console.error("Error updating expired free trial during session:", err);
+                });
+              }
             }
           }
 
@@ -868,7 +883,7 @@ export default function PaymentScreen({
           }
 
           // Auto-correction for Free Trial expiration
-          if (uData && uData.freeTrialStatus === "used" && uData.expiresAt) {
+          if (uData && (uData.freeTrialStatus === "used" || uData.freeTrialStatus === "active") && uData.expiresAt) {
             const expires = new Date(uData.expiresAt);
             if (new Date() >= expires) {
               console.warn(`[Free Trial Expiration]: Detected expired free trial for user (${uData.email || u.uid}). Correcting permanently...`);
@@ -876,6 +891,7 @@ export default function PaymentScreen({
               setDoc(userRef, {
                 isActive: false,
                 freeTrialStatus: "expired",
+                freeTrialUsed: true,
                 paymentStatus: "unpaid"
               }, { merge: true }).catch((err) => {
                 console.error(`[Free Trial Expiration Error] Failed to correct user ${snapDoc.id}:`, err);
@@ -1504,7 +1520,7 @@ export default function PaymentScreen({
     } else if (adminFilter === "lifetime") {
       if (u.isActive !== true || u.plan !== "enterprise") return false;
     } else if (adminFilter === "free_trial") {
-      if (u.paymentStatus !== "free_trial" && !["expired", "used", "pending", "approved"].includes(u.freeTrialStatus)) return false;
+      if (u.paymentStatus !== "free_trial" && !["expired", "used", "active", "completed", "pending", "approved"].includes(u.freeTrialStatus)) return false;
     } else if (adminFilter === "unpaid") {
       if (u.isActive === true || u.paymentStatus === "pending_verification") return false;
     }
@@ -2866,18 +2882,52 @@ export default function PaymentScreen({
             <SubscriptionManager />
           ) : adminSubTab === "free_trials" ? (
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md mb-8">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-2 flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-600" />
-                Free Trial Requests
-              </h2>
-              <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-                Review and approve or reject free trial requests from newly registered users.
-              </p>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                    Free Trial Management
+                  </h2>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Review and approve or reject free trial requests and monitor trial statuses of all registered users.
+                  </p>
+                </div>
+              </div>
+
+              {/* Filters and Search Bar */}
+              <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search users by name or email..."
+                    className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 transition-colors"
+                    value={trialSearchQuery}
+                    onChange={(e) => setTrialSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div className="w-full sm:w-48">
+                  <select
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 bg-white font-semibold text-slate-700"
+                    value={trialStatusFilter}
+                    onChange={(e) => setTrialStatusFilter(e.target.value)}
+                  >
+                    <option value="all">All Trial Statuses</option>
+                    <option value="pending">Pending Approval</option>
+                    <option value="approved">Approved</option>
+                    <option value="active">Active</option>
+                    <option value="expired">Expired</option>
+                    <option value="completed">Completed</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="not_requested">Not Requested</option>
+                  </select>
+                </div>
+              </div>
               
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-slate-150 rounded-xl">
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
-                    <tr className="bg-slate-50 border-y border-slate-200">
+                    <tr className="bg-slate-50 border-b border-slate-200">
                       <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">User</th>
                       <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Registered</th>
                       <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Requested</th>
@@ -2887,66 +2937,136 @@ export default function PaymentScreen({
                   </thead>
                   <tbody>
                     {allUsers
-                      .filter(u => ["pending", "approved", "rejected", "used", "expired"].includes(u.freeTrialStatus))
-                      .sort((a, b) => new Date(b.trialRequestedAt || 0).getTime() - new Date(a.trialRequestedAt || 0).getTime())
-                      .map(u => (
-                      <tr key={u.uid} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-800 text-sm">{u.displayName || "Unknown User"}</div>
-                          <div className="text-xs text-slate-500">{u.email}</div>
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-600">
-                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "N/A"}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-600">
-                          {u.trialRequestedAt ? new Date(u.trialRequestedAt).toLocaleString() : "N/A"}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                            u.freeTrialStatus === "pending" ? "bg-yellow-100 text-yellow-800" :
-                            u.freeTrialStatus === "approved" ? "bg-green-100 text-green-800" :
-                            u.freeTrialStatus === "used" ? "bg-blue-100 text-blue-800" :
-                            "bg-red-100 text-red-800"
-                          }`}>
-                            {u.freeTrialStatus}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          {u.freeTrialStatus === "pending" && (
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "approved" });
-                                  } catch (err) {
-                                    console.error("Error approving", err);
-                                  }
-                                }}
-                                className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  try {
-                                    await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "rejected" });
-                                  } catch (err) {
-                                    console.error("Error rejecting", err);
-                                  }
-                                }}
-                                className="px-3 py-1.5 bg-slate-200 hover:bg-red-500 hover:text-white text-slate-600 text-xs font-bold rounded-lg transition-colors"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {allUsers.filter(u => ["pending", "approved", "rejected", "used", "expired"].includes(u.freeTrialStatus)).length === 0 && (
+                      .filter((u) => {
+                        const email = (u.email || "").toLowerCase();
+                        const name = (u.displayName || "").toLowerCase();
+                        const q = trialSearchQuery.toLowerCase();
+                        if (q && !email.includes(q) && !name.includes(q)) return false;
+
+                        const status = u.freeTrialStatus || "eligible";
+                        if (trialStatusFilter !== "all") {
+                          if (trialStatusFilter === "pending" && status !== "pending") return false;
+                          if (trialStatusFilter === "approved" && status !== "approved") return false;
+                          if (trialStatusFilter === "active" && status !== "active" && status !== "used") return false;
+                          if (trialStatusFilter === "expired" && status !== "expired") return false;
+                          if (trialStatusFilter === "completed" && status !== "completed") return false;
+                          if (trialStatusFilter === "rejected" && status !== "rejected") return false;
+                          if (trialStatusFilter === "not_requested" && status !== "eligible" && status !== "not_requested") return false;
+                        }
+                        return true;
+                      })
+                      .sort((a, b) => {
+                        // Put pending first
+                        const statusA = a.freeTrialStatus || "eligible";
+                        const statusB = b.freeTrialStatus || "eligible";
+                        if (statusA === "pending" && statusB !== "pending") return -1;
+                        if (statusA !== "pending" && statusB === "pending") return 1;
+
+                        // Sort by trialRequestedAt or createdAt
+                        const timeA = new Date(a.trialRequestedAt || a.createdAt || 0).getTime();
+                        const timeB = new Date(b.trialRequestedAt || b.createdAt || 0).getTime();
+                        return timeB - timeA;
+                      })
+                      .map((u) => {
+                        const trialStatus = u.freeTrialStatus || "eligible";
+                        
+                        const getStatusLabel = (status: string) => {
+                          switch (status) {
+                            case "pending": return "Pending Approval";
+                            case "approved": return "Approved";
+                            case "active":
+                            case "used": return "Active";
+                            case "expired": return "Expired";
+                            case "completed": return "Completed";
+                            case "rejected": return "Rejected";
+                            default: return "Not Requested";
+                          }
+                        };
+
+                        const getBadgeClass = (status: string) => {
+                          switch (status) {
+                            case "pending": return "bg-yellow-50 text-yellow-800 border border-yellow-200";
+                            case "approved": return "bg-emerald-50 text-emerald-800 border border-emerald-200";
+                            case "active":
+                            case "used": return "bg-blue-50 text-blue-800 border border-blue-200";
+                            case "expired": return "bg-rose-50 text-rose-800 border border-rose-200";
+                            case "completed": return "bg-green-50 text-green-800 border border-green-200";
+                            case "rejected": return "bg-slate-100 text-slate-800 border border-slate-200";
+                            default: return "bg-slate-50 text-slate-500 border border-slate-200";
+                          }
+                        };
+
+                        return (
+                          <tr key={u.uid} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-800 text-sm">{u.displayName || "Unknown User"}</div>
+                              <div className="text-xs text-slate-500">{u.email}</div>
+                            </td>
+                            <td className="py-3 px-4 text-xs text-slate-600">
+                              {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "N/A"}
+                            </td>
+                            <td className="py-3 px-4 text-xs text-slate-600">
+                              {u.trialRequestedAt ? new Date(u.trialRequestedAt).toLocaleString() : "N/A"}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border ${getBadgeClass(trialStatus)}`}>
+                                {getStatusLabel(trialStatus)}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {trialStatus === "pending" && (
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "approved" });
+                                      } catch (err) {
+                                        console.error("Error approving", err);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "rejected" });
+                                      } catch (err) {
+                                        console.error("Error rejecting", err);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-200 hover:bg-red-500 hover:text-white text-slate-600 text-xs font-bold rounded-lg transition-colors"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {allUsers.filter((u) => {
+                      const email = (u.email || "").toLowerCase();
+                      const name = (u.displayName || "").toLowerCase();
+                      const q = trialSearchQuery.toLowerCase();
+                      if (q && !email.includes(q) && !name.includes(q)) return false;
+
+                      const status = u.freeTrialStatus || "eligible";
+                      if (trialStatusFilter !== "all") {
+                        if (trialStatusFilter === "pending" && status !== "pending") return false;
+                        if (trialStatusFilter === "approved" && status !== "approved") return false;
+                        if (trialStatusFilter === "active" && status !== "active" && status !== "used") return false;
+                        if (trialStatusFilter === "expired" && status !== "expired") return false;
+                        if (trialStatusFilter === "completed" && status !== "completed") return false;
+                        if (trialStatusFilter === "rejected" && status !== "rejected") return false;
+                        if (trialStatusFilter === "not_requested" && status !== "eligible" && status !== "not_requested") return false;
+                      }
+                      return true;
+                    }).length === 0 && (
                       <tr>
                         <td colSpan={5} className="py-8 text-center text-slate-500 text-sm">
-                          No free trial requests found.
+                          No users found matching free trial criteria.
                         </td>
                       </tr>
                     )}
@@ -5181,6 +5301,10 @@ export default function PaymentScreen({
 
   const handleRequestFreeTrial = async () => {
     if (!user) return;
+    if (userProfile?.freeTrialUsed || ["pending", "approved", "active", "used", "expired", "completed", "rejected"].includes(userProfile?.freeTrialStatus)) {
+      setError("You are no longer eligible for a free trial.");
+      return;
+    }
     setRequestingTrial(true);
     setError("");
     try {
@@ -5198,13 +5322,17 @@ export default function PaymentScreen({
 
   const handleStartFreeTrial = async () => {
     if (!user) return;
+    if (userProfile?.freeTrialStatus !== "approved") {
+      setError("Your free trial has not been approved or is already used.");
+      return;
+    }
     setStartingTrial(true);
     setError("");
     try {
       const now = new Date();
       const oneHourFromNow = new Date(now.getTime() + 1 * 60 * 60 * 1000);
       await updateDoc(doc(db, "users", user.uid), {
-        freeTrialStatus: "used",
+        freeTrialStatus: "active",
         paymentStatus: "free_trial",
         isActive: true,
         activatedAt: now.toISOString(),
@@ -5276,7 +5404,7 @@ export default function PaymentScreen({
             </div>
           )}
 
-          {!isUpgrade && userProfile?.freeTrialStatus === "eligible" && (
+          {!isUpgrade && (!userProfile?.freeTrialStatus || userProfile?.freeTrialStatus === "eligible" || userProfile?.freeTrialStatus === "not_requested") && !userProfile?.freeTrialUsed && (
             <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-black text-slate-800 mb-2">Want to try before you buy?</h3>
               <p className="text-sm text-slate-600 mb-4 leading-relaxed">
@@ -5334,13 +5462,13 @@ export default function PaymentScreen({
             </div>
           )}
 
-          {!isUpgrade && userProfile?.freeTrialStatus === "expired" && (
+          {!isUpgrade && (userProfile?.freeTrialStatus === "expired" || userProfile?.freeTrialStatus === "completed" || userProfile?.freeTrialUsed) && (
             <div className="mb-6 bg-rose-50 border border-rose-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
               <AlertCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
               <div>
                 <h3 className="text-sm font-black text-rose-800 mb-1">Free Trial Expired</h3>
                 <p className="text-sm text-rose-700 leading-relaxed">
-                  Your 1-hour free trial has expired. Please select a subscription plan below to continue using the application.
+                  Your 1-hour free trial has expired or has been completed. Please select a subscription plan below to continue using the application.
                 </p>
               </div>
             </div>

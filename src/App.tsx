@@ -203,6 +203,19 @@ export default function App() {
               const expires = new Date(data.expiresAt);
               if (new Date() >= expires) {
                 isExpired = true;
+                // Auto-correct / update database status for free trials
+                if (data.freeTrialStatus === "active" || data.freeTrialStatus === "used") {
+                  console.warn(`[Free Trial Expiration App Check]: Trial expired. Updating in database.`);
+                  const userRef = doc(db, "users", user.uid);
+                  setDoc(userRef, {
+                    isActive: false,
+                    freeTrialStatus: "expired",
+                    freeTrialUsed: true,
+                    paymentStatus: "unpaid"
+                  }, { merge: true }).catch((err) => {
+                    console.error("Error updating expired free trial:", err);
+                  });
+                }
               }
             }
 
