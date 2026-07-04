@@ -157,6 +157,7 @@ export default function PaymentScreen({
     enableGCash: true,
     enablePayMongo: true,
     enableMaya: true,
+    enableFreeTrial: true,
   });
 
   // Admin Pricing Input States
@@ -177,6 +178,7 @@ export default function PaymentScreen({
   const [adminEnableGCash, setAdminEnableGCash] = useState<boolean>(true);
   const [adminEnablePayMongo, setAdminEnablePayMongo] = useState<boolean>(true);
   const [adminEnableMaya, setAdminEnableMaya] = useState<boolean>(true);
+  const [adminEnableFreeTrial, setAdminEnableFreeTrial] = useState<boolean>(true);
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
   const hasSelectedInitialPlan = useRef(false);
@@ -426,6 +428,7 @@ export default function PaymentScreen({
           const enableGCash = data.enableGCash !== false;
           const enablePayMongo = data.enablePayMongo !== false;
           const enableMaya = data.enableMaya !== false;
+          const enableFreeTrial = data.enableFreeTrial !== false;
 
           setPricingSettings({
             basicPrice: basic,
@@ -445,6 +448,7 @@ export default function PaymentScreen({
             enableGCash,
             enablePayMongo,
             enableMaya,
+            enableFreeTrial,
           });
           setIsPricingLoaded(true);
 
@@ -467,6 +471,7 @@ export default function PaymentScreen({
             setAdminEnableGCash(enableGCash);
             setAdminEnablePayMongo(enablePayMongo);
             setAdminEnableMaya(enableMaya);
+            setAdminEnableFreeTrial(enableFreeTrial);
             hasLoadedPricingInputs.current = true;
           }
         } else {
@@ -489,6 +494,7 @@ export default function PaymentScreen({
             enableGCash: true,
             enablePayMongo: true,
             enableMaya: true,
+            enableFreeTrial: true,
           });
           setIsPricingLoaded(true);
 
@@ -512,6 +518,7 @@ export default function PaymentScreen({
                 enableGCash: true,
                 enablePayMongo: true,
                 enableMaya: true,
+                enableFreeTrial: true,
                 updatedBy: "System (Auto-generated)",
                 updatedAt: new Date().toISOString()
               });
@@ -755,6 +762,7 @@ export default function PaymentScreen({
           enableGCash: adminEnableGCash,
           enablePayMongo: adminEnablePayMongo,
           enableMaya: adminEnableMaya,
+          enableFreeTrial: adminEnableFreeTrial,
           updatedBy: user.email || "",
           updatedAt: new Date().toISOString()
         },
@@ -772,10 +780,26 @@ export default function PaymentScreen({
             gcash: adminEnableGCash,
             paymongo: adminEnablePayMongo,
             maya: adminEnableMaya,
+            freeTrial: adminEnableFreeTrial,
           },
         });
       } catch (logErr) {
         console.warn("Failed to write to admin activity log:", logErr);
+      }
+
+      // Explicitly log free trial status changes for auditing purposes
+      if (pricingSettings.enableFreeTrial !== adminEnableFreeTrial) {
+        try {
+          await addDoc(collection(db, "admin_activity_logs"), {
+            action: "toggle_free_trial",
+            adminEmail: user.email || "Unknown Admin",
+            timestamp: new Date().toISOString(),
+            previousStatus: pricingSettings.enableFreeTrial ? "enabled" : "disabled",
+            newStatus: adminEnableFreeTrial ? "enabled" : "disabled"
+          });
+        } catch (logErr) {
+          console.warn("Failed to write to admin activity log for free trial toggle:", logErr);
+        }
       }
 
       setAdminStatusMsg("Pricing configurations updated successfully throughout the system!");
@@ -3859,6 +3883,38 @@ export default function PaymentScreen({
                 </div>
               </div>
 
+              {/* Free Trial Global Configuration */}
+              <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-200 mt-6 space-y-4">
+                <span className="text-[10px] uppercase font-black tracking-widest text-slate-800 block select-none">
+                  🎁 Free Trial Configuration
+                </span>
+                <p className="text-xs text-slate-500 mb-2 leading-relaxed">
+                  Enable or disable the Free Trial globally for all users. If disabled, eligible users cannot start or request a free trial, and must select a paid plan.
+                </p>
+
+                <div className="flex flex-col gap-3">
+                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-all">
+                    <input
+                      type="checkbox"
+                      className="w-5 h-5 accent-indigo-600 rounded bg-slate-100 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                      checked={adminEnableFreeTrial}
+                      onChange={(e) => setAdminEnableFreeTrial(e.target.checked)}
+                    />
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-900">Enable Free Trial</span>
+                        {adminEnableFreeTrial ? (
+                          <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-extrabold rounded-full border border-emerald-200 uppercase">🟢 Free Trial Enabled</span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-700 font-extrabold rounded-full border border-rose-200 uppercase">🔴 Free Trial Disabled</span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Allow new eligible users to request/activate a 1-hour free trial</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               {/* Inline feedback status message */}
               {adminStatusMsg && (
                 <div className="mt-4 bg-indigo-50 border-l-4 border-indigo-600 p-3 rounded-xl animate-fade-in">
@@ -5301,6 +5357,10 @@ export default function PaymentScreen({
 
   const handleRequestFreeTrial = async () => {
     if (!user) return;
+    if (!pricingSettings.enableFreeTrial) {
+      setError("Free Trial is currently unavailable.");
+      return;
+    }
     if (userProfile?.freeTrialUsed || ["pending", "approved", "active", "used", "expired", "completed", "rejected"].includes(userProfile?.freeTrialStatus)) {
       setError("You are no longer eligible for a free trial.");
       return;
@@ -5322,6 +5382,10 @@ export default function PaymentScreen({
 
   const handleStartFreeTrial = async () => {
     if (!user) return;
+    if (!pricingSettings.enableFreeTrial) {
+      setError("Free Trial is currently unavailable.");
+      return;
+    }
     if (userProfile?.freeTrialStatus !== "approved") {
       setError("Your free trial has not been approved or is already used.");
       return;
@@ -5408,16 +5472,25 @@ export default function PaymentScreen({
             <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-black text-slate-800 mb-2">Want to try before you buy?</h3>
               <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-                You can request a 1-hour free trial to test out all premium features. Your request will be reviewed by an administrator.
+                {pricingSettings.enableFreeTrial 
+                  ? "You can request a 1-hour free trial to test out all premium features. Your request will be reviewed by an administrator."
+                  : "Free trial requests are currently closed. Please select one of the subscription options below to access premium tools."
+                }
               </p>
-              <button
-                onClick={handleRequestFreeTrial}
-                disabled={requestingTrial}
-                className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {requestingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {requestingTrial ? "Requesting..." : "Request Free Trial"}
-              </button>
+              {pricingSettings.enableFreeTrial ? (
+                <button
+                  onClick={handleRequestFreeTrial}
+                  disabled={requestingTrial}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {requestingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {requestingTrial ? "Requesting..." : "Request Free Trial"}
+                </button>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider">
+                  🔴 Free Trial is currently unavailable
+                </div>
+              )}
             </div>
           )}
 
@@ -5449,16 +5522,25 @@ export default function PaymentScreen({
             <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-6 shadow-sm">
               <h3 className="text-sm font-black text-green-800 mb-2">Free Trial Approved!</h3>
               <p className="text-sm text-green-700 mb-4 leading-relaxed">
-                Your 1-hour free trial has been approved by the administrator. Click the button below to start your trial immediately.
+                {pricingSettings.enableFreeTrial
+                  ? "Your 1-hour free trial has been approved by the administrator. Click the button below to start your trial immediately."
+                  : "Your 1-hour free trial was approved, but the free trial system is currently suspended/disabled globally."
+                }
               </p>
-              <button
-                onClick={handleStartFreeTrial}
-                disabled={startingTrial}
-                className="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {startingTrial ? "Starting Trial..." : "Start 1-Hour Free Trial"}
-              </button>
+              {pricingSettings.enableFreeTrial ? (
+                <button
+                  onClick={handleStartFreeTrial}
+                  disabled={startingTrial}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {startingTrial ? "Starting Trial..." : "Start 1-Hour Free Trial"}
+                </button>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider">
+                  🔴 Free Trial is currently unavailable
+                </div>
+              )}
             </div>
           )}
 

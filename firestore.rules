@@ -72,13 +72,20 @@ service cloud.firestore {
         && (!("upgradePrice" in data) || data.upgradePrice == null || (data.upgradePrice is int || data.upgradePrice is float))
         && (!("promoDiscountBasic" in data) || data.promoDiscountBasic == null || (data.promoDiscountBasic is int || data.promoDiscountBasic is float))
         && (!("promoDiscountPremium" in data) || data.promoDiscountPremium == null || (data.promoDiscountPremium is int || data.promoDiscountPremium is float))
+        && (!("promoDiscountEnterprise" in data) || data.promoDiscountEnterprise == null || (data.promoDiscountEnterprise is int || data.promoDiscountEnterprise is float))
         && (!("offerTitle" in data) || data.offerTitle == null || data.offerTitle is string)
         && (!("offerExpiry" in data) || data.offerExpiry == null || data.offerExpiry is string)
         && (!("updatedBy" in data) || data.updatedBy == null || data.updatedBy is string)
         && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string)
+        && (!("basicFeatures" in data) || data.basicFeatures == null || data.basicFeatures is string)
+        && (!("premiumFeatures" in data) || data.premiumFeatures == null || data.premiumFeatures is string)
+        && (!("enterpriseFeatures" in data) || data.enterpriseFeatures == null || data.enterpriseFeatures is string)
+        && (!("upgradeFeatures" in data) || data.upgradeFeatures == null || data.upgradeFeatures is string)
         && (!("enableMaribank" in data) || data.enableMaribank == null || data.enableMaribank is bool)
         && (!("enableGCash" in data) || data.enableGCash == null || data.enableGCash is bool)
-        && (!("enablePayMongo" in data) || data.enablePayMongo == null || data.enablePayMongo is bool);
+        && (!("enablePayMongo" in data) || data.enablePayMongo == null || data.enablePayMongo is bool)
+        && (!("enableMaya" in data) || data.enableMaya == null || data.enableMaya is bool)
+        && (!("enableFreeTrial" in data) || data.enableFreeTrial == null || data.enableFreeTrial is bool);
     }
 
     function isValidProject(data) {
