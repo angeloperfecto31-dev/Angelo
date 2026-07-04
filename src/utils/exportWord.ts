@@ -782,8 +782,19 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
       createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
-
       createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
+      
+      ...(p.transferSwitchType && p.transferSwitchType !== "None" ? [
+         createParagraph(`4. Transfer Switch Selection (${p.transferSwitchType}):`),
+         createParagraph(`The ${p.transferSwitchType === "ATS" ? "Automatic" : "Manual"} Transfer Switch is selected based on the upstream Main Breaker rating:`),
+         (() => {
+            const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+            const recommendedTsRating = STANDARD_TS_RATINGS.find(r => r >= cb) || cb;
+            const tsRating = p.transferSwitchRating || recommendedTsRating;
+            const tsPoles = p.transferSwitchPoles || (p.system.includes("3PH") ? 3 : 2);
+            return createFormulaCallout(`I_{\\text{TS}} \\geq I_{\\text{OCPD}} \\implies I_{\\text{TS}} = ${tsRating}\\text{ A, } ${tsPoles}\\text{P}`);
+         })()
+      ] : []),
       
       new Paragraph({ spacing: { after: 150 } }),
       createSubHeader(`B. PEC 2017 & Visual Safety Sizing Reference Map:`),

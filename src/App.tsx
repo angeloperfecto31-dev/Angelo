@@ -2118,6 +2118,18 @@ export default function App() {
           "Main Breaker:",
           `${cb} AT / ${af} AF, ${poles}P, ${kaic} kAIC, ${type}`,
         ]);
+        
+        if (p.transferSwitchType && p.transferSwitchType !== "None") {
+          const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+          const recommendedTsRating = STANDARD_TS_RATINGS.find(r => r >= cb) || cb;
+          const tsRating = p.transferSwitchRating || recommendedTsRating;
+          const tsPoles = p.transferSwitchPoles || (p.system.includes("3PH") ? 3 : 2);
+          wsData.push([
+            "Transfer Switch:",
+            `${tsRating} A, ${tsPoles}P, ${p.transferSwitchType === "ATS" ? "Automatic Transfer Switch" : "Manual Transfer Switch"}`
+          ]);
+        }
+
         if (p.system.includes("3PH")) {
           wsData.push(["Phase Imbalance:", `${phaseImbalance.toFixed(2)}%`]);
         }

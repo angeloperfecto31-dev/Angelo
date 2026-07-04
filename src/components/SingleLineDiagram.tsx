@@ -121,7 +121,32 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
       {/* Top Feed Wire */}
       <line x1="270" y1="100" x2="400" y2="100" className="sld-line" />
       {isSubPanel ? (
-         <line x1="400" y1="100" x2="400" y2="180" className="sld-line" />
+        panel.transferSwitchType && panel.transferSwitchType !== "None" ? (
+          <g>
+            <line x1="400" y1="100" x2="400" y2="150" className="sld-line" />
+            <rect x="385" y="150" width="30" height="20" rx="2" className="sld-line" fill="none" />
+            <text x="400" y="163" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">{panel.transferSwitchType}</text>
+            <line x1="400" y1="170" x2="400" y2="180" className="sld-line" />
+            
+            {/* Gen input */}
+            <line x1="365" y1="160" x2="385" y2="160" className="sld-line" />
+            <circle cx="355" cy="160" r="10" className="sld-line" fill="none" />
+            <text x="355" y="164" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">G</text>
+            
+            {/* ATS/MTS Label */}
+            <text x="340" y="155" className="sld-text" style={{fontSize: '10px'}} textAnchor="end">
+              {panel.transferSwitchRating || (() => {
+                 const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+                 return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
+              })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
+            </text>
+            <text x="340" y="167" className="sld-text" style={{fontSize: '9px'}} textAnchor="end">
+              {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
+            </text>
+          </g>
+        ) : (
+          <line x1="400" y1="100" x2="400" y2="180" className="sld-line" />
+        )
       ) : (
          <line x1="400" y1="100" x2="400" y2="120" className="sld-line" />
       )}
@@ -143,7 +168,32 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
         <>
           <circle cx="400" cy="135" r="15" className="sld-line" />
           <text x="400" y="140" className="sld-text" textAnchor="middle">M</text>
-          <line x1="400" y1="150" x2="400" y2="180" className="sld-line" />
+          {panel.transferSwitchType && panel.transferSwitchType !== "None" ? (
+             <g>
+               <line x1="400" y1="150" x2="400" y2="153" className="sld-line" />
+               <rect x="385" y="153" width="30" height="18" rx="2" className="sld-line" fill="none" />
+               <text x="400" y="165" className="sld-text" style={{fontSize: '9px'}} textAnchor="middle">{panel.transferSwitchType}</text>
+               <line x1="400" y1="171" x2="400" y2="180" className="sld-line" />
+               
+               {/* Gen input */}
+               <line x1="365" y1="162" x2="385" y2="162" className="sld-line" />
+               <circle cx="355" cy="162" r="10" className="sld-line" fill="none" />
+               <text x="355" y="166" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">G</text>
+               
+               {/* ATS/MTS Label */}
+               <text x="340" y="157" className="sld-text" style={{fontSize: '9px'}} textAnchor="end">
+                 {panel.transferSwitchRating || (() => {
+                    const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+                    return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
+                 })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
+               </text>
+               <text x="340" y="167" className="sld-text" style={{fontSize: '8px'}} textAnchor="end">
+                 {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
+               </text>
+             </g>
+          ) : (
+             <line x1="400" y1="150" x2="400" y2="180" className="sld-line" />
+          )}
         </>
       )}
 

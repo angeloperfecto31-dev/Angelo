@@ -129,6 +129,17 @@ export interface PanelConfig {
     poles?: number;
     kaic?: number;
   };
+  transferSwitchType?: 'None' | 'ATS' | 'MTS';
+  transferSwitchRating?: number;
+  transferSwitchPoles?: number;
+  transferSwitchPhases?: number;
+  transferSwitchWires?: number;
+  transferSwitchFrame?: string;
+  transferSwitchSCCR?: string;
+  transferSwitchManufacturer?: string;
+  transferSwitchModel?: string;
+  transferSwitchRemarks?: string;
+  transferSwitchIsCustomRating?: boolean;
 }
 
 export interface ShortCircuitParams {

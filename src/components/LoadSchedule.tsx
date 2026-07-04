@@ -2508,6 +2508,137 @@ export default function LoadSchedule({
           </div>
         </div>
 
+        {/* --- TRANSFER SWITCH SECTION --- */}
+        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/><rect width="4" height="4" x="10" y="10" rx="1"/></svg>
+                Transfer Switch (ATS / MTS)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Configure an Automatic or Manual Transfer Switch for this panel. The size will be recommended based on PEC.
+              </p>
+            </div>
+          </div>
+          
+          {(() => {
+            const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+            const recommendedTsRating = STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
+            const isTsUndersized = panel.transferSwitchRating && panel.transferSwitchRating < mainFeeder.cb;
+            const isTsCustom = panel.transferSwitchRating && panel.transferSwitchRating !== recommendedTsRating;
+
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Switch Type
+                    </label>
+                    <select
+                      value={panel.transferSwitchType || "None"}
+                      onChange={(e) =>
+                        setPanel((prev) => ({
+                          ...prev,
+                          transferSwitchType: e.target.value as "None" | "ATS" | "MTS",
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                    >
+                      <option value="None">None</option>
+                      <option value="ATS">Automatic Transfer Switch (ATS)</option>
+                      <option value="MTS">Manual Transfer Switch (MTS)</option>
+                    </select>
+                  </div>
+                  
+                  {panel.transferSwitchType && panel.transferSwitchType !== "None" && (
+                    <>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex justify-between items-center">
+                          <span>Rating (Amperes)</span>
+                          {isTsCustom && (
+                            <button
+                              onClick={() => setPanel(prev => ({ ...prev, transferSwitchRating: undefined, transferSwitchIsCustomRating: false }))}
+                              className="text-[10px] text-indigo-500 hover:text-indigo-600 underline px-1"
+                            >
+                              Reset to Auto
+                            </button>
+                          )}
+                        </label>
+                        <select
+                          value={panel.transferSwitchRating || ""}
+                          onChange={(e) =>
+                            setPanel((prev) => ({
+                              ...prev,
+                              transferSwitchRating: e.target.value ? Number(e.target.value) : undefined,
+                              transferSwitchIsCustomRating: true,
+                            }))
+                          }
+                          className={`w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none ${isTsUndersized ? 'border-amber-500 text-amber-700 dark:text-amber-500' : 'border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100'}`}
+                        >
+                          <option value="">Auto ({recommendedTsRating} A)</option>
+                          {[15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000].map(
+                            (size) => (
+                              <option key={size} value={size}>
+                                {size} A
+                              </option>
+                            )
+                          )}
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Poles
+                        </label>
+                        <select
+                          value={panel.transferSwitchPoles || ""}
+                          onChange={(e) =>
+                            setPanel((prev) => ({
+                              ...prev,
+                              transferSwitchPoles: e.target.value ? Number(e.target.value) : undefined,
+                            }))
+                          }
+                          className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                        >
+                          <option value="">Auto (Match System)</option>
+                          <option value="2">2-Pole</option>
+                          <option value="3">3-Pole</option>
+                          <option value="4">4-Pole</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                {panel.transferSwitchType && panel.transferSwitchType !== "None" && isTsUndersized && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-lg flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-bold text-amber-800 dark:text-amber-500">Engineering Warning: Transfer Switch Size</h4>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                        The selected transfer switch rating ({panel.transferSwitchRating} A) is lower than the recommended size ({recommendedTsRating} A) based on the Main Breaker rating ({mainFeeder.cb} A). This may lead to overheating or coordination issues.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {panel.transferSwitchType && panel.transferSwitchType !== "None" && isTsCustom && !isTsUndersized && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 rounded-lg flex items-start gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    <div>
+                      <h4 className="text-sm font-bold text-blue-800 dark:text-blue-500">Manual Override Active</h4>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                        You have manually selected a transfer switch rating ({panel.transferSwitchRating} A). The PEC recommended minimum rating is {recommendedTsRating} A.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
         {/* --- MANAUL OVERRIDES SECTION --- */}
         <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
           <div className="flex items-center justify-between mb-4">

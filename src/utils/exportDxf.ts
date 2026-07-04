@@ -437,13 +437,41 @@ const drawCadPanelSLD = (
   );
 
   // 3. Meter (Main Panel only)
+  let feedLineStartY = yBase - 15;
   if (!isSubPanel) {
     b.addCircle(xBase, yBase - 22, 5, "SLD_GEOMETRY");
     b.addText("M", xBase, yBase - 24, 2.5, 0, "TEXT_HEADER", "center");
     b.addLine(xBase, yBase - 15, xBase, yBase - 17, "SLD_GEOMETRY");
-    b.addLine(xBase, yBase - 27, xBase, yBase - 35, "SLD_GEOMETRY");
+    feedLineStartY = yBase - 27;
+  }
+  
+  if (panel.transferSwitchType && panel.transferSwitchType !== "None") {
+    b.addLine(xBase, feedLineStartY, xBase, yBase - 29, "SLD_GEOMETRY");
+    b.addRect(xBase - 5, yBase - 35, xBase + 5, yBase - 29, "SLD_GEOMETRY");
+    b.addText(panel.transferSwitchType, xBase, yBase - 33, 2, 0, "TEXT_HEADER", "center");
+    b.addLine(xBase, yBase - 35, xBase, yBase - 38, "SLD_GEOMETRY");
+    
+    // Gen Input
+    b.addLine(xBase - 5, yBase - 32, xBase - 10, yBase - 32, "SLD_GEOMETRY");
+    b.addCircle(xBase - 13, yBase - 32, 3, "SLD_GEOMETRY");
+    b.addText("G", xBase - 13, yBase - 33, 1.5, 0, "TEXT_HEADER", "center");
+    
+    const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+    const recommendedTsRating = STANDARD_TS_RATINGS.find(r => r >= (mainFeeder?.cb || 60)) || (mainFeeder?.cb || 60);
+    const tsRating = panel.transferSwitchRating || recommendedTsRating;
+    const tsPoles = panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2);
+
+    b.addText(
+      `${tsRating}A, ${tsPoles}P ${panel.transferSwitchType === "ATS" ? "AUTO" : "MANUAL"} TS`,
+      xBase - 18,
+      yBase - 31,
+      1.2,
+      0,
+      "TEXT_DATA",
+      "right"
+    );
   } else {
-    b.addLine(xBase, yBase - 15, xBase, yBase - 35, "SLD_GEOMETRY");
+    b.addLine(xBase, feedLineStartY, xBase, yBase - 38, "SLD_GEOMETRY");
   }
 
   // 4. Main Overcurrent Protective Device (CB, professional graphic matching web UI)
@@ -2311,7 +2339,7 @@ export const exportToCAD = (
     b.addText(
       `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² THHN + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} ${currentCalcData.mainFeeder.conduitType || "PVC"}.`,
       xOffset + 23,
-      ty - metrics.mainFeederBoxH / 2 + 1.5,
+      ty - metrics.mainFeederBoxH / 2 + 3.5,
       metrics.mainFeederFontSize,
       0,
       "TEXT_DATA",
@@ -2321,13 +2349,30 @@ export const exportToCAD = (
     b.addText(
       `MAIN RATED OVERCURRENT BREAKER: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P, ${currentCalcData.mainFeeder.kaic} kAIC, ${currentCalcData.mainFeeder.type}.`,
       xOffset + 23,
-      ty - metrics.mainFeederBoxH / 2 - 3.5,
+      ty - metrics.mainFeederBoxH / 2 - 1.5,
       metrics.mainFeederFontSize,
       0,
       "TEXT_DATA",
       "left",
       (tableRight - (xOffset + 23)) - 140
     );
+    if (currentPanel.transferSwitchType && currentPanel.transferSwitchType !== "None") {
+      const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+      const recommendedTsRating = STANDARD_TS_RATINGS.find(r => r >= (currentCalcData?.mainFeeder?.cb || 60)) || (currentCalcData?.mainFeeder?.cb || 60);
+      const tsRating = currentPanel.transferSwitchRating || recommendedTsRating;
+      const tsPoles = currentPanel.transferSwitchPoles || (currentPanel.system.includes("3PH") ? 3 : 2);
+
+      b.addText(
+        `TRANSFER SWITCH: ${currentPanel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SWITCH (${currentPanel.transferSwitchType}) RATED ${tsRating}A, ${tsPoles}P.`,
+        xOffset + 23,
+        ty - metrics.mainFeederBoxH / 2 - 6.5,
+        metrics.mainFeederFontSize,
+        0,
+        "TEXT_DATA",
+        "left",
+        (tableRight - (xOffset + 23)) - 140
+      );
+    }
     b.addText(
       `${isPanel3Phase ? `PHASE DISBALANCE RATIO: ${currentCalcData.phaseImbalance.toFixed(2)}% | ` : ""}RATED MAX DEMAND CURRENT: ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
       tableRight - 5,
