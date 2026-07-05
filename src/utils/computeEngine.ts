@@ -132,6 +132,8 @@ export const getWireForBreakerLocal = (
   material: "Copper" | "Aluminum" = "Copper",
   insulation: string = "THHN",
   tempRating?: 60 | 75 | 90,
+  isMotor?: boolean,
+  isMultioutlet?: boolean
 ) => {
   return sizeConductor(
     cbRating,
@@ -139,6 +141,8 @@ export const getWireForBreakerLocal = (
     material,
     insulation,
     tempRating,
+    isMotor,
+    isMultioutlet
   );
 };
 
@@ -688,12 +692,17 @@ export const calculateCircuitValues = (
   const calculatedWireTypeStr = panel.insulationType || "THHN";
   const finalWireType = c.wireTypeOverride || calculatedWireTypeStr;
 
+  const isMotor = c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON;
+  const isMultioutlet = c.loadType === LoadType.CONVENIENCE_OUTLET;
+
   const wire = getWireForBreakerLocal(
     mcbAT,
     designLoadA,
     panel.conductorMaterial || "Copper",
     finalWireType,
     c.wireTypeOverride ? undefined : (panel.temperatureRating as any),
+    isMotor,
+    isMultioutlet
   );
 
   let baseWireSize = wire.size;
@@ -1220,120 +1229,58 @@ export const computePanelScheduleValues = (
     });
   }
 
-  let maxBaseAmp = 0;
-  let maxDesignAmp = 0;
+  let maxBaseAmp = p.system.includes("3PH") 
+    ? Math.max(phaseBaseCurrents.R, phaseBaseCurrents.Y, phaseBaseCurrents.B)
+    : Math.max(phaseBaseCurrents.R, Math.max(phaseBaseCurrents.Y, phaseBaseCurrents.B));
+  
+  let maxDesignAmp = p.system.includes("3PH")
+    ? Math.max(phaseDesignCurrents.R, phaseDesignCurrents.Y, phaseDesignCurrents.B)
+    : Math.max(phaseDesignCurrents.R, Math.max(phaseDesignCurrents.Y, phaseDesignCurrents.B));
 
-  let subPanelDemandAmps = 0;
-  let internalDemandCurrent = 0;
-  let globalHML = 0;
-  let internalConnectedVA = 0;
-
-  const phaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
-  c.forEach((cir) => {
-    if (isIdleSpareOrSpace(cir)) return;
-
-    if (cir.subPanelReflectionMode === "max_demand") {
-      subPanelDemandAmps += cir.loadA;
-    } else {
-      internalConnectedVA += cir.loadVA;
-
-      if (
-        cir.subPanelReflectionMode === "phase_loads" &&
-        cir.reflectedPhaseAmps
-      ) {
-        phaseAmps.R += cir.reflectedPhaseAmps.R;
-        phaseAmps.Y += cir.reflectedPhaseAmps.Y;
-        phaseAmps.B += cir.reflectedPhaseAmps.B;
-        phaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
-      } else if (cir.phases && cir.phases.length === 3) {
-        phaseAmps.threePhase += cir.loadA;
-      } else if (cir.phases) {
-        if (cir.phases.includes("R")) phaseAmps.R += cir.loadA;
-        if (cir.phases.includes("Y")) phaseAmps.Y += cir.loadA;
-        if (cir.phases.includes("B")) phaseAmps.B += cir.loadA;
-      }
-    }
-  });
-
-  if (p.system.includes("3PH")) {
-    const motorCircuits = c.filter(
-      (cir) =>
-        cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-    );
-    let HML = 0;
-    motorCircuits.forEach((cir) => {
+  let globalHML = motorCircuits.length > 0 ? Math.max(...motorCircuits.map(cir => {
       const is3Phase = cir.phases && cir.phases.length === 3;
-      let cirV =
-        cir.voltage ||
-        getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
-      const loadI = is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
-      if (loadI > HML) {
-        HML = loadI;
+      let cirV = cir.voltage || getPanelSystemVoltageFallback(p.system, is3Phase, p.connectionType);
+      return is3Phase ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+  })) : 0;
+
+  // Track some metadata for display
+  const phaseAmps = { 
+    R: phaseBaseCurrents.R, 
+    Y: phaseBaseCurrents.Y, 
+    B: phaseBaseCurrents.B, 
+    threePhase: 0 
+  };
+  let internalConnectedVA = 0;
+  let subPanelDemandAmps = 0;
+  let internalDemandCurrent = maxDesignAmp;
+  
+  c.forEach(cir => {
+      if (!isIdleSpareOrSpace(cir)) {
+          internalConnectedVA += cir.loadVA || 0;
+          if (cir.subPanelReflectionMode === "max_demand") {
+              subPanelDemandAmps += cir.loadA || 0;
+          }
       }
-    });
-    globalHML = HML;
-
-    const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
-    internalDemandCurrent =
-      (totalAmpere * 1.732 * 0.8 + phaseAmps.threePhase + 0.25 * HML) * 1.25;
-
-    maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
-    maxDesignAmp = maxBaseAmp;
-  } else {
-    const motorCircuits = c.filter(
-      (cir) =>
-        cir.loadType === LoadType.MOTOR || cir.loadType === LoadType.AIR_CON,
-    );
-    let HML = 0;
-    motorCircuits.forEach((cir) => {
-      const loadI = cir.loadA || cir.loadVA / (cir.voltage || 230);
-      if (loadI > HML) {
-        HML = loadI;
-      }
-    });
-    globalHML = HML;
-    internalDemandCurrent =
-      ((internalConnectedVA / 230) * 0.8 + 0.25 * HML) * 1.25;
-
-    maxBaseAmp = internalDemandCurrent + subPanelDemandAmps;
-    maxDesignAmp = maxBaseAmp;
-  }
+  });
 
   const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
 
   // Calculate Main Feeder
   const designAmp = mainCurrent.designAmp;
-  const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT));
+  const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT || 0));
+  
+  // PEC standard: overcurrent protection >= 125% continuous + 100% non-continuous.
+  // maxDesignAmp already includes this 125% factor from the first pass phaseDesignCurrents.
+  // We just need a breaker >= maxDesignAmp.
   let calculatedCb =
-    STANDARD_CB_RATINGS.find(
-      (r) =>
-        r * 0.8 >= mainCurrent.baseAmp &&
-        r >= Math.max(designAmp, mainCurrent.baseAmp),
-    ) || 100;
+    STANDARD_CB_RATINGS.find((r) => r >= maxDesignAmp) || 100;
 
   if (calculatedCb < maxBranchAT) {
     calculatedCb =
       STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
   }
 
-  // Guarantee 80% rule loop just in case
-  while (calculatedCb * 0.8 < mainCurrent.baseAmp) {
-    const nextSize = STANDARD_CB_RATINGS.find((r) => r > calculatedCb);
-    if (!nextSize) break;
-    calculatedCb = nextSize;
-  }
-  let cb = Math.max(
-    calculatedCb,
-    STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
-    30,
-  );
-
-  // Guarantee 80% rule loop on final cb
-  while (cb * 0.8 < mainCurrent.baseAmp) {
-    const nextSize = STANDARD_CB_RATINGS.find((r) => r > cb);
-    if (!nextSize) break;
-    cb = nextSize;
-  }
+  let cb = Math.max(calculatedCb, 30);
 
   let poles = p.system.includes("3PH") ? 3 : 2;
   if (!p.system.includes("3PH") && p.connectionType === "Line-to-Neutral") {
@@ -1345,6 +1292,8 @@ export const computePanelScheduleValues = (
     p.conductorMaterial || "Copper",
     p.insulationType || "THHN",
     p.temperatureRating as any,
+    false,
+    false
   );
 
   let baseWireSize = wire.size;
