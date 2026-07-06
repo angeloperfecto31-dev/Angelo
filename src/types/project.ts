@@ -19,6 +19,7 @@ export interface MdpData {
 }
 
 export interface ProjectData {
+  schemaVersion?: number;
   mainSource?: MainSourceConfig;
   mdps?: MdpData[];
   panel: PanelConfig;

@@ -290,6 +290,7 @@ export function migrateProjectData(data: any): ProjectData {
 
   return {
     ...data,
+    schemaVersion: 4,
     panel: activePanel,
     circuits: activeCircuits,
     subPanels: activeSubPanels,

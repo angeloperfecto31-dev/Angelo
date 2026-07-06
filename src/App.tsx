@@ -386,6 +386,96 @@ export default function App() {
     };
   }, [user, isAdmin]);
 
+  // Transparent, background automatic migration of ALL existing projects to the latest calculation engine / PEC-standards
+  useEffect(() => {
+    // 1. Guest users (localStorage projects)
+    if (!authLoading && !user) {
+      try {
+        const STORAGE_KEY = "electricalph_projects";
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const projects = JSON.parse(saved);
+          let hasMigration = false;
+          const updatedProjects = projects.map((p: any) => {
+            const projectData = p.data;
+            if (projectData && projectData.schemaVersion !== 4) {
+              hasMigration = true;
+              console.log(`[Auto-Migration] Guest user project "${p.name || 'Untitled'}" (${p.id}) is outdated. Upgrading...`);
+              const migratedData = migrateProjectData(projectData);
+              return {
+                ...p,
+                lastModified: Date.now(),
+                data: migratedData
+              };
+            }
+            return p;
+          });
+
+          if (hasMigration) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
+            console.log("[Auto-Migration] All guest user projects successfully migrated and persisted.");
+          }
+        }
+      } catch (err) {
+        console.error("[Auto-Migration] Error during guest user project background migration:", err);
+      }
+      return;
+    }
+
+    // 2. Authenticated users (Firestore projects)
+    if (!user) return;
+
+    const projectsRef = collection(db, "users", user.uid, "projects");
+    const unsubscribe = onSnapshot(
+      projectsRef,
+      (snapshot) => {
+        snapshot.docs.forEach((docSnap) => {
+          const projectDocData = docSnap.data();
+          const projectId = docSnap.id;
+          const projectData = projectDocData.data;
+
+          if (projectData && projectData.schemaVersion !== 4) {
+            console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) is outdated. Upgrading...`);
+            
+            // Clean object helper
+            const cleanObject = (obj: any): any => {
+              if (obj === null || typeof obj !== "object") return obj;
+              if (Array.isArray(obj)) return obj.map(cleanObject);
+              const result: any = {};
+              for (const key in obj) {
+                if (obj[key] !== undefined) {
+                  result[key] = cleanObject(obj[key]);
+                }
+              }
+              return result;
+            };
+
+            const migratedData = migrateProjectData(projectData);
+            const docRef = doc(db, "users", user.uid, "projects", projectId);
+            
+            setDoc(
+              docRef,
+              {
+                data: cleanObject(migratedData),
+                lastModified: Date.now(),
+              },
+              { merge: true }
+            ).then(() => {
+              console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) successfully migrated and saved.`);
+            }).catch((err) => {
+              console.error(`[Auto-Migration] Failed to save migrated project "${projectId}" to Firestore:`, err);
+            });
+          }
+        });
+      },
+      (err) => {
+        console.error("[Auto-Migration] Error listening to user projects for migration:", err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, authLoading]);
+
   // Periodic expiration check
   useEffect(() => {
     if (
