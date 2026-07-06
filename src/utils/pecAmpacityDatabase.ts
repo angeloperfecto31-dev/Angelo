@@ -128,36 +128,38 @@ export const sizeConductor = (
     if (cbRating > 800) return totalAmp >= cbRating; // Next size up rule doesn't apply above 800A
     
     if (totalAmp >= cbRating) return true;
+
+    // Under PEC, next-size-up is ONLY allowed if the conductor's ampacity does not correspond to a standard overcurrent device rating
+    if (STANDARD_CB_RATINGS.includes(totalAmp)) return false;
+
     const nextBreaker = STANDARD_CB_RATINGS.find(r => r > totalAmp);
     return nextBreaker !== undefined && nextBreaker >= cbRating;
   };
 
-  // Enforce PEC Small Conductor Rules for small branch circuits (<= 30A)
-  // Copper: 2.0 mm² for 15A, 3.5 mm² for 20A, 5.5 mm² for 30A
-  // Aluminum: Conductor sizes for low ratings usually start larger.
-  if (material === 'Copper' && cbRating <= 30 && !isMotor) {
-    let minSize = 2.0;
-    if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-    else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
-
-    const row = PEC_AMPACITY_TABLE.find(r => {
-      const amp = r.copper[tempRating];
-      return r.size >= minSize && isAmpacityAcceptable(amp);
-    }) || PEC_AMPACITY_TABLE.find(r => r.size >= minSize) || PEC_AMPACITY_TABLE[0];
-
-    return { size: row.size, ampacity: row.copper[tempRating], runs: 1 };
-  } else if (material === 'Aluminum' && cbRating <= 30 && !isMotor) {
-    // For aluminum, minimum allowable size is often larger
-    let minSize = 3.5; // Aluminum has no 2.0 level
-    if (cbRating > 15 && cbRating <= 20) minSize = 3.5;
-    else if (cbRating > 20 && cbRating <= 30) minSize = 5.5;
-
-    const row = PEC_AMPACITY_TABLE.find(r => {
-      const amp = r.aluminum[tempRating];
-      return amp !== null && r.size >= minSize && isAmpacityAcceptable(amp);
-    }) || PEC_AMPACITY_TABLE.find(r => r.aluminum[tempRating] !== null && r.size >= minSize) || PEC_AMPACITY_TABLE[1];
-
-    return { size: row.size, ampacity: row.aluminum[tempRating] || 0, runs: 1 };
+  // Determine minimum allowable size to enforce PEC small conductor rules and safety
+  let minSize = 2.0;
+  if (!isMotor) {
+    if (material === 'Copper') {
+      if (cbRating > 30) {
+        minSize = 8.0; // 5.5 mm² copper is limited to 30A overcurrent protection
+      } else if (cbRating > 20) {
+        minSize = 5.5; // 3.5 mm² copper is limited to 20A overcurrent protection
+      } else if (cbRating > 15) {
+        minSize = 3.5; // 2.0 mm² copper is limited to 15A overcurrent protection
+      } else {
+        minSize = 2.0;
+      }
+    } else { // Aluminum
+      if (cbRating > 25) {
+        minSize = 8.0; // 5.5 mm² aluminum is limited to 25A overcurrent protection
+      } else if (cbRating > 15) {
+        minSize = 5.5; // 3.5 mm² aluminum is limited to 15A overcurrent protection
+      } else {
+        minSize = 3.5;
+      }
+    }
+  } else {
+    minSize = material === 'Copper' ? 2.0 : 3.5;
   }
 
   // Handle paralleling for large breakers per PEC Article 3.10.1.10 (50 mm² or larger required)
@@ -169,6 +171,7 @@ export const sizeConductor = (
 
     const row = PEC_AMPACITY_TABLE.find(r => {
       if (r.size < 50) return false;
+      if (r.size < minSize) return false;
       const singleAmp = material === 'Copper' ? r.copper[tempRating] : r.aluminum[tempRating];
       return singleAmp !== null && isAmpacityAcceptable(singleAmp, runs);
     }) || PEC_AMPACITY_TABLE[PEC_AMPACITY_TABLE.length - 1];
@@ -179,9 +182,10 @@ export const sizeConductor = (
 
   // Standard single run
   const row = PEC_AMPACITY_TABLE.find(r => {
+    if (r.size < minSize) return false;
     const singleAmp = material === 'Copper' ? r.copper[tempRating] : r.aluminum[tempRating];
     return singleAmp !== null && isAmpacityAcceptable(singleAmp);
-  }) || PEC_AMPACITY_TABLE[PEC_AMPACITY_TABLE.length - 1];
+  }) || PEC_AMPACITY_TABLE.find(r => r.size >= minSize) || PEC_AMPACITY_TABLE[PEC_AMPACITY_TABLE.length - 1];
 
   const singleAmp = (material === 'Copper' ? row.copper[tempRating] : row.aluminum[tempRating]) || 0;
   return { size: row.size, ampacity: singleAmp, runs: 1 };
