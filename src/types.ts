@@ -88,6 +88,7 @@ export interface Circuit {
   subLoads?: SubLoad[];
   motorHP?: string;
   motorFLC?: number;
+  manualMotorFLC?: number;
   isLocked?: boolean;
 }
 

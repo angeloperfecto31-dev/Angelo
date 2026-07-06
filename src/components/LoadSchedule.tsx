@@ -4018,11 +4018,34 @@ export default function LoadSchedule({
                                     </option>
                                   ))}
                                 </select>
-                                {c.motorFLC && (
+                                {c.motorFLC ? (
                                   <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-950/50">
                                     {c.motorFLC}A FLC
                                   </span>
-                                )}
+                                ) : c.motorHP ? (
+                                  <div className="flex flex-col gap-1.5 mt-1.5">
+                                    <span className="text-[10px] text-rose-600 font-bold bg-rose-50 px-2 py-1 rounded border border-rose-200 block">
+                                      Selected Horsepower/Voltage combination is not available in PEC Table 4.30.14.4.
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] text-slate-500 font-bold">Manual FLC Override:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.1"
+                                        value={c.manualMotorFLC || ""}
+                                        onChange={(e) => {
+                                          updateCircuit(c.id, {
+                                            manualMotorFLC: parseFloat(e.target.value) || undefined,
+                                          });
+                                        }}
+                                        className="w-16 p-1 py-0.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-[11px] font-mono"
+                                        placeholder="0.0"
+                                      />
+                                      <span className="text-[10px] text-slate-500">A</span>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
                             )}
                             {c.loadType === LoadType.MOTOR && c.motorHP && (

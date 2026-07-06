@@ -572,7 +572,12 @@ export const calculateCircuitValues = (
     effectiveHP
   ) {
     const is3P = panel.system.includes("3PH") && is3PhaseLoadFinal;
-    const fVal = getMotorFLC(effectiveHP, v, is3P);
+    let fVal = 0;
+    if (c.manualMotorFLC !== undefined && c.manualMotorFLC > 0) {
+      fVal = c.manualMotorFLC;
+    } else {
+      fVal = getMotorFLC(effectiveHP, v, is3P);
+    }
     c.motorHP = effectiveHP || undefined;
     c.motorFLC = fVal;
     loadA = fVal * qty;
