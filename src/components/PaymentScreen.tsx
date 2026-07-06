@@ -3842,7 +3842,7 @@ export default function PaymentScreen({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
-                Starter / Free Tier Base
+                Free Tier Base
               </p>
             </div>
           </div>
@@ -3931,7 +3931,7 @@ export default function PaymentScreen({
                             : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
-                        {mode === "all" ? "All Plans" : mode === "free" ? "Starter" : mode}
+                        {mode === "all" ? "All Plans" : mode === "free" ? "Free" : mode}
                       </button>
                     ))}
                   </div>
@@ -4188,7 +4188,7 @@ export default function PaymentScreen({
                                   </span>
                                 ) : finance.planStr === "free" ? (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-sm">
-                                    Starter
+                                    Free
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md shadow-sm">
@@ -4207,7 +4207,7 @@ export default function PaymentScreen({
                                 finance.planStr === "free" ? (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200/50 shadow-sm">
                                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
-                                    Active Starter
+                                    Active Free
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">

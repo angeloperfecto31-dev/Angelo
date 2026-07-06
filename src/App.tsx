@@ -196,7 +196,7 @@ export default function App() {
             const plan = data.plan || "free";
             const userIsActive = data.isActive === true;
 
-            // Check expiration for basic, premium, and free/starter plans
+            // Check expiration for basic, premium, and free plans
             let isExpired = false;
             if (
               (plan === "basic" || plan === "premium" || plan === "free") &&
@@ -3910,7 +3910,7 @@ export default function App() {
                   <div className="flex items-center gap-1.5">
                     <Activity className="w-3.5 h-3.5 text-indigo-400" />
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                      {userPlan === "free" ? "STARTER PLAN" : "SUBSCRIPTION"}
+                      {userPlan === "free" ? "FREE PLAN" : "SUBSCRIPTION"}
                     </span>
                   </div>
                   <span
@@ -3922,7 +3922,7 @@ export default function App() {
                           : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                     }`}
                   >
-                    {userPlan === "free" ? "Starter" : userPlan}
+                    {userPlan === "free" ? "Free" : userPlan}
                   </span>
                 </div>
 
@@ -4666,7 +4666,7 @@ export default function App() {
                 );
                 const planName =
                   userPlan === "free"
-                    ? "Starter"
+                    ? "Free"
                     : userPlan === "basic"
                       ? "Basic"
                       : "Premium";
@@ -4833,7 +4833,7 @@ export default function App() {
                               <span className="flex items-center gap-1">
                                 <span>
                                   {isFreePlan
-                                    ? "Remaining Starter Access Time:"
+                                    ? "Remaining Free Access Time:"
                                     : "Remaining Access Time:"}
                                 </span>
                                 <strong className="font-mono text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-0.5 text-xxs">
@@ -4887,7 +4887,7 @@ export default function App() {
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
                             <span>
                               {isFreePlan
-                                ? "STARTER DAYS REMAINING"
+                                ? "FREE DAYS REMAINING"
                                 : "DAYS REMAINING"}
                             </span>
                             {countdownTime ? (
@@ -6878,7 +6878,7 @@ export default function App() {
                                   ? "PREMIUM (30 DAYS)"
                                   : userPlan === "basic"
                                     ? "BASIC (30 DAYS)"
-                                    : "STARTER TIER"}
+                                    : "FREE TIER"}
                             </p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
                               Enterprise licenses unlock complete single-line
