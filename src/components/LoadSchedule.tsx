@@ -1247,6 +1247,8 @@ export default function LoadSchedule({
     });
   }, [circuits, panel, vdCalculations]);
 
+  const sysV = maxDemandDetails?.systemVoltage || 230;
+
   const mainFeeder = useMemo(() => {
     // The design ampacity correctly incorporates Continuous (125%) + Non-Continuous (100%) + Largest Motor (25%)
     const designAmp = mainCurrent.designAmp;
@@ -5088,11 +5090,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
-  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
-  &= \\left[ ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
-  &= ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} \\\\
-  &= \\mathbf{${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}}
+  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
+  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / sysV).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= \\left[ ${(((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= ${((((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} \\\\
+  &= \\mathbf{${((((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
                     </div>
@@ -5104,7 +5106,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"

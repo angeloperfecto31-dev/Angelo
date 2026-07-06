@@ -1220,11 +1220,16 @@ export const computePanelScheduleValues = (
     const demandReductionI =
       (lightingReceptacleVA - lightingReceptacleDemand) /
       (systemVoltage * (p.system.includes("3PH") ? 1.732 : 1));
+    Object.keys(phaseBaseCurrents).forEach((ph) => {
+      phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] = Math.max(
+        0,
+        phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents] - demandReductionI
+      );
+    });
     Object.keys(phaseDesignCurrents).forEach((ph) => {
       phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] = Math.max(
         phaseBaseCurrents[ph as keyof typeof phaseBaseCurrents],
-        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] -
-          demandReductionI,
+        phaseDesignCurrents[ph as keyof typeof phaseDesignCurrents] - demandReductionI
       );
     });
   }
@@ -1337,7 +1342,7 @@ export const computePanelScheduleValues = (
   // maxDesignAmp already includes this 125% factor from the first pass phaseDesignCurrents.
   // We just need a breaker >= maxDesignAmp.
   let calculatedCb =
-    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxDesignAmp) || 100;
+    STANDARD_CB_RATINGS.find((r) => r >= maxDesignAmp) || 100;
 
   if (calculatedCb < maxBranchAT) {
     calculatedCb =
