@@ -193,18 +193,19 @@ export default function App() {
         (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            const plan = data.plan || "free";
-            const userIsActive = data.isActive === true;
+            const plan = data.plan || "basic";
+            const userIsActive = data.isActive === true && plan !== "free";
 
-            // Check expiration for basic, premium, and free plans
+            // Check expiration for basic and premium plans
             let isExpired = false;
-            if (
-              (plan === "basic" || plan === "premium" || plan === "free") &&
-              data.expiresAt
-            ) {
-              const expires = new Date(data.expiresAt);
-              if (new Date() >= expires) {
-                isExpired = true;
+            if (plan === "basic" || plan === "premium") {
+              if (data.expiresAt) {
+                const expires = new Date(data.expiresAt);
+                if (new Date() >= expires) {
+                  isExpired = true;
+                }
+              } else {
+                isExpired = true; // MUST have expiration date
               }
             }
 
@@ -261,7 +262,7 @@ export default function App() {
                   user.displayName ||
                   user.email?.split("@")[0] ||
                   "Engineering User",
-                plan: "free",
+                plan: "basic",
                 isActive: false,
                 createdAt: now.toISOString(),
                 paymentStatus: "unpaid",
@@ -281,7 +282,7 @@ export default function App() {
                 });
 
               // Optimistically update local state so they don't have to wait for the next snapshot
-              setUserPlan("free");
+              setUserPlan("basic");
               setActivatedAt(null);
               setExpiresAt(null);
               setIsActive(false);
@@ -297,7 +298,7 @@ export default function App() {
               console.warn(
                 "User profile not found in Firestore. Account may have been deleted/revoked by an administrator. Locking to payment/subscription screen.",
               );
-              setUserPlan("free");
+              setUserPlan("basic");
               setActivatedAt(null);
               setExpiresAt(null);
               setIsActive(false);
@@ -436,16 +437,20 @@ export default function App() {
 
   // Periodic expiration check
   useEffect(() => {
-    if (
-      !isActive ||
-      !expiresAt ||
-      (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")
-    )
-      return;
+    if (!isActive || (userPlan !== "basic" && userPlan !== "premium")) return;
 
     const checkExpiration = () => {
-      const expires = new Date(expiresAt);
-      if (new Date() >= expires) {
+      let expired = false;
+      if (!expiresAt) {
+        expired = true;
+      } else {
+        const expires = new Date(expiresAt);
+        if (new Date() >= expires) {
+          expired = true;
+        }
+      }
+
+      if (expired) {
         setIsActive(false);
         isActiveRef.current = false;
         setShowRenew(true);
@@ -475,7 +480,7 @@ export default function App() {
     if (
       !expiresAt ||
       !isActive ||
-      (userPlan !== "basic" && userPlan !== "premium" && userPlan !== "free")
+      (userPlan !== "basic" && userPlan !== "premium")
     ) {
       setCountdownTime(null);
       return;

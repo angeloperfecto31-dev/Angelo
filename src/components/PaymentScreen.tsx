@@ -215,7 +215,7 @@ export default function PaymentScreen({
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [planFilter, setPlanFilter] = useState<"all" | "free" | "basic" | "premium" | "enterprise">("all");
+  const [planFilter, setPlanFilter] = useState<"all" | "basic" | "premium" | "enterprise">("all");
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [confirmingAction, setConfirmingAction] = useState<{
     uid: string;
@@ -255,8 +255,8 @@ export default function PaymentScreen({
           }
 
           let isExpired = false;
-          const plan = data.plan || "free";
-          if ((plan === "basic" || plan === "premium" || false) && data.expiresAt) {
+          const plan = data.plan || "basic";
+          if ((plan === "basic" || plan === "premium") && data.expiresAt) {
             const expires = new Date(data.expiresAt);
             if (new Date() >= expires) {
               isExpired = true;
