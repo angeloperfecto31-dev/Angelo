@@ -3904,13 +3904,13 @@ export default function App() {
             expiresAt &&
             (userPlan === "basic" ||
               userPlan === "premium" ||
-              userPlan === "free") && (
+              false) && (
               <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <Activity className="w-3.5 h-3.5 text-indigo-400" />
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                      {userPlan === "free" ? "FREE PLAN" : "SUBSCRIPTION"}
+                      {false ? "STANDARD PLAN" : "SUBSCRIPTION"}
                     </span>
                   </div>
                   <span
@@ -3922,7 +3922,7 @@ export default function App() {
                           : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                     }`}
                   >
-                    {userPlan === "free" ? "Free" : userPlan}
+                    {false ? "Standard" : userPlan}
                   </span>
                 </div>
 
@@ -3999,7 +3999,7 @@ export default function App() {
                         <span>30-Day Cycle</span>
                         <button
                           onClick={() => {
-                            if (userPlan === "free") {
+                            if (false) {
                               setShowUpgrade(true);
                             } else {
                               setShowRenew(true);
@@ -4007,7 +4007,7 @@ export default function App() {
                           }}
                           className="font-black text-indigo-400 hover:text-indigo-300 hover:underline transition-colors cursor-pointer"
                         >
-                          {userPlan === "free" ? "Upgrade Plan" : "Renew Plan"}
+                          {false ? "Upgrade Plan" : "Renew Plan"}
                         </button>
                       </div>
                     </div>
@@ -4288,13 +4288,13 @@ export default function App() {
                                 ? "Premium Access"
                                 : userPlan === "basic"
                                   ? "Basic Access"
-                                  : "Free Member"}
+                                  : "Standard Member"}
                         </span>
 
                         {/* Remaining Days indicator */}
                         {(userPlan === "basic" ||
                           userPlan === "premium" ||
-                          userPlan === "free") &&
+                          false) &&
                           expiresAt && (
                             <span
                               className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
@@ -4344,7 +4344,7 @@ export default function App() {
 
                       {(userPlan === "basic" ||
                         userPlan === "premium" ||
-                        userPlan === "free") &&
+                        false) &&
                         expiresAt && (
                           <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
                             <div className="flex justify-between items-center mb-1">
@@ -4477,10 +4477,10 @@ export default function App() {
               countdownTime &&
               (userPlan === "basic" ||
                 userPlan === "premium" ||
-                userPlan === "free") && (
+                false) && (
                 <div
                   onClick={() => {
-                    if (userPlan === "free") {
+                    if (false) {
                       setShowUpgrade(true);
                     } else {
                       setShowRenew(true);
@@ -4493,7 +4493,7 @@ export default function App() {
                         ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/25"
                         : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 border-emerald-500/25"
                   }`}
-                  title={`${userPlan === "free" ? "Access" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                  title={`${false ? "Access" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
                 >
                   <Clock className="w-3 h-3" />
                   <span>
@@ -4541,10 +4541,10 @@ export default function App() {
               countdownTime &&
               (userPlan === "basic" ||
                 userPlan === "premium" ||
-                userPlan === "free") && (
+                false) && (
                 <div
                   onClick={() => {
-                    if (userPlan === "free") {
+                    if (false) {
                       setShowUpgrade(true);
                     } else {
                       setShowRenew(true);
@@ -4557,11 +4557,11 @@ export default function App() {
                         ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 shadow-sm"
                         : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm"
                   }`}
-                  title={`${userPlan === "free" ? "Access" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                  title={`${false ? "Access" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
                 >
                   <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
                   <span className="text-slate-500 dark:text-slate-400 font-bold tracking-normal mr-0.5">
-                    {userPlan === "free"
+                    {false
                       ? "Access Time Left:"
                       : "Access Time Left:"}
                   </span>
@@ -4652,7 +4652,7 @@ export default function App() {
                 expiresAt &&
                 (userPlan === "basic" ||
                   userPlan === "premium" ||
-                  userPlan === "free")
+                  false)
               ) {
                 const daysLeft = countdownTime
                   ? countdownTime.days
@@ -4665,12 +4665,12 @@ export default function App() {
                   Math.max(0, (daysLeft / 30) * 100),
                 );
                 const planName =
-                  userPlan === "free"
-                    ? "Free"
+                  false
+                    ? "Standard"
                     : userPlan === "basic"
                       ? "Basic"
                       : "Premium";
-                const isFreePlan = userPlan === "free";
+                const isFreePlan = false;
 
                 if (daysLeft <= 0) {
                   return (
@@ -4833,7 +4833,7 @@ export default function App() {
                               <span className="flex items-center gap-1">
                                 <span>
                                   {isFreePlan
-                                    ? "Remaining Free Access Time:"
+                                    ? "Remaining Standard Access Time:"
                                     : "Remaining Access Time:"}
                                 </span>
                                 <strong className="font-mono text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-0.5 text-xxs">
@@ -4887,7 +4887,7 @@ export default function App() {
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
                             <span>
                               {isFreePlan
-                                ? "FREE DAYS REMAINING"
+                                ? "STANDARD DAYS REMAINING"
                                 : "DAYS REMAINING"}
                             </span>
                             {countdownTime ? (
@@ -6878,7 +6878,7 @@ export default function App() {
                                   ? "PREMIUM (30 DAYS)"
                                   : userPlan === "basic"
                                     ? "BASIC (30 DAYS)"
-                                    : "FREE TIER"}
+                                    : "STANDARD ACCESS"}
                             </p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
                               Enterprise licenses unlock complete single-line

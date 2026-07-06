@@ -256,7 +256,7 @@ export default function PaymentScreen({
 
           let isExpired = false;
           const plan = data.plan || "free";
-          if ((plan === "basic" || plan === "premium" || plan === "free") && data.expiresAt) {
+          if ((plan === "basic" || plan === "premium" || false) && data.expiresAt) {
             const expires = new Date(data.expiresAt);
             if (new Date() >= expires) {
               isExpired = true;
@@ -3842,7 +3842,7 @@ export default function PaymentScreen({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
-                Free Tier Base
+                Base Users
               </p>
             </div>
           </div>
@@ -3921,7 +3921,7 @@ export default function PaymentScreen({
                     Plan
                   </span>
                   <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40">
-                    {(["all", "free", "basic", "premium", "enterprise"] as const).map((mode) => (
+                    {(["all", "basic", "premium", "enterprise"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setPlanFilter(mode)}
@@ -3931,7 +3931,7 @@ export default function PaymentScreen({
                             : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
-                        {mode === "all" ? "All Plans" : mode === "free" ? "Free" : mode}
+                        {mode === "all" ? "All Plans" : mode}
                       </button>
                     ))}
                   </div>
@@ -4186,9 +4186,9 @@ export default function PaymentScreen({
                                     <Sparkles className="w-2.5 h-2.5 text-purple-600" />
                                     Premium Pro
                                   </span>
-                                ) : finance.planStr === "free" ? (
+                                ) : false ? (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-sm">
-                                    Free
+                                    Standard
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md shadow-sm">
@@ -4204,10 +4204,10 @@ export default function PaymentScreen({
                             {/* STATUS COLUMN */}
                             <td className="px-5 py-3">
                               {isUserActive ? (
-                                finance.planStr === "free" ? (
+                                false ? (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200/50 shadow-sm">
                                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
-                                    Active Free
+                                    Active Standard
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
@@ -4451,9 +4451,9 @@ export default function PaymentScreen({
                                 <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 rounded border border-purple-205/15">
                                   PREMIUM
                                 </span>
-                              ) : finance.planStr === "free" ? (
+                              ) : false ? (
                                 <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-slate-50 text-slate-700 rounded border border-slate-200">
-                                  FREE
+                                  STANDARD
                                 </span>
                               ) : (
                                 <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 rounded border border-blue-200">
@@ -5345,7 +5345,7 @@ export default function PaymentScreen({
 
                     {/* Transfer fees text */}
                     <span className="text-[10px] font-bold text-slate-400 mt-4 uppercase tracking-wide">
-                      Free InstaPay Transfers
+                      Zero-Fee InstaPay Transfers
                     </span>
 
                     {/* Payee Name */}
@@ -5462,7 +5462,7 @@ export default function PaymentScreen({
 
                     {/* Transfer fees text */}
                     <span className="text-[10px] font-bold text-slate-400 mt-4 uppercase tracking-wide">
-                      Free InstaPay Transfers
+                      Zero-Fee InstaPay Transfers
                     </span>
 
                     {/* Payee Name */}
