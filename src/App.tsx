@@ -81,6 +81,7 @@ import { ProjectData, MainSourceConfig, MdpData } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
 import { syncHierarchyData } from "./utils/hierarchyEngine";
+import { migrateProjectData } from "./utils/projectMigration";
 import {
   computePanelScheduleValues,
   calculateCircuitValues,
@@ -556,34 +557,40 @@ export default function App() {
   const subPanels = activeMdp.subPanels || [];
 
   const setPanel = useCallback((val: React.SetStateAction<PanelConfig>) => {
-    setMdps((prev) => prev.map((m) => {
-      const activeId = mdps.find((x) => x.id === activeMdpId)?.id || mdps[0].id;
-      if (m.id === activeId) {
-        return { ...m, panel: typeof val === "function" ? (val as Function)(m.panel) : val };
-      }
-      return m;
-    }));
-  }, [activeMdpId, mdps]);
+    setMdps((prev) => {
+      const activeId = prev.find((x) => x.id === activeMdpId)?.id || prev[0].id;
+      return prev.map((m) => {
+        if (m.id === activeId) {
+          return { ...m, panel: typeof val === "function" ? (val as Function)(m.panel) : val };
+        }
+        return m;
+      });
+    });
+  }, [activeMdpId]);
 
   const setCircuits = useCallback((val: React.SetStateAction<Circuit[]>) => {
-    setMdps((prev) => prev.map((m) => {
-      const activeId = mdps.find((x) => x.id === activeMdpId)?.id || mdps[0].id;
-      if (m.id === activeId) {
-        return { ...m, circuits: typeof val === "function" ? (val as Function)(m.circuits) : val };
-      }
-      return m;
-    }));
-  }, [activeMdpId, mdps]);
+    setMdps((prev) => {
+      const activeId = prev.find((x) => x.id === activeMdpId)?.id || prev[0].id;
+      return prev.map((m) => {
+        if (m.id === activeId) {
+          return { ...m, circuits: typeof val === "function" ? (val as Function)(m.circuits) : val };
+        }
+        return m;
+      });
+    });
+  }, [activeMdpId]);
 
   const setSubPanels = useCallback((val: React.SetStateAction<{ id: string; panel: PanelConfig; circuits: Circuit[] }[]>) => {
-    setMdps((prev) => prev.map((m) => {
-      const activeId = mdps.find((x) => x.id === activeMdpId)?.id || mdps[0].id;
-      if (m.id === activeId) {
-        return { ...m, subPanels: typeof val === "function" ? (val as Function)(m.subPanels) : val };
-      }
-      return m;
-    }));
-  }, [activeMdpId, mdps]);
+    setMdps((prev) => {
+      const activeId = prev.find((x) => x.id === activeMdpId)?.id || prev[0].id;
+      return prev.map((m) => {
+        if (m.id === activeId) {
+          return { ...m, subPanels: typeof val === "function" ? (val as Function)(m.subPanels) : val };
+        }
+        return m;
+      });
+    });
+  }, [activeMdpId]);
 
   const uniqueSubPanels = useMemo(() => {
     const seen = new Set<string>();
@@ -1391,262 +1398,33 @@ export default function App() {
     setDuplicateName("");
   };
 
-  const handleLoadProject = (projectId: string, data: ProjectData) => {
+  const handleLoadProject = (projectId: string, rawData: ProjectData) => {
     setCurrentProjectId(projectId);
     
-    const currentPanel = data.panel || INITIAL_PANEL;
+    // Automatically apply all newly released features, enhancements, and calculations
+    const data = migrateProjectData(rawData);
 
-    // Normalize short circuit params
-    const normalizedIscParams = { ...data.iscParams };
-    if (normalizedIscParams) {
-      if (normalizedIscParams.transformerConnection === "Delta-Wye")
-        normalizedIscParams.transformerConnection = "Delta-Wye (Δ-Y)";
-      else if (normalizedIscParams.transformerConnection === "Wye (Star)")
-        normalizedIscParams.transformerConnection = "Wye (Star) Connection";
-      else if (normalizedIscParams.transformerConnection === "Delta")
-        normalizedIscParams.transformerConnection = "Delta Connection";
-      else if (normalizedIscParams.transformerConnection === "Wye-Wye")
-        normalizedIscParams.transformerConnection = "Wye-Wye (Y-Y)";
-    }
-    setIscParams(normalizedIscParams || INITIAL_SHORT_CIRCUIT_PARAMS);
+    setIscParams(data.iscParams);
     setIscSource(data.iscSource || "auto");
-    setIllumParams(data.illumParams || INITIAL_ILLUMINATION_PARAMS);
+    setIllumParams(data.illumParams);
 
     if (data.transformerConfig) {
-      setTransformerPrimaryVoltage(
-        data.transformerConfig.primaryVoltage ?? 13800,
-      );
+      setTransformerPrimaryVoltage(data.transformerConfig.primaryVoltage ?? 13800);
       setTransformerPowerFactor(data.transformerConfig.powerFactor ?? 0.85);
       setTransformerDemandFactor(data.transformerConfig.demandFactor ?? 0.8);
       setTransformerLoadingFactor(data.transformerConfig.loadingFactor ?? 0.8);
-    } else {
-      setTransformerPrimaryVoltage(13800);
-      setTransformerPowerFactor(0.85);
-      setTransformerDemandFactor(0.8);
-      setTransformerLoadingFactor(0.8);
     }
 
-    // MIGRATION / RECALCULATION: Automatically apply the latest calculation methodologies to loaded data.
-    // Ensure accurate sizing by passing older circuits through the current compute engine.
-    const seenCircuitIds = new Set<string>();
-
-    const migratedSubSubPanels = (data.subSubPanels || []).map((sp) => {
-      const updatedCircuits = (sp.circuits || []).map((c) => {
-        let uniqueId = c.id;
-        if (seenCircuitIds.has(uniqueId)) {
-          uniqueId = safeUUID();
-        }
-        seenCircuitIds.add(uniqueId);
-
-        return {
-          ...c,
-          id: uniqueId,
-          ...calculateCircuitValues(c, sp.panel, [], data.vdCalculations),
-        };
-      }) as Circuit[];
-
-      const { mainFeeder } = computePanelScheduleValues(
-        sp.panel,
-        updatedCircuits,
-        { vdCalculations: data.vdCalculations, panelId: sp.id },
-      );
-      return {
-        ...sp,
-        panel: {
-          ...sp.panel,
-          mainBreakerAT:
-            sp.panel.mainOverrides?.isOverrideEnabled &&
-            sp.panel.mainOverrides.breakerAT
-              ? sp.panel.mainOverrides.breakerAT
-              : mainFeeder.cb,
-          mainBreakerAF:
-            sp.panel.mainOverrides?.isOverrideEnabled &&
-            sp.panel.mainOverrides.breakerAF
-              ? sp.panel.mainOverrides.breakerAF
-              : mainFeeder.af,
-          icRating:
-            sp.panel.mainOverrides?.isOverrideEnabled &&
-            sp.panel.mainOverrides.kaic
-              ? `${sp.panel.mainOverrides.kaic}kAIC`
-              : `${mainFeeder.kaic}kAIC`,
-        },
-        circuits: updatedCircuits,
-      };
-    });
-
-    const migratedSubPanels = (data.subPanels || []).map((sp) => {
-      const updatedCircuits = (sp.circuits || []).map((c) => {
-        let uniqueId = c.id;
-        if (seenCircuitIds.has(uniqueId)) {
-          uniqueId = safeUUID();
-        }
-        seenCircuitIds.add(uniqueId);
-
-        return {
-          ...c,
-          id: uniqueId,
-          ...calculateCircuitValues(
-            c,
-            sp.panel,
-            migratedSubSubPanels,
-            data.vdCalculations,
-          ),
-        };
-      }) as Circuit[];
-
-      const { mainFeeder } = computePanelScheduleValues(
-        sp.panel,
-        updatedCircuits,
-        { vdCalculations: data.vdCalculations, panelId: sp.id },
-      );
-      return {
-        ...sp,
-        panel: {
-          ...sp.panel,
-          mainBreakerAT:
-            sp.panel.mainOverrides?.isOverrideEnabled &&
-            sp.panel.mainOverrides.breakerAT
-              ? sp.panel.mainOverrides.breakerAT
-              : mainFeeder.cb,
-          mainBreakerAF:
-            sp.panel.mainOverrides?.isOverrideEnabled &&
-            sp.panel.mainOverrides.breakerAF
-              ? sp.panel.mainOverrides.breakerAF
-              : mainFeeder.af,
-          icRating:
-            sp.panel.mainOverrides?.isOverrideEnabled &&
-            sp.panel.mainOverrides.kaic
-              ? `${sp.panel.mainOverrides.kaic}kAIC`
-              : `${mainFeeder.kaic}kAIC`,
-        },
-        circuits: updatedCircuits,
-      };
-    });
-
-    const migratedCircuits = (data.circuits || []).map((c) => {
-      let uniqueId = c.id;
-      if (seenCircuitIds.has(uniqueId)) {
-        uniqueId = safeUUID();
-      }
-      seenCircuitIds.add(uniqueId);
-
-      return {
-        ...c,
-        id: uniqueId,
-        ...calculateCircuitValues(
-          c,
-          currentPanel,
-          migratedSubPanels,
-          data.vdCalculations,
-        ),
-      };
-    }) as Circuit[];
-
-    const { mainFeeder: mainFeederData } = computePanelScheduleValues(
-      currentPanel,
-      migratedCircuits,
-      { vdCalculations: data.vdCalculations, panelId: "main" },
-    );
-
-    let tc = currentPanel.transformerConnection;
-    if (tc === "Delta-Wye") tc = "Delta-Wye (Δ-Y)";
-    else if (tc === "Wye (Star)") tc = "Wye (Star) Connection";
-    else if (tc === "Delta") tc = "Delta Connection";
-    else if (tc === "Wye-Wye") tc = "Wye-Wye (Y-Y)";
-    else tc = tc;
-
-    const loadedPanel = {
-      ...currentPanel,
-      transformerConnection: tc,
-      mainBreakerAT:
-        currentPanel.mainOverrides?.isOverrideEnabled &&
-        currentPanel.mainOverrides.breakerAT
-          ? currentPanel.mainOverrides.breakerAT
-          : mainFeederData.cb,
-      mainBreakerAF:
-        currentPanel.mainOverrides?.isOverrideEnabled &&
-        currentPanel.mainOverrides.breakerAF
-          ? currentPanel.mainOverrides.breakerAF
-          : mainFeederData.af,
-      icRating:
-        currentPanel.mainOverrides?.isOverrideEnabled &&
-        currentPanel.mainOverrides.kaic
-          ? `${currentPanel.mainOverrides.kaic}kAIC`
-          : `${mainFeederData.kaic}kAIC`,
-    };
-
     if (data.mdps && data.mdps.length > 0) {
-      const migratedMdps = data.mdps.map(mdp => {
-        const mergedSubPanels = [...(mdp.subPanels || []), ...(mdp.subSubPanels || [])];
-        const { subSubPanels, ...rest } = mdp;
-        return { ...rest, subPanels: mergedSubPanels };
-      });
-      setMdps(migratedMdps);
-      setActiveMdpId(migratedMdps[0].id);
-    } else {
-      setMdps([{
-        id: "mdp-1",
-        panel: loadedPanel,
-        circuits: migratedCircuits,
-        subPanels: [...migratedSubPanels, ...migratedSubSubPanels]
-      }]);
-      setActiveMdpId("mdp-1");
+      setMdps(data.mdps);
+      setActiveMdpId(data.mdps[0].id);
     }
 
     if (data.mainSource) {
       setMainSource(data.mainSource);
-    } else {
-      setMainSource({
-        systemVoltage: currentPanel.voltage,
-        systemFrequency: currentPanel.frequency,
-        phaseConfiguration: currentPanel.system,
-        transformerConnection: tc || "N/A",
-        availableFaultCurrent: data.iscParams?.utilityShortCircuitMVA || 10,
-        sourceCapacity: 500,
-        utilityProvider: currentPanel.utilityProvider || "Utility",
-      });
     }
 
-    // MIGRATION: Update Voltage Drop tracking values
-    const newVdCalculations = (data.vdCalculations || []).map((vd) => {
-      // Re-evaluate calculation based on source
-      if (vd.source === "main") {
-        const { mainCurrent, mainFeeder } = computePanelScheduleValues(
-          currentPanel,
-          migratedCircuits,
-        );
-        return {
-          ...vd,
-          loadA: Number(mainCurrent.baseAmp.toFixed(2)),
-          wireSize: mainFeeder.wire.size.toString(),
-          wireSets: mainFeeder.wire.runs || 1,
-          voltage: currentPanel.voltage,
-          systemType: (currentPanel.system.includes("3PH") ? "3PH" : "1PH") as
-            "1PH" | "3PH",
-        };
-      } else if (vd.source !== "custom") {
-        // Evaluate for subpanel
-        const sp = migratedSubPanels.find((s) => s.id === vd.source);
-        if (sp) {
-          const { mainCurrent, mainFeeder } = computePanelScheduleValues(
-            sp.panel,
-            sp.circuits,
-          );
-          return {
-            ...vd,
-            loadA: Number(mainCurrent.baseAmp.toFixed(2)),
-            wireSize: mainFeeder.wire.size.toString(),
-            wireSets: mainFeeder.wire.runs || 1,
-            voltage: sp.panel.voltage,
-            systemType: (sp.panel.system.includes("3PH") ? "3PH" : "1PH") as
-              "1PH" | "3PH",
-          };
-        }
-      }
-      return vd;
-    });
-
-    setVdCalculations(newVdCalculations);
+    setVdCalculations(data.vdCalculations || []);
   };
 
   const currentProjectData: ProjectData = {

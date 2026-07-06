@@ -1029,9 +1029,6 @@ export default function LoadSchedule({
     panel.system,
     panel.connectionType,
     panel.voltage,
-    dbThreePhaseFLC,
-    availableSubPanels,
-    vdCalculations,
   ]);
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {
