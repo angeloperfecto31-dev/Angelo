@@ -2453,8 +2453,9 @@ export const exportToCAD = (
       );
       cy -= 12;
     } else {
+      const dxfSysV = maxDemandDetails.systemVoltage || 230;
       writeCalcLine(
-        `Formula: I_demand = ((Total VA / 230) * 0.80 + 0.25 * HML) * 1.25`,
+        `Formula: I_demand = ((Total VA / ${dxfSysV}) * 0.80 + 0.25 * HML) * 1.25`,
         cy,
       );
       cy -= 6;
@@ -2464,7 +2465,7 @@ export const exportToCAD = (
       );
       cy -= 6;
       writeCalcLine(
-        `Math: (((${maxDemandDetails.internalConnectedVA.toFixed(1)} / 230) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} A`,
+        `Math: (((${maxDemandDetails.internalConnectedVA.toFixed(1)} / ${dxfSysV}) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / dxfSysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );
