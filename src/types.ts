@@ -43,6 +43,7 @@ export interface Circuit {
   is3PhaseMarker?: boolean;
   loadA: number;
   mcbAT: number;
+  mcbATOverride?: number;
   mcbAF: number;
   mcbP: number;
   mcbKAIC: number;

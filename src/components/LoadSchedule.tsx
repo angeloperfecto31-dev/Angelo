@@ -765,7 +765,7 @@ export default function LoadSchedule({
 
   const dynamicLoadPresets = useMemo(() => {
     return LOAD_PRESETS.map((category) => {
-      if (category.category === "Air Conditioning (PEC 2017 Based)") {
+      if (category.category === "Air Conditioning (PEC 2017 Based)" || category.category === "Motor Loads (PEC 2017 Based)") {
         return {
           ...category,
           items: category.items.map((item) => {
@@ -1163,6 +1163,7 @@ export default function LoadSchedule({
             "quantity" in updates ||
             "voltage" in updates ||
             "mcbAT" in updates ||
+            "mcbATOverride" in updates ||
             "loadType" in updates ||
             "pf" in updates ||
             "linkedSubPanelId" in updates ||
@@ -1174,7 +1175,8 @@ export default function LoadSchedule({
             "groundSizeOverride" in updates ||
             "conduitSizeOverride" in updates ||
             "conduitTypeOverride" in updates ||
-            "wireSets" in updates
+            "wireSets" in updates ||
+            "description" in updates
           ) {
             return { ...merged, ...calculateCircuit(merged) } as Circuit;
           }
@@ -4421,18 +4423,19 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <select
-                          value={c.mcbAT || ""}
+                          value={c.mcbATOverride || ""}
                           disabled={
                             c.loadType === LoadType.SUB_PANEL ||
                             c.loadType === LoadType.SUB_SUB_PANEL
                           }
                           onChange={(e) =>
                             updateCircuit(c.id, {
-                              mcbAT: parseInt(e.target.value),
+                              mcbATOverride: e.target.value ? parseInt(e.target.value) : undefined,
                             })
                           }
-                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-14 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 font-bold appearance-none w-24 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
                         >
+                          <option value="">Auto ({c.mcbAT})</option>
                           {STANDARD_CB_RATINGS.map((r) => (
                             <option
                               key={r}
@@ -5851,6 +5854,7 @@ export default function LoadSchedule({
                           : 1;
                       const newCircuits = [...circuits];
                       selectedPresets.forEach((preset) => {
+                        const is3P = (preset.loadType === LoadType.MOTOR || preset.loadType === LoadType.AIR_CON) && panel.system.includes("3PH");
                         const base: Partial<Circuit> = {
                           id: crypto.randomUUID(),
                           circuitNo: nextNo++,
@@ -5858,7 +5862,8 @@ export default function LoadSchedule({
                           wattage: preset.wattage,
                           quantity: 1,
                           voltage: panel.voltage,
-                          phases: ["R"],
+                          phases: is3P ? ["R", "Y", "B"] : ["R"],
+                          is3PhaseMarker: is3P,
                           loadType: preset.loadType as LoadType,
                           mcbType: MCBType.BOLT_ON,
                           wireType: "THHN",

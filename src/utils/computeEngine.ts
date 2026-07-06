@@ -652,10 +652,10 @@ export const calculateCircuitValues = (
     availableSubPanels.some((s) => s.id === c.linkedSubPanelId);
 
   let mcbAT = isSubPanelLink
-    ? c.mcbAT || 30
+    ? c.mcbATOverride || c.mcbAT || 30
     : c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL
-      ? c.mcbAT || 30
-      : Math.max(requiredMcbAT, c.mcbAT || 0);
+      ? c.mcbATOverride || c.mcbAT || 30
+      : c.mcbATOverride || requiredMcbAT;
 
   const mcbAF =
     isSubPanelLink && c.mcbAF
@@ -1277,7 +1277,10 @@ export const computePanelScheduleValues = (
   c.forEach((cir) => {
     if (isIdleSpareOrSpace(cir)) return;
 
-    const is3P = cir.phases && cir.phases.length === 3;
+    const is3P =
+      cir.is3PhaseMarker !== undefined
+        ? cir.is3PhaseMarker
+        : cir.phases && cir.phases.length === 3;
     let cirV =
       cir.voltage ||
       getPanelSystemVoltageFallback(p.system, is3P, p.connectionType);
@@ -1336,6 +1339,7 @@ export const computePanelScheduleValues = (
       }
     }
   });
+
   let internalConnectedVA = 0;
   let subPanelDemandAmps = 0;
   let internalDemandCurrent = maxDesignAmp;
@@ -1349,20 +1353,6 @@ export const computePanelScheduleValues = (
       }
   });
 
-  const is3PH = p.system.includes("3PH");
-  let formulaDemandAmp = maxDesignAmp;
-  if (is3PH) {
-    const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
-    const total3Phase = phaseAmps.threePhase;
-    formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
-  } else {
-    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
-  }
-  
-  maxDesignAmp = formulaDemandAmp;
-  maxBaseAmp = formulaDemandAmp / 1.25;
-  internalDemandCurrent = formulaDemandAmp;
-
   const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
 
   // Calculate Main Feeder
@@ -1370,13 +1360,12 @@ export const computePanelScheduleValues = (
   const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT || 0));
   
   // PEC standard: overcurrent protection >= 125% continuous + 100% non-continuous.
-  // formulaDemandAmp includes this 125% factor from the first pass phaseDesignCurrents.
+  // maxDesignAmp includes this 125% factor from the first pass phaseDesignCurrents.
   // For the Main Breaker, the user specifically requested to implement the allowable 80% rule:
   // This means the Main Breaker must be sized so that it is loaded to a maximum of 80% of its rating.
-  // 80% of Rating >= Base Load -> Rating >= Base Load / 0.8 -> Rating >= Base Load * 1.25.
-  // Since formulaDemandAmp is the design load (which already includes the 1.25 factor), we use maxBaseAmp.
+  // 80% of Rating >= Maximum Demand Current
   let calculatedCb =
-    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxBaseAmp) || 100;
+    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxDesignAmp) || 100;
 
   if (calculatedCb < maxBranchAT) {
     calculatedCb =
