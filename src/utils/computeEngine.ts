@@ -1342,7 +1342,6 @@ export const computePanelScheduleValues = (
 
   let internalConnectedVA = 0;
   let subPanelDemandAmps = 0;
-  let internalDemandCurrent = maxDesignAmp;
   
   c.forEach(cir => {
       if (!isIdleSpareOrSpace(cir)) {
@@ -1352,6 +1351,20 @@ export const computePanelScheduleValues = (
           }
       }
   });
+
+  const is3PH = p.system.includes("3PH");
+  let formulaDemandAmp = maxDesignAmp;
+  if (is3PH) {
+    const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
+    const total3Phase = phaseAmps.threePhase;
+    formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
+  } else {
+    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
+  }
+
+  maxDesignAmp = formulaDemandAmp;
+  maxBaseAmp = formulaDemandAmp / 1.25;
+  let internalDemandCurrent = formulaDemandAmp;
 
   const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
 
