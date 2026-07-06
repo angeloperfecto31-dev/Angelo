@@ -609,8 +609,10 @@ export const calculateCircuitValues = (
     );
   } else if (c.loadType === LoadType.MOTOR) {
     const motorBranchProtection = loadA * 2.5;
-    requiredMcbAT =
-      STANDARD_CB_RATINGS.find((r) => r >= motorBranchProtection) || 15;
+    requiredMcbAT = Math.max(
+      20,
+      STANDARD_CB_RATINGS.find((r) => r >= motorBranchProtection) || 20,
+    );
   } else if (c.loadType === LoadType.AIR_CON) {
     const flc = loadA;
     const limit175 = flc * 1.75;
@@ -621,15 +623,17 @@ export const calculateCircuitValues = (
       (r) => r > baseRating,
     );
     const nextHigherRating =
-      nextHigherIndex !== -1 ? STANDARD_CB_RATINGS[nextHigherIndex] : 15;
+      nextHigherIndex !== -1 ? STANDARD_CB_RATINGS[nextHigherIndex] : 20;
 
+    let calcedMcbAT = 20;
     if (nextHigherRating <= limit225) {
-      requiredMcbAT = Math.max(15, nextHigherRating);
+      calcedMcbAT = Math.max(20, nextHigherRating);
     } else {
       const under225 = STANDARD_CB_RATINGS.filter((r) => r <= limit225);
-      requiredMcbAT =
-        under225.length > 0 ? Math.max(15, under225[under225.length - 1]) : 15;
+      calcedMcbAT =
+        under225.length > 0 ? Math.max(20, under225[under225.length - 1]) : 20;
     }
+    requiredMcbAT = calcedMcbAT;
   } else if (
     c.loadType === LoadType.SUB_PANEL ||
     c.loadType === LoadType.SUB_SUB_PANEL

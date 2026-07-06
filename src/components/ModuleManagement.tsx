@@ -31,6 +31,7 @@ export const DEFAULT_MODULES: SystemModule[] = [
   { id: "current-calc", name: "PEC Calculator", status: "active" },
   { id: "egc", name: "EGC Sizer", status: "active" },
   { id: "transformer", name: "Transformer Capacity", status: "active" },
+  { id: "bom", name: "Bill of Materials", status: "active" },
 ];
 
 export const ModuleManagement: React.FC<Props> = ({ adminEmail }) => {

@@ -107,6 +107,7 @@ import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 import EgcSizingCalculator from "./components/EgcSizingCalculator";
 import TransformerCalc from "./components/TransformerCalc";
+import BomModule, { BomItem } from "./components/BomModule";
 import {
   ModuleManagement,
   SystemModule,
@@ -566,6 +567,7 @@ export default function App() {
     | "egc"
     | "system-sld"
     | "transformer"
+    | "bom"
     | "power-suite"
     | "billing"
     | "module-management"
@@ -714,6 +716,9 @@ export default function App() {
     useState<number>(0.8);
   const [transformerLoadingFactor, setTransformerLoadingFactor] =
     useState<number>(0.8);
+
+  const [bomItems, setBomItems] = useState<BomItem[]>([]);
+  const [bomSettings, setBomSettings] = useState<any>(null);
 
   // Real-time synchronization of Short Circuit and Voltage Drop calculation parameters
   useEffect(() => {
@@ -1414,6 +1419,7 @@ export default function App() {
   const [isProjectManagerOpen, setIsProjectManagerOpen] =
     useState<boolean>(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("saved");
 
   const [panelToDuplicate, setPanelToDuplicate] = useState<{
     id: string;
@@ -1515,6 +1521,8 @@ export default function App() {
     }
 
     setVdCalculations(data.vdCalculations || []);
+    setBomItems(data.bomItems || []);
+    setBomSettings(data.bomSettings || null);
 
     // Clean data of undefined fields before saving to avoid Firestore serialization errors
     const cleanObject = (obj: any): any => {
@@ -1583,6 +1591,8 @@ export default function App() {
       demandFactor: transformerDemandFactor,
       loadingFactor: transformerLoadingFactor,
     },
+    bomItems,
+    bomSettings,
   };
 
   const handleNewProject = (configOverrides?: Partial<PanelConfig>) => {
@@ -1611,7 +1621,124 @@ export default function App() {
     setTransformerPowerFactor(0.85);
     setTransformerDemandFactor(0.8);
     setTransformerLoadingFactor(0.8);
+    setBomItems([]);
+    setBomSettings(null);
   };
+
+  // Trigger saving status instantly on data changes
+  useEffect(() => {
+    if (currentProjectId) {
+      setSaveStatus("saving");
+    }
+  }, [
+    panel,
+    circuits,
+    subPanels,
+    iscParams,
+    iscSource,
+    vdCalculations,
+    illumParams,
+    bomItems,
+    bomSettings,
+    transformerPrimaryVoltage,
+    transformerPowerFactor,
+    transformerDemandFactor,
+    transformerLoadingFactor,
+    mainSource,
+  ]);
+
+  // Debounced auto-save effect
+  useEffect(() => {
+    if (!currentProjectId) return;
+
+    const timer = setTimeout(() => {
+      const cleanData = (obj: any): any => {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (Array.isArray(obj)) return obj.map(cleanData);
+        const result: any = {};
+        for (const key in obj) {
+          if (obj[key] !== undefined) {
+            result[key] = cleanData(obj[key]);
+          }
+        }
+        return result;
+      };
+
+      const finalName = panel.project?.trim() || "Untitled Project Station";
+      const updatedData = {
+        ...currentProjectData,
+        panel: {
+          ...currentProjectData.panel,
+          project: finalName,
+        },
+      };
+
+      if (user) {
+        const docRef = doc(db, "users", user.uid, "projects", currentProjectId);
+        setDoc(
+          docRef,
+          cleanData({
+            name: finalName,
+            lastModified: Date.now(),
+            data: updatedData,
+            ownerId: user.uid,
+          }),
+          { merge: true }
+        )
+          .then(() => {
+            setSaveStatus("saved");
+          })
+          .catch((err) => {
+            console.error("Auto-save to Firestore failed:", err);
+            setSaveStatus("saved"); // revert to avoid stuck state
+          });
+      } else {
+        const STORAGE_KEY = "electricalph_projects";
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const projects = JSON.parse(saved);
+            const updated = projects.map((p: any) => {
+              if (p.id === currentProjectId) {
+                return {
+                  ...p,
+                  name: finalName,
+                  lastModified: Date.now(),
+                  data: updatedData,
+                };
+              }
+              return p;
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+            setSaveStatus("saved");
+          } catch (e) {
+            console.error("Auto-save to localStorage failed", e);
+            setSaveStatus("saved");
+          }
+        } else {
+          setSaveStatus("saved");
+        }
+      }
+    }, 1500); // 1.5s debounce
+
+    return () => clearTimeout(timer);
+  }, [
+    currentProjectId,
+    panel,
+    circuits,
+    subPanels,
+    iscParams,
+    iscSource,
+    vdCalculations,
+    illumParams,
+    bomItems,
+    bomSettings,
+    transformerPrimaryVoltage,
+    transformerPowerFactor,
+    transformerDemandFactor,
+    transformerLoadingFactor,
+    mainSource,
+  ]);
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
   const isPostPaymentRedirect = window.location.search.includes("session_id=");
@@ -1679,6 +1806,13 @@ export default function App() {
       bg: "bg-indigo-50",
     },
     {
+      id: "power-suite",
+      label: "Power Analysis Suite",
+      icon: Zap,
+      color: "text-amber-500",
+      bg: "bg-amber-50",
+    },
+    {
       id: "isc",
       label: "Short Circuit",
       icon: ShieldAlert,
@@ -1733,6 +1867,13 @@ export default function App() {
       icon: Cpu,
       color: "text-rose-600",
       bg: "bg-rose-50",
+    },
+    {
+      id: "bom",
+      label: "Bill of Materials",
+      icon: FileSpreadsheet,
+      color: "text-violet-600",
+      bg: "bg-violet-50",
     },
     ...(isAdmin
       ? [
@@ -3581,6 +3722,12 @@ export default function App() {
                     icon: Cpu,
                     requiresPremium: false,
                   },
+                  {
+                    id: "bom",
+                    label: "Bill of Materials",
+                    icon: FileSpreadsheet,
+                    requiresPremium: false,
+                  },
                 ]
                   .filter((item) => {
                     if (isAdmin) return true;
@@ -4900,9 +5047,30 @@ export default function App() {
 
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                       <div className="space-y-2">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-yellow-300 text-xs font-bold uppercase tracking-wider">
-                          ⚡ Active Session Station
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-yellow-300 text-xs font-bold uppercase tracking-wider">
+                            ⚡ Active Session Station
+                          </span>
+                          {currentProjectId && (
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
+                              saveStatus === "saving" 
+                                ? "bg-amber-400/10 border border-amber-400/25 text-amber-300"
+                                : "bg-emerald-400/10 border border-emerald-400/25 text-emerald-300"
+                            }`}>
+                              {saveStatus === "saving" ? (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                  Saving...
+                                </>
+                              ) : (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                  Saved to {user ? "Cloud" : "Local"}
+                                </>
+                              )}
+                            </span>
+                          )}
+                        </div>
                         <h2 className="text-3xl font-black uppercase tracking-tight text-white sm:text-4xl">
                           {panel.project || "Untitled Project Station"}
                         </h2>
@@ -6426,6 +6594,41 @@ export default function App() {
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
+                  />
+                </motion.div>
+              </div>
+
+              {/* Bill of Materials (BOM) Tab */}
+              <div
+                className={activeTab === "bom" ? "w-full" : "hidden"}
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "bom" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full"
+                >
+                  <BomModule
+                    projectId={currentProjectId}
+                    panel={panel}
+                    circuits={circuits}
+                    subPanels={subPanels}
+                    iscParams={iscParams}
+                    vdCalculations={vdCalculations}
+                    isPremium={
+                      userPlan === "premium" ||
+                      userPlan === "enterprise" ||
+                      isAdmin
+                    }
+                    onRequestUpgrade={() => setShowUpgrade(true)}
+                    savedBomItems={bomItems}
+                    savedBomSettings={bomSettings}
+                    onSaveBom={(items, settings) => {
+                      setBomItems(items);
+                      setBomSettings(settings);
+                    }}
                   />
                 </motion.div>
               </div>

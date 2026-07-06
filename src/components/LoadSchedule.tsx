@@ -1486,18 +1486,14 @@ export default function LoadSchedule({
       const material = panel.conductorMaterial || "Copper";
       const cbRating = c.mcbAT;
       
-      if (!isMotor) {
-        if (material === "Copper") {
-          if (cbRating > 30) minSize = 8.0;
-          else if (cbRating > 20) minSize = 5.5;
-          else if (cbRating > 15) minSize = 3.5;
-        } else { // Aluminum
-          if (cbRating > 25) minSize = 8.0;
-          else if (cbRating > 15) minSize = 5.5;
-          else minSize = 3.5;
-        }
-      } else {
-        minSize = material === "Copper" ? 2.0 : 3.5;
+      if (material === "Copper") {
+        if (cbRating > 30) minSize = 8.0;
+        else if (cbRating > 20) minSize = 5.5;
+        else if (cbRating > 15) minSize = 3.5;
+      } else { // Aluminum
+        if (cbRating > 25) minSize = 8.0;
+        else if (cbRating > 15) minSize = 5.5;
+        else minSize = 3.5;
       }
       if (overrideSize < minSize) {
         return true;

@@ -36,6 +36,20 @@ export interface ProjectData {
     demandFactor: number;
     loadingFactor: number;
   };
+  bomItems?: any[];
+  bomSettings?: {
+    wasteConductors: number;
+    wasteConduits: number;
+    wasteAccessories: number;
+    laborRatePercent: number;
+    taxRatePercent: number;
+    profitMarginPercent: number;
+    contingencyPercent: number;
+    preferredBrandConductors?: string;
+    preferredBrandConduits?: string;
+    preferredBrandBreakers?: string;
+    preferredBrandAccessories?: string;
+  };
 }
 
 export interface SavedProject {

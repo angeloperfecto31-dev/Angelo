@@ -301,5 +301,7 @@ export function migrateProjectData(data: any): ProjectData {
     illumParams: migratedIllum,
     transformerConfig,
     mainSource,
+    bomItems: data.bomItems || [],
+    bomSettings: data.bomSettings || null,
   };
 }
