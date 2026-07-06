@@ -196,7 +196,7 @@ export default function App() {
             const plan = data.plan || "free";
             const userIsActive = data.isActive === true;
 
-            // Check expiration for basic, premium, and free trials
+            // Check expiration for basic, premium, and free/starter plans
             let isExpired = false;
             if (
               (plan === "basic" || plan === "premium" || plan === "free") &&
@@ -205,19 +205,6 @@ export default function App() {
               const expires = new Date(data.expiresAt);
               if (new Date() >= expires) {
                 isExpired = true;
-                // Auto-correct / update database status for free trials
-                if (data.freeTrialStatus === "active" || data.freeTrialStatus === "used") {
-                  console.warn(`[Free Trial Expiration App Check]: Trial expired. Updating in database.`);
-                  const userRef = doc(db, "users", user.uid);
-                  setDoc(userRef, {
-                    isActive: false,
-                    freeTrialStatus: "expired",
-                    freeTrialUsed: true,
-                    paymentStatus: "unpaid"
-                  }, { merge: true }).catch((err) => {
-                    console.error("Error updating expired free trial:", err);
-                  });
-                }
               }
             }
 
@@ -265,72 +252,42 @@ export default function App() {
             const isBrandNew = Math.abs(nowTime - creationTime) < 60000; // registered in the last 60 seconds
 
             if (isBrandNew) {
-              // Check if the user's email is blacklisted from free trials
-              const emailLower = user.email ? user.email.toLowerCase() : "";
-              getDoc(doc(db, "blacklisted_emails", emailLower))
-                .then((blacklistSnap) => {
-                  if (blacklistSnap.exists()) {
-                    // Email is blacklisted! No free trial. Force them to subscribe. Do NOT write a document to Firestore to avoid restoring the account automatically!
-                    console.warn(
-                      "User email is blacklisted. Denying free trial.",
-                    );
-                    setUserPlan("free");
-                    setActivatedAt(null);
-                    setExpiresAt(null);
-                    setIsActive(false);
-                    isActiveRef.current = false;
-                  } else {
-                    // Not blacklisted, set as eligible for 1-Hour Free Trial
-                    const now = new Date();
+              const now = new Date();
 
-                    const initialUserData = {
-                      uid: user.uid,
-                      email: user.email,
-                      displayName:
-                        user.displayName ||
-                        user.email?.split("@")[0] ||
-                        "Engineering User",
-                      plan: "free",
-                      isActive: false,
-                      createdAt: now.toISOString(),
-                      paymentStatus: "unpaid",
-                      freeTrialStatus: "eligible",
-                    };
+              const initialUserData = {
+                uid: user.uid,
+                email: user.email,
+                displayName:
+                  user.displayName ||
+                  user.email?.split("@")[0] ||
+                  "Engineering User",
+                plan: "free",
+                isActive: false,
+                createdAt: now.toISOString(),
+                paymentStatus: "unpaid",
+              };
 
-                    setDoc(doc(db, "users", user.uid), initialUserData)
-                      .then(() => {
-                        console.log(
-                          "Successfully initialized user profile in Firestore.",
-                        );
-                      })
-                      .catch((err) => {
-                        console.error(
-                          "Error creating initial user profile:",
-                          err,
-                        );
-                      });
-
-                    // Optimistically update local state so they don't have to wait for the next snapshot
-                    setUserPlan("free");
-                    setActivatedAt(null);
-                    setExpiresAt(null);
-                    setIsActive(false);
-                    isActiveRef.current = false;
-                  }
+              setDoc(doc(db, "users", user.uid), initialUserData)
+                .then(() => {
+                  console.log(
+                    "Successfully initialized user profile in Firestore.",
+                  );
                 })
-                .catch((blErr) => {
-                  console.error("Error checking blacklist:", blErr);
-                  // fallback to safe unpaid profile local state if error checking blacklist to be secure
-                  setUserPlan("free");
-                  setActivatedAt(null);
-                  setExpiresAt(null);
-                  setIsActive(false);
-                  isActiveRef.current = false;
-                })
-                .finally(() => {
-                  initialLoad = false;
-                  setAuthLoading(false);
+                .catch((err) => {
+                  console.error(
+                    "Error creating initial user profile:",
+                    err,
+                  );
                 });
+
+              // Optimistically update local state so they don't have to wait for the next snapshot
+              setUserPlan("free");
+              setActivatedAt(null);
+              setExpiresAt(null);
+              setIsActive(false);
+              isActiveRef.current = false;
+              initialLoad = false;
+              setAuthLoading(false);
 
               return; // return so we don't call setAuthLoading(false) immediately below
             } else {
@@ -4713,7 +4670,7 @@ export default function App() {
                     : userPlan === "basic"
                       ? "Basic"
                       : "Premium";
-                const isTrial = userPlan === "free";
+                const isFreePlan = userPlan === "free";
 
                 if (daysLeft <= 0) {
                   return (
@@ -4723,10 +4680,10 @@ export default function App() {
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
                             Your {planName}{" "}
-                            {isTrial ? "has ended" : "has expired"}!
+                            {isFreePlan ? "has ended" : "has expired"}!
                           </p>
                           <p className="text-xs text-rose-600 dark:text-rose-400">
-                            {isTrial
+                            {isFreePlan
                               ? "Upgrade to a premium plan to continue using professional electrical calculation engines."
                               : "Renew your subscription to regain access to premium features and exports."}
                           </p>
@@ -4734,11 +4691,11 @@ export default function App() {
                       </div>
                       <button
                         onClick={() =>
-                          isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                          isFreePlan ? setShowUpgrade(true) : setShowRenew(true)
                         }
                         className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                       >
-                        {isTrial ? "Upgrade Now" : "Renew Plan"}
+                        {isFreePlan ? "Upgrade Now" : "Renew Plan"}
                       </button>
                     </div>
                   );
@@ -4749,12 +4706,12 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse animate-bounce" />
                         <div>
                           <p className="text-sm font-bold text-rose-800 dark:text-rose-200">
-                            Your {planName} {isTrial ? "ends" : "expires"} in{" "}
+                            Your {planName} {isFreePlan ? "ends" : "expires"} in{" "}
                             {daysLeft} day{daysLeft > 1 ? "s" : ""}!
                           </p>
                           <p className="text-xs text-rose-600 dark:text-rose-400">
                             Critical countdown:{" "}
-                            {isTrial
+                            {isFreePlan
                               ? "Upgrade to a premium plan to avoid losing workspace access."
                               : "Renew immediately to avoid interruption."}
                           </p>
@@ -4791,11 +4748,11 @@ export default function App() {
                         </div>
                         <button
                           onClick={() =>
-                            isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                            isFreePlan ? setShowUpgrade(true) : setShowRenew(true)
                           }
                           className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                         >
-                          {isTrial ? "Upgrade Now" : "Renew Plan"}
+                          {isFreePlan ? "Upgrade Now" : "Renew Plan"}
                         </button>
                       </div>
                     </div>
@@ -4807,11 +4764,11 @@ export default function App() {
                         <AlertTriangle className="w-5 h-5 text-amber-600" />
                         <div>
                           <p className="text-sm font-bold text-amber-800 dark:text-amber-200">
-                            Your {planName} {isTrial ? "ends" : "expires"} in{" "}
+                            Your {planName} {isFreePlan ? "ends" : "expires"} in{" "}
                             {daysLeft} day{daysLeft > 1 ? "s" : ""}!
                           </p>
                           <p className="text-xs text-amber-600 dark:text-amber-400">
-                            {isTrial
+                            {isFreePlan
                               ? "Upgrade now to keep uninterrupted access to your professional suite."
                               : "Renew now to keep uninterrupted access to your engineering tools."}
                           </p>
@@ -4848,11 +4805,11 @@ export default function App() {
                         </div>
                         <button
                           onClick={() =>
-                            isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                            isFreePlan ? setShowUpgrade(true) : setShowRenew(true)
                           }
                           className="px-4 py-2 rounded-xl text-xs font-bold transition-colors bg-amber-500 hover:bg-amber-400 text-slate-900 cursor-pointer"
                         >
-                          {isTrial ? "Upgrade Now" : "Renew Plan"}
+                          {isFreePlan ? "Upgrade Now" : "Renew Plan"}
                         </button>
                       </div>
                     </div>
@@ -4875,7 +4832,7 @@ export default function App() {
                             {countdownTime ? (
                               <span className="flex items-center gap-1">
                                 <span>
-                                  {isTrial
+                                  {isFreePlan
                                     ? "Remaining Starter Access Time:"
                                     : "Remaining Access Time:"}
                                 </span>
@@ -4917,7 +4874,7 @@ export default function App() {
                               •
                             </span>
                             <span className="font-mono text-[10px]">
-                              {isTrial ? "Access Ends:" : "Expires:"}{" "}
+                              {isFreePlan ? "Access Ends:" : "Expires:"}{" "}
                               {new Date(expiresAt).toLocaleDateString()}
                             </span>
                           </div>
@@ -4929,7 +4886,7 @@ export default function App() {
                         <div className="flex-1 space-y-1 min-w-[120px]">
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
                             <span>
-                              {isTrial
+                              {isFreePlan
                                 ? "STARTER DAYS REMAINING"
                                 : "DAYS REMAINING"}
                             </span>
@@ -4945,7 +4902,7 @@ export default function App() {
                           <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden border border-slate-200/30 dark:border-slate-750">
                             <div
                               className={`h-full rounded-full transition-all duration-500 ${
-                                isTrial
+                                isFreePlan
                                   ? "bg-gradient-to-r from-amber-500 to-yellow-500"
                                   : "bg-gradient-to-r from-emerald-500 to-teal-500"
                               }`}
@@ -4956,15 +4913,15 @@ export default function App() {
 
                         <button
                           onClick={() =>
-                            isTrial ? setShowUpgrade(true) : setShowRenew(true)
+                            isFreePlan ? setShowUpgrade(true) : setShowRenew(true)
                           }
                           className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all duration-200 shadow-sm whitespace-nowrap cursor-pointer active:scale-98 ${
-                            isTrial
+                            isFreePlan
                               ? "bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-950"
                               : "bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900"
                           }`}
                         >
-                          {isTrial ? "Upgrade Now" : "Renew Plan"}
+                          {isFreePlan ? "Upgrade Now" : "Renew Plan"}
                         </button>
                       </div>
                     </div>

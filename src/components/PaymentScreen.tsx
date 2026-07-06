@@ -117,8 +117,6 @@ export default function PaymentScreen({
   const [uploadingMayaQr, setUploadingMayaQr] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<"basic" | "premium" | "enterprise">("premium");
-  const [requestingTrial, setRequestingTrial] = useState(false);
-  const [startingTrial, setStartingTrial] = useState(false);
 
   // Custom confirmation states to bypass native window.confirm blocks in sandboxed iframes
   const [confirmDeleteReg, setConfirmDeleteReg] = useState(false);
@@ -127,9 +125,7 @@ export default function PaymentScreen({
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions" | "free_trials">("verifications");
-  const [trialSearchQuery, setTrialSearchQuery] = useState("");
-  const [trialStatusFilter, setTrialStatusFilter] = useState("all");
+  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions">("verifications");
 
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
@@ -157,7 +153,6 @@ export default function PaymentScreen({
     enableGCash: true,
     enablePayMongo: true,
     enableMaya: true,
-    enableFreeTrial: true,
   });
 
   // Admin Pricing Input States
@@ -178,7 +173,6 @@ export default function PaymentScreen({
   const [adminEnableGCash, setAdminEnableGCash] = useState<boolean>(true);
   const [adminEnablePayMongo, setAdminEnablePayMongo] = useState<boolean>(true);
   const [adminEnableMaya, setAdminEnableMaya] = useState<boolean>(true);
-  const [adminEnableFreeTrial, setAdminEnableFreeTrial] = useState<boolean>(true);
   const [savingPricing, setSavingPricing] = useState<boolean>(false);
   const hasLoadedPricingInputs = useRef(false);
   const hasSelectedInitialPlan = useRef(false);
@@ -216,7 +210,7 @@ export default function PaymentScreen({
   const [discrepancies, setDiscrepancies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [adminFilter, setAdminFilter] = useState<
-    "all" | "pending" | "paid" | "lifetime" | "unpaid" | "free_trial"
+    "all" | "pending" | "paid" | "lifetime" | "unpaid"
   >("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -266,19 +260,6 @@ export default function PaymentScreen({
             const expires = new Date(data.expiresAt);
             if (new Date() >= expires) {
               isExpired = true;
-              // If it's a free trial that just expired, update in DB
-              if (data.freeTrialStatus === "active" || data.freeTrialStatus === "used") {
-                console.warn(`[Free Trial Expiration Session Check]: Trial expired. Updating in database.`);
-                const userRef = doc(db, "users", user.uid);
-                setDoc(userRef, {
-                  isActive: false,
-                  freeTrialStatus: "expired",
-                  freeTrialUsed: true,
-                  paymentStatus: "unpaid"
-                }, { merge: true }).catch((err) => {
-                  console.error("Error updating expired free trial during session:", err);
-                });
-              }
             }
           }
 
@@ -428,7 +409,6 @@ export default function PaymentScreen({
           const enableGCash = data.enableGCash !== false;
           const enablePayMongo = data.enablePayMongo !== false;
           const enableMaya = data.enableMaya !== false;
-          const enableFreeTrial = data.enableFreeTrial !== false;
 
           setPricingSettings({
             basicPrice: basic,
@@ -448,7 +428,6 @@ export default function PaymentScreen({
             enableGCash,
             enablePayMongo,
             enableMaya,
-            enableFreeTrial,
           });
           setIsPricingLoaded(true);
 
@@ -471,7 +450,6 @@ export default function PaymentScreen({
             setAdminEnableGCash(enableGCash);
             setAdminEnablePayMongo(enablePayMongo);
             setAdminEnableMaya(enableMaya);
-            setAdminEnableFreeTrial(enableFreeTrial);
             hasLoadedPricingInputs.current = true;
           }
         } else {
@@ -494,7 +472,6 @@ export default function PaymentScreen({
             enableGCash: true,
             enablePayMongo: true,
             enableMaya: true,
-            enableFreeTrial: true,
           });
           setIsPricingLoaded(true);
 
@@ -518,7 +495,6 @@ export default function PaymentScreen({
                 enableGCash: true,
                 enablePayMongo: true,
                 enableMaya: true,
-                enableFreeTrial: true,
                 updatedBy: "System (Auto-generated)",
                 updatedAt: new Date().toISOString()
               });
@@ -762,7 +738,6 @@ export default function PaymentScreen({
           enableGCash: adminEnableGCash,
           enablePayMongo: adminEnablePayMongo,
           enableMaya: adminEnableMaya,
-          enableFreeTrial: adminEnableFreeTrial,
           updatedBy: user.email || "",
           updatedAt: new Date().toISOString()
         },
@@ -780,26 +755,10 @@ export default function PaymentScreen({
             gcash: adminEnableGCash,
             paymongo: adminEnablePayMongo,
             maya: adminEnableMaya,
-            freeTrial: adminEnableFreeTrial,
           },
         });
       } catch (logErr) {
         console.warn("Failed to write to admin activity log:", logErr);
-      }
-
-      // Explicitly log free trial status changes for auditing purposes
-      if (pricingSettings.enableFreeTrial !== adminEnableFreeTrial) {
-        try {
-          await addDoc(collection(db, "admin_activity_logs"), {
-            action: "toggle_free_trial",
-            adminEmail: user.email || "Unknown Admin",
-            timestamp: new Date().toISOString(),
-            previousStatus: pricingSettings.enableFreeTrial ? "enabled" : "disabled",
-            newStatus: adminEnableFreeTrial ? "enabled" : "disabled"
-          });
-        } catch (logErr) {
-          console.warn("Failed to write to admin activity log for free trial toggle:", logErr);
-        }
       }
 
       setAdminStatusMsg("Pricing configurations updated successfully throughout the system!");
@@ -906,22 +865,6 @@ export default function PaymentScreen({
             }
           }
 
-          // Auto-correction for Free Trial expiration
-          if (uData && (uData.freeTrialStatus === "used" || uData.freeTrialStatus === "active") && uData.expiresAt) {
-            const expires = new Date(uData.expiresAt);
-            if (new Date() >= expires) {
-              console.warn(`[Free Trial Expiration]: Detected expired free trial for user (${uData.email || u.uid}). Correcting permanently...`);
-              const userRef = doc(db, "users", snapDoc.id);
-              setDoc(userRef, {
-                isActive: false,
-                freeTrialStatus: "expired",
-                freeTrialUsed: true,
-                paymentStatus: "unpaid"
-              }, { merge: true }).catch((err) => {
-                console.error(`[Free Trial Expiration Error] Failed to correct user ${snapDoc.id}:`, err);
-              });
-            }
-          }
         });
         setAllUsers(usersList);
       },
@@ -1540,11 +1483,9 @@ export default function PaymentScreen({
     if (adminFilter === "pending") {
       if (u.paymentStatus !== "pending_verification") return false;
     } else if (adminFilter === "paid") {
-      if (u.isActive !== true || u.paymentStatus === "free_trial") return false;
+      if (u.isActive !== true) return false;
     } else if (adminFilter === "lifetime") {
       if (u.isActive !== true || u.plan !== "enterprise") return false;
-    } else if (adminFilter === "free_trial") {
-      if (u.paymentStatus !== "free_trial" && !["expired", "used", "active", "completed", "pending", "approved"].includes(u.freeTrialStatus)) return false;
     } else if (adminFilter === "unpaid") {
       if (u.isActive === true || u.paymentStatus === "pending_verification") return false;
     }
@@ -2879,17 +2820,6 @@ export default function PaymentScreen({
               <Users className="w-4 h-4" />
               Subscriptions
             </button>
-            <button
-              onClick={() => setAdminSubTab("free_trials")}
-              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
-                adminSubTab === "free_trials"
-                  ? "border-indigo-600 text-indigo-600 font-extrabold"
-                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Free Trials
-            </button>
           </div>
 
           {adminStatusMsg && (
@@ -2904,200 +2834,6 @@ export default function PaymentScreen({
             <InvoiceManager user={user} isAdminPanel={true} />
           ) : adminSubTab === "subscriptions" ? (
             <SubscriptionManager />
-          ) : adminSubTab === "free_trials" ? (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md mb-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                <div>
-                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-indigo-600" />
-                    Free Trial Management
-                  </h2>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Review and approve or reject free trial requests and monitor trial statuses of all registered users.
-                  </p>
-                </div>
-              </div>
-
-              {/* Filters and Search Bar */}
-              <div className="flex flex-col sm:flex-row gap-3 mb-6">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search users by name or email..."
-                    className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 transition-colors"
-                    value={trialSearchQuery}
-                    onChange={(e) => setTrialSearchQuery(e.target.value)}
-                  />
-                </div>
-                <div className="w-full sm:w-48">
-                  <select
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 bg-white font-semibold text-slate-700"
-                    value={trialStatusFilter}
-                    onChange={(e) => setTrialStatusFilter(e.target.value)}
-                  >
-                    <option value="all">All Trial Statuses</option>
-                    <option value="pending">Pending Approval</option>
-                    <option value="approved">Approved</option>
-                    <option value="active">Active</option>
-                    <option value="expired">Expired</option>
-                    <option value="completed">Completed</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="not_requested">Not Requested</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div className="overflow-x-auto border border-slate-150 rounded-xl">
-                <table className="w-full text-left border-collapse min-w-[800px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">User</th>
-                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Registered</th>
-                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Requested</th>
-                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider">Status</th>
-                      <th className="py-3 px-4 text-[10px] font-black uppercase text-slate-500 tracking-wider text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allUsers
-                      .filter((u) => {
-                        const email = (u.email || "").toLowerCase();
-                        const name = (u.displayName || "").toLowerCase();
-                        const q = trialSearchQuery.toLowerCase();
-                        if (q && !email.includes(q) && !name.includes(q)) return false;
-
-                        const status = u.freeTrialStatus || "eligible";
-                        if (trialStatusFilter !== "all") {
-                          if (trialStatusFilter === "pending" && status !== "pending") return false;
-                          if (trialStatusFilter === "approved" && status !== "approved") return false;
-                          if (trialStatusFilter === "active" && status !== "active" && status !== "used") return false;
-                          if (trialStatusFilter === "expired" && status !== "expired") return false;
-                          if (trialStatusFilter === "completed" && status !== "completed") return false;
-                          if (trialStatusFilter === "rejected" && status !== "rejected") return false;
-                          if (trialStatusFilter === "not_requested" && status !== "eligible" && status !== "not_requested") return false;
-                        }
-                        return true;
-                      })
-                      .sort((a, b) => {
-                        // Put pending first
-                        const statusA = a.freeTrialStatus || "eligible";
-                        const statusB = b.freeTrialStatus || "eligible";
-                        if (statusA === "pending" && statusB !== "pending") return -1;
-                        if (statusA !== "pending" && statusB === "pending") return 1;
-
-                        // Sort by trialRequestedAt or createdAt
-                        const timeA = new Date(a.trialRequestedAt || a.createdAt || 0).getTime();
-                        const timeB = new Date(b.trialRequestedAt || b.createdAt || 0).getTime();
-                        return timeB - timeA;
-                      })
-                      .map((u) => {
-                        const trialStatus = u.freeTrialStatus || "eligible";
-                        
-                        const getStatusLabel = (status: string) => {
-                          switch (status) {
-                            case "pending": return "Pending Approval";
-                            case "approved": return "Approved";
-                            case "active":
-                            case "used": return "Active";
-                            case "expired": return "Expired";
-                            case "completed": return "Completed";
-                            case "rejected": return "Rejected";
-                            default: return "Not Requested";
-                          }
-                        };
-
-                        const getBadgeClass = (status: string) => {
-                          switch (status) {
-                            case "pending": return "bg-yellow-50 text-yellow-800 border border-yellow-200";
-                            case "approved": return "bg-emerald-50 text-emerald-800 border border-emerald-200";
-                            case "active":
-                            case "used": return "bg-blue-50 text-blue-800 border border-blue-200";
-                            case "expired": return "bg-rose-50 text-rose-800 border border-rose-200";
-                            case "completed": return "bg-green-50 text-green-800 border border-green-200";
-                            case "rejected": return "bg-slate-100 text-slate-800 border border-slate-200";
-                            default: return "bg-slate-50 text-slate-500 border border-slate-200";
-                          }
-                        };
-
-                        return (
-                          <tr key={u.uid} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                            <td className="py-3 px-4">
-                              <div className="font-bold text-slate-800 text-sm">{u.displayName || "Unknown User"}</div>
-                              <div className="text-xs text-slate-500">{u.email}</div>
-                            </td>
-                            <td className="py-3 px-4 text-xs text-slate-600">
-                              {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "N/A"}
-                            </td>
-                            <td className="py-3 px-4 text-xs text-slate-600">
-                              {u.trialRequestedAt ? new Date(u.trialRequestedAt).toLocaleString() : "N/A"}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border ${getBadgeClass(trialStatus)}`}>
-                                {getStatusLabel(trialStatus)}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              {trialStatus === "pending" && (
-                                <div className="flex items-center justify-end gap-2">
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "approved" });
-                                      } catch (err) {
-                                        console.error("Error approving", err);
-                                      }
-                                    }}
-                                    className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await updateDoc(doc(db, "users", u.uid), { freeTrialStatus: "rejected" });
-                                      } catch (err) {
-                                        console.error("Error rejecting", err);
-                                      }
-                                    }}
-                                    className="px-3 py-1.5 bg-slate-200 hover:bg-red-500 hover:text-white text-slate-600 text-xs font-bold rounded-lg transition-colors"
-                                  >
-                                    Reject
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    {allUsers.filter((u) => {
-                      const email = (u.email || "").toLowerCase();
-                      const name = (u.displayName || "").toLowerCase();
-                      const q = trialSearchQuery.toLowerCase();
-                      if (q && !email.includes(q) && !name.includes(q)) return false;
-
-                      const status = u.freeTrialStatus || "eligible";
-                      if (trialStatusFilter !== "all") {
-                        if (trialStatusFilter === "pending" && status !== "pending") return false;
-                        if (trialStatusFilter === "approved" && status !== "approved") return false;
-                        if (trialStatusFilter === "active" && status !== "active" && status !== "used") return false;
-                        if (trialStatusFilter === "expired" && status !== "expired") return false;
-                        if (trialStatusFilter === "completed" && status !== "completed") return false;
-                        if (trialStatusFilter === "rejected" && status !== "rejected") return false;
-                        if (trialStatusFilter === "not_requested" && status !== "eligible" && status !== "not_requested") return false;
-                      }
-                      return true;
-                    }).length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-500 text-sm">
-                          No users found matching free trial criteria.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           ) : (
             <>
               {/* Flagged Payment Gateway Discrepancies & Audit Panel */}
@@ -4106,7 +3842,7 @@ export default function PaymentScreen({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-semibold mt-1 uppercase tracking-wider">
-                Trial / Free Tier Base
+                Starter / Free Tier Base
               </p>
             </div>
           </div>
@@ -4195,7 +3931,7 @@ export default function PaymentScreen({
                             : "text-slate-500 hover:text-slate-800 font-bold"
                         }`}
                       >
-                        {mode === "all" ? "All Plans" : mode === "free" ? "Free Trial" : mode}
+                        {mode === "all" ? "All Plans" : mode === "free" ? "Starter" : mode}
                       </button>
                     ))}
                   </div>
@@ -4452,7 +4188,7 @@ export default function PaymentScreen({
                                   </span>
                                 ) : finance.planStr === "free" ? (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-50 text-slate-700 border border-slate-200 rounded-md shadow-sm">
-                                    Free Trial
+                                    Starter
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md shadow-sm">
@@ -4468,10 +4204,10 @@ export default function PaymentScreen({
                             {/* STATUS COLUMN */}
                             <td className="px-5 py-3">
                               {isUserActive ? (
-                                u.paymentStatus === "free_trial" || finance.planStr === "free" ? (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse" />
-                                    Active Trial
+                                finance.planStr === "free" ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200/50 shadow-sm">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
+                                    Active Starter
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50 shadow-sm">
@@ -4488,11 +4224,6 @@ export default function PaymentScreen({
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-250 shadow-sm animate-pulse font-extrabold">
                                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-bounce" />
                                   🚩 Audit Discrepancy
-                                </span>
-                              ) : u.freeTrialStatus === "expired" ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-250 shadow-sm font-extrabold">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                                  ❌ Expired Trial
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200/60 shadow-sm">
@@ -5318,61 +5049,6 @@ export default function PaymentScreen({
         </li>
       );
     });
-  };
-
-  const handleRequestFreeTrial = async () => {
-    if (!user) return;
-    if (!pricingSettings.enableFreeTrial) {
-      setError("Free Trial is currently unavailable.");
-      return;
-    }
-    if (userProfile?.freeTrialUsed || ["pending", "approved", "active", "used", "expired", "completed", "rejected"].includes(userProfile?.freeTrialStatus)) {
-      setError("You are no longer eligible for a free trial.");
-      return;
-    }
-    setRequestingTrial(true);
-    setError("");
-    try {
-      await updateDoc(doc(db, "users", user.uid), {
-        freeTrialStatus: "pending",
-        trialRequestedAt: new Date().toISOString()
-      });
-    } catch (err) {
-      console.error("Error requesting free trial:", err);
-      setError("Failed to request free trial. Please try again.");
-    } finally {
-      setRequestingTrial(false);
-    }
-  };
-
-  const handleStartFreeTrial = async () => {
-    if (!user) return;
-    if (!pricingSettings.enableFreeTrial) {
-      setError("Free Trial is currently unavailable.");
-      return;
-    }
-    if (userProfile?.freeTrialStatus !== "approved") {
-      setError("Your free trial has not been approved or is already used.");
-      return;
-    }
-    setStartingTrial(true);
-    setError("");
-    try {
-      const now = new Date();
-      const oneHourFromNow = new Date(now.getTime() + 1 * 60 * 60 * 1000);
-      await updateDoc(doc(db, "users", user.uid), {
-        freeTrialStatus: "active",
-        paymentStatus: "free_trial",
-        isActive: true,
-        activatedAt: now.toISOString(),
-        expiresAt: oneHourFromNow.toISOString()
-      });
-    } catch (err) {
-      console.error("Error starting free trial:", err);
-      setError("Failed to start free trial. Please try again.");
-    } finally {
-      setStartingTrial(false);
-    }
   };
 
   // General Customer View Screen

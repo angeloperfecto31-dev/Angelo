@@ -605,7 +605,7 @@ export const calculateCircuitValues = (
   if (c.loadType === LoadType.CONVENIENCE_OUTLET) {
     requiredMcbAT = Math.max(
       20,
-      STANDARD_CB_RATINGS.find((r) => r * 0.8 >= mdcForBranch) || 20,
+      STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 20,
     );
   } else if (c.loadType === LoadType.MOTOR) {
     const motorBranchProtection = loadA * 2.5;
@@ -641,7 +641,7 @@ export const calculateCircuitValues = (
     requiredMcbAT = c.mcbAT || 30;
   } else {
     requiredMcbAT =
-      STANDARD_CB_RATINGS.find((r) => r * 0.8 >= mdcForBranch) || 15;
+      STANDARD_CB_RATINGS.find((r) => r >= designLoadA) || 15;
   }
 
   const isSubPanelLink =
@@ -656,21 +656,6 @@ export const calculateCircuitValues = (
     : c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL
       ? c.mcbAT || 30
       : Math.max(requiredMcbAT, c.mcbAT || 0);
-
-  // Enforce the 80% loading rule on all breakers uniformly (except sub-panel links and phase_loads mode which are synced directly)
-  const skip80PercentRule =
-    isSubPanelLink ||
-    c.subPanelReflectionMode === "phase_loads" ||
-    c.loadType === LoadType.SUB_PANEL ||
-    c.loadType === LoadType.SUB_SUB_PANEL;
-
-  if (!skip80PercentRule) {
-    while (mcbAT * 0.8 < mdcForBranch) {
-      const nextSize = STANDARD_CB_RATINGS.find((r) => r > mcbAT);
-      if (!nextSize) break;
-      mcbAT = nextSize;
-    }
-  }
 
   const mcbAF =
     isSubPanelLink && c.mcbAF
@@ -1385,10 +1370,13 @@ export const computePanelScheduleValues = (
   const maxBranchAT = Math.max(0, ...c.map((cir) => cir.mcbAT || 0));
   
   // PEC standard: overcurrent protection >= 125% continuous + 100% non-continuous.
-  // maxDesignAmp already includes this 125% factor from the first pass phaseDesignCurrents.
-  // We just need a breaker >= maxDesignAmp.
+  // formulaDemandAmp includes this 125% factor from the first pass phaseDesignCurrents.
+  // For the Main Breaker, the user specifically requested to implement the allowable 80% rule:
+  // This means the Main Breaker must be sized so that it is loaded to a maximum of 80% of its rating.
+  // 80% of Rating >= Base Load -> Rating >= Base Load / 0.8 -> Rating >= Base Load * 1.25.
+  // Since formulaDemandAmp is the design load (which already includes the 1.25 factor), we use maxBaseAmp.
   let calculatedCb =
-    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxDesignAmp) || 100;
+    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxBaseAmp) || 100;
 
   if (calculatedCb < maxBranchAT) {
     calculatedCb =
