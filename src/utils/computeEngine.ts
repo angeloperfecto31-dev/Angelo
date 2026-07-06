@@ -1388,7 +1388,7 @@ export const computePanelScheduleValues = (
   // maxDesignAmp already includes this 125% factor from the first pass phaseDesignCurrents.
   // We just need a breaker >= maxDesignAmp.
   let calculatedCb =
-    STANDARD_CB_RATINGS.find((r) => r >= maxDesignAmp) || 100;
+    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxDesignAmp) || 100;
 
   if (calculatedCb < maxBranchAT) {
     calculatedCb =
