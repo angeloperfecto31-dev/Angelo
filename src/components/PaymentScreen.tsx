@@ -3883,38 +3883,6 @@ export default function PaymentScreen({
                 </div>
               </div>
 
-              {/* Free Trial Global Configuration */}
-              <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-200 mt-6 space-y-4">
-                <span className="text-[10px] uppercase font-black tracking-widest text-slate-800 block select-none">
-                  🎁 Free Trial Configuration
-                </span>
-                <p className="text-xs text-slate-500 mb-2 leading-relaxed">
-                  Enable or disable the Free Trial globally for all users. If disabled, eligible users cannot start or request a free trial, and must select a paid plan.
-                </p>
-
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-3 cursor-pointer p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-slate-300 transition-all">
-                    <input
-                      type="checkbox"
-                      className="w-5 h-5 accent-indigo-600 rounded bg-slate-100 border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                      checked={adminEnableFreeTrial}
-                      onChange={(e) => setAdminEnableFreeTrial(e.target.checked)}
-                    />
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-900">Enable Free Trial</span>
-                        {adminEnableFreeTrial ? (
-                          <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 font-extrabold rounded-full border border-emerald-200 uppercase">🟢 Free Trial Enabled</span>
-                        ) : (
-                          <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-700 font-extrabold rounded-full border border-rose-200 uppercase">🔴 Free Trial Disabled</span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Allow new eligible users to request/activate a 1-hour free trial</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
               {/* Inline feedback status message */}
               {adminStatusMsg && (
                 <div className="mt-4 bg-indigo-50 border-l-4 border-indigo-600 p-3 rounded-xl animate-fade-in">
@@ -4239,7 +4207,7 @@ export default function PaymentScreen({
                     Status
                   </span>
                   <div className="flex gap-0.5 bg-slate-200/60 p-0.5 rounded-xl border border-slate-200/40 flex-wrap">
-                    {(["all", "pending", "paid", "lifetime", "free_trial", "unpaid"] as const).map((mode) => (
+                    {(["all", "pending", "paid", "lifetime", "unpaid"] as const).map((mode) => (
                       <button
                         key={mode}
                         onClick={() => setAdminFilter(mode)}
@@ -4257,9 +4225,7 @@ export default function PaymentScreen({
                               ? "Active"
                               : mode === "lifetime"
                                 ? "Lifetime"
-                                : mode === "free_trial"
-                                  ? "Free Trial"
-                                  : "Unpaid"}
+                                : "Unpaid"}
                       </button>
                     ))}
                   </div>
@@ -4684,7 +4650,7 @@ export default function PaymentScreen({
                                         className="w-full px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors flex items-center gap-2 cursor-pointer"
                                       >
                                         <Zap className="w-3.5 h-3.5 text-indigo-500" />
-                                        {isUserActive ? "Revoke Pro Access" : "Direct Activate (Trial)"}
+                                        {isUserActive ? "Revoke Pro Access" : "Direct Activate"}
                                       </button>
                                     )}
 
@@ -4963,7 +4929,6 @@ export default function PaymentScreen({
                       <option value="basic">Basic (30 Days)</option>
                       <option value="premium">Premium (30 Days)</option>
                       <option value="enterprise">Enterprise (Lifetime)</option>
-                      <option value="free">Free Trial</option>
                     </select>
                   </div>
                   <div>
@@ -5063,7 +5028,7 @@ export default function PaymentScreen({
                           ? "PERMANENT DELETION"
                           : confirmingAction.currentActiveStatus
                             ? "ACCESS DEACTIVATION"
-                            : "MANUAL TRIAL ACTIVATION"}
+                            : "MANUAL ACTIVATION"}
                   </span>{" "}
                   for the subscriber account: <span className="font-extrabold text-slate-800">{confirmingAction.email}</span>?
                 </p>
@@ -5467,95 +5432,6 @@ export default function PaymentScreen({
               )}
             </div>
           )}
-
-          {!isUpgrade && (!userProfile?.freeTrialStatus || userProfile?.freeTrialStatus === "eligible" || userProfile?.freeTrialStatus === "not_requested") && !userProfile?.freeTrialUsed && (
-            <div className="mb-6 bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-black text-slate-800 mb-2">Want to try before you buy?</h3>
-              <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-                {pricingSettings.enableFreeTrial 
-                  ? "You can request a 1-hour free trial to test out all premium features. Your request will be reviewed by an administrator."
-                  : "Free trial requests are currently closed. Please select one of the subscription options below to access premium tools."
-                }
-              </p>
-              {pricingSettings.enableFreeTrial ? (
-                <button
-                  onClick={handleRequestFreeTrial}
-                  disabled={requestingTrial}
-                  className="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {requestingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {requestingTrial ? "Requesting..." : "Request Free Trial"}
-                </button>
-              ) : (
-                <div className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider">
-                  🔴 Free Trial is currently unavailable
-                </div>
-              )}
-            </div>
-          )}
-
-          {!isUpgrade && userProfile?.freeTrialStatus === "pending" && (
-            <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
-              <AlertCircle className="w-6 h-6 text-yellow-600 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-black text-yellow-800 mb-1">Trial Request Pending</h3>
-                <p className="text-sm text-yellow-700 leading-relaxed">
-                  Your free trial request is awaiting admin approval. Please check back later.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {!isUpgrade && userProfile?.freeTrialStatus === "rejected" && (
-            <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
-              <AlertCircle className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-black text-red-800 mb-1">Trial Request Declined</h3>
-                <p className="text-sm text-red-700 leading-relaxed">
-                  Unfortunately, your free trial request was declined by the administrator. Please select a subscription plan below to continue.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {!isUpgrade && userProfile?.freeTrialStatus === "approved" && (
-            <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-sm font-black text-green-800 mb-2">Free Trial Approved!</h3>
-              <p className="text-sm text-green-700 mb-4 leading-relaxed">
-                {pricingSettings.enableFreeTrial
-                  ? "Your 1-hour free trial has been approved by the administrator. Click the button below to start your trial immediately."
-                  : "Your 1-hour free trial was approved, but the free trial system is currently suspended/disabled globally."
-                }
-              </p>
-              {pricingSettings.enableFreeTrial ? (
-                <button
-                  onClick={handleStartFreeTrial}
-                  disabled={startingTrial}
-                  className="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {startingTrial ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {startingTrial ? "Starting Trial..." : "Start 1-Hour Free Trial"}
-                </button>
-              ) : (
-                <div className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider">
-                  🔴 Free Trial is currently unavailable
-                </div>
-              )}
-            </div>
-          )}
-
-          {!isUpgrade && (userProfile?.freeTrialStatus === "expired" || userProfile?.freeTrialStatus === "completed" || userProfile?.freeTrialUsed) && (
-            <div className="mb-6 bg-rose-50 border border-rose-200 rounded-2xl p-6 shadow-sm flex items-start gap-4">
-              <AlertCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-black text-rose-800 mb-1">Free Trial Expired</h3>
-                <p className="text-sm text-rose-700 leading-relaxed">
-                  Your 1-hour free trial has expired or has been completed. Please select a subscription plan below to continue using the application.
-                </p>
-              </div>
-            </div>
-          )}
-
           <div className="mb-6 border-b border-slate-100 pb-6">
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">1. Select Your Subscription Plan</h3>
             {isUpgrade ? (

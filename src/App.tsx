@@ -3953,7 +3953,7 @@ export default function App() {
                   <div className="flex items-center gap-1.5">
                     <Activity className="w-3.5 h-3.5 text-indigo-400" />
                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                      {userPlan === "free" ? "Free Trial" : "SUBSCRIPTION"}
+                      {userPlan === "free" ? "STARTER PLAN" : "SUBSCRIPTION"}
                     </span>
                   </div>
                   <span
@@ -3965,7 +3965,7 @@ export default function App() {
                           : "bg-amber-500/10 text-amber-400 border-amber-500/20"
                     }`}
                   >
-                    {userPlan === "free" ? "Trial" : userPlan}
+                    {userPlan === "free" ? "Starter" : userPlan}
                   </span>
                 </div>
 
@@ -4536,7 +4536,7 @@ export default function App() {
                         ? "bg-amber-500/10 text-amber-650 dark:text-amber-400 border-amber-500/25"
                         : "bg-emerald-500/10 text-emerald-650 dark:text-emerald-400 border-emerald-500/25"
                   }`}
-                  title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                  title={`${userPlan === "free" ? "Access" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
                 >
                   <Clock className="w-3 h-3" />
                   <span>
@@ -4600,12 +4600,12 @@ export default function App() {
                         ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 shadow-sm"
                         : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm"
                   }`}
-                  title={`${userPlan === "free" ? "Trial" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
+                  title={`${userPlan === "free" ? "Access" : "Subscription"} expires on ${expiresAt ? new Date(expiresAt).toLocaleString() : ""}`}
                 >
                   <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
                   <span className="text-slate-500 dark:text-slate-400 font-bold tracking-normal mr-0.5">
                     {userPlan === "free"
-                      ? "Trial Time Left:"
+                      ? "Access Time Left:"
                       : "Access Time Left:"}
                   </span>
                   <span className="tracking-tight text-slate-900 dark:text-white">
@@ -4709,7 +4709,7 @@ export default function App() {
                 );
                 const planName =
                   userPlan === "free"
-                    ? "Free Trial"
+                    ? "Starter"
                     : userPlan === "basic"
                       ? "Basic"
                       : "Premium";
@@ -4866,7 +4866,7 @@ export default function App() {
                         </div>
                         <div className="space-y-0.5 animate-fade-in">
                           <p className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                            Active {planName} {isTrial ? "Trial" : "Plan"}
+                            Active {planName} Plan
                             <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-2.5 py-0.5 rounded-full font-black uppercase border border-emerald-500/20">
                               Active
                             </span>
@@ -4876,7 +4876,7 @@ export default function App() {
                               <span className="flex items-center gap-1">
                                 <span>
                                   {isTrial
-                                    ? "Remaining Trial Access Time:"
+                                    ? "Remaining Starter Access Time:"
                                     : "Remaining Access Time:"}
                                 </span>
                                 <strong className="font-mono text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-0.5 text-xxs">
@@ -4917,7 +4917,7 @@ export default function App() {
                               •
                             </span>
                             <span className="font-mono text-[10px]">
-                              {isTrial ? "Trial Ends:" : "Expires:"}{" "}
+                              {isTrial ? "Access Ends:" : "Expires:"}{" "}
                               {new Date(expiresAt).toLocaleDateString()}
                             </span>
                           </div>
@@ -4930,7 +4930,7 @@ export default function App() {
                           <div className="flex justify-between text-[10px] font-bold text-slate-400 dark:text-slate-500 font-mono">
                             <span>
                               {isTrial
-                                ? "TRIAL DAYS REMAINING"
+                                ? "STARTER DAYS REMAINING"
                                 : "DAYS REMAINING"}
                             </span>
                             {countdownTime ? (
@@ -6921,7 +6921,7 @@ export default function App() {
                                   ? "PREMIUM (30 DAYS)"
                                   : userPlan === "basic"
                                     ? "BASIC (30 DAYS)"
-                                    : "FREE TRIAL TIER"}
+                                    : "STARTER TIER"}
                             </p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
                               Enterprise licenses unlock complete single-line
