@@ -1256,35 +1256,17 @@ export default function LoadSchedule({
 
     // Minimum main breaker sizes are standard, and it must not be less than the maximum branch breaker
     const maxBranchAT = Math.max(0, ...circuits.map((c) => c.mcbAT));
-    let calculatedCb =
-      STANDARD_CB_RATINGS.find(
-        (r) =>
-          r * 0.8 >= mainCurrent.baseAmp &&
-          r >= Math.max(designAmp, mainCurrent.baseAmp),
-      ) || 100;
+    let calculatedCb = STANDARD_CB_RATINGS.find((r) => r * 0.8 >= designAmp) || 100;
 
     if (calculatedCb < maxBranchAT) {
       calculatedCb =
         STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
     }
 
-    while (calculatedCb * 0.8 < mainCurrent.baseAmp) {
-      const nextSize = STANDARD_CB_RATINGS.find((r) => r > calculatedCb);
-      if (!nextSize) break;
-      calculatedCb = nextSize;
-    }
-
     let cb = Math.max(
       calculatedCb,
-      STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb,
       30,
     );
-
-    while (cb * 0.8 < mainCurrent.baseAmp) {
-      const nextSize = STANDARD_CB_RATINGS.find((r) => r > cb);
-      if (!nextSize) break;
-      cb = nextSize;
-    }
 
     const poles = panel.system.includes("3PH") ? 3 : 2;
     // Main feeder wire must be rated for the breaker or the load, whichever is higher
@@ -3310,7 +3292,7 @@ export default function LoadSchedule({
                     Total Demand Load
                   </span>
                   <p className="text-lg font-black text-slate-800 dark:text-slate-150 mt-1">
-                    {(mainCurrent.baseAmp * (maxDemandDetails.systemVoltage || 230) * (panel.system.includes("3PH") ? 1.732 : 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px] font-bold">VA</span>
+                    {(mainCurrent.designAmp * (maxDemandDetails.systemVoltage || 230) * (panel.system.includes("3PH") ? 1.732 : 1)).toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px] font-bold">VA</span>
                   </p>
                 </div>
 
@@ -3319,7 +3301,7 @@ export default function LoadSchedule({
                     Demand Current (Line)
                   </span>
                   <p className="text-lg font-black text-slate-800 dark:text-slate-150 mt-1">
-                    {mainCurrent.baseAmp.toFixed(1)} <span className="text-[10px] font-bold">A</span>
+                    {mainCurrent.designAmp.toFixed(1)} <span className="text-[10px] font-bold">A</span>
                   </p>
                 </div>
 
@@ -4878,7 +4860,7 @@ export default function LoadSchedule({
                   </>
                 ) : (
                   <td className="px-1 py-6 text-center text-yellow-400 print:text-slate-900 truncate">
-                    {mainCurrent.baseAmp.toFixed(2)} A
+                    {mainCurrent.designAmp.toFixed(2)} A
                   </td>
                 )}
                 <td colSpan={7} className="px-4 py-6">
@@ -5020,7 +5002,7 @@ export default function LoadSchedule({
             Max Demand Current
           </h4>
           <p className="text-5xl font-black text-yellow-400 print:text-slate-900 md:text-3xl">
-            {mainCurrent.baseAmp.toFixed(1)}
+            {mainCurrent.designAmp.toFixed(1)}
             <span className="text-lg ml-2">AMPS</span>
           </p>
         </div>
@@ -5506,7 +5488,7 @@ export default function LoadSchedule({
               <span>{`For 3-Phase: I = Total Connected VA / (1.732 × Voltage)`}</span>
             </div>
             <p className="mt-2 text-indigo-600 font-bold">
-              Calculated Main Current: {mainCurrent.baseAmp.toFixed(2)} Amperes
+              Calculated Main Current: {mainCurrent.designAmp.toFixed(2)} Amperes
               ({panel.system.includes("3PH") ? "Three-Phase" : "Single-Phase"},{" "}
               {panel.voltage}V)
             </p>
@@ -5527,7 +5509,7 @@ export default function LoadSchedule({
                 Loads, 100% for Non-Continuous) + 25% for the largest Motor.
               </span>
               <span>
-                Circuit Breaker Rating (AT) ≥ Design Current (Next Standard
+                Circuit Breaker Rating (AT) × 0.80 ≥ Design Current (Next Standard
                 Size)
               </span>
               <span>

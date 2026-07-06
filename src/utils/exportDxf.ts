@@ -2239,7 +2239,7 @@ export const exportToCAD = (
     let ampsEndIdx = 7;
     if (!isPanel3Phase) {
       b.addText(
-        `${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+        `${currentCalcData.mainCurrent.designAmp.toFixed(2)} A`,
         colPositions[6] + cols[6].w / 2,
         ySumText,
         metrics.summaryFontSize,
@@ -2375,7 +2375,7 @@ export const exportToCAD = (
       );
     }
     b.addText(
-      `${isPanel3Phase ? `PHASE DISBALANCE RATIO: ${currentCalcData.phaseImbalance.toFixed(2)}% | ` : ""}RATED MAX DEMAND CURRENT: ${currentCalcData.mainCurrent.baseAmp.toFixed(2)} A`,
+      `${isPanel3Phase ? `PHASE DISBALANCE RATIO: ${currentCalcData.phaseImbalance.toFixed(2)}% | ` : ""}RATED MAX DEMAND CURRENT: ${currentCalcData.mainCurrent.designAmp.toFixed(2)} A`,
       tableRight - 5,
       ty - metrics.mainFeederBoxH / 2 - 1.0,
       metrics.mainFeederFontSize,
@@ -2459,12 +2459,12 @@ export const exportToCAD = (
       );
       cy -= 6;
       writeCalcLine(
-        `Values: totalVA = ${maxDemandDetails.totalConnectedVA.toFixed(1)} VA, HML = ${maxDemandDetails.HML.toFixed(2)} A`,
+        `Values: totalVA = ${maxDemandDetails.internalConnectedVA.toFixed(1)} VA, HML = ${maxDemandDetails.HML.toFixed(2)} A`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Math: (((${maxDemandDetails.totalConnectedVA.toFixed(1)} / 230) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25 = ${((((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} A`,
+        `Math: (((${maxDemandDetails.internalConnectedVA.toFixed(1)} / 230) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );

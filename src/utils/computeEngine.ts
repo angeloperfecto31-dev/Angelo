@@ -1244,12 +1244,62 @@ export const computePanelScheduleValues = (
   })) : 0;
 
   // Track some metadata for display
-  const phaseAmps = { 
-    R: phaseBaseCurrents.R, 
-    Y: phaseBaseCurrents.Y, 
-    B: phaseBaseCurrents.B, 
-    threePhase: 0 
-  };
+  const phaseAmps = { R: 0, Y: 0, B: 0, threePhase: 0 };
+  c.forEach((cir) => {
+    if (isIdleSpareOrSpace(cir)) return;
+
+    const is3P = cir.phases && cir.phases.length === 3;
+    let cirV =
+      cir.voltage ||
+      getPanelSystemVoltageFallback(p.system, is3P, p.connectionType);
+
+    if (
+      cir.loadType === LoadType.SUB_PANEL ||
+      cir.loadType === LoadType.SUB_SUB_PANEL
+    ) {
+      cirV = cir.voltage || cirV;
+    }
+
+    if (
+      cir.subPanelReflectionMode === "phase_loads" &&
+      cir.reflectedPhaseLoads
+    ) {
+      const is3PhaseMode = p.system.includes("3PH");
+      const v3 = is3PhaseMode ? cirV * 1.732 : cirV;
+      const v1 = cirV;
+
+      const ir = cir.reflectedPhaseLoads.R / v1;
+      const iy = cir.reflectedPhaseLoads.Y / v1;
+      const ib = cir.reflectedPhaseLoads.B / v1;
+      const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
+
+      phaseAmps.R += ir;
+      phaseAmps.Y += iy;
+      phaseAmps.B += ib;
+      phaseAmps.threePhase += i3;
+    } else if (
+      cir.subPanelReflectionMode === "phase_loads" &&
+      cir.reflectedPhaseAmps
+    ) {
+      phaseAmps.R += cir.reflectedPhaseAmps.R;
+      phaseAmps.Y += cir.reflectedPhaseAmps.Y;
+      phaseAmps.B += cir.reflectedPhaseAmps.B;
+      phaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
+    } else {
+      let loadA = cir.loadA;
+      if (loadA === undefined || loadA === null) {
+        loadA = is3P ? cir.loadVA / (cirV * 1.732) : cir.loadVA / cirV;
+      }
+      if (is3P) {
+        phaseAmps.threePhase += loadA;
+      } else {
+        const pArr = cir.phases || [];
+        if (pArr.includes("R")) phaseAmps.R += loadA;
+        if (pArr.includes("Y")) phaseAmps.Y += loadA;
+        if (pArr.includes("B")) phaseAmps.B += loadA;
+      }
+    }
+  });
   let internalConnectedVA = 0;
   let subPanelDemandAmps = 0;
   let internalDemandCurrent = maxDesignAmp;
@@ -1263,6 +1313,20 @@ export const computePanelScheduleValues = (
       }
   });
 
+  const is3PH = p.system.includes("3PH");
+  let formulaDemandAmp = maxDesignAmp;
+  if (is3PH) {
+    const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
+    const total3Phase = phaseAmps.threePhase;
+    formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
+  } else {
+    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
+  }
+  
+  maxDesignAmp = formulaDemandAmp;
+  maxBaseAmp = formulaDemandAmp / 1.25;
+  internalDemandCurrent = formulaDemandAmp;
+
   const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
 
   // Calculate Main Feeder
@@ -1273,7 +1337,7 @@ export const computePanelScheduleValues = (
   // maxDesignAmp already includes this 125% factor from the first pass phaseDesignCurrents.
   // We just need a breaker >= maxDesignAmp.
   let calculatedCb =
-    STANDARD_CB_RATINGS.find((r) => r >= maxDesignAmp) || 100;
+    STANDARD_CB_RATINGS.find((r) => r * 0.8 >= maxDesignAmp) || 100;
 
   if (calculatedCb < maxBranchAT) {
     calculatedCb =
