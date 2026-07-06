@@ -1250,73 +1250,12 @@ export default function LoadSchedule({
     return amps;
   }, [circuits]);
 
-  const { maxDemandDetails, mainCurrent } = useMemo(() => {
-    return computePanelScheduleValues(panel, circuits, {
-      vdCalculations,
-      panelId: panel.designation || "main",
-    });
-  }, [circuits, panel, vdCalculations]);
-
-  const sysV = maxDemandDetails?.systemVoltage || 230;
-
-  const mainFeeder = useMemo(() => {
-    // The design ampacity correctly incorporates Continuous (125%) + Non-Continuous (100%) + Largest Motor (25%)
-    const designAmp = mainCurrent.designAmp;
-
-    // Minimum main breaker sizes are standard, and it must not be less than the maximum branch breaker
-    const maxBranchAT = Math.max(0, ...circuits.map((c) => c.mcbAT));
-    let calculatedCb = STANDARD_CB_RATINGS.find((r) => r * 0.8 >= designAmp) || 100;
-
-    if (calculatedCb < maxBranchAT) {
-      calculatedCb =
-        STANDARD_CB_RATINGS.find((r) => r >= maxBranchAT) || calculatedCb;
-    }
-
-    let cb = Math.max(
-      calculatedCb,
-      30,
-    );
-
-    const poles = panel.system.includes("3PH") ? 3 : 2;
-    // Main feeder wire must be rated for the breaker or the load, whichever is higher
-    const wire = getWireForBreaker(cb, designAmp);
-    const groundSize = getGroundWireForWireSize(wire.size, cb);
-    const selectedMainConduitType =
-      panel.mainConduitType || panel.mainOverrides?.conduitType || "PVC";
-    const conduitSize = getConduitSizeForWires(
-      wire.size,
-      groundSize,
-      poles,
-      panel.system,
-      selectedMainConduitType,
-    );
-
-    const branchTypeCounts = circuits.reduce(
-      (acc, c) => {
-        acc[c.mcbType] = (acc[c.mcbType] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    );
-    const sortedBranchTypes = Object.entries(branchTypeCounts).sort(
-      (a, b) => Number(b[1]) - Number(a[1]),
-    );
-    const predominantBranchType = (sortedBranchTypes[0]?.[0] ||
-      MCBType.MCB) as MCBType;
-    let type = predominantBranchType;
-    if (
-      cb > 100 &&
-      (type === MCBType.PLUG_IN ||
-        type === MCBType.BOLT_ON ||
-        type === MCBType.MCB)
-    ) {
-      type = MCBType.MCCB;
-    }
-    let faultCurrentA = 10000;
+  const faultCurrentA = useMemo(() => {
+    let faultA = 10000;
     if (iscParams) {
       if (!isSubPanel && !isSubSubPanel) {
         // MDP
-        faultCurrentA = calculatePanelFault(
+        faultA = calculatePanelFault(
           panel,
           iscParams,
           undefined,
@@ -1338,7 +1277,7 @@ export default function LoadSchedule({
               : acc,
           0,
         );
-        faultCurrentA = calculatePanelFault(
+        faultA = calculatePanelFault(
           panel,
           iscParams,
           feederLen,
@@ -1348,91 +1287,28 @@ export default function LoadSchedule({
         );
       }
     }
-
-    const defaultKaic = cb > 100 ? 18 : 10;
-    let kaic = defaultKaic;
-    if (faultCurrentA) {
-      const faultKA = faultCurrentA / 1000;
-      const KAIC_RATINGS = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
-      kaic = KAIC_RATINGS.find((k) => k >= faultKA) || 100;
-    }
-    const af =
-      cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
-
-    let finalCb = cb;
-    let finalAf = af;
-    let finalType = type;
-    let finalKaic = kaic;
-    let finalPoles = poles;
-
-    let finalWireSize = wire.size;
-    let finalWireRuns = wire.runs;
-    let finalGroundSize = groundSize;
-    let finalConduitSize = conduitSize;
-    let finalConduitType = selectedMainConduitType;
-
-    if (panel.mainOverrides?.isOverrideEnabled) {
-      if (panel.mainOverrides.breakerAT)
-        finalCb = panel.mainOverrides.breakerAT;
-      if (panel.mainOverrides.breakerAF)
-        finalAf = panel.mainOverrides.breakerAF;
-      if (panel.mainOverrides.breakerType)
-        finalType = panel.mainOverrides.breakerType as MCBType;
-      if (panel.mainOverrides.kaic) finalKaic = panel.mainOverrides.kaic;
-      if (panel.mainOverrides.poles) finalPoles = panel.mainOverrides.poles;
-
-      if (panel.mainOverrides.wireSize)
-        finalWireSize = Number(panel.mainOverrides.wireSize);
-      if (panel.mainOverrides.wireRuns)
-        finalWireRuns = panel.mainOverrides.wireRuns;
-      if (panel.mainOverrides.groundSize)
-        finalGroundSize = panel.mainOverrides.groundSize;
-      if (panel.mainOverrides.conduitSize)
-        finalConduitSize = panel.mainOverrides.conduitSize;
-      if (panel.mainOverrides.conduitType)
-        finalConduitType = panel.mainOverrides.conduitType;
-    }
-
-    const mat = panel.conductorMaterial || "Copper";
-    const ins = panel.insulationType || "THHN";
-    const temp =
-      (panel.temperatureRating as any) || getTemperatureForInsulation(ins);
-    let finalWireAmpacity =
-      getConductorAmpacity(finalWireSize, mat, temp) * finalWireRuns;
-
-    return {
-      wire: {
-        size: finalWireSize,
-        ampacity: finalWireAmpacity,
-        runs: finalWireRuns,
-      },
-      groundSize: finalGroundSize,
-      cb: finalCb,
-      conduitSize: finalConduitSize,
-      conduitType: finalConduitType,
-      poles: finalPoles,
-      type: finalType,
-      kaic: finalKaic,
-      af: finalAf,
-      raw: {
-        wireSize: wire.size,
-        cb: cb,
-        type: type,
-        kaic: kaic,
-        designAmp: designAmp,
-        faultCurrentA: faultCurrentA,
-      },
-    };
+    return faultA;
   }, [
-    mainCurrent,
-    circuits,
-    panel,
     iscParams,
     isSubPanel,
     isSubSubPanel,
+    panel,
     parentMdpConnection,
     vdCalculations,
+    circuits,
   ]);
+
+  const { maxDemandDetails, mainCurrent, mainFeeder: computedMainFeeder } = useMemo(() => {
+    return computePanelScheduleValues(panel, circuits, {
+      vdCalculations,
+      panelId: panel.designation || "main",
+      faultCurrentA,
+    });
+  }, [circuits, panel, vdCalculations, faultCurrentA]);
+
+  const sysV = maxDemandDetails?.systemVoltage || 230;
+
+  const mainFeeder = computedMainFeeder;
 
   useEffect(() => {
     if (!circuits || circuits.length === 0) return;

@@ -1572,6 +1572,8 @@ export const computePanelScheduleValues = (
         cb: cb,
         type: type,
         kaic: kaic,
+        designAmp: designAmp,
+        faultCurrentA: options?.faultCurrentA ?? 10000,
       },
     },
   };
