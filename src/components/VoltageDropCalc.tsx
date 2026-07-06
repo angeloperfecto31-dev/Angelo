@@ -115,7 +115,7 @@ export default function VoltageDropCalc({
         length: getLength("main"),
         wireSize: mainFeeder.wire.size.toString(),
         wireSets: mainFeeder.wire.runs,
-        voltage: transformerPrimaryVoltage,
+        voltage: panel.voltage || 230,
         systemType: is3PH ? "3PH" : "1PH",
       });
       
@@ -129,7 +129,7 @@ export default function VoltageDropCalc({
             length: getLength(c.id),
             wireSize: c.wireSize,
             wireSets: c.wireSets,
-            voltage: transformerPrimaryVoltage,
+            voltage: c.voltage || panel.voltage || 230,
             systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
          });
       });
@@ -146,7 +146,7 @@ export default function VoltageDropCalc({
         length: getLength(sp.id),
         wireSize: mainFeeder.wire.size.toString(),
         wireSets: mainFeeder.wire.runs,
-        voltage: transformerPrimaryVoltage,
+        voltage: sp.panel.voltage || panel.voltage || 230,
         systemType: is3PH ? "3PH" : "1PH",
       });
 
@@ -160,7 +160,7 @@ export default function VoltageDropCalc({
             length: getLength(c.id),
             wireSize: c.wireSize,
             wireSets: c.wireSets,
-            voltage: transformerPrimaryVoltage,
+            voltage: c.voltage || sp.panel.voltage || panel.voltage || 230,
             systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
          });
       });

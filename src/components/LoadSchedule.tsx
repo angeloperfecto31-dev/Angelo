@@ -1029,6 +1029,10 @@ export default function LoadSchedule({
     panel.system,
     panel.connectionType,
     panel.voltage,
+    panel.conductorMaterial,
+    panel.insulationType,
+    panel.temperatureRating,
+    vdCalculations,
   ]);
 
   const calculateCircuit = (c: Partial<Circuit>): Partial<Circuit> => {
@@ -1152,7 +1156,7 @@ export default function LoadSchedule({
       prev.map((c) => {
         if (c.id === id) {
           const merged = { ...c, ...updates };
-          // Trigger recalculation if load parameters OR the circuit breaker itself changes
+          // Trigger recalculation if load parameters, circuit breaker, or manual overrides change
           if (
             "phases" in updates ||
             "wattage" in updates ||
@@ -1164,7 +1168,13 @@ export default function LoadSchedule({
             "linkedSubPanelId" in updates ||
             "subPanelReflectionMode" in updates ||
             "subLoads" in updates ||
-            "motorHP" in updates
+            "motorHP" in updates ||
+            "wireSizeOverride" in updates ||
+            "wireTypeOverride" in updates ||
+            "groundSizeOverride" in updates ||
+            "conduitSizeOverride" in updates ||
+            "conduitTypeOverride" in updates ||
+            "wireSets" in updates
           ) {
             return { ...merged, ...calculateCircuit(merged) } as Circuit;
           }
@@ -1457,6 +1467,44 @@ export default function LoadSchedule({
       setCircuits(nextCircuits);
     }
   }, [mainFeeder.kaic, circuits]);
+
+  const nonCompliantBranchCircuits = useMemo(() => {
+    return circuits.filter((c) => {
+      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return false;
+      
+      const overrideSize = c.wireSizeOverride ? parseFloat(c.wireSizeOverride) : null;
+      if (overrideSize === null) return false;
+
+      const calcSize = parseFloat(c.calculatedWireSize || c.wireSize || "0");
+      if (overrideSize < calcSize) {
+        return true;
+      }
+      
+      // Also verify PEC small conductor constraints
+      let minSize = 2.0;
+      const isMotor = c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON;
+      const material = panel.conductorMaterial || "Copper";
+      const cbRating = c.mcbAT;
+      
+      if (!isMotor) {
+        if (material === "Copper") {
+          if (cbRating > 30) minSize = 8.0;
+          else if (cbRating > 20) minSize = 5.5;
+          else if (cbRating > 15) minSize = 3.5;
+        } else { // Aluminum
+          if (cbRating > 25) minSize = 8.0;
+          else if (cbRating > 15) minSize = 5.5;
+          else minSize = 3.5;
+        }
+      } else {
+        minSize = material === "Copper" ? 2.0 : 3.5;
+      }
+      if (overrideSize < minSize) {
+        return true;
+      }
+      return false;
+    });
+  }, [circuits, panel.conductorMaterial]);
 
   const panelRows = useMemo(() => {
     const maxCircuitNo = Math.max(...circuits.map((c) => c.circuitNo), 0);
@@ -3034,6 +3082,41 @@ export default function LoadSchedule({
                   </div>
                 </div>
               )}
+
+            {nonCompliantBranchCircuits.map((c) => {
+              const isMotor = c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON;
+              const material = panel.conductorMaterial || "Copper";
+              const cbRating = c.mcbAT;
+              let explanation = "";
+              if (!isMotor) {
+                if (material === "Copper") {
+                  if (cbRating > 30) { explanation = "PEC Table 3.10.2.6(B)(16) requires copper conductors smaller than 8.0 mm² to have a maximum of 30A overcurrent protection."; }
+                  else if (cbRating > 20) { explanation = "PEC Table 3.10.2.6(B)(16) requires copper conductors smaller than 5.5 mm² to have a maximum of 20A overcurrent protection."; }
+                  else if (cbRating > 15) { explanation = "PEC Table 3.10.2.6(B)(16) requires copper conductors smaller than 3.5 mm² to have a maximum of 15A overcurrent protection."; }
+                } else { // Aluminum
+                  if (cbRating > 25) { explanation = "PEC Table 3.10.2.6(B)(16) requires aluminum conductors smaller than 8.0 mm² to have a maximum of 25A overcurrent protection."; }
+                  else if (cbRating > 15) { explanation = "PEC Table 3.10.2.6(B)(16) requires aluminum conductors smaller than 5.5 mm² to have a maximum of 15A overcurrent protection."; }
+                }
+              }
+              const calcSize = c.calculatedWireSize || c.wireSize;
+              return (
+                <div key={c.id} className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-lg flex items-start gap-2.5 text-rose-800 dark:text-rose-400 text-xs text-left">
+                  <span className="font-extrabold text-base leading-none">⚠️</span>
+                  <div>
+                    <p className="font-bold">
+                      Circuit {c.circuitNo} Compliance Warning: Undersized Wire Override
+                    </p>
+                    <p className="mt-0.5 opacity-90">
+                      The manually selected wire size of <strong>{c.wireSizeOverride} mm²</strong> is non-compliant with the protective breaker rating of <strong>{c.mcbAT} AT</strong>.
+                      {" "}{explanation}
+                    </p>
+                    <p className="mt-1 font-semibold text-emerald-700 dark:text-emerald-400">
+                      ✓ Compliant Recommended Size: {calcSize} mm²
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
