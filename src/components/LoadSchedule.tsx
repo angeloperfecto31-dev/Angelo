@@ -5136,7 +5136,11 @@ export default function LoadSchedule({
                   </h4>
                   <div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
                     <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
-                      <span>Phase currents (Line values):</span>
+                      <span>
+                        {maxDemandDetails.connectionType === "Line-to-Line"
+                          ? "Phase currents (Line-to-Line values):"
+                          : "Phase currents (Line-to-Neutral values):"}
+                      </span>
                       <span className="font-mono text-xs">
                         {maxDemandDetails.connectionType === "Line-to-Line"
                           ? "AB"

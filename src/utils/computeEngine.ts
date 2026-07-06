@@ -403,6 +403,7 @@ export const calculateCircuitValues = (
         mainCurrent: subMainCurrent,
         explicitPhaseVAs: subExplicitPhaseVAs,
         phaseAmps: subPhaseAmps,
+        maxDemandDetails: subMaxDemandDetails,
       } = computePanelScheduleValues(sp.panel, sp.circuits, {
         vdCalculations,
         panelId: sp.id,
@@ -437,8 +438,8 @@ export const calculateCircuitValues = (
         };
         // Mirror the exact calculated VA from the Sub-Panel
         c.loadVA = subTotalVA;
-        // Mirror the exact calculated current (amperes) from the Sub-Panel
-        c.loadA = Number(computedDemandAmp.toFixed(2));
+        // Mirror the exact calculated Highest Phase Current (I_line) from the Sub-Panel
+        c.loadA = Number((subMaxDemandDetails?.totalAmpere || 0).toFixed(2));
       } else {
         c.reflectedPhaseLoads = undefined;
         c.reflectedPhaseAmps = undefined;
@@ -1114,16 +1115,50 @@ export const computePanelScheduleValues = (
 
     if (
       cir.subPanelReflectionMode === "phase_loads" &&
+      cir.reflectedPhaseAmps
+    ) {
+      const isSubL2L = cir.mcbP !== 1;
+      const ir = cir.reflectedPhaseAmps.R;
+      const iy = cir.reflectedPhaseAmps.Y;
+      const ib = cir.reflectedPhaseAmps.B;
+      const i3 = cir.reflectedPhaseAmps.ThreePhase;
+
+      if (isSubL2L) {
+        phaseBaseCurrents.R += (ir + ib) + i3;
+        phaseBaseCurrents.Y += (ir + iy) + i3;
+        phaseBaseCurrents.B += (iy + ib) + i3;
+
+        phaseDesignCurrents.R += (ir + ib) + i3;
+        phaseDesignCurrents.Y += (ir + iy) + i3;
+        phaseDesignCurrents.B += (iy + ib) + i3;
+      } else {
+        phaseBaseCurrents.R += ir + i3;
+        phaseBaseCurrents.Y += iy + i3;
+        phaseBaseCurrents.B += ib + i3;
+
+        phaseDesignCurrents.R += ir + i3;
+        phaseDesignCurrents.Y += iy + i3;
+        phaseDesignCurrents.B += ib + i3;
+      }
+    } else if (
+      cir.subPanelReflectionMode === "phase_loads" &&
       cir.reflectedPhaseLoads
     ) {
       const is3PhaseMode = p.system.includes("3PH");
       const v3 = is3PhaseMode ? cirV * 1.732 : cirV;
       const v1 = cirV;
 
-      const ir = cir.reflectedPhaseLoads.R / v1;
-      const iy = cir.reflectedPhaseLoads.Y / v1;
-      const ib = cir.reflectedPhaseLoads.B / v1;
+      let ir = cir.reflectedPhaseLoads.R / v1;
+      let iy = cir.reflectedPhaseLoads.Y / v1;
+      let ib = cir.reflectedPhaseLoads.B / v1;
       const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
+
+      const isSubL2L = cir.mcbP !== 1;
+      if (isSubL2L) {
+        ir = ir * 2;
+        iy = iy * 2;
+        ib = ib * 2;
+      }
 
       phaseBaseCurrents.R += ir + i3;
       phaseBaseCurrents.Y += iy + i3;
@@ -1267,29 +1302,36 @@ export const computePanelScheduleValues = (
 
     if (
       cir.subPanelReflectionMode === "phase_loads" &&
-      cir.reflectedPhaseLoads
-    ) {
-      const is3PhaseMode = p.system.includes("3PH");
-      const v3 = is3PhaseMode ? cirV * 1.732 : cirV;
-      const v1 = cirV;
-
-      const ir = cir.reflectedPhaseLoads.R / v1;
-      const iy = cir.reflectedPhaseLoads.Y / v1;
-      const ib = cir.reflectedPhaseLoads.B / v1;
-      const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
-
-      phaseAmps.R += ir;
-      phaseAmps.Y += iy;
-      phaseAmps.B += ib;
-      phaseAmps.threePhase += i3;
-    } else if (
-      cir.subPanelReflectionMode === "phase_loads" &&
       cir.reflectedPhaseAmps
     ) {
       phaseAmps.R += cir.reflectedPhaseAmps.R;
       phaseAmps.Y += cir.reflectedPhaseAmps.Y;
       phaseAmps.B += cir.reflectedPhaseAmps.B;
       phaseAmps.threePhase += cir.reflectedPhaseAmps.ThreePhase;
+    } else if (
+      cir.subPanelReflectionMode === "phase_loads" &&
+      cir.reflectedPhaseLoads
+    ) {
+      const is3PhaseMode = p.system.includes("3PH");
+      const v3 = is3PhaseMode ? cirV * 1.732 : cirV;
+      const v1 = cirV;
+
+      let ir = cir.reflectedPhaseLoads.R / v1;
+      let iy = cir.reflectedPhaseLoads.Y / v1;
+      let ib = cir.reflectedPhaseLoads.B / v1;
+      const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
+
+      const isSubL2L = cir.mcbP !== 1;
+      if (isSubL2L) {
+        ir = ir * 2;
+        iy = iy * 2;
+        ib = ib * 2;
+      }
+
+      phaseAmps.R += ir;
+      phaseAmps.Y += iy;
+      phaseAmps.B += ib;
+      phaseAmps.threePhase += i3;
     } else {
       let loadA = cir.loadA;
       if (loadA === undefined || loadA === null) {
