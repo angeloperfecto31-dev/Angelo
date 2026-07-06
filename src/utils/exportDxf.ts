@@ -2437,34 +2437,34 @@ export const exportToCAD = (
     cy -= 6;
     if (isPanel3Phase) {
       writeCalcLine(
-        `Formula: I_demand = ((I_line * 1.732) * 0.80 + I_3ph + 0.25 * HML) * 1.25${maxDemandDetails.subPanelDemandAmps ? ' + I_subpanels' : ''}`,
+        `Formula: I_demand = ((I_line * 1.732) * 0.80 + I_3ph + 0.25 * HML) * 1.25`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Values: I_line = ${(maxDemandDetails.totalAmpere || 0).toFixed(2)} A, I_3ph = ${(maxDemandDetails.total3Phase || 0).toFixed(2)} A, HML = ${(maxDemandDetails.HML || 0).toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `, I_subpanels = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}`,
+        `Values: I_line = ${(maxDemandDetails.totalAmpere || 0).toFixed(2)} A, I_3ph = ${(maxDemandDetails.total3Phase || 0).toFixed(2)} A, HML = ${(maxDemandDetails.HML || 0).toFixed(2)} A`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Math: (((${maxDemandDetails.totalAmpere.toFixed(2)} * 1.732) * 0.80) + ${maxDemandDetails.total3Phase.toFixed(2)} + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25${maxDemandDetails.subPanelDemandAmps ? ` + ${maxDemandDetails.subPanelDemandAmps.toFixed(2)}` : ''} = ${maxDemandDetails.baseAmp.toFixed(2)} A`,
+        `Math: (((${maxDemandDetails.totalAmpere.toFixed(2)} * 1.732) * 0.80) + ${maxDemandDetails.total3Phase.toFixed(2)} + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25 = ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );
       cy -= 12;
     } else {
       writeCalcLine(
-        `Formula: I_demand = ((Total VA / 230) * 0.80 + 0.25 * HML) * 1.25${maxDemandDetails.subPanelDemandAmps ? ' + I_subpanels' : ''}`,
+        `Formula: I_demand = ((Total VA / 230) * 0.80 + 0.25 * HML) * 1.25`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Values: totalVA = ${maxDemandDetails.totalConnectedVA.toFixed(1)} VA, HML = ${maxDemandDetails.HML.toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `, I_subpanels = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}`,
+        `Values: totalVA = ${maxDemandDetails.totalConnectedVA.toFixed(1)} VA, HML = ${maxDemandDetails.HML.toFixed(2)} A`,
         cy,
       );
       cy -= 6;
       writeCalcLine(
-        `Math: (((${maxDemandDetails.totalConnectedVA.toFixed(1)} / 230) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25${maxDemandDetails.subPanelDemandAmps ? ` + ${maxDemandDetails.subPanelDemandAmps.toFixed(2)}` : ''} = ${maxDemandDetails.baseAmp.toFixed(2)} A`,
+        `Math: (((${maxDemandDetails.totalConnectedVA.toFixed(1)} / 230) * 0.80) + (0.25 * ${maxDemandDetails.HML.toFixed(2)})) * 1.25 = ${((((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} A`,
         cy,
         "TEXT_TITLE",
       );

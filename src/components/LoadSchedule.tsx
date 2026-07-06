@@ -5109,12 +5109,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ""} \\\\
-  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= \\left[ ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
+  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
+  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / 230).toFixed(3)} \\right) \\times 0.80 + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= \\left[ ${(((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8).toFixed(3)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} \\\\
+  &= \\mathbf{${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
                     </div>
@@ -5126,7 +5125,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
@@ -5144,7 +5143,7 @@ export default function LoadSchedule({
                   </h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
                     <LatexRenderer
-                      tex={`\\text{Max Demand Current (3}\\Phi\\text{)} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ""}`}
+                      tex={`\\text{Max Demand Current (3}\\Phi\\text{)} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25`}
                     />
                   </div>
                 </div>
@@ -5199,20 +5198,6 @@ export default function LoadSchedule({
                         {(maxDemandDetails.HML || 0).toFixed(2)} A
                       </span>
                     </p>
-                    {maxDemandDetails.subPanelDemandAmps ? (
-                      <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
-                        <span>
-                          Sub-Panel Reflections (
-                          <span className="font-mono">I_subpanels</span>):
-                        </span>
-                        <span className="font-bold text-slate-800 dark:text-white">
-                          {(maxDemandDetails.subPanelDemandAmps || 0).toFixed(
-                            2,
-                          )}{" "}
-                          A
-                        </span>
-                      </p>
-                    ) : null}
                   </div>
                 </div>
 
@@ -5224,12 +5209,11 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ""} \\\\
-  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= ${(maxDemandDetails.internalDemandCurrent || 0).toFixed(2)} ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ""} \\\\
-  &= \\mathbf{${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}}
+  I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
+  &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
+  &= ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)} \\\\
+  &= \\mathbf{${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
                     </div>
@@ -5242,7 +5226,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (3\\Phi)} = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${(maxDemandDetails.baseAmp || 0).toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (3\\Phi)} = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"

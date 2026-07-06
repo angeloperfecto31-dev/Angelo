@@ -747,17 +747,17 @@ export const exportToWord = async (
       stepDescription = `The system is Three-Phase (${p.system}) with ${connectionLabel} single-phase loading.
 - Highest Line Current (I_line) = ${(maxDemandDetails.totalAmpere || 0).toFixed(2)} A
 - Total 3-Phase loads current (I_3ph) = ${(maxDemandDetails.total3Phase || 0).toFixed(2)} A
-- Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `\n- Sub-Panel Reflections (I_subpanels) = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}
+- Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A
 Using Philippine Electrical Code (PEC) demand rules with a system-wide 1.25 safety factor, the Maximum Demand Current is computed as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25 = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${(((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8 + (maxDemandDetails.total3Phase || 0) + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
     } else {
       stepDescription = `The system is Single-Phase (${p.system}).
 - Total Connected Load = ${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)} VA
-- Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A${maxDemandDetails.subPanelDemandAmps ? `\n- Sub-Panel Reflections (I_subpanels) = ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)} A` : ''}
+- Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A
 Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Current is calculated as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ I_{\\text{subpanels}}` : ''} = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 ${maxDemandDetails.subPanelDemandAmps ? `+ ${(maxDemandDetails.subPanelDemandAmps || 0).toFixed(2)}` : ''} = ${maxBaseAmp.toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 = \\left[ \\left( \\frac{${(maxDemandDetails.totalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${((((maxDemandDetails.totalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
     }
 
     const tfPrimaryV = transformerConfig?.primaryVoltage || 34500;
