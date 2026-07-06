@@ -1425,6 +1425,55 @@ export default function App() {
     }
 
     setVdCalculations(data.vdCalculations || []);
+
+    // Clean data of undefined fields before saving to avoid Firestore serialization errors
+    const cleanObject = (obj: any): any => {
+      if (obj === null || typeof obj !== "object") return obj;
+      if (Array.isArray(obj)) return obj.map(cleanObject);
+      const result: any = {};
+      for (const key in obj) {
+        if (obj[key] !== undefined) {
+          result[key] = cleanObject(obj[key]);
+        }
+      }
+      return result;
+    };
+
+    // Automatically and transparently save migrated & recalculated data back to persistence (Firestore or localStorage)
+    try {
+      if (user) {
+        const docRef = doc(db, "users", user.uid, "projects", projectId);
+        setDoc(
+          docRef,
+          {
+            data: cleanObject(data),
+            lastModified: Date.now(),
+          },
+          { merge: true }
+        ).catch((err) => {
+          console.error("[Auto-Migration] Failed to save updated project data to Firestore:", err);
+        });
+      } else {
+        const STORAGE_KEY = "electricalph_projects";
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const projects = JSON.parse(saved);
+          const updated = projects.map((p: any) => {
+            if (p.id === projectId) {
+              return {
+                ...p,
+                lastModified: Date.now(),
+                data,
+              };
+            }
+            return p;
+          });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        }
+      }
+    } catch (err) {
+      console.error("[Auto-Migration] Error during background transparent persistence:", err);
+    }
   };
 
   const currentProjectData: ProjectData = {

@@ -757,7 +757,8 @@ Using Philippine Electrical Code (PEC) demand rules with a system-wide 1.25 safe
 - Highest Motor Load (HML) = ${(maxDemandDetails.HML || 0).toFixed(2)} A
 Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Current is calculated as:`;
 
-      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{230} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / 230) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
+      const sysVWord = p.voltage || 230;
+      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] \\times 1.25 = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysVWord}} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${((((maxDemandDetails.internalConnectedVA || 0) / sysVWord) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)) * 1.25).toFixed(2)}\\text{ A}`;
     }
 
     const tfPrimaryV = transformerConfig?.primaryVoltage || 34500;
