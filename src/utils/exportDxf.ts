@@ -787,10 +787,10 @@ const drawSystemSLD = (
   });
 
   const getWidth = (id: string, seen: Set<string> = new Set()): number => {
-    if (seen.has(id)) return 110;
+    if (seen.has(id)) return 180;
     seen.add(id);
     const children = getChildren(id);
-    if (children.length === 0) return 110;
+    if (children.length === 0) return 180;
     return children.reduce((sum, c) => sum + getWidth(c.sp.id, seen), 0);
   };
 
@@ -846,7 +846,7 @@ const drawSystemSLD = (
     children.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
     
     children.forEach((c) => {
-      const w = widths.get(c.sp.id) || 110;
+      const w = widths.get(c.sp.id) || 180;
       const cx = currentX + w / 2;
       positions.set(c.sp.id, cx);
       placeChildren(c.sp.id, currentX);
@@ -854,7 +854,7 @@ const drawSystemSLD = (
     });
   };
 
-  const leftTotalWidth = leftRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 110), 0);
+  const leftTotalWidth = leftRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 180), 0);
   const leftSpan = xBase_MDP - 100 - (xOffset + 60);
   const leftS = leftSpan - leftTotalWidth;
   const leftGap = leftRoots.length > 0 ? leftS / (leftRoots.length + 1) : 0;
@@ -862,14 +862,14 @@ const drawSystemSLD = (
   let currentLeftX = xOffset + 60;
   leftRoots.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
   leftRoots.forEach((r) => {
-    const w = widths.get(r.sp.id) || 110;
+    const w = widths.get(r.sp.id) || 180;
     const cx = currentLeftX + leftGap + w / 2;
     positions.set(r.sp.id, cx);
     placeChildren(r.sp.id, currentLeftX + leftGap);
     currentLeftX += w + leftGap;
   });
 
-  const rightTotalWidth = rightRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 110), 0);
+  const rightTotalWidth = rightRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 180), 0);
   const rightSpan = (xOffset + layoutAreaW - 60) - (xBase_MDP + 100);
   const rightS = rightSpan - rightTotalWidth;
   const rightGap = rightRoots.length > 0 ? rightS / (rightRoots.length + 1) : 0;
@@ -877,7 +877,7 @@ const drawSystemSLD = (
   let currentRightX = xBase_MDP + 100;
   rightRoots.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
   rightRoots.forEach((r) => {
-    const w = widths.get(r.sp.id) || 110;
+    const w = widths.get(r.sp.id) || 180;
     const cx = currentRightX + rightGap + w / 2;
     positions.set(r.sp.id, cx);
     placeChildren(r.sp.id, currentRightX + rightGap);
@@ -1375,10 +1375,11 @@ export const exportToCAD = (
     else rightSpCount++;
   });
 
-  const spRequiredWidth = 145; // Generous width per subpanel to avoid text collisions
+  const spRequiredWidth = 180; // Generous width per subpanel to avoid text collisions
   const leftRequired = Math.max(300, leftSpCount * spRequiredWidth);
   const rightRequired = Math.max(300, rightSpCount * spRequiredWidth);
-  const sldCustomW = Math.max(baseW, leftRequired + 100 + rightRequired + 130);
+  const maxSideRequired = Math.max(leftRequired, rightRequired);
+  const sldCustomW = Math.max(baseW, maxSideRequired * 2 + 460);
 
   const sheetConfigs: { w: number; xOffset: number }[] = [];
   let currentSheetX = 0;
