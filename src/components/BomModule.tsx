@@ -978,6 +978,25 @@ export default function BomModule({
 
           {/* Master Table Grid */}
           <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900/60 shadow-xs">
+            {/* Total Header inside workspace */}
+            <div className="bg-slate-50 dark:bg-slate-800/40 p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer no-print"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Custom Material
+                </button>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Total Materials (Unfinished Estimations):</span>
+                <p className="text-lg md:text-xl font-black text-indigo-600 dark:text-indigo-400 font-mono mt-0.5">
+                  ₱{costCalculations.materialsSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -1078,25 +1097,6 @@ export default function BomModule({
                   )}
                 </tbody>
               </table>
-            </div>
-
-            {/* Total Footer inside workspace */}
-            <div className="bg-slate-50 dark:bg-slate-800/40 p-4 border-t border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer no-print"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add Custom Material
-                </button>
-              </div>
-              <div className="text-right">
-                <span className="text-xs text-slate-500 dark:text-slate-400">Total Materials (Unfinished Estimations):</span>
-                <p className="text-lg md:text-xl font-black text-indigo-600 dark:text-indigo-400 font-mono mt-0.5">
-                  ₱{costCalculations.materialsSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
             </div>
           </div>
         </div>
