@@ -1007,7 +1007,7 @@ export default function BomModule({
 
       const grandTotalCost = filteredBomItems.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
       const totalRow = [
-        "GRAND TOTAL", "", "", "", "", "", "", "", grandTotalCost, ""
+        "MATERIALS TOTAL", "", "", "", "", "", "", "", grandTotalCost, ""
       ];
 
       const wsData = [
@@ -1017,7 +1017,17 @@ export default function BomModule({
         headers,
         ...rows,
         [""], // Spacer
-        totalRow
+        totalRow,
+        [""], // Spacer
+        ["COST ESTIMATES & ANALYTICS", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "Total Materials", costCalculations.materialsSum, ""],
+        ["", "", "", "", "", "", "", "Labor Estimation", costCalculations.laborSum, ""],
+        ["", "", "", "", "", "", "", "Subtotal", costCalculations.subtotal, ""],
+        ["", "", "", "", "", "", "", "Contingency", costCalculations.contingencyAmount, ""],
+        ["", "", "", "", "", "", "", "Profit Margin", costCalculations.profitAmount, ""],
+        ["", "", "", "", "", "", "", "Taxable Subtotal", costCalculations.subtotal + costCalculations.contingencyAmount + costCalculations.profitAmount, ""],
+        ["", "", "", "", "", "", "", "Taxes / VAT", costCalculations.taxAmount, ""],
+        ["", "", "", "", "", "", "", "GRAND PROFESSIONAL TOTAL", costCalculations.grandTotal, ""]
       ];
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -1091,8 +1101,50 @@ export default function BomModule({
         }
       };
 
+      const analyticsSectionTitleStyle = {
+        font: { name: "Segoe UI", sz: 14, bold: true, color: { rgb: "1E293B" } },
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const analyticsLabelStyle = {
+        font: { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "334155" } },
+        alignment: { horizontal: "right", vertical: "center" }
+      };
+      
+      const analyticsValueStyle = {
+        font: { name: "Segoe UI", sz: 10, bold: true, color: { rgb: "334155" } },
+        alignment: { horizontal: "right", vertical: "center" },
+        numFmt: "₱#,##0.00",
+      };
+      
+      const analyticsSubtotalLabelStyle = {
+        font: { name: "Segoe UI", sz: 11, bold: true, color: { rgb: "0F172A" } },
+        fill: { fgColor: { rgb: "F1F5F9" } },
+        alignment: { horizontal: "right", vertical: "center" },
+        border: {
+          top: { style: "thin", color: { rgb: "E2E8F0" } },
+          bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+        }
+      };
+      
+      const analyticsSubtotalValueStyle = {
+        font: { name: "Segoe UI", sz: 11, bold: true, color: { rgb: "0F172A" } },
+        fill: { fgColor: { rgb: "F1F5F9" } },
+        alignment: { horizontal: "right", vertical: "center" },
+        numFmt: "₱#,##0.00",
+        border: {
+          top: { style: "thin", color: { rgb: "E2E8F0" } },
+          bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+        }
+      };
+
       // Apply styles to cells
       const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+      const materialsTotalRowIndex = rows.length + 5;
+      const analyticsHeaderRowIndex = rows.length + 7;
+      const subtotalRowIndex = analyticsHeaderRowIndex + 3;
+      const taxableSubtotalRowIndex = analyticsHeaderRowIndex + 6;
+
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -1104,16 +1156,35 @@ export default function BomModule({
             ws[cellAddress].s = subtitleStyle;
           } else if (R === 3) {
             ws[cellAddress].s = headerStyle;
-          } else if (R === range.e.r) {
-            // Grand Total row
+          } else if (R === materialsTotalRowIndex) {
+            // Materials Total row
             if (C === 8) {
               ws[cellAddress].s = grandTotalValueStyle;
             } else {
               ws[cellAddress].s = grandTotalLabelStyle;
             }
-          } else if (R === range.e.r - 1) {
-            // Spacer row
-          } else if (R > 3) {
+          } else if (R === analyticsHeaderRowIndex) {
+            ws[cellAddress].s = analyticsSectionTitleStyle;
+          } else if (R === range.e.r) {
+            // Grand Professional Total row
+            if (C === 8) {
+              ws[cellAddress].s = grandTotalValueStyle;
+            } else {
+              if (C >= 7) ws[cellAddress].s = grandTotalLabelStyle;
+            }
+          } else if (R === subtotalRowIndex || R === taxableSubtotalRowIndex) {
+             if (C === 8) {
+               ws[cellAddress].s = analyticsSubtotalValueStyle;
+             } else if (C === 7) {
+               ws[cellAddress].s = analyticsSubtotalLabelStyle;
+             }
+          } else if (R > analyticsHeaderRowIndex && R < range.e.r) {
+             if (C === 8) {
+               ws[cellAddress].s = analyticsValueStyle;
+             } else if (C === 7) {
+               ws[cellAddress].s = analyticsLabelStyle;
+             }
+          } else if (R > 3 && R < materialsTotalRowIndex - 1) {
             if (C === 7 || C === 8) {
               ws[cellAddress].s = costStyle;
             } else if (C === 5) {
@@ -1128,7 +1199,10 @@ export default function BomModule({
       // Merge cells for title and grand total
       if (!ws["!merges"]) ws["!merges"] = [];
       ws["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
-      ws["!merges"].push({ s: { r: range.e.r, c: 0 }, e: { r: range.e.r, c: 7 } }); // Merge Grand Total label
+      ws["!merges"].push({ s: { r: materialsTotalRowIndex, c: 0 }, e: { r: materialsTotalRowIndex, c: 7 } }); // Merge Materials Total label
+      ws["!merges"].push({ s: { r: analyticsHeaderRowIndex, c: 0 }, e: { r: analyticsHeaderRowIndex, c: 9 } }); // Merge Analytics Header
+      ws["!merges"].push({ s: { r: range.e.r, c: 0 }, e: { r: range.e.r, c: 6 } }); // Merge Grand Professional Total start
+
 
       // Set column widths
       ws["!cols"] = [
@@ -1161,7 +1235,7 @@ export default function BomModule({
       return;
     }
     try {
-      await exportBomToWord(panel, filteredBomItems);
+      await exportBomToWord(panel, filteredBomItems, costCalculations);
     } catch (err) {
       console.error("Word Export failed:", err);
       alert("Failed to export Word file. Check console for details.");

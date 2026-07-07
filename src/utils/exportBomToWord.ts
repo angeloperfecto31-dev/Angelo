@@ -19,7 +19,7 @@ import {
 import { PanelConfig } from "../types";
 import { BomItem } from "../components/BomModule";
 
-export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[]) => {
+export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[], costCalculations: any) => {
   const docChildren: any[] = [];
   
   // Title
@@ -133,7 +133,7 @@ export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[]) =
     );
   });
 
-  // Grand Total Row
+  // Materials Total Row
   tableRows.push(
     new TableRow({
       children: [
@@ -146,7 +146,7 @@ export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[]) =
             new Paragraph({
               alignment: AlignmentType.RIGHT,
               children: [
-                new TextRun({ text: "GRAND TOTAL", bold: true, color: "FFFFFF", font: "Segoe UI", size: 20 })
+                new TextRun({ text: "MATERIALS TOTAL", bold: true, color: "FFFFFF", font: "Segoe UI", size: 20 })
               ]
             })
           ]
@@ -159,7 +159,7 @@ export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[]) =
             new Paragraph({
               alignment: AlignmentType.RIGHT,
               children: [
-                new TextRun({ text: `PHP ${grandTotalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, bold: true, color: "FFFFFF", font: "Segoe UI", size: 20 })
+                new TextRun({ text: `PHP ${costCalculations.materialsSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, bold: true, color: "FFFFFF", font: "Segoe UI", size: 20 })
               ]
             })
           ]
@@ -192,6 +192,91 @@ export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[]) =
   });
 
   docChildren.push(table);
+
+  // COST ESTIMATES & ANALYTICS
+  docChildren.push(
+    new Paragraph({
+      spacing: { before: 800, after: 400 },
+      children: [
+        new TextRun({
+          text: "Cost Estimates & Analytics",
+          bold: true,
+          size: 28,
+          font: "Segoe UI",
+          color: "1E293B" // Slate 800
+        })
+      ]
+    })
+  );
+
+  const analyticsRows: TableRow[] = [];
+
+  const analyticsData = [
+    { label: "Total Materials", value: costCalculations.materialsSum, isTotal: false },
+    { label: "Labor Estimation", value: costCalculations.laborSum, isTotal: false },
+    { label: "Subtotal", value: costCalculations.subtotal, isTotal: true },
+    { label: "Contingency", value: costCalculations.contingencyAmount, isTotal: false },
+    { label: "Profit Margin", value: costCalculations.profitAmount, isTotal: false },
+    { label: "Taxable Subtotal", value: costCalculations.subtotal + costCalculations.contingencyAmount + costCalculations.profitAmount, isTotal: true },
+    { label: "Taxes / VAT", value: costCalculations.taxAmount, isTotal: false },
+    { label: "GRAND PROFESSIONAL TOTAL", value: costCalculations.grandTotal, isTotal: true, highlight: true }
+  ];
+
+  analyticsData.forEach((row, idx) => {
+    const isEven = idx % 2 === 1;
+    const fill = row.highlight ? "312E81" : (row.isTotal ? "F1F5F9" : (isEven ? "F8FAFC" : "FFFFFF"));
+    const textColor = row.highlight ? "FFFFFF" : (row.isTotal ? "1E293B" : "334155");
+    const isBold = row.isTotal || row.highlight;
+
+    analyticsRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            shading: { fill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 150, right: 100 },
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.LEFT,
+                children: [
+                  new TextRun({ text: row.label, bold: isBold, font: "Segoe UI", size: isBold ? 20 : 18, color: textColor })
+                ]
+              })
+            ]
+          }),
+          new TableCell({
+            shading: { fill },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 120, bottom: 120, left: 100, right: 150 },
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [
+                  new TextRun({ text: `PHP ${row.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, bold: isBold, font: "Segoe UI", size: isBold ? 20 : 18, color: textColor })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+    );
+  });
+
+  const analyticsTable = new Table({
+    rows: analyticsRows,
+    width: { size: 60, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      left: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      right: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
+      insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 }
+    },
+    alignment: AlignmentType.RIGHT // Right-align the analytics table
+  });
+
+  docChildren.push(analyticsTable);
 
   const footerTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
