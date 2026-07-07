@@ -107,7 +107,8 @@ import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 import EgcSizingCalculator from "./components/EgcSizingCalculator";
 import TransformerCalc from "./components/TransformerCalc";
-import BomModule, { BomItem } from "./components/BomModule";
+import BomModule from "./components/BomModule";
+import { BomItem } from "./utils/bomRulesEngine";
 import {
   ModuleManagement,
   SystemModule,
@@ -3769,13 +3770,14 @@ export default function App() {
         illumParams,
         images,
         iscParams,
-
         {
           primaryVoltage: transformerPrimaryVoltage,
           powerFactor: transformerPowerFactor,
           demandFactor: transformerDemandFactor,
           loadingFactor: transformerLoadingFactor,
         },
+        bomItems,
+        bomSettings
       );
     } catch (e) {
       console.error("Error generating Word doc:", e);
@@ -6845,6 +6847,8 @@ export default function App() {
                       setBomItems(items);
                       setBomSettings(settings);
                     }}
+                    illumParams={illumParams}
+                    mainSource={mainSource}
                   />
                 </motion.div>
               </div>

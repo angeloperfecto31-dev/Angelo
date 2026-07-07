@@ -1,5 +1,4 @@
 import { Document, Packer, PageOrientation,
-  PageOrientation, 
   Paragraph, 
   TextRun, 
   HeadingLevel, 
@@ -258,7 +257,9 @@ export const exportToWord = async (
   illumParams: import('../types').IlluminationParams,
   images?: any,
   iscParams?: any,
-  transformerConfig?: any
+  transformerConfig?: any,
+  bomItems?: any[],
+  bomSettings?: any
 ) => {
   const docChildren: any[] = [];
 
@@ -688,13 +689,24 @@ export const exportToWord = async (
   addTOCEntry("5.0", "Indoor Illumination Sizing & Industrial Ergonomics Quality Report", "Standard Lumen Method calculations, workspace lux target validation, DOLE Rule 1075 working conditions, ASHRAE LPD density checks, and smart photodetector energy dims payback schedules.", "Page 7", false);
   
   const hasFloorPlan = images?.floorPlan && Array.isArray(images.floorPlan) && images.floorPlan.length > 0;
+  const hasBOM = bomItems && bomItems.length > 0;
+
+  let currentSec = 6;
+  let currentPage = 8;
+
   if (hasFloorPlan) {
-    addTOCEntry("6.0", "Electrical Floor Plan Wiring Diagram & Layout Mapping", "Architectural CAD and electrical circuit routes, device placements, and wiring distribution schemas.", "Page 8", true);
+    addTOCEntry("6.0", "Electrical Floor Plan Wiring Diagram & Layout Mapping", "Architectural CAD and electrical circuit routes, device placements, and wiring distribution schemas.", `Page ${currentPage}`, true);
+    currentSec++;
+    currentPage++;
   }
 
-  const checklistSectionNum = hasFloorPlan ? "7.0" : "6.0";
-  const checklistPageNum = hasFloorPlan ? "Page 9" : "Page 8";
-  addTOCEntry(checklistSectionNum, "Reference Framework Checklist", "Compliance checklist index and legal/engineering execution mandates from the Philippine Electrical Code.", checklistPageNum, !hasFloorPlan);
+  if (hasBOM) {
+    addTOCEntry(`${currentSec}.0`, "Bill of Materials (BOM) Takeoff Summary", "Comprehensive physical material count takeoff, itemized brand specifications, material costs, labor costs, and project capitalization forecasts.", `Page ${currentPage}`, currentSec % 2 === 1);
+    currentSec++;
+    currentPage++;
+  }
+
+  addTOCEntry(`${currentSec}.0`, "Reference Framework Checklist", "Compliance checklist index and legal/engineering execution mandates from the Philippine Electrical Code.", `Page ${currentPage}`, currentSec % 2 === 1);
 
   const tocTable = new Table({
     rows: tocRows,
@@ -1754,8 +1766,145 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     }
   }
 
-  // === 6. REFERENCE FRAMEWORK CHECKLIST ===
-  const checklistSecNum = (images?.floorPlan && Array.isArray(images.floorPlan) && images.floorPlan.length > 0) ? "7.0" : "6.0";
+  // === BILL OF MATERIALS SECTION ===
+  let bomSectionNum = "6.0";
+  let checklistSecNum = "7.0";
+
+  if (hasFloorPlan && hasBOM) {
+    bomSectionNum = "7.0";
+    checklistSecNum = "8.0";
+  } else if (hasFloorPlan && !hasBOM) {
+    checklistSecNum = "7.0";
+  } else if (!hasFloorPlan && hasBOM) {
+    bomSectionNum = "6.0";
+    checklistSecNum = "7.0";
+  } else {
+    checklistSecNum = "6.0";
+  }
+
+  if (hasBOM && bomItems) {
+    docChildren.push(createHeader(`${bomSectionNum} Bill of Materials (BOM) Takeoff Summary`, true));
+    docChildren.push(
+      createParagraph("An automated PEC-compliant quantity takeoff and material schedule analysis has been conducted. The itemized cost analysis factors standard manufacturer product lists, preferred industrial brands, and localized contractor labor indices:"),
+      new Paragraph({ spacing: { after: 150 } })
+    );
+
+    const bomTableRows: TableRow[] = [];
+    const createBOMHeaderCell = (text: string, size = 15) => new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text, bold: true, font: "Segoe UI", size, color: "FFFFFF" })], alignment: AlignmentType.CENTER })],
+      shading: { fill: "1B365D" },
+      verticalAlign: VerticalAlign.CENTER,
+      margins: { top: 60, bottom: 60, left: 80, right: 80 }
+    });
+
+    bomTableRows.push(new TableRow({
+      children: [
+        createBOMHeaderCell('Category', 16),
+        createBOMHeaderCell('Item Name & Brand', 16),
+        createBOMHeaderCell('Specification', 15),
+        createBOMHeaderCell('Qty', 16),
+        createBOMHeaderCell('Unit', 16),
+        createBOMHeaderCell('Material (₱)', 16),
+        createBOMHeaderCell('Labor (₱)', 16),
+        createBOMHeaderCell('Total Cost (₱)', 16),
+      ],
+      tableHeader: true
+    }));
+
+    let totalMaterial = 0;
+    let totalLabor = 0;
+
+    bomItems.forEach((item, idx) => {
+      const isEven = idx % 2 === 0;
+      const rowShading = isEven ? "F8FAFC" : "FFFFFF";
+
+      const createBOMCell = (text: string, align: any = AlignmentType.CENTER, bold = false) => new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text, font: "Segoe UI", size: 15, color: "334155", bold })], alignment: align })],
+        shading: { fill: rowShading },
+        verticalAlign: VerticalAlign.CENTER,
+        margins: { top: 60, bottom: 60, left: 80, right: 80 }
+      });
+
+      const qty = item.quantity || 0;
+      const matUnit = item.unitCost || 0;
+      const labUnit = item.laborCostPerUnit || 0;
+      const matCost = qty * matUnit;
+      const labCost = qty * labUnit;
+      const totalCost = matCost + labCost;
+
+      totalMaterial += matCost;
+      totalLabor += labCost;
+
+      bomTableRows.push(new TableRow({
+        children: [
+          createBOMCell(item.category || "General", AlignmentType.LEFT),
+          createBOMCell(`${item.name || "Item"}\n[${item.brand || "Generic"}]`, AlignmentType.LEFT),
+          createBOMCell(item.specification || "", AlignmentType.LEFT),
+          createBOMCell(qty.toString()),
+          createBOMCell(item.unit || "pcs"),
+          createBOMCell(matCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), AlignmentType.RIGHT),
+          createBOMCell(labCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), AlignmentType.RIGHT),
+          createBOMCell(totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), AlignmentType.RIGHT, true),
+        ]
+      }));
+    });
+
+    // Summary Row
+    const grandTotal = totalMaterial + totalLabor;
+    const createSummaryCell = (text: string, align: any = AlignmentType.CENTER, bold = true) => new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text, font: "Segoe UI", size: 16, color: "1B365D", bold })], alignment: align })],
+      shading: { fill: "E2E8F0" },
+      verticalAlign: VerticalAlign.CENTER,
+      margins: { top: 80, bottom: 80, left: 80, right: 80 }
+    });
+
+    bomTableRows.push(new TableRow({
+      children: [
+        createSummaryCell("TOTAL TAKE-OFF", AlignmentType.LEFT, true),
+        createSummaryCell("", AlignmentType.LEFT, false),
+        createSummaryCell("", AlignmentType.LEFT, false),
+        createSummaryCell("", AlignmentType.CENTER, false),
+        createSummaryCell("", AlignmentType.CENTER, false),
+        createSummaryCell(totalMaterial.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), AlignmentType.RIGHT, true),
+        createSummaryCell(totalLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), AlignmentType.RIGHT, true),
+        createSummaryCell(grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), AlignmentType.RIGHT, true),
+      ]
+    }));
+
+    docChildren.push(new Table({
+      rows: bomTableRows,
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+        bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+        insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
+        insideVertical: { style: BorderStyle.NONE },
+      }
+    }));
+    docChildren.push(new Paragraph({ spacing: { after: 200 } }));
+
+    // BOM Key Findings Callout
+    const taxAndContingencyMultiplier = (bomSettings?.taxRate || 12) / 100;
+    const contractorMarkupMultiplier = (bomSettings?.markupRate || 15) / 100;
+
+    const computedTax = grandTotal * taxAndContingencyMultiplier;
+    const computedMarkup = grandTotal * contractorMarkupMultiplier;
+    const finalCapitalProjectCost = grandTotal + computedTax + computedMarkup;
+
+    const bomFindings = [
+      `Total Direct Material Capital Take-off: ₱${totalMaterial.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+      `Total Direct Specialized Labor Services: ₱${totalLabor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+      `Direct Project Sizing Cost (Material + Labor): ₱${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+      `Factoring Project Indirect Surcharge Margins:`,
+      `  - Government VAT, Permits, & Contingency Fee (${bomSettings?.taxRate || 12}%): ₱${computedTax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+      `  - Professional Contractor General Markup Surcharge (${bomSettings?.markupRate || 15}%): ₱${computedMarkup.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+      `Computed Ultimate Turnkey Capitalized Project Value: ₱${finalCapitalProjectCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`,
+    ];
+    docChildren.push(createCallout("🔍 AUTOMATED BILL OF MATERIALS & CAPITAL FORECASTING FARE", bomFindings));
+    docChildren.push(new Paragraph({ spacing: { after: 200 } }));
+  }
+
+  // === REFERENCE FRAMEWORK CHECKLIST ===
   docChildren.push(createHeader(`${checklistSecNum} Reference Framework Checklist`, true));
   docChildren.push(
     createParagraph("The design memorandum and calculations compiled in this dossier adhere strictly to the mandate of the Philippine Electrical Code (PEC) and related professional frameworks. Sizing methodologies and engineering limits are logged below for standard audit compliance verification:"),

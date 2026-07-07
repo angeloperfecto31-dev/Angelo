@@ -17,7 +17,7 @@ import {
   PageOrientation
 } from "docx";
 import { PanelConfig } from "../types";
-import { BomItem } from "../components/BomModule";
+import { BomItem } from "./bomRulesEngine";
 
 export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[], costCalculations: any) => {
   const docChildren: any[] = [];

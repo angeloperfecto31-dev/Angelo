@@ -25,8 +25,8 @@ import {
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { exportBomToWord } from "../utils/exportBomToWord";
+import { runBomQuantityTakeoff, BomItem } from "../utils/bomRulesEngine";
 
-// Materials Library Item template
 interface LibraryItem {
   id: string;
   category: string;
@@ -39,7 +39,6 @@ interface LibraryItem {
   supplierName?: string;
 }
 
-// Supplier registry interface
 interface Supplier {
   id: string;
   name: string;
@@ -48,24 +47,6 @@ interface Supplier {
   address: string;
   leadTime: string;
   brands: string[];
-}
-
-// Bill of Materials Item
-export interface BomItem {
-  id: string;
-  category: "Conductors" | "Grounding" | "Conduits" | "Breakers" | "Switches" | "Distribution Equipment" | "Boxes" | "Lighting" | "Devices" | "Protection" | "Equipment" | "Accessories";
-  name: string;
-  description: string;
-  brand: string;
-  specification: string;
-  quantity: number;
-  unit: string;
-  unitCost: number;
-  laborCostPerUnit: number;
-  remarks: string;
-  isLocked: boolean; // lock from auto-recalculation
-  source: string; // "MDP Circuit 1", "Main Transformer", "Manual Add", etc.
-  rating?: string;
 }
 
 interface BomModuleProps {
@@ -80,6 +61,8 @@ interface BomModuleProps {
   savedBomItems?: BomItem[];
   savedBomSettings?: any;
   onSaveBom?: (items: BomItem[], settings: any) => void;
+  illumParams?: any;
+  mainSource?: any;
 }
 
 // Default standard Materials Library
@@ -164,7 +147,9 @@ export default function BomModule({
   onRequestUpgrade,
   savedBomItems,
   savedBomSettings,
-  onSaveBom
+  onSaveBom,
+  illumParams,
+  mainSource
 }: BomModuleProps) {
 
   // Active sub-tab
@@ -235,459 +220,50 @@ export default function BomModule({
     return vd && vd.length ? vd.length : 50; // 50m default fallback for feeders
   };
 
-  // Run Quantity Takeoff and build/synchronize the BOM
+  // Run Quantity Takeoff and build/synchronize the BOM using our Rules Engine
   const synchronizeBOM = (forceReset: boolean = false) => {
-    const logs: string[] = [];
     const timestamp = new Date().toLocaleTimeString();
-    logs.push(`[${timestamp}] Initiated PEC-compliant BOM Takeoff synchronization.`);
-
+    
     // Keep locked items, discard others if not force reset
     const lockedItems = forceReset ? [] : bomItems.filter(item => item.isLocked);
-    if (lockedItems.length > 0) {
-      logs.push(`[${timestamp}] Preserved ${lockedItems.length} manually modified/locked material lines.`);
-    }
+    
+    // Call the external rules engine
+    const { items: generatedItems, logs: engineLogs } = runBomQuantityTakeoff(
+      panel,
+      circuits,
+      subPanels,
+      vdCalculations,
+      iscParams,
+      {
+        wasteConductors,
+        wasteConduits,
+        wasteAccessories,
+        preferredBrandConductors,
+        preferredBrandConduits,
+        preferredBrandBreakers,
+        preferredBrandAccessories
+      },
+      illumParams,
+      mainSource
+    );
 
-    const generatedItems: BomItem[] = [];
-
-    // Auxiliary to safely add or consolidate items
-    const addItem = (item: Omit<BomItem, "id" | "isLocked">) => {
-      // Check if there's a locked item matching the exact name and source
-      const isOverridden = lockedItems.some(
+    // Filter out generated items that conflict with locked items (matching name and source)
+    const filteredGenerated = generatedItems.filter(item => {
+      return !lockedItems.some(
         li => li.name === item.name && li.source === item.source
       );
-      if (isOverridden) return;
-
-      // Consolidate identical items from the same source
-      const existing = generatedItems.find(
-        gi => gi.name === item.name && gi.source === item.source && gi.category === item.category && gi.brand === item.brand
-      );
-
-      if (existing) {
-        existing.quantity += item.quantity;
-      } else {
-        generatedItems.push({
-          ...item,
-          id: `gen-${Math.random().toString(36).substr(2, 9)}`,
-          isLocked: false
-        });
-      }
-    };
-
-    // 1. GENERATE FOR CIRCUIT BREAKERS & CONDUCTORS FROM MDP
-    const mdpId = panel.designation || "Main Distribution Panel";
-    logs.push(`[${timestamp}] Extracting circuits from main panel: ${mdpId}`);
-
-    // Main Overcurrent Protective Device
-    const mainBreakerRating = panel.mainBreakerAT || 100;
-    const mainBreakerPoles = panel.system.includes("3PH") ? 3 : 2;
-    const mainBreakerCost = mainBreakerRating > 100 ? 5800 : 18500; // approximation
-    addItem({
-      category: "Breakers",
-      name: `Main Circuit Breaker, ${mainBreakerRating}AT/${panel.mainBreakerAF || 100}AF, ${mainBreakerPoles}P`,
-      description: `Main protective breaker with interrupting capacity of ${panel.icRating || "10"} kAIC`,
-      brand: preferredBrandBreakers,
-      specification: `MCCB, NEMA Type 1 or Standard Box fitting, compliant with PEC Sec 2.40`,
-      quantity: 1,
-      unit: "pcs",
-      unitCost: mainBreakerCost,
-      laborCostPerUnit: mainBreakerCost * 0.15,
-      remarks: "Main service protection",
-      source: `Panel [${mdpId}] Main`
     });
 
-    // Main Cabinet/Panel Box Enclosure
-    addItem({
-      category: "Distribution Equipment",
-      name: `Panelboard Enclosure Cabinet - ${mdpId}`,
-      description: `NEMA ${panel.mounting === "Flush" ? "1 Flush" : "1 Surface"} Panelboard Enclosure Cabinet, ${circuits.length} branches space`,
-      brand: preferredBrandAccessories,
-      specification: `Fabricated 1.5mm thick gauge metal, powder-coated ANSI 61 gray, busbar system included`,
-      quantity: 1,
-      unit: "pcs",
-      unitCost: 3500 + (circuits.length * 150),
-      laborCostPerUnit: 1200,
-      remarks: `Main distribution cabinet - ${panel.mounting} mount`,
-      source: `Panel [${mdpId}]`
-    });
-
-    // Grounding Kit for main panel
-    addItem({
-      category: "Grounding",
-      name: "Copper Clad Ground Rod, 3/4\" x 10ft",
-      description: "High-grade steel core rod with electrolytic copper cladding",
-      brand: "Erico",
-      specification: "PEC Article 2.50 compliant",
-      quantity: 2,
-      unit: "pcs",
-      unitCost: 950,
-      laborCostPerUnit: 400,
-      remarks: "Service grounding system",
-      source: "Grounding System"
-    });
-    addItem({
-      category: "Grounding",
-      name: "Ground Rod Clamp, 3/4\"",
-      description: "Heavy-duty bronze direct burial ground clamp",
-      brand: "Erico",
-      specification: "Threaded bolt mechanical clamp",
-      quantity: 2,
-      unit: "pcs",
-      unitCost: 180,
-      laborCostPerUnit: 80,
-      remarks: "Clamp connection to ground rods",
-      source: "Grounding System"
-    });
-
-    // Transfer Switch (ATS / MTS)
-    if (panel.transferSwitchType && panel.transferSwitchType !== "None") {
-      const tsRating = panel.transferSwitchRating || mainBreakerRating;
-      const tsCost = panel.transferSwitchType === "ATS" ? tsRating * 120 : tsRating * 45;
-      addItem({
-        category: "Switches",
-        name: `${panel.transferSwitchType === "ATS" ? "Automatic" : "Manual"} Transfer Switch (ATS/MTS) - ${tsRating}A`,
-        description: `${panel.transferSwitchPoles || mainBreakerPoles} Pole, ${panel.transferSwitchType === "ATS" ? "ATS" : "MTS"} generator transfer panel`,
-        brand: panel.transferSwitchManufacturer || preferredBrandBreakers,
-        specification: `SCCR ${panel.transferSwitchSCCR || "10kA"}, NEMA 1 Enclosure, Model: ${panel.transferSwitchModel || "Standard"}`,
-        quantity: 1,
-        unit: "pcs",
-        unitCost: tsCost,
-        laborCostPerUnit: tsCost * 0.12,
-        remarks: panel.transferSwitchRemarks || "Generator backup line transition",
-        source: `Panel [${mdpId}]`
-      });
-    }
-
-    // Branch Circuits
-    circuits.forEach((c) => {
-      // Ignore space/spare
-      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-
-      const is3Ph = (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2));
-      const poles = is3Ph ? 3 : (c.mcbP || 2);
-      const wireSets = c.wireSets || 1;
-
-      // Extract Branch Circuit Breakers
-      let breakerCost = 650; // fallback standard bolt-on price
-      if (c.mcbAT > 100) breakerCost = 4500;
-      else if (c.mcbAT > 50) breakerCost = 1200;
-
-      addItem({
-        category: "Breakers",
-        name: `Circuit Breaker, ${c.mcbAT}AT/${c.mcbAF || 50}AF, ${poles}P, ${c.mcbType}`,
-        description: `Interrupting capacity: ${c.mcbKAIC || 10} kAIC at 230V`,
-        brand: preferredBrandBreakers,
-        specification: `Bolt-on / plug-in molded breaker matching schedule specs`,
-        quantity: 1,
-        unit: "pcs",
-        unitCost: breakerCost,
-        laborCostPerUnit: breakerCost * 0.15,
-        remarks: `Branch protection for Circuit ${c.circuitNo} (${c.description})`,
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-
-      // Branch Wires (Conductors)
-      const length = getCircuitLength(c.id);
-      const wireSizeStr = c.wireSizeOverride || c.calculatedWireSize || c.wireSize || "2.0";
-      const wireSizeNum = parseFloat(wireSizeStr);
-      
-      // Determine standard price for wire from database or fallback scale
-      const matchingLibWire = library.find(l => l.category === "Conductors" && l.rating === `${wireSizeStr} mm²`);
-      const baseWireCost = matchingLibWire ? matchingLibWire.unitCost : (wireSizeNum * 5 + 10);
-
-      // Branch circuits are usually 1PH (2 active wires) or 3PH (3 active wires)
-      const conductorCount = is3Ph ? 3 : 2;
-      const totalConductorMeters = length * conductorCount * wireSets * (1 + wasteConductors / 100);
-
-      addItem({
-        category: "Conductors",
-        name: `THHN Copper Wire, ${wireSizeStr} mm²`,
-        description: `Thermoplastic High Heat-Resistant Nylon-insulated, 600V`,
-        brand: preferredBrandConductors,
-        specification: `Annealed copper conductor, compliant with PEC Table 3.10.2.6(B)(16)`,
-        quantity: Math.ceil(totalConductorMeters),
-        unit: "meters",
-        unitCost: baseWireCost,
-        laborCostPerUnit: baseWireCost * 0.25,
-        remarks: `Circuit ${c.circuitNo} Phase Wires (${wireSets} run/s)`,
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-
-      // Neutral Wire if Single Phase Line-to-Neutral (or if 3 Phase 4-Wire)
-      const hasNeutral = panel.connectionType === "Line-to-Neutral" || (is3Ph && panel.system.includes("4W"));
-      if (hasNeutral) {
-        const totalNeutralMeters = length * wireSets * (1 + wasteConductors / 100);
-        addItem({
-          category: "Conductors",
-          name: `THHN Copper Wire, ${wireSizeStr} mm² (Neutral)`,
-          description: `Neutral Conductor (White/Gray coded), 600V`,
-          brand: preferredBrandConductors,
-          specification: `Annealed copper conductor matching Phase size for general branch`,
-          quantity: Math.ceil(totalNeutralMeters),
-          unit: "meters",
-          unitCost: baseWireCost,
-          laborCostPerUnit: baseWireCost * 0.25,
-          remarks: `Circuit ${c.circuitNo} Neutral line`,
-          source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-        });
-      }
-
-      // Equipment Grounding Conductor (EGC)
-      const egcSizeStr = c.groundSize || "2.0";
-      const egcSizeNum = parseFloat(egcSizeStr);
-      const matchingLibEgc = library.find(l => l.category === "Conductors" && l.rating === `${egcSizeStr} mm²`);
-      const egcWireCost = matchingLibEgc ? matchingLibEgc.unitCost : (egcSizeNum * 5 + 10);
-      const totalEgcMeters = length * wireSets * (1 + wasteConductors / 100);
-
-      addItem({
-        category: "Conductors",
-        name: `THHN Copper Wire, ${egcSizeStr} mm² (Ground)`,
-        description: `Equipment Grounding Conductor (Green coded), 600V`,
-        brand: preferredBrandConductors,
-        specification: `Annealed copper grounding wire compliant with PEC Table 2.50.6.13`,
-        quantity: Math.ceil(totalEgcMeters),
-        unit: "meters",
-        unitCost: egcWireCost,
-        laborCostPerUnit: egcWireCost * 0.25,
-        remarks: `Circuit ${c.circuitNo} Ground conductor`,
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-
-      // Branch Conduits
-      const conduitSizeStr = c.conduitSizeOverride || c.calculatedConduitSize || c.conduitSize || "20";
-      const conduitType = c.conduitTypeOverride || c.conduitType || "PVC";
-      const totalConduitMeters = length * (1 + wasteConduits / 100);
-
-      const matchingConduit = library.find(l => l.category === "Conduits" && l.rating === `${conduitSizeStr}mm` && l.name.includes(conduitType));
-      const baseConduitCost = matchingConduit ? matchingConduit.unitCost : (parseInt(conduitSizeStr) * 1.5 + 10);
-
-      addItem({
-        category: "Conduits",
-        name: `${conduitType} Conduit, ${conduitSizeStr}mm Ø`,
-        description: `Electrical conduit raceway for branch circuit runs`,
-        brand: preferredBrandConduits,
-        specification: `${conduitType === "PVC" ? "uPVC Thick-wall Heavy Duty" : "Rigid/Intermediate Steel Conduit"}`,
-        quantity: Math.ceil(totalConduitMeters),
-        unit: "meters",
-        unitCost: baseConduitCost,
-        laborCostPerUnit: baseConduitCost * 0.35,
-        remarks: `Circuit ${c.circuitNo} Raceway`,
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-
-      // Fittings and Boxes per circuit (1 Utility/Junction Box, connectors and locknuts)
-      addItem({
-        category: "Boxes",
-        name: c.loadType === "L" ? "Junction Box, Octagonal Metal" : "Utility Box, Rectangular Metal",
-        description: `Outlet / connection box for circuit outlets`,
-        brand: "Kotatsu",
-        specification: "Standard galvanized steel with multiple conduit knockouts",
-        quantity: 1,
-        unit: "pcs",
-        unitCost: c.loadType === "L" ? 65 : 45,
-        laborCostPerUnit: 25,
-        remarks: `Circuit ${c.circuitNo} box housing`,
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-
-      addItem({
-        category: "Accessories",
-        name: `PVC Connector with Locknut, ${conduitSizeStr}mm`,
-        description: `Conduit fitting adapter to secure conduits to panel/utility boxes`,
-        brand: preferredBrandConduits,
-        specification: "Threaded PVC male adapter with securing ring",
-        quantity: 2,
-        unit: "pcs",
-        unitCost: parseInt(conduitSizeStr) > 25 ? 18 : 8,
-        laborCostPerUnit: 5,
-        remarks: "Box connector endpoints",
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-
-      addItem({
-        category: "Accessories",
-        name: `PVC Conduit Coupling, ${conduitSizeStr}mm`,
-        description: "Socket pipe sleeve for joining conduit lengths",
-        brand: preferredBrandConduits,
-        specification: "Slip-fit PVC coupling sleeve",
-        quantity: Math.ceil(totalConduitMeters / 3), // 1 coupling per 3m standard conduit pipe
-        unit: "pcs",
-        unitCost: parseInt(conduitSizeStr) > 25 ? 15 : 6,
-        laborCostPerUnit: 4,
-        remarks: "Conduit joint couplings",
-        source: `Panel [${mdpId}] Circuit ${c.circuitNo}`
-      });
-    });
-
-    // 2. GENERATE FOR SUB-PANELS IN HIERARCHY
-    subPanels.forEach((sp) => {
-      const spId = sp.panel.designation || "Sub-Panel";
-      logs.push(`[${timestamp}] Extracting circuits from sub-panel: ${spId}`);
-
-      const spMainBreaker = sp.panel.mainBreakerAT || 60;
-      const spMainPoles = sp.panel.system.includes("3PH") ? 3 : 2;
-      const spBreakerCost = spMainBreaker > 100 ? 5800 : 18500;
-
-      addItem({
-        category: "Breakers",
-        name: `Sub-Panel Main Breaker, ${spMainBreaker}AT/${sp.panel.mainBreakerAF || 100}AF, ${spMainPoles}P`,
-        description: `Main overcurrent protective device for Sub-panelboard ${spId}`,
-        brand: preferredBrandBreakers,
-        specification: `MCCB / Bolt-on, matching subpanel current load rating`,
-        quantity: 1,
-        unit: "pcs",
-        unitCost: spBreakerCost,
-        laborCostPerUnit: spBreakerCost * 0.15,
-        remarks: "Sub-panel incoming feeder protection",
-        source: `Panel [${spId}] Main`
-      });
-
-      addItem({
-        category: "Distribution Equipment",
-        name: `Panelboard Enclosure Cabinet - ${spId}`,
-        description: `NEMA ${sp.panel.mounting === "Flush" ? "1 Flush" : "1 Surface"} Enclosure Cabinet, ${sp.circuits.length} branches space`,
-        brand: preferredBrandAccessories,
-        specification: `Fabricated metal enclosure, ANSI 61 gray matching main standard`,
-        quantity: 1,
-        unit: "pcs",
-        unitCost: 3000 + (sp.circuits.length * 150),
-        laborCostPerUnit: 1000,
-        remarks: `Secondary subpanel cabinet - ${sp.panel.mounting} mount`,
-        source: `Panel [${spId}]`
-      });
-
-      // Subpanel branch circuits
-      sp.circuits.forEach((sc) => {
-        if (sc.loadType === LoadType.SPACE || sc.loadType === LoadType.SPARE) return;
-
-        const sIs3Ph = (sc.is3PhaseMarker !== undefined ? sc.is3PhaseMarker : (sc.phases && sc.phases.length > 2));
-        const sPoles = sIs3Ph ? 3 : (sc.mcbP || 2);
-        const sWireSets = sc.wireSets || 1;
-
-        let sBreakerCost = 650;
-        if (sc.mcbAT > 100) sBreakerCost = 4500;
-        else if (sc.mcbAT > 50) sBreakerCost = 1200;
-
-        addItem({
-          category: "Breakers",
-          name: `Circuit Breaker, ${sc.mcbAT}AT/${sc.mcbAF || 50}AF, ${sPoles}P, ${sc.mcbType}`,
-          description: `Interrupting capacity: ${sc.mcbKAIC || 10} kAIC at 230V`,
-          brand: preferredBrandBreakers,
-          specification: "Standard branch miniature circuit breaker",
-          quantity: 1,
-          unit: "pcs",
-          unitCost: sBreakerCost,
-          laborCostPerUnit: sBreakerCost * 0.15,
-          remarks: `Branch protection for Circuit ${sc.circuitNo} (${sc.description})`,
-          source: `Panel [${spId}] Circuit ${sc.circuitNo}`
-        });
-
-        // Wires for subpanel branch
-        const sLength = getCircuitLength(sc.id);
-        const sWireSizeStr = sc.wireSizeOverride || sc.calculatedWireSize || sc.wireSize || "2.0";
-        const sWireSizeNum = parseFloat(sWireSizeStr);
-        const sMatchingWire = library.find(l => l.category === "Conductors" && l.rating === `${sWireSizeStr} mm²`);
-        const sBaseWireCost = sMatchingWire ? sMatchingWire.unitCost : (sWireSizeNum * 5 + 10);
-
-        const sConductorCount = sIs3Ph ? 3 : 2;
-        const sTotalConductorMeters = sLength * sConductorCount * sWireSets * (1 + wasteConductors / 100);
-
-        addItem({
-          category: "Conductors",
-          name: `THHN Copper Wire, ${sWireSizeStr} mm²`,
-          brand: preferredBrandConductors,
-          description: "Branch feeder conductors, 600V PVC copper wire",
-          specification: "PEC Table 3.10.2.6(B)(16) compliant",
-          quantity: Math.ceil(sTotalConductorMeters),
-          unit: "meters",
-          unitCost: sBaseWireCost,
-          laborCostPerUnit: sBaseWireCost * 0.25,
-          remarks: `Circuit ${sc.circuitNo} Phase Wires`,
-          source: `Panel [${spId}] Circuit ${sc.circuitNo}`
-        });
-
-        const sHasNeutral = sp.panel.connectionType === "Line-to-Neutral" || (sIs3Ph && sp.panel.system.includes("4W"));
-        if (sHasNeutral) {
-          const sTotalNeutralMeters = sLength * sWireSets * (1 + wasteConductors / 100);
-          addItem({
-            category: "Conductors",
-            name: `THHN Copper Wire, ${sWireSizeStr} mm² (Neutral)`,
-            brand: preferredBrandConductors,
-            description: "Neutral line conductor, 600V",
-            specification: "Color coded White/Gray for neutral grounding line",
-            quantity: Math.ceil(sTotalNeutralMeters),
-            unit: "meters",
-            unitCost: sBaseWireCost,
-            laborCostPerUnit: sBaseWireCost * 0.25,
-            remarks: `Circuit ${sc.circuitNo} Neutral line`,
-            source: `Panel [${spId}] Circuit ${sc.circuitNo}`
-          });
-        }
-
-        const sEgcSizeStr = sc.groundSize || "2.0";
-        const sEgcSizeNum = parseFloat(sEgcSizeStr);
-        const sMatchingEgc = library.find(l => l.category === "Conductors" && l.rating === `${sEgcSizeStr} mm²`);
-        const sEgcWireCost = sMatchingEgc ? sMatchingEgc.unitCost : (sEgcSizeNum * 5 + 10);
-        const sTotalEgcMeters = sLength * sWireSets * (1 + wasteConductors / 100);
-
-        addItem({
-          category: "Conductors",
-          name: `THHN Copper Wire, ${sEgcSizeStr} mm² (Ground)`,
-          brand: preferredBrandConductors,
-          description: "Grounding protection, Green insulated copper",
-          specification: "PEC compliant Equipment Grounding Wire",
-          quantity: Math.ceil(sTotalEgcMeters),
-          unit: "meters",
-          unitCost: sEgcWireCost,
-          laborCostPerUnit: sEgcWireCost * 0.25,
-          remarks: `Circuit ${sc.circuitNo} Ground conductor`,
-          source: `Panel [${spId}] Circuit ${sc.circuitNo}`
-        });
-
-        const sConduitSizeStr = sc.conduitSizeOverride || sc.calculatedConduitSize || sc.conduitSize || "20";
-        const sConduitType = sc.conduitTypeOverride || sc.conduitType || "PVC";
-        const sTotalConduitMeters = sLength * (1 + wasteConduits / 100);
-        const sMatchingConduit = library.find(l => l.category === "Conduits" && l.rating === `${sConduitSizeStr}mm` && l.name.includes(sConduitType));
-        const sBaseConduitCost = sMatchingConduit ? sMatchingConduit.unitCost : (parseInt(sConduitSizeStr) * 1.5 + 10);
-
-        addItem({
-          category: "Conduits",
-          name: `${sConduitType} Conduit, ${sConduitSizeStr}mm Ø`,
-          brand: preferredBrandConduits,
-          description: "Branch conduit pipeline protection",
-          specification: `${sConduitType} Conduit, Class thick-wall standard`,
-          quantity: Math.ceil(sTotalConduitMeters),
-          unit: "meters",
-          unitCost: sBaseConduitCost,
-          laborCostPerUnit: sBaseConduitCost * 0.35,
-          remarks: `Circuit ${sc.circuitNo} Raceway`,
-          source: `Panel [${spId}] Circuit ${sc.circuitNo}`
-        });
-
-        // Box and fittings
-        addItem({
-          category: "Boxes",
-          name: sc.loadType === "L" ? "Junction Box, Octagonal Metal" : "Utility Box, Rectangular Metal",
-          description: "Secondary branch outlet junction box housing",
-          brand: "Kotatsu",
-          specification: "Galvanized utility wall box",
-          quantity: 1,
-          unit: "pcs",
-          unitCost: sc.loadType === "L" ? 65 : 45,
-          laborCostPerUnit: 25,
-          remarks: `Circuit ${sc.circuitNo} Box housing`,
-          source: `Panel [${spId}] Circuit ${sc.circuitNo}`
-        });
-      });
-    });
-
-    // Combine newly generated auto-takeoff items and preserved manually locked items
-    const combined = [...lockedItems, ...generatedItems];
+    const combined = [...lockedItems, ...filteredGenerated];
     setBomItems(combined);
 
-    logs.push(`[${timestamp}] Successfully generated ${combined.length} BOM lines with full quantities Takeoff.`);
-    setAuditLogs(prev => [...logs, ...prev]);
+    const auditMsgs = [
+      `[${timestamp}] Synchronized BOM using PEC Rules Engine.`,
+      ...engineLogs,
+      `[${timestamp}] Total items in BOM: ${combined.length} (${lockedItems.length} locked, ${filteredGenerated.length} newly generated).`
+    ];
+    setAuditLogs(prev => [...auditMsgs, ...prev]);
 
-    // Save back to parent state if available
     if (onSaveBom) {
       onSaveBom(combined, {
         wasteConductors,
