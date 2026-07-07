@@ -211,11 +211,53 @@ export default function VoltageDropCalc({
     }
   }, [panel, circuits, allSubPanels, transformerPrimaryVoltage]);
 
+  const getConductorMaterialForCalculation = (calc: VoltageDropCalculation) => {
+    if (calc.source === "main") {
+      return panel?.conductorMaterial || "Copper";
+    }
+    const subPanel = allSubPanels.find(sp => sp.id === calc.source);
+    if (subPanel) {
+      return subPanel.panel?.conductorMaterial || "Copper";
+    }
+    if (circuits?.some(c => c.id === calc.source)) {
+      return panel?.conductorMaterial || "Copper";
+    }
+    const spWithCircuit = allSubPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
+    if (spWithCircuit) {
+      return spWithCircuit.panel?.conductorMaterial || "Copper";
+    }
+    return "Copper";
+  };
+
+  const getInsulationTypeForCalculation = (calc: VoltageDropCalculation) => {
+    if (calc.source === "main") {
+      return panel?.insulationType || "THHN";
+    }
+    const subPanel = allSubPanels.find(sp => sp.id === calc.source);
+    if (subPanel) {
+      return subPanel.panel?.insulationType || "THHN";
+    }
+    if (circuits?.some(c => c.id === calc.source)) {
+      return panel?.insulationType || "THHN";
+    }
+    const spWithCircuit = allSubPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
+    if (spWithCircuit) {
+      return spWithCircuit.panel?.insulationType || "THHN";
+    }
+    return "THHN";
+  };
+
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const data =
       WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
     let R = data ? data.r : 5.76;
     
+    // Apply Aluminum 1.64 resistivity factor in accordance with PEC/NEC
+    const material = getConductorMaterialForCalculation(calc);
+    if (material === "Aluminum") {
+      R = R * 1.64;
+    }
+
     const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
     R = R / sets;
 
@@ -242,7 +284,7 @@ export default function VoltageDropCalc({
       ...c,
       result: calculateVDAndCompliance(c),
     }));
-  }, [calculations]);
+  }, [calculations, panel, circuits, allSubPanels]);
 
   const handleUpdateCalculation = (
     id: string,
@@ -1090,7 +1132,7 @@ export default function VoltageDropCalc({
         {c.loadA}
       </td>
       <td className="p-3 text-slate-700 dark:text-slate-300">
-        {c.wireSets && c.wireSets > 1 ? `${c.wireSets}x ` : ""}{c.wireSize}
+        {c.wireSets && c.wireSets > 1 ? `${c.wireSets}x ` : ""}{c.wireSize} mm² {getConductorMaterialForCalculation(c) === "Copper" ? "CU" : "AL"} {getInsulationTypeForCalculation(c)}
       </td>
       <td className="p-3 text-slate-700 dark:text-slate-300">
         {c.systemType}
@@ -2234,7 +2276,10 @@ export default function VoltageDropCalc({
                   const y = 150;
                   const vdPct = parseFloat(segment.calc.result.vdPercentage);
                   const isSegCompliant = vdPct <= 3.0;
-                  const strokeColor = isSegCompliant ? "#4F46E5" : "#EF4444"; // highlighted color, red if over 3%
+                  const material = getConductorMaterialForCalculation(segment.calc);
+                  const strokeColor = isSegCompliant 
+                    ? (material === "Copper" ? "#EA580C" : "#64748B") 
+                    : "#EF4444";
 
                   return (
                     <g key={segment.id}>
@@ -2296,7 +2341,7 @@ export default function VoltageDropCalc({
                         textAnchor="middle"
                         className="fill-slate-500 dark:fill-slate-400 text-[10px] font-extrabold uppercase font-sans tracking-wide"
                       >
-                        {segment.calc.wireSets && segment.calc.wireSets > 1 ? `${segment.calc.wireSets}x ` : ""}{segment.calc.wireSize} mm² THHN
+                        {segment.calc.wireSets && segment.calc.wireSets > 1 ? `${segment.calc.wireSets}x ` : ""}{segment.calc.wireSize} mm² {getConductorMaterialForCalculation(segment.calc) === "Copper" ? "CU" : "AL"} {getInsulationTypeForCalculation(segment.calc)}
                       </text>
                     </g>
                   );
@@ -2424,14 +2469,14 @@ export default function VoltageDropCalc({
                           <g>
                             {/* Circle outline with ground connection */}
                             <circle cx="0" cy="0" r="14" fill="#FFFFFF" stroke="#1E293B" strokeWidth="2" className="dark:fill-slate-900 dark:stroke-slate-100" />
-                            <line x1="-4" y1="-18" x2="-4" y2="18" stroke="#1E293B" className="dark:fill-slate-100" strokeWidth="1.5" />
-                            <line x1="4" y1="-18" x2="4" y2="18" stroke="#1E293B" className="dark:fill-slate-100" strokeWidth="1.5" />
+                            <line x1="-4" y1="-18" x2="-4" y2="18" stroke="#1E293B" className="dark:stroke-slate-100" strokeWidth="1.5" />
+                            <line x1="4" y1="-18" x2="4" y2="18" stroke="#1E293B" className="dark:stroke-slate-100" strokeWidth="1.5" />
                             
                             {/* Ground line below */}
-                            <line x1="0" y1="14" x2="0" y2="22" stroke="#475569" strokeWidth="1.5" />
-                            <line x1="-5" y1="22" x2="5" y2="22" stroke="#475569" strokeWidth="1.5" />
-                            <line x1="-3" y1="25" x2="3" y2="25" stroke="#475569" strokeWidth="1.5" />
-                            <line x1="-1" y1="28" x2="1" y2="28" stroke="#475569" strokeWidth="1.5" />
+                            <line x1="0" y1="14" x2="0" y2="22" stroke="#475569" className="dark:stroke-slate-400" strokeWidth="1.5" />
+                            <line x1="-5" y1="22" x2="5" y2="22" stroke="#475569" className="dark:stroke-slate-400" strokeWidth="1.5" />
+                            <line x1="-3" y1="25" x2="3" y2="25" stroke="#475569" className="dark:stroke-slate-400" strokeWidth="1.5" />
+                            <line x1="-1" y1="28" x2="1" y2="28" stroke="#475569" className="dark:stroke-slate-400" strokeWidth="1.5" />
                           </g>
                         );
                         break;

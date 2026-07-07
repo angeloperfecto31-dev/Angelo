@@ -263,6 +263,24 @@ export const exportToWord = async (
 ) => {
   const docChildren: any[] = [];
 
+  const getConductorMaterialForCalculation = (calc: import('../types').VoltageDropCalculation) => {
+    if (calc.source === "main") {
+      return panel?.conductorMaterial || "Copper";
+    }
+    const subPanel = subPanels.find(sp => sp.id === calc.source);
+    if (subPanel) {
+      return subPanel.panel?.conductorMaterial || "Copper";
+    }
+    if (circuits?.some(c => c.id === calc.source)) {
+      return panel?.conductorMaterial || "Copper";
+    }
+    const spWithCircuit = subPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
+    if (spWithCircuit) {
+      return spWithCircuit.panel?.conductorMaterial || "Copper";
+    }
+    return "Copper";
+  };
+
   const addImageToDoc = async (dataUrl: string | null, isFullPageDiagram = false) => {
     if (!dataUrl) return;
     try {
@@ -1399,6 +1417,10 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
         const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
         let R = data.r;
+        const material = getConductorMaterialForCalculation(calc);
+        if (material === "Aluminum") {
+          R = R * 1.64;
+        }
         const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
         R = R / sets;
         const factor = calc.systemType === '3PH' ? 1.732 : 2;
@@ -1476,6 +1498,10 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
            const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
            let R = data.r;
+           const material = getConductorMaterialForCalculation(calc);
+           if (material === "Aluminum") {
+              R = R * 1.64;
+           }
            const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
            R = R / sets;
            const is3Phase = calc.systemType === '3PH';
@@ -1493,7 +1519,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
            docChildren.push(createParagraph(`   • System Type = ${calc.systemType}`));
            docChildren.push(createParagraph(`   • Load Current ($I$) = ${cLoad.toFixed(2)} A`));
            docChildren.push(createParagraph(`   • Feeder Length ($L$) = ${cLength.toFixed(2)} m`));
-           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ''}${calc.wireSize} mm²`));
+           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ''}${calc.wireSize} mm² ${material === "Copper" ? "CU" : "AL"} THHN`));
            docChildren.push(createParagraph(`   • AC Resistance ($R_{\\text{ohms}}$) = ${R} \\Omega/km`));
            docChildren.push(createParagraph(`   • Nominal Voltage ($V_{\\text{nominal}}$) = ${cVoltage} V`));
            

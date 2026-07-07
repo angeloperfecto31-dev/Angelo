@@ -1052,6 +1052,24 @@ export const exportToCAD = (
 ) => {
   const b = new DxfBuilder();
 
+  const getConductorMaterialForCalculation = (calc: VoltageDropCalculation) => {
+    if (calc.source === "main") {
+      return panel?.conductorMaterial || "Copper";
+    }
+    const subPanel = subPanels.find(sp => sp.id === calc.source);
+    if (subPanel) {
+      return subPanel.panel?.conductorMaterial || "Copper";
+    }
+    if (circuits?.some(c => c.id === calc.source)) {
+      return panel?.conductorMaterial || "Copper";
+    }
+    const spWithCircuit = subPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
+    if (spWithCircuit) {
+      return spWithCircuit.panel?.conductorMaterial || "Copper";
+    }
+    return "Copper";
+  };
+
   // Run Load Schedule calculations
   const calcData = computePanelScheduleValues(panel, circuits);
   const is3Phase = panel.system.includes("3PH");
@@ -2975,6 +2993,10 @@ export const exportToCAD = (
           const data =
             WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
           let R = data.r;
+          const material = getConductorMaterialForCalculation(calc);
+          if (material === "Aluminum") {
+            R = R * 1.64;
+          }
           const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
           R = R / sets;
           const vd = (factorRaw * calc.length * calc.loadA * R) / 1000;
@@ -2984,9 +3006,9 @@ export const exportToCAD = (
           const limit = isFeeder ? 5.0 : 3.0;
 
           writeEqVD([
-            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
-            `R_{ohms} = ${R} \\ \\Omega\\text{/km}`,
-            `VD = \\frac{${factorMath} \\times ${R} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
+            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2 ${material === "Copper" ? "CU" : "AL"} THHN\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
+            `R_{ohms} = ${R.toFixed(4)} \\ \\Omega\\text{/km}`,
+            `VD = \\frac{${factorMath} \\times ${R.toFixed(4)} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
             `VD_{\\%} = \\left(\\frac{${vd.toFixed(2)}}{${calc.voltage}}\\right) \\times 100\\% = ${vdPerc.toFixed(2)} \\%`,
             `\\text{Compliance Check: } ${vdPerc <= limit ? `\\text{VERIFIED ACCEPTABLE} (\\le ${limit}\\%)` : `\\text{WARNING EXCEEDS ${limit}\\% LIMIT}`}`,
           ]);

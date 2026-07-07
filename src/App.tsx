@@ -3940,7 +3940,7 @@ export default function App() {
                     id: "bom",
                     label: "Bill of Materials",
                     icon: FileSpreadsheet,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                 ]
                   .filter((item) => {
@@ -3968,6 +3968,13 @@ export default function App() {
                         alert(
                           `Module Under Maintenance\n\nThe ${mod?.name || item.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`,
                         );
+                        return;
+                      }
+                      if (item.id === "bom" && userPlan === "basic" && !isAdmin) {
+                        alert(
+                          `Premium Module Required\n\nThe Bill of Materials (BOM) module is available exclusively in the Premium and Enterprise plans. Please upgrade your subscription to unlock this module.`,
+                        );
+                        setShowUpgrade(true);
                         return;
                       }
                       setActiveTab(item.id as any);
@@ -4005,6 +4012,11 @@ export default function App() {
                                   LOCK
                                 </span>
                               )}
+                              {item.requiresPremium && userPlan === "basic" && !isAdmin && (
+                                <span className="text-[8px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded shrink-0">
+                                  PREMIUM
+                                </span>
+                              )}
                             </span>
                           )}
                         </button>
@@ -4013,7 +4025,8 @@ export default function App() {
                         {isSidebarCollapsed && (
                           <div className="absolute left-16 top-1/2 -translate-y-1/2 ml-2 px-3 py-1.5 bg-slate-950 text-white text-xxs font-black tracking-wider uppercase rounded-md border border-slate-800 shadow-xl opacity-0 scale-90 translate-x-1 group-hover:opacity-100 group-hover:scale-100 group-hover:translate-x-0 pointer-events-none transition-all duration-200 z-50 whitespace-nowrap">
                             {item.label} {isMaintenance && "(Maintenance)"}{" "}
-                            {isDisabled && "(Disabled)"}
+                            {isDisabled && "(Disabled)"}{" "}
+                            {item.requiresPremium && userPlan === "basic" && !isAdmin && "(Premium)"}
                           </div>
                         )}
                       </div>
@@ -6822,30 +6835,54 @@ export default function App() {
                     activeTab === "bom" ? { opacity: 1, y: 0 } : {}
                   }
                   transition={{ duration: 0.2 }}
-                  className="w-full"
+                  className="w-full text-center"
                 >
-                  <BomModule
-                    projectId={currentProjectId}
-                    panel={panel}
-                    circuits={circuits}
-                    subPanels={subPanels}
-                    iscParams={iscParams}
-                    vdCalculations={vdCalculations}
-                    isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
-                      isAdmin
-                    }
-                    onRequestUpgrade={() => setShowUpgrade(true)}
-                    savedBomItems={bomItems}
-                    savedBomSettings={bomSettings}
-                    onSaveBom={(items, settings) => {
-                      setBomItems(items);
-                      setBomSettings(settings);
-                    }}
-                    illumParams={illumParams}
-                    mainSource={mainSource}
-                  />
+                  {userPlan === "basic" && !isAdmin ? (
+                    <div className="w-full max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-12 flex flex-col items-center justify-center gap-6 shadow-2xl">
+                      <div className="p-4 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20 shadow-lg">
+                        <Lock className="w-12 h-12" />
+                      </div>
+                      <div className="space-y-2 max-w-lg">
+                        <h2 className="text-2xl font-bold text-white tracking-tight">
+                          Bill of Materials (BOM) is Locked
+                        </h2>
+                        <p className="text-slate-400 text-sm leading-relaxed">
+                          The Bill of Materials module generates a complete, PEC-compliant material takeoff, conduit/fitting lists, and dynamic costing schedules automatically from your Load Schedules. This professional-grade module is available exclusively in the **Premium** and **Enterprise** Plans.
+                        </p>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3 mt-2">
+                        <button
+                          onClick={() => setShowUpgrade(true)}
+                          className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5"
+                        >
+                          Upgrade Plan
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <BomModule
+                      projectId={currentProjectId}
+                      panel={panel}
+                      circuits={circuits}
+                      subPanels={subPanels}
+                      iscParams={iscParams}
+                      vdCalculations={vdCalculations}
+                      isPremium={
+                        userPlan === "premium" ||
+                        userPlan === "enterprise" ||
+                        isAdmin
+                      }
+                      onRequestUpgrade={() => setShowUpgrade(true)}
+                      savedBomItems={bomItems}
+                      savedBomSettings={bomSettings}
+                      onSaveBom={(items, settings) => {
+                        setBomItems(items);
+                        setBomSettings(settings);
+                      }}
+                      illumParams={illumParams}
+                      mainSource={mainSource}
+                    />
+                  )}
                 </motion.div>
               </div>
 
