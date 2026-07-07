@@ -3691,7 +3691,7 @@ export default function App() {
         if (!el) return null;
         try {
           const isSld = id.startsWith("sld-");
-          const pRatio = isSld ? 1 : 1.5;
+          const pRatio = isSld ? 4 : 2; // Increase resolution for Word export (min 300 DPI eq)
 
           let width = el.scrollWidth;
           let height = el.scrollHeight;

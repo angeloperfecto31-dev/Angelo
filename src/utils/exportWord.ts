@@ -1,6 +1,5 @@
-import { 
-  Document, 
-  Packer, 
+import { Document, Packer, PageOrientation,
+  PageOrientation, 
   Paragraph, 
   TextRun, 
   HeadingLevel, 
@@ -263,7 +262,7 @@ export const exportToWord = async (
 ) => {
   const docChildren: any[] = [];
 
-  const addImageToDoc = async (dataUrl: string | null) => {
+  const addImageToDoc = async (dataUrl: string | null, isFullPageDiagram = false) => {
     if (!dataUrl) return;
     try {
       const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
@@ -275,16 +274,34 @@ export const exportToWord = async (
         img.src = dataUrl; 
       });
       
-      const maxWidth = 500;
-      const maxHeight = 700;
-      const ratio = img.height / img.width;
+      // Standard margins: 20mm (0.78 inches = ~1134 twips). A4 is 8.27 x 11.69 inches.
+      // Standard page max width in pt = 500, maxHeight = 700.
+      let maxWidth = 500;
+      let maxHeight = 700;
+      let isLandscape = false;
       
+      if (isFullPageDiagram) {
+         if (img.width > img.height) {
+            isLandscape = true;
+            maxWidth = 700; // Landscape A4 max width
+            maxHeight = 500; // Landscape A4 max height
+         } else {
+            maxWidth = 500;
+            maxHeight = 700;
+         }
+      }
+      
+      const ratio = img.height / img.width;
       let docWidth = maxWidth;
       let docHeight = docWidth * ratio;
       
       if (docHeight > maxHeight) {
           docHeight = maxHeight;
           docWidth = docHeight / ratio;
+      }
+      
+      if (isFullPageDiagram) {
+          docChildren.push({ isSectionBreak: true, orientation: isLandscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT });
       }
 
       const base64String = atob(base64Data);
@@ -709,7 +726,7 @@ export const exportToWord = async (
 
   if (images?.systemSLD) {
     docChildren.push(createHeader(`System-Wide Distribution Single Line Diagram`));
-    await addImageToDoc(images.systemSLD);
+    await addImageToDoc(images.systemSLD, true);
   }
 
   const allPanelsToExport = [
@@ -923,7 +940,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     const designationKey = p?.designation || '';
     if (images?.sld?.[designationKey]) {
        docChildren.push(createSubHeader(`Single Line Diagram - ${p?.designation || 'main'}`));
-       await addImageToDoc(images.sld[designationKey]);
+       await addImageToDoc(images.sld[designationKey], true);
     }
   }
 
@@ -1928,29 +1945,61 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     ]
   });
 
+  const processedSections = [];
+  let currentChildren = [];
+  let currentOrientation = PageOrientation.PORTRAIT;
+
+  for (const child of docChildren) {
+    let isBreak = false;
+    let newOrientation = PageOrientation.PORTRAIT;
+    
+    if (child && child.isSectionBreak) {
+        isBreak = true;
+        newOrientation = child.orientation;
+    }
+
+    if (isBreak) {
+        if (currentChildren.length > 0) {
+            processedSections.push({
+                properties: {
+                  page: {
+                    margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 }, // 20mm
+                    size: { orientation: currentOrientation },
+                  },
+                },
+                footers: {
+                  default: new Footer({ children: [footerTable] })
+                },
+                children: currentChildren,
+            });
+            currentChildren = [];
+        }
+        currentOrientation = newOrientation;
+        continue; // skip the marker
+    }
+    
+    currentChildren.push(child);
+  }
+
+  if (currentChildren.length > 0) {
+      processedSections.push({
+          properties: {
+            page: {
+              margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 }, // 20mm
+              size: { orientation: currentOrientation },
+            },
+          },
+          footers: {
+            default: new Footer({ children: [footerTable] })
+          },
+          children: currentChildren,
+      });
+  }
+
   const doc = new Document({
     creator: "AI Studio Integrated Sizer",
     title: `Electrical Design Analysis - ${panel.project || 'Project'}`,
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: {
-              top: 1440,
-              right: 1440,
-              bottom: 1440,
-              left: 1440,
-            },
-          },
-        },
-        footers: {
-          default: new Footer({
-            children: [footerTable]
-          })
-        },
-        children: docChildren,
-      },
-    ],
+    sections: processedSections,
   });
 
   const blob = await Packer.toBlob(doc);
