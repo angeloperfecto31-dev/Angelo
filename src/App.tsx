@@ -3351,6 +3351,167 @@ export default function App() {
       }
 
       // -----------------------------------------------------
+      // 5. Bill of Materials (BOM)
+      // -----------------------------------------------------
+      if (bomItems && bomItems.length > 0) {
+        const bomHeaders = ["Category", "Material Name", "Description", "Brand", "Specification", "Quantity", "Unit", "Unit Cost (₱)", "Total Cost (₱)", "Source / Reference"];
+        
+        const bomRows = bomItems.map((item: any) => [
+          item.category,
+          item.name,
+          item.description,
+          item.brand,
+          item.specification,
+          item.quantity,
+          item.unit,
+          item.unitCost,
+          item.quantity * item.unitCost,
+          item.source
+        ]);
+
+        const grandTotalCost = bomItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unitCost), 0);
+        const totalRow = [
+          "GRAND TOTAL", "", "", "", "", "", "", "", grandTotalCost, ""
+        ];
+
+        const bomWsData = [
+          ["BILL OF MATERIALS (BOM) TAKEOFF REPORT"],
+          [`Project Designation: ${panel.designation || "Project"}`, "", "", "", "", "", "", "", "", `Generated on: ${new Date().toLocaleDateString()}`],
+          [""],
+          bomHeaders,
+          ...bomRows,
+          [""], // Spacer
+          totalRow
+        ];
+
+        const wsBom = XLSX.utils.aoa_to_sheet(bomWsData);
+
+        // Define standard styles
+        const headerStyle = {
+          font: { bold: true, color: { rgb: "FFFFFF" }, name: "Segoe UI", sz: 10 },
+          fill: { fgColor: { rgb: "312E81" } }, // Indigo 900
+          alignment: { horizontal: "center", vertical: "center", wrapText: true },
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+
+        const titleStyle = {
+          font: { bold: true, color: { rgb: "0F172A" }, name: "Segoe UI", sz: 16 },
+          alignment: { horizontal: "left", vertical: "center" }
+        };
+
+        const subtitleStyle = {
+          font: { bold: true, color: { rgb: "475569" }, name: "Segoe UI", sz: 11 },
+          alignment: { horizontal: "left", vertical: "center" }
+        };
+
+        const cellStyle = {
+          font: { name: "Segoe UI", sz: 10 },
+          alignment: { vertical: "center" },
+          border: {
+            bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+          }
+        };
+        
+        const costStyle = {
+          font: { name: "Segoe UI", sz: 10, bold: true },
+          alignment: { horizontal: "right", vertical: "center" },
+          numFmt: "₱#,##0.00",
+          border: {
+            bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+          }
+        };
+
+        const qtyStyle = {
+          font: { name: "Segoe UI", sz: 10, bold: true },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: {
+            bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+          }
+        };
+        
+        const grandTotalLabelStyle = {
+          font: { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "1E293B" } }, // Slate 800
+          alignment: { horizontal: "right", vertical: "center" },
+          border: {
+            top: { style: "medium", color: { rgb: "000000" } },
+            bottom: { style: "medium", color: { rgb: "000000" } }
+          }
+        };
+
+        const grandTotalValueStyle = {
+          font: { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "1E293B" } },
+          alignment: { horizontal: "right", vertical: "center" },
+          numFmt: "₱#,##0.00",
+          border: {
+            top: { style: "medium", color: { rgb: "000000" } },
+            bottom: { style: "medium", color: { rgb: "000000" } }
+          }
+        };
+
+        // Apply styles to cells
+        const rangeBom = XLSX.utils.decode_range(wsBom["!ref"] || "A1:A1");
+        for (let R = rangeBom.s.r; R <= rangeBom.e.r; ++R) {
+          for (let C = rangeBom.s.c; C <= rangeBom.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            if (!wsBom[cellAddress]) continue;
+
+            if (R === 0) {
+              wsBom[cellAddress].s = titleStyle;
+            } else if (R === 1) {
+              wsBom[cellAddress].s = subtitleStyle;
+            } else if (R === 3) {
+              wsBom[cellAddress].s = headerStyle;
+            } else if (R === rangeBom.e.r) {
+              // Grand Total row
+              if (C === 8) {
+                wsBom[cellAddress].s = grandTotalValueStyle;
+              } else {
+                wsBom[cellAddress].s = grandTotalLabelStyle;
+              }
+            } else if (R === rangeBom.e.r - 1) {
+              // Spacer row
+            } else if (R > 3) {
+              if (C === 7 || C === 8) {
+                wsBom[cellAddress].s = costStyle;
+              } else if (C === 5) {
+                wsBom[cellAddress].s = qtyStyle;
+              } else {
+                wsBom[cellAddress].s = cellStyle;
+              }
+            }
+          }
+        }
+
+        // Merge cells for title and grand total
+        if (!wsBom["!merges"]) wsBom["!merges"] = [];
+        wsBom["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
+        wsBom["!merges"].push({ s: { r: rangeBom.e.r, c: 0 }, e: { r: rangeBom.e.r, c: 7 } }); // Merge Grand Total label
+
+        // Set column widths
+        wsBom["!cols"] = [
+          { wch: 20 }, // Category
+          { wch: 35 }, // Material Name
+          { wch: 45 }, // Description
+          { wch: 15 }, // Brand
+          { wch: 35 }, // Specification
+          { wch: 10 }, // Quantity
+          { wch: 10 }, // Unit
+          { wch: 15 }, // Unit Cost
+          { wch: 15 }, // Total Cost
+          { wch: 25 }  // Source
+        ];
+
+        XLSX.utils.book_append_sheet(wb, wsBom, "BOM_Takeoff");
+      }
+
+      // -----------------------------------------------------
       // Trigger File Download
       // -----------------------------------------------------
       const filename = `Engineering_Reports_${panel.designation || "Project"}.xlsx`;

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import * as XLSX from "xlsx-js-style";
 import { 
   FileSpreadsheet, 
   Search, 
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { exportBomToWord } from "../utils/exportBomToWord";
 
 // Materials Library Item template
 interface LibraryItem {
@@ -978,35 +980,192 @@ export default function BomModule({
     return issues;
   }, [circuits]);
 
-  // Export to CSV
-  const handleExportCSV = () => {
-    const headers = ["Category", "Material Name", "Description", "Brand", "Specification", "Quantity", "Unit", "Unit Cost (₱)", "Total Cost (₱)", "Source / Reference"];
-    const rows = filteredBomItems.map(item => [
-      item.category,
-      item.name,
-      item.description,
-      item.brand,
-      item.specification,
-      item.quantity,
-      item.unit,
-      item.unitCost,
-      item.quantity * item.unitCost,
-      item.source
-    ]);
+  // Export to Excel using xlsx-js-style
+  const handleExportExcel = () => {
+    if (!isPremium) {
+      alert("Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.");
+      onRequestUpgrade();
+      return;
+    }
+    try {
+      const wb = XLSX.utils.book_new();
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map(e => e.map(val => `"${val.toString().replace(/"/g, '""')}"`).join(","))
-    ].join("\n");
+      const headers = ["Category", "Material Name", "Description", "Brand", "Specification", "Quantity", "Unit", "Unit Cost (₱)", "Total Cost (₱)", "Source / Reference"];
+      
+      const rows = filteredBomItems.map(item => [
+        item.category,
+        item.name,
+        item.description,
+        item.brand,
+        item.specification,
+        item.quantity,
+        item.unit,
+        item.unitCost,
+        item.quantity * item.unitCost,
+        item.source
+      ]);
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `BOM_Takeoff_Report_${panel.designation || "Project"}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const grandTotalCost = filteredBomItems.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
+      const totalRow = [
+        "GRAND TOTAL", "", "", "", "", "", "", "", grandTotalCost, ""
+      ];
+
+      const wsData = [
+        ["BILL OF MATERIALS (BOM) TAKEOFF REPORT"],
+        [`Project Designation: ${panel.designation || "Project"}`, "", "", "", "", "", "", "", "", `Generated on: ${new Date().toLocaleDateString()}`],
+        [""],
+        headers,
+        ...rows,
+        [""], // Spacer
+        totalRow
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Define standard styles
+      const headerStyle = {
+        font: { bold: true, color: { rgb: "FFFFFF" }, name: "Segoe UI", sz: 10 },
+        fill: { fgColor: { rgb: "312E81" } }, // Indigo 900
+        alignment: { horizontal: "center", vertical: "center", wrapText: true },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        }
+      };
+
+      const titleStyle = {
+        font: { bold: true, color: { rgb: "0F172A" }, name: "Segoe UI", sz: 16 },
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const subtitleStyle = {
+        font: { bold: true, color: { rgb: "475569" }, name: "Segoe UI", sz: 11 },
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+
+      const cellStyle = {
+        font: { name: "Segoe UI", sz: 10 },
+        alignment: { vertical: "center" },
+        border: {
+          bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+        }
+      };
+      
+      const costStyle = {
+        font: { name: "Segoe UI", sz: 10, bold: true },
+        alignment: { horizontal: "right", vertical: "center" },
+        numFmt: "₱#,##0.00",
+        border: {
+          bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+        }
+      };
+
+      const qtyStyle = {
+        font: { name: "Segoe UI", sz: 10, bold: true },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: {
+          bottom: { style: "thin", color: { rgb: "E2E8F0" } }
+        }
+      };
+
+      const grandTotalLabelStyle = {
+        font: { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1E293B" } }, // Slate 800
+        alignment: { horizontal: "right", vertical: "center" },
+        border: {
+          top: { style: "medium", color: { rgb: "000000" } },
+          bottom: { style: "medium", color: { rgb: "000000" } }
+        }
+      };
+
+      const grandTotalValueStyle = {
+        font: { name: "Segoe UI", sz: 12, bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1E293B" } },
+        alignment: { horizontal: "right", vertical: "center" },
+        numFmt: "₱#,##0.00",
+        border: {
+          top: { style: "medium", color: { rgb: "000000" } },
+          bottom: { style: "medium", color: { rgb: "000000" } }
+        }
+      };
+
+      // Apply styles to cells
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+
+          if (R === 0) {
+            ws[cellAddress].s = titleStyle;
+          } else if (R === 1) {
+            ws[cellAddress].s = subtitleStyle;
+          } else if (R === 3) {
+            ws[cellAddress].s = headerStyle;
+          } else if (R === range.e.r) {
+            // Grand Total row
+            if (C === 8) {
+              ws[cellAddress].s = grandTotalValueStyle;
+            } else {
+              ws[cellAddress].s = grandTotalLabelStyle;
+            }
+          } else if (R === range.e.r - 1) {
+            // Spacer row
+          } else if (R > 3) {
+            if (C === 7 || C === 8) {
+              ws[cellAddress].s = costStyle;
+            } else if (C === 5) {
+              ws[cellAddress].s = qtyStyle;
+            } else {
+              ws[cellAddress].s = cellStyle;
+            }
+          }
+        }
+      }
+
+      // Merge cells for title and grand total
+      if (!ws["!merges"]) ws["!merges"] = [];
+      ws["!merges"].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } });
+      ws["!merges"].push({ s: { r: range.e.r, c: 0 }, e: { r: range.e.r, c: 7 } }); // Merge Grand Total label
+
+      // Set column widths
+      ws["!cols"] = [
+        { wch: 20 }, // Category
+        { wch: 35 }, // Material Name
+        { wch: 45 }, // Description
+        { wch: 15 }, // Brand
+        { wch: 35 }, // Specification
+        { wch: 10 }, // Quantity
+        { wch: 10 }, // Unit
+        { wch: 15 }, // Unit Cost
+        { wch: 15 }, // Total Cost
+        { wch: 25 }  // Source
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "BOM_Takeoff");
+
+      const filename = `BOM_Takeoff_Report_${panel.designation || "Project"}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error("Excel Export failed:", err);
+      alert("Failed to export Excel file. Check console for details.");
+    }
+  };
+
+  const handleExportWord = async () => {
+    if (!isPremium) {
+      alert("Word export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Word export functionality.");
+      onRequestUpgrade();
+      return;
+    }
+    try {
+      await exportBomToWord(panel, filteredBomItems);
+    } catch (err) {
+      console.error("Word Export failed:", err);
+      alert("Failed to export Word file. Check console for details.");
+    }
   };
 
   // Trigger browser print
@@ -1038,11 +1197,18 @@ export default function BomModule({
             Force Re-Synchronize Takeoff
           </button>
           <button 
-            onClick={handleExportCSV}
+            onClick={handleExportExcel}
             className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            Export CSV
+            Export Excel
+          </button>
+          <button 
+            onClick={handleExportWord}
+            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Export Word
           </button>
           <button 
             onClick={handlePrint}
