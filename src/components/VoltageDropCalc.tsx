@@ -72,7 +72,8 @@ export default function VoltageDropCalc({
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({ main: true });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [activeTab, setActiveTab] = useState<"table" | "diagram">("table");
+  const [activeTab, setActiveTab] = useState<"table" | "sld">("table");
+  const [selectedEndpointId, setSelectedEndpointId] = useState<string>("main");
   const [zoom, setZoom] = useState<number>(0.85);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 50, y: 30 });
   const [isPanning, setIsPanning] = useState(false);
@@ -104,6 +105,26 @@ export default function VoltageDropCalc({
       return existing ? existing.length : 30; // default 30m
     };
 
+    const getWireSize = (sourceId: string, defaultSize: string) => {
+      const existing = calculations.find(c => c.source === sourceId);
+      return existing && existing.wireSize ? existing.wireSize : defaultSize;
+    };
+
+    const getWireSets = (sourceId: string, defaultSets: number) => {
+      const existing = calculations.find(c => c.source === sourceId);
+      return existing && existing.wireSets !== undefined ? existing.wireSets : defaultSets;
+    };
+
+    const getVoltage = (sourceId: string, defaultVolt: number) => {
+      const existing = calculations.find(c => c.source === sourceId);
+      return existing && existing.voltage !== undefined ? existing.voltage : defaultVolt;
+    };
+
+    const getSystemType = (sourceId: string, defaultSys: "1PH" | "3PH") => {
+      const existing = calculations.find(c => c.source === sourceId);
+      return existing && existing.systemType ? existing.systemType : defaultSys;
+    };
+
     if (panel && circuits) {
       const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits, { availableSubPanels: allSubPanels });
       const is3PH = panel.system.includes("3PH");
@@ -113,10 +134,10 @@ export default function VoltageDropCalc({
         name: "Main Feeder",
         loadA: Number(mainCurrent.baseAmp.toFixed(2)),
         length: getLength("main"),
-        wireSize: mainFeeder.wire.size.toString(),
-        wireSets: mainFeeder.wire.runs,
-        voltage: panel.voltage || 230,
-        systemType: is3PH ? "3PH" : "1PH",
+        wireSize: getWireSize("main", mainFeeder.wire.size.toString()),
+        wireSets: getWireSets("main", mainFeeder.wire.runs),
+        voltage: getVoltage("main", panel.voltage || 230),
+        systemType: getSystemType("main", is3PH ? "3PH" : "1PH"),
       });
       
       circuits.forEach(c => {
@@ -127,10 +148,10 @@ export default function VoltageDropCalc({
             name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
             loadA: c.loadA,
             length: getLength(c.id),
-            wireSize: c.wireSize,
-            wireSets: c.wireSets,
-            voltage: c.voltage || panel.voltage || 230,
-            systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
+            wireSize: getWireSize(c.id, c.wireSize),
+            wireSets: getWireSets(c.id, c.wireSets),
+            voltage: getVoltage(c.id, c.voltage || panel.voltage || 230),
+            systemType: getSystemType(c.id, (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH"),
          });
       });
     }
@@ -144,10 +165,10 @@ export default function VoltageDropCalc({
         name: `${sp.panel.designation || "Sub-Panel"} Feeder`,
         loadA: Number(mainCurrent.baseAmp.toFixed(2)),
         length: getLength(sp.id),
-        wireSize: mainFeeder.wire.size.toString(),
-        wireSets: mainFeeder.wire.runs,
-        voltage: sp.panel.voltage || panel.voltage || 230,
-        systemType: is3PH ? "3PH" : "1PH",
+        wireSize: getWireSize(sp.id, mainFeeder.wire.size.toString()),
+        wireSets: getWireSets(sp.id, mainFeeder.wire.runs),
+        voltage: getVoltage(sp.id, sp.panel.voltage || panel.voltage || 230),
+        systemType: getSystemType(sp.id, is3PH ? "3PH" : "1PH"),
       });
 
       sp.circuits.forEach(c => {
@@ -158,10 +179,10 @@ export default function VoltageDropCalc({
             name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
             loadA: c.loadA,
             length: getLength(c.id),
-            wireSize: c.wireSize,
-            wireSets: c.wireSets,
-            voltage: c.voltage || sp.panel.voltage || panel.voltage || 230,
-            systemType: (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH",
+            wireSize: getWireSize(c.id, c.wireSize),
+            wireSets: getWireSets(c.id, c.wireSets),
+            voltage: getVoltage(c.id, c.voltage || sp.panel.voltage || panel.voltage || 230),
+            systemType: getSystemType(c.id, (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH"),
          });
       });
     });
@@ -175,6 +196,9 @@ export default function VoltageDropCalc({
           if (newCalcs[i].source !== calculations[i].source ||
               newCalcs[i].loadA !== calculations[i].loadA ||
               newCalcs[i].wireSize !== calculations[i].wireSize ||
+              newCalcs[i].wireSets !== calculations[i].wireSets ||
+              newCalcs[i].voltage !== calculations[i].voltage ||
+              newCalcs[i].systemType !== calculations[i].systemType ||
               newCalcs[i].length !== calculations[i].length ||
               newCalcs[i].name !== calculations[i].name) {
              changed = true; break;
@@ -763,11 +787,242 @@ export default function VoltageDropCalc({
     setZoom(newZoom);
   };
 
+  const getCircuitForSource = (sourceId: string) => {
+    if (circuits) {
+      const c = circuits.find(x => x.id === sourceId);
+      if (c) return c;
+    }
+    for (const sp of allSubPanels) {
+      const c = sp.circuits.find(x => x.id === sourceId);
+      if (c) return c;
+    }
+    return null;
+  };
+
   const resetView = () => {
     setZoom(0.85);
     setPan({ x: 50, y: 30 });
     setNodeOffsets({});
   };
+
+  // Path Tracing & Endpoints for the Automatic Feeder Cascade Diagram
+  const pathEndpoints = useMemo(() => {
+    const list: Array<{ id: string; name: string; type: string }> = [];
+
+    // 1. Main Panel (MDP)
+    list.push({
+      id: "main",
+      name: `${panel?.designation || "Main Distribution Panel"} (MDP) Feeder`,
+      type: "panel",
+    });
+
+    // 2. MDP Branch Circuits (that are not subpanels themselves)
+    if (circuits) {
+      circuits.forEach(c => {
+        if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+        if (c.linkedSubPanelId) return; // covered by subpanel option
+        list.push({
+          id: c.id,
+          name: `MDP Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
+          type: "circuit",
+        });
+      });
+    }
+
+    // 3. Subpanels and their branch circuits
+    allSubPanels.forEach(sp => {
+      list.push({
+        id: sp.id,
+        name: `${sp.panel.designation || "Subpanel"} Feeder`,
+        type: "panel",
+      });
+
+      sp.circuits.forEach(c => {
+        if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+        list.push({
+          id: c.id,
+          name: `${sp.panel.designation || "Subpanel"} Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
+          type: "circuit",
+        });
+      });
+    });
+
+    return list;
+  }, [panel, circuits, allSubPanels]);
+
+  const selectedPathSegments = useMemo(() => {
+    const path: Array<{
+      id: string;
+      fromName: string;
+      toName: string;
+      calc: typeof activeCalculations[0];
+      type: "feeder" | "branch";
+    }> = [];
+
+    if (!selectedEndpointId) return path;
+
+    // Helper to find a calculation
+    const getCalc = (sourceId: string) => activeCalculations.find(c => c.source === sourceId);
+
+    // If "main" is selected, the path is just Utility -> MDP
+    if (selectedEndpointId === "main") {
+      const mainCalc = getCalc("main");
+      if (mainCalc) {
+        path.push({
+          id: "segment-main",
+          fromName: "SERVICE ENTRANCE",
+          toName: panel?.designation || "MDP",
+          calc: mainCalc,
+          type: "feeder",
+        });
+      }
+      return path;
+    }
+
+    // Check if selectedEndpointId is a subpanel
+    const matchedSp = allSubPanels.find(sp => sp.id === selectedEndpointId);
+    if (matchedSp) {
+      // Path is Service Entrance -> MDP -> Subpanel
+      const mainCalc = getCalc("main");
+      if (mainCalc) {
+        path.push({
+          id: "segment-main",
+          fromName: "SERVICE ENTRANCE",
+          toName: panel?.designation || "MDP",
+          calc: mainCalc,
+          type: "feeder",
+        });
+      }
+
+      const spCalc = getCalc(matchedSp.id);
+      if (spCalc) {
+        // Find parent panel name
+        let parentName = panel?.designation || "MDP";
+        if (circuits) {
+          const linkingCircuit = circuits.find(c => c.linkedSubPanelId === matchedSp.id);
+          if (linkingCircuit) {
+            parentName = panel?.designation || "MDP";
+          } else {
+            for (const otherSp of allSubPanels) {
+              if (otherSp.circuits.some(c => c.linkedSubPanelId === matchedSp.id)) {
+                parentName = otherSp.panel.designation || "Subpanel";
+                break;
+              }
+            }
+          }
+        }
+        path.push({
+          id: `segment-${matchedSp.id}`,
+          fromName: parentName,
+          toName: matchedSp.panel.designation || "Subpanel",
+          calc: spCalc,
+          type: "feeder",
+        });
+      }
+      return path;
+    }
+
+    // Check if selectedEndpointId is a branch circuit on MDP
+    const mdpCircuit = circuits?.find(c => c.id === selectedEndpointId);
+    if (mdpCircuit) {
+      const mainCalc = getCalc("main");
+      if (mainCalc) {
+        path.push({
+          id: "segment-main",
+          fromName: "SERVICE ENTRANCE",
+          toName: panel?.designation || "MDP",
+          calc: mainCalc,
+          type: "feeder",
+        });
+      }
+
+      const circuitCalc = getCalc(mdpCircuit.id);
+      if (circuitCalc) {
+        path.push({
+          id: `segment-${mdpCircuit.id}`,
+          fromName: panel?.designation || "MDP",
+          toName: mdpCircuit.description ? `${mdpCircuit.description}` : `Circuit ${mdpCircuit.circuitNo} Endpoint`,
+          calc: circuitCalc,
+          type: "branch",
+        });
+      }
+      return path;
+    }
+
+    // Check if selectedEndpointId is a branch circuit on a subpanel
+    for (const sp of allSubPanels) {
+      const spCircuit = sp.circuits.find(c => c.id === selectedEndpointId);
+      if (spCircuit) {
+        // Path is Service Entrance -> MDP -> Subpanel Feeder -> Subpanel -> Branch Circuit
+        const mainCalc = getCalc("main");
+        if (mainCalc) {
+          path.push({
+            id: "segment-main",
+            fromName: "SERVICE ENTRANCE",
+            toName: panel?.designation || "MDP",
+            calc: mainCalc,
+            type: "feeder",
+          });
+        }
+
+        const spCalc = getCalc(sp.id);
+        if (spCalc) {
+          let parentName = panel?.designation || "MDP";
+          path.push({
+            id: `segment-${sp.id}`,
+            fromName: parentName,
+            toName: sp.panel.designation || "Subpanel",
+            calc: spCalc,
+            type: "feeder",
+          });
+        }
+
+        const circuitCalc = getCalc(spCircuit.id);
+        if (circuitCalc) {
+          path.push({
+            id: `segment-${spCircuit.id}`,
+            fromName: sp.panel.designation || "Subpanel",
+            toName: spCircuit.description ? `${spCircuit.description}` : `Circuit ${spCircuit.circuitNo} Endpoint`,
+            calc: circuitCalc,
+            type: "branch",
+          });
+        }
+        return path;
+      }
+    }
+
+    return path;
+  }, [selectedEndpointId, activeCalculations, panel, circuits, allSubPanels]);
+
+  const cumulativeVdVolts = useMemo(() => {
+    return selectedPathSegments.reduce((sum, s) => sum + parseFloat(s.calc.result.vd), 0);
+  }, [selectedPathSegments]);
+
+  const cumulativeVdPercent = useMemo(() => {
+    return selectedPathSegments.reduce((sum, s) => sum + parseFloat(s.calc.result.vdPercentage), 0);
+  }, [selectedPathSegments]);
+
+  const isPathCompliant = useMemo(() => {
+    const hasFeederViolation = selectedPathSegments
+      .filter(s => s.type === "feeder")
+      .some(s => parseFloat(s.calc.result.vdPercentage) > 3.0);
+    const hasCumulativeViolation = cumulativeVdPercent > 5.0;
+    return !hasFeederViolation && !hasCumulativeViolation;
+  }, [selectedPathSegments, cumulativeVdPercent]);
+
+  const serviceEntranceLabel = useMemo(() => {
+    const systemVoltage = panel?.voltage || 230;
+    const systemPhase = panel?.system?.includes("3PH") ? "3Ø" : "1Ø";
+    return `${systemVoltage}V, ${systemPhase}, 60Hz`;
+  }, [panel]);
+
+  const nodePositions = useMemo(() => {
+    const numNodes = selectedPathSegments.length + 1;
+    const startX = 120;
+    const endX = 800;
+    const stepX = (endX - startX) / (numNodes - 1 || 1);
+    return Array.from({ length: numNodes }, (_, i) => startX + i * stepX);
+  }, [selectedPathSegments]);
 
   const filteredGroups = useMemo(() => {
     return panelGroups.map(group => {
@@ -934,17 +1189,17 @@ export default function VoltageDropCalc({
             <span>Calculation Tables</span>
           </button>
           <button
-            onClick={() => setActiveTab("diagram")}
+            onClick={() => setActiveTab("sld")}
             className={`px-5 py-2.5 border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === "diagram"
+              activeTab === "sld"
                 ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
                 : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             }`}
           >
-            <GitFork className="w-4 h-4" />
-            <span>Interactive System Diagram</span>
-            <span className="bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 px-1.5 py-0.5 rounded text-[9px] uppercase font-black tracking-wider">
-              Reactive
+            <GitFork className="w-4 h-4 rotate-90" />
+            <span>Feeder Cascade Diagram (SLD)</span>
+            <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 px-1.5 py-0.5 rounded text-[9px] uppercase font-black tracking-wider">
+              New
             </span>
           </button>
         </div>
@@ -1043,7 +1298,7 @@ export default function VoltageDropCalc({
           </div>
         </div>
 
-        <div className={activeTab === "diagram" || isExporting ? "block" : "hidden"}>
+        <div className="hidden">
           {/* ========================================================
              2. INTERACTIVE VOLTAGE DROP DIAGRAM (NEW VIEW)
              ======================================================== */}
@@ -1897,6 +2152,486 @@ export default function VoltageDropCalc({
                   R: impedance from WIRE_IMPEDANCE_TABLE / sets.
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className={activeTab === "sld" || isExporting ? "block" : "hidden"}>
+          {/* Path selector & cumulative stats */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 mb-6">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-black tracking-wider text-slate-400">Select Feeder / Branch Cascade Path:</label>
+              <div className="relative">
+                <select
+                  value={selectedEndpointId}
+                  onChange={(e) => setSelectedEndpointId(e.target.value)}
+                  className="w-full md:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  {pathEndpoints.map((ep) => (
+                    <option key={ep.id} value={ep.id}>
+                      {ep.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-4 text-right">
+              <div className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                <p className="text-[9px] uppercase font-black text-slate-400">Total Path VD</p>
+                <p className="font-mono text-base font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+                  {cumulativeVdVolts.toFixed(2)}V
+                </p>
+              </div>
+              <div className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                <p className="text-[9px] uppercase font-black text-slate-400">VD Percentage</p>
+                <p className={`font-mono text-base font-black mt-0.5 ${
+                  isPathCompliant ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                }`}>
+                  {cumulativeVdPercent.toFixed(2)}%
+                </p>
+              </div>
+              <div className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-center min-w-[150px]">
+                <span className={`inline-flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-full border ${
+                  isPathCompliant
+                    ? "text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-900/50"
+                    : "text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-900/50"
+                }`}>
+                  {isPathCompliant ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
+                  {isPathCompliant ? "✓ PEC Compliant" : "⚠ Exceeds Limit"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* SVG Diagram Canvas */}
+          <div className="relative border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-950 p-4 shadow-sm mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Voltage Drop Single-Line Diagram</span>
+              <div className="flex gap-2">
+                <span className="text-[10px] font-bold text-slate-400">Format: Standard Horizontal CAD Feeder Layout</span>
+              </div>
+            </div>
+
+            <div className="relative w-full overflow-x-auto border border-slate-100 dark:border-slate-900 rounded-xl bg-slate-50 dark:bg-slate-950/30 p-2 select-none">
+              <svg
+                id="voltage-drop-cascade-diagram"
+                viewBox="0 0 920 300"
+                className="w-full min-w-[850px] h-[300px]"
+              >
+                {/* Visual Grid Background */}
+                <defs>
+                  <pattern id="cascade-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" className="text-slate-100 dark:text-slate-900" strokeWidth="0.5" />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#cascade-grid)" rx="8" />
+
+                {/* 1. Draw feeder/branch lines */}
+                {selectedPathSegments.map((segment, idx) => {
+                  const x1 = nodePositions[idx];
+                  const x2 = nodePositions[idx + 1];
+                  const y = 150;
+                  const vdPct = parseFloat(segment.calc.result.vdPercentage);
+                  const isSegCompliant = vdPct <= 3.0;
+                  const strokeColor = isSegCompliant ? "#4F46E5" : "#EF4444"; // highlighted color, red if over 3%
+
+                  return (
+                    <g key={segment.id}>
+                      {/* Main Segment Feeder line */}
+                      <line
+                        x1={x1 + 25}
+                        y1={y}
+                        x2={x2 - 25}
+                        y2={y}
+                        stroke={strokeColor}
+                        strokeWidth="2.5"
+                        strokeDasharray={segment.type === "branch" ? "4 4" : "0"}
+                      />
+
+                      {/* Top Dimension Bracket: e.g. |<-------- 65.62 m -------->| */}
+                      <path
+                        d={`M ${x1 + 30} 100 L ${x1 + 30} 110 M ${x1 + 30} 105 L ${x2 - 30} 105 M ${x2 - 30} 100 L ${x2 - 30} 110`}
+                        stroke="#94A3B8"
+                        strokeWidth="1.5"
+                      />
+                      
+                      {/* Dimension Text Above line */}
+                      <text
+                        x={(x1 + x2) / 2}
+                        y="95"
+                        textAnchor="middle"
+                        className="fill-slate-600 dark:fill-slate-300 font-bold text-xs font-mono"
+                      >
+                        {segment.calc.length.toFixed(2)} m
+                      </text>
+
+                      {/* Voltage Drop text in the middle of line (e.g. Vd = 0.78V) */}
+                      <rect
+                        x={(x1 + x2) / 2 - 45}
+                        y="125"
+                        width="90"
+                        height="18"
+                        rx="4"
+                        fill="#F8FAFC"
+                        className="dark:fill-slate-900 border border-slate-200 dark:border-slate-800"
+                        stroke="#CBD5E1"
+                        strokeWidth="0.5"
+                      />
+                      <text
+                        x={(x1 + x2) / 2}
+                        y="138"
+                        textAnchor="middle"
+                        className={`font-black text-[10px] font-mono ${
+                          isSegCompliant ? "fill-indigo-600 dark:fill-indigo-400" : "fill-red-600 dark:fill-red-400"
+                        }`}
+                      >
+                        Vd = {segment.calc.result.vd}V ({vdPct.toFixed(2)}%)
+                      </text>
+
+                      {/* Cable size under line (e.g. 250mm² THHN Wire) */}
+                      <text
+                        x={(x1 + x2) / 2}
+                        y="180"
+                        textAnchor="middle"
+                        className="fill-slate-500 dark:fill-slate-400 text-[10px] font-extrabold uppercase font-sans tracking-wide"
+                      >
+                        {segment.calc.wireSets && segment.calc.wireSets > 1 ? `${segment.calc.wireSets}x ` : ""}{segment.calc.wireSize} mm² THHN
+                      </text>
+                    </g>
+                  );
+                })}
+
+                {/* 2. Draw Nodes */}
+                {/* Node 0: SERVICE ENTRANCE */}
+                <g transform={`translate(${nodePositions[0]}, 150)`}>
+                  {/* Service Entrance incoming triangle and ground */}
+                  <path
+                    d="M -25 -15 L -25 15 L -5 0 Z"
+                    fill="#1E293B"
+                    className="dark:fill-slate-100"
+                  />
+                  {/* Three phase lines leading to triangle */}
+                  <line x1="-40" y1="-10" x2="-25" y2="-10" stroke="#475569" className="dark:stroke-slate-300" strokeWidth="1.5" />
+                  <line x1="-40" y1="0" x2="-25" y2="0" stroke="#475569" className="dark:stroke-slate-300" strokeWidth="1.5" />
+                  <line x1="-40" y1="10" x2="-25" y2="10" stroke="#475569" className="dark:stroke-slate-300" strokeWidth="1.5" />
+                  
+                  {/* Ground symbol */}
+                  <line x1="-25" y1="15" x2="-25" y2="25" stroke="#475569" strokeWidth="1.5" />
+                  <line x1="-30" y1="25" x2="-20" y2="25" stroke="#475569" strokeWidth="1.5" />
+                  <line x1="-28" y1="28" x2="-22" y2="28" stroke="#475569" strokeWidth="1.5" />
+                  <line x1="-26" y1="31" x2="-24" y2="31" stroke="#475569" strokeWidth="1.5" />
+
+                  <text
+                    x="0"
+                    y="50"
+                    textAnchor="middle"
+                    className="fill-slate-900 dark:fill-slate-100 font-black text-[10px] uppercase tracking-tight"
+                  >
+                    SERVICE ENTRANCE
+                  </text>
+                  <text
+                    x="0"
+                    y="65"
+                    textAnchor="middle"
+                    className="fill-slate-500 dark:fill-slate-400 text-[9px] font-mono"
+                  >
+                    {serviceEntranceLabel}
+                  </text>
+                </g>
+
+                {/* Other Nodes (MDP, Subpanels, Circuit Endpoint) */}
+                {selectedPathSegments.map((segment, idx) => {
+                  const nodeX = nodePositions[idx + 1];
+                  const nodeY = 150;
+                  const isLastNode = idx === selectedPathSegments.length - 1;
+                  const isLastBranch = isLastNode && segment.type === "branch";
+
+                   if (isLastBranch) {
+                    const circuit = getCircuitForSource(segment.calc.source);
+                    const loadType = circuit ? circuit.loadType : LoadType.CONVENIENCE_OUTLET;
+
+                    let symbolElement = null;
+                    let loadTypeLabel = "FINAL LOAD ENDPOINT";
+
+                    switch (loadType) {
+                      case LoadType.LIGHTING:
+                        loadTypeLabel = "LIGHT FIXTURE";
+                        symbolElement = (
+                          <g>
+                            <circle cx="0" cy="0" r="14" fill="#FFFFFF" stroke="#1E293B" strokeWidth="2" className="dark:fill-slate-900 dark:stroke-slate-100" />
+                            <line x1="-10" y1="-10" x2="10" y2="10" stroke="#1E293B" className="dark:stroke-slate-100" strokeWidth="2" />
+                            <line x1="-10" y1="10" x2="10" y2="-10" stroke="#1E293B" className="dark:stroke-slate-100" strokeWidth="2" />
+                          </g>
+                        );
+                        break;
+                      case LoadType.MOTOR:
+                        loadTypeLabel = "MOTOR INDUCTION";
+                        symbolElement = (
+                          <g>
+                            <circle cx="0" cy="0" r="14" fill="#FFFFFF" stroke="#1E293B" strokeWidth="2" className="dark:fill-slate-900 dark:stroke-slate-100" />
+                            <circle cx="0" cy="0" r="11" fill="none" stroke="#1E293B" strokeWidth="1" className="dark:stroke-slate-100/30" strokeDasharray="2 1" />
+                            <text
+                              x="0"
+                              y="4.5"
+                              textAnchor="middle"
+                              className="fill-slate-900 dark:fill-slate-100 font-sans font-black"
+                              style={{ fontSize: "12px", letterSpacing: "-0.5px" }}
+                            >
+                              M
+                            </text>
+                          </g>
+                        );
+                        break;
+                      case LoadType.AIR_CON:
+                        loadTypeLabel = "AIR CONDITIONER";
+                        symbolElement = (
+                          <g>
+                            <rect x="-14" y="-14" width="28" height="28" rx="4" fill="#FFFFFF" stroke="#1E293B" strokeWidth="2" className="dark:fill-slate-900 dark:stroke-slate-100" />
+                            <text
+                              x="0"
+                              y="3.5"
+                              textAnchor="middle"
+                              className="fill-slate-900 dark:fill-slate-100 font-sans font-black"
+                              style={{ fontSize: "10px" }}
+                            >
+                              AC
+                            </text>
+                          </g>
+                        );
+                        break;
+                      case LoadType.POWER:
+                        loadTypeLabel = "POWER OUTLET / RANGE";
+                        symbolElement = (
+                          <g>
+                            <circle cx="0" cy="0" r="14" fill="#FFFFFF" stroke="#1E293B" strokeWidth="2" className="dark:fill-slate-900 dark:stroke-slate-100" />
+                            <text
+                              x="0"
+                              y="4.5"
+                              textAnchor="middle"
+                              className="fill-slate-900 dark:fill-slate-100 font-sans font-black"
+                              style={{ fontSize: "11px" }}
+                            >
+                              P
+                            </text>
+                          </g>
+                        );
+                        break;
+                      case LoadType.CONVENIENCE_OUTLET:
+                      default:
+                        loadTypeLabel = "CONVENIENCE RECEPTACLE";
+                        symbolElement = (
+                          <g>
+                            {/* Circle outline with ground connection */}
+                            <circle cx="0" cy="0" r="14" fill="#FFFFFF" stroke="#1E293B" strokeWidth="2" className="dark:fill-slate-900 dark:stroke-slate-100" />
+                            <line x1="-4" y1="-18" x2="-4" y2="18" stroke="#1E293B" className="dark:fill-slate-100" strokeWidth="1.5" />
+                            <line x1="4" y1="-18" x2="4" y2="18" stroke="#1E293B" className="dark:fill-slate-100" strokeWidth="1.5" />
+                            
+                            {/* Ground line below */}
+                            <line x1="0" y1="14" x2="0" y2="22" stroke="#475569" strokeWidth="1.5" />
+                            <line x1="-5" y1="22" x2="5" y2="22" stroke="#475569" strokeWidth="1.5" />
+                            <line x1="-3" y1="25" x2="3" y2="25" stroke="#475569" strokeWidth="1.5" />
+                            <line x1="-1" y1="28" x2="1" y2="28" stroke="#475569" strokeWidth="1.5" />
+                          </g>
+                        );
+                        break;
+                    }
+
+                    return (
+                      <g key={`node-${idx}`} transform={`translate(${nodeX}, ${nodeY})`}>
+                        {symbolElement}
+
+                        <text
+                          x="0"
+                          y="42"
+                          textAnchor="middle"
+                          className="fill-slate-900 dark:fill-slate-100 font-black text-[10px] uppercase tracking-tight"
+                        >
+                          {segment.toName}
+                        </text>
+                        <text
+                          x="0"
+                          y="55"
+                          textAnchor="middle"
+                          className="fill-indigo-500 text-[8px] font-mono font-bold"
+                        >
+                          {loadTypeLabel}
+                        </text>
+                      </g>
+                    );
+                  } else {
+                    return (
+                      <g key={`node-${idx}`} transform={`translate(${nodeX}, ${nodeY})`}>
+                        <rect
+                          x="-13"
+                          y="-20"
+                          width="26"
+                          height="40"
+                          fill="#FFFFFF"
+                          stroke="#1E293B"
+                          className="dark:fill-slate-900 stroke-slate-900 dark:stroke-slate-100"
+                          strokeWidth="2"
+                        />
+                        <line
+                          x1="-13"
+                          y1="20"
+                          x2="13"
+                          y2="-20"
+                          stroke="#1E293B"
+                          className="stroke-slate-900 dark:stroke-slate-100"
+                          strokeWidth="1.5"
+                        />
+                        <text
+                          x="0"
+                          y="35"
+                          textAnchor="middle"
+                          className="fill-slate-900 dark:fill-slate-100 font-black text-[10px] uppercase tracking-tight"
+                        >
+                          {segment.toName}
+                        </text>
+                        <text
+                          x="0"
+                          y="48"
+                          textAnchor="middle"
+                          className="fill-slate-500 dark:fill-slate-400 text-[8px] font-mono font-bold"
+                        >
+                          {segment.type === "feeder" ? "DIST. BOARD" : "SUB-PANEL"}
+                        </text>
+                      </g>
+                    );
+                  }
+                })}
+              </svg>
+            </div>
+          </div>
+
+          {/* Interactive segment editors */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-indigo-500" />
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                Interactive Segment Calculator
+              </h3>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-6">
+              {selectedPathSegments.map((segment, idx) => (
+                <div key={segment.id} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
+                  <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-400 flex items-center justify-center text-[10px] font-black">
+                        {idx + 1}
+                      </span>
+                      <h4 className="font-black text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                        {segment.fromName} ➔ {segment.toName}
+                      </h4>
+                    </div>
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+                      parseFloat(segment.calc.result.vdPercentage) <= 3.0
+                        ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-900 dark:text-green-400"
+                        : "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-400"
+                    }`}>
+                      Segment Drop: {segment.calc.result.vdPercentage}%
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {/* 1. Wire length (Distance) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
+                        Length / Distance (meters)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={segment.calc.length}
+                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { length: Math.max(0.1, parseFloat(e.target.value) || 0) })}
+                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    {/* 2. Conductor Size (mm²) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
+                        Wire Size (mm²)
+                      </label>
+                      <select
+                        value={segment.calc.wireSize}
+                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { wireSize: e.target.value })}
+                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        {Object.keys(WIRE_IMPEDANCE_TABLE).map((size) => (
+                          <option key={size} value={size}>
+                            {size} mm² (THHN/THWN)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 3. Number of sets/runs */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
+                        Conductor Sets (Runs)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={segment.calc.wireSets || 1}
+                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { wireSets: Math.max(1, parseInt(e.target.value) || 1) })}
+                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    {/* 4. Voltage (V) */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
+                        Operating Voltage (Volts)
+                      </label>
+                      <select
+                        value={segment.calc.voltage}
+                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { voltage: parseInt(e.target.value) || 230 })}
+                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="115">115 V</option>
+                        <option value="230">230 V</option>
+                        <option value="400">400 V</option>
+                        <option value="440">440 V</option>
+                        <option value="460">460 V</option>
+                        <option value="480">480 V</option>
+                      </select>
+                    </div>
+
+                    {/* 5. Phase System */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
+                        System Phase
+                      </label>
+                      <select
+                        value={segment.calc.systemType}
+                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { systemType: e.target.value as "1PH" | "3PH" })}
+                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="1PH">Single-Phase (1Ø)</option>
+                        <option value="3PH">Three-Phase (3Ø)</option>
+                      </select>
+                    </div>
+
+                    {/* 6. Current Load (A) - readonly */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
+                        Amperage Load (A) - Dynamic
+                      </label>
+                      <input
+                        type="text"
+                        disabled
+                        value={`${segment.calc.loadA} Amps`}
+                        className="w-full bg-slate-100 dark:bg-slate-800 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg font-mono font-bold text-sm text-slate-400 dark:text-slate-500 cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -1268,12 +1268,12 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
   );
 
   if (vdCalculations && vdCalculations.length > 0) {
-    if (images?.vdInteractiveCanvas) {
+    if (images?.vdFeederCascadeDiagram) {
       docChildren.push(
-        createSubHeader(`C. Interactive Electrical Distribution & Voltage Drop Diagram`),
+        createSubHeader(`C. Feeder Cascade & Single-Line Voltage Drop Diagram`),
         new Paragraph({ spacing: { after: 100 } })
       );
-      await addImageToDoc(images.vdInteractiveCanvas);
+      await addImageToDoc(images.vdFeederCascadeDiagram);
       docChildren.push(new Paragraph({ spacing: { after: 150 } }));
     }
 
