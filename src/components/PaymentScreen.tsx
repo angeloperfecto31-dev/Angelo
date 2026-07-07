@@ -2862,7 +2862,7 @@ export default function PaymentScreen({
                           <thead>
                             <tr className="bg-rose-50/50 border-b border-rose-100">
                               <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Subscriber / Email</th>
-                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Requested Plan</th>
+                              <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Attempted Plan</th>
                               <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Baseline Expected</th>
                               <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Gateway Amount Paid</th>
                               <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Discrepancy Deviation</th>
@@ -4176,7 +4176,11 @@ export default function PaymentScreen({
                             {/* PLAN COLUMN */}
                             <td className="px-5 py-3">
                               <div className="flex flex-col items-start gap-1">
-                                {finance.planStr === "enterprise" ? (
+                                {!isUserActive && u.paymentStatus === "unpaid" ? (
+                                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-slate-50 text-slate-500 border border-slate-200 rounded-md shadow-sm">
+                                    Unregistered / No Plan
+                                  </span>
+                                ) : finance.planStr === "enterprise" ? (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/40 rounded-md flex items-center gap-1 shadow-sm">
                                     <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
                                     Enterprise
@@ -4192,7 +4196,7 @@ export default function PaymentScreen({
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-md shadow-sm">
-                                    Basic Tier
+                                    Basic (Paid)
                                   </span>
                                 )}
                                 <span className="text-[11px] font-bold text-slate-900 font-mono mt-0.5">
@@ -4443,7 +4447,11 @@ export default function PaymentScreen({
                               </span>
                               
                               {/* Tier Badge */}
-                              {finance.planStr === "enterprise" ? (
+                              {!isUserActive && u.paymentStatus === "unpaid" ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-slate-50 text-slate-500 rounded border border-slate-200">
+                                  UNREGISTERED
+                                </span>
+                              ) : finance.planStr === "enterprise" ? (
                                 <span className="px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 rounded border border-indigo-205/15">
                                   ENTERPRISE
                                 </span>
