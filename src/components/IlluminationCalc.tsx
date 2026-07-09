@@ -40,7 +40,9 @@ import {
   Copy,
   FileDown,
   Printer,
-  Move
+  Move,
+  Settings,
+  Sliders
 } from 'lucide-react';
 import { exportToCAD } from '../utils/exportDxf';
 import { auth, db } from '../firebase';
@@ -519,6 +521,45 @@ import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 export default function IlluminationCalc({ panel, circuits, subPanels, vdCalculations, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
   const [showWizard, setShowWizard] = useState<boolean>(true);
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
+
+  // Dynamic Lux Standards Library
+  const [luxStandards, setLuxStandards] = useState<{ name: string; lux: number; category: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('local_lux_standards');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn("Failed to load local lux standards", e);
+    }
+    const list: { name: string; lux: number; category: string }[] = [];
+    if (RECOMMENDED_LUX_LEVELS_CATEGORIZED) {
+      Object.entries(RECOMMENDED_LUX_LEVELS_CATEGORIZED).forEach(([category, items]) => {
+        items.forEach(item => {
+          list.push({ name: item.name, lux: item.lux, category });
+        });
+      });
+    }
+    return list;
+  });
+
+  const [showLuxModal, setShowLuxModal] = useState(false);
+  const [editingLuxStandard, setEditingLuxStandard] = useState<{ name: string; lux: number; category: string } | null>(null);
+  const [luxForm, setLuxForm] = useState({ name: '', lux: 150, category: 'Office & Educational' });
+
+  // Sync lux standards to local storage
+  useEffect(() => {
+    localStorage.setItem('local_lux_standards', JSON.stringify(luxStandards));
+  }, [luxStandards]);
+
+  const categorizedLuxStandards = useMemo(() => {
+    const categories: Record<string, { name: string; lux: number }[]> = {};
+    luxStandards.forEach(item => {
+      if (!categories[item.category]) {
+        categories[item.category] = [];
+      }
+      categories[item.category].push({ name: item.name, lux: item.lux });
+    });
+    return categories;
+  }, [luxStandards]);
   
   // Auto Save Effect
   useEffect(() => {
@@ -861,6 +902,101 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
     setSuccessBanner("Custom fixture removed from library.");
     setTimeout(() => setSuccessBanner(null), 3000);
+  };
+
+  const handleAutoRecommend = () => {
+    const area = params.inputMode === 'area' ? params.userArea : (params.roomWidth * params.roomLength);
+    const roomNameUpper = (params.roomName || params.targetRoomName || 'General Office').toUpperCase();
+    
+    // Choose fixture type from library
+    let recommendedFixtureId = 'ind-panel'; // default
+    if (roomNameUpper.includes('OFFICE') || roomNameUpper.includes('CLASS') || roomNameUpper.includes('MEETING') || roomNameUpper.includes('CONFERENCE') || roomNameUpper.includes('STUDY') || roomNameUpper.includes('SCHOOL')) {
+      recommendedFixtureId = 'ind-panel'; // LED Panel 600x600 36W
+    } else if (roomNameUpper.includes('WAREHOUSE') || roomNameUpper.includes('INDUSTRIAL') || roomNameUpper.includes('FABRICATION') || roomNameUpper.includes('WORKSHOP') || roomNameUpper.includes('MECHANICAL') || roomNameUpper.includes('GENERATOR')) {
+      recommendedFixtureId = 'ind-highbay'; // Industrial High-Bay 120W
+    } else if (roomNameUpper.includes('RESIDENTIAL') || roomNameUpper.includes('BEDROOM') || roomNameUpper.includes('BATH') || roomNameUpper.includes('LIVING') || roomNameUpper.includes('DINING') || roomNameUpper.includes('HOTEL') || roomNameUpper.includes('KITCHEN') || roomNameUpper.includes('REST')) {
+      recommendedFixtureId = 'ind-downlight'; // LED Downlight 12W
+    } else {
+      recommendedFixtureId = 'surf-ceiling-18w'; // default
+    }
+
+    // Verify it exists in allFixtures, if not fallback to first
+    const selectedF = allFixtures.find(f => f.id === recommendedFixtureId) || allFixtures[0];
+    const fixtureLumens = selectedF.lumens || 1500;
+    
+    // Target Lux
+    const targetLux = params.targetLux || 500;
+    
+    // Default baseline reflectances
+    const rc = 0.7; // ceiling
+    const rw = 0.5; // wall
+    const rf = 0.2; // floor
+    const maintenanceFactor = 0.8;
+    const initialCU = 0.6; // initial guess
+    
+    // Calculate Room Index & Adjusted CU
+    const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
+    const roomIndex = (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0)
+      ? (params.roomWidth * params.roomLength) / (hrc * (params.roomWidth + params.roomLength))
+      : 2.0;
+    const riFactor = roomIndex / (roomIndex + 0.5);
+    const baselineRiFactor = 2.0 / 2.5;
+    const reflectanceFactor = (rc * 0.3 + rw * 0.5 + rf * 0.2) / 0.5;
+    const effectiveCU = Math.min(0.95, Math.max(0.1, initialCU * (riFactor / baselineRiFactor) * reflectanceFactor));
+
+    // Calculate count
+    const totalLumensRequired = (targetLux * area) / (effectiveCU * maintenanceFactor);
+    const fixturesCount = Math.max(1, Math.ceil(totalLumensRequired / fixtureLumens));
+
+    // Spacing (Rows and Cols)
+    let cols = 1;
+    let rows = 1;
+    if (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0) {
+      const ratio = params.roomWidth / params.roomLength;
+      cols = Math.max(1, Math.round(Math.sqrt(fixturesCount * ratio)));
+      rows = Math.ceil(fixturesCount / cols);
+    } else {
+      cols = Math.max(1, Math.round(Math.sqrt(fixturesCount)));
+      rows = Math.ceil(fixturesCount / cols);
+    }
+    const finalCount = cols * rows;
+
+    // Build active fixtures payload
+    const defaultsSeed = getPredefinedFixtureDefaults(selectedF.id, false);
+    const recommendedActiveFixture = {
+      id: crypto.randomUUID(),
+      fixtureId: selectedF.id,
+      lightType: selectedF.lightType,
+      quantity: finalCount,
+      wattage: selectedF.wattage,
+      lumens: selectedF.lumens,
+      brands: selectedF.brands || 'Recommended Brand',
+      isCustom: false,
+      fixtureShape: defaultsSeed.fixtureShape,
+      fixtureWidth: defaultsSeed.fixtureWidth,
+      fixtureLength: defaultsSeed.fixtureLength,
+      fixtureDiameter: defaultsSeed.fixtureDiameter,
+      fixtureThickness: defaultsSeed.fixtureThickness,
+      fixtureBeamAngle: defaultsSeed.fixtureBeamAngle,
+      fixtureDistributionType: defaultsSeed.fixtureDistributionType
+    };
+
+    // Update state with highly optimized recommended values!
+    setParams({
+      ...params,
+      selectedFixtureId: selectedF.id,
+      lumensPerFixture: selectedF.lumens,
+      coefficientOfUtilization: initialCU,
+      maintenanceFactor: maintenanceFactor,
+      ceilingReflectance: rc,
+      wallReflectance: rw,
+      floorReflectance: rf,
+      activeFixtures: [recommendedActiveFixture],
+      customPositions: []
+    });
+
+    setSuccessBanner(`Optimized layout: Arranged ${finalCount}x ${selectedF.lightType} in a ${cols}x${rows} grid!`);
+    setTimeout(() => setSuccessBanner(null), 5000);
   };
 
   const handleExportLibrary = () => {
@@ -1770,16 +1906,25 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     const area = params.inputMode === 'area' ? params.userArea : params.roomWidth * params.roomLength;
     
     // Calculate Room Index to adjust CU dynamically based on ceiling height
+    const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
+    const roomIndex = (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0)
+      ? (params.roomWidth * params.roomLength) / (hrc * (params.roomWidth + params.roomLength))
+      : 2.0;
+
     let effectiveCU = params.coefficientOfUtilization;
     if (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0) {
-      const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
-      const roomIndex = (params.roomWidth * params.roomLength) / (hrc * (params.roomWidth + params.roomLength));
-      
       // Standardize the User's CU entry against a typical Room Index of 2.0
       // This scaling ensures that higher ceilings (lower Room Index) reduce CU, requiring more fixtures.
       const riFactor = roomIndex / (roomIndex + 0.5);
       const baselineRiFactor = 2.0 / 2.5; // RI of 2.0
-      effectiveCU = Math.min(0.95, Math.max(0.1, params.coefficientOfUtilization * (riFactor / baselineRiFactor)));
+      
+      // Incorporate reflectances (Ceiling, Wall, Floor)
+      const rc = params.ceilingReflectance !== undefined ? params.ceilingReflectance : 0.7;
+      const rw = params.wallReflectance !== undefined ? params.wallReflectance : 0.5;
+      const rf = params.floorReflectance !== undefined ? params.floorReflectance : 0.2;
+      const reflectanceFactor = (rc * 0.3 + rw * 0.5 + rf * 0.2) / 0.5;
+
+      effectiveCU = Math.min(0.95, Math.max(0.1, params.coefficientOfUtilization * (riFactor / baselineRiFactor) * reflectanceFactor));
     }
 
     // Basic Lumen Formula: N = (E * A) / (F * CU * MF)
@@ -1790,7 +1935,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       area: area.toFixed(2),
       fixtures: fixturesNeeded,
       totalLumens: Math.round(totalLumensRequired),
-      effectiveCU: Number(effectiveCU.toFixed(2))
+      effectiveCU: Number(effectiveCU.toFixed(2)),
+      roomIndex: Number(roomIndex.toFixed(2))
     };
   }, [params, activeFixture.lumens]);
 
@@ -2370,27 +2516,72 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         </div>
       )}
       <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 no-print">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
            <div className="flex items-center gap-2">
              <Target className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Space Parameters</h2>
            </div>
            
-           <div className="flex items-center gap-3">
+           <div className="flex flex-wrap items-center gap-3">
+             <button
+               type="button"
+               onClick={handleAutoRecommend}
+               className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800 text-white font-extrabold rounded-lg text-xs flex items-center gap-1.5 shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] uppercase tracking-wider"
+             >
+               <Sparkles className="w-3.5 h-3.5 animate-pulse" /> AI Smart Optimize
+             </button>
              <button
                onClick={() => setIsFullscreen(true)}
                className="hidden md:flex px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-md items-center gap-2 transition-colors uppercase tracking-wider"
              >
-               <Maximize className="w-4 h-4" /> Maximize Workspace
+               <Maximize className="w-4 h-4" /> Maximize
              </button>
              {/* Global input mode toggle */}
              <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
                <button title="Dimensions Mode" onClick={() => setParams({...params, inputMode: 'dimensions'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'dimensions' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Dimensions</button>
-               <button title="Area Mode" onClick={() => setParams({...params, inputMode: 'area'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'area' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Total Area</button>
+               <button title="Area Mode" onClick={() => setParams({...params, inputMode: 'area'})} className={`px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${params.inputMode === 'area' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>Area</button>
              </div>
            </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Room Name and Type */}
+            <div className="space-y-1.5 md:col-span-2">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Room Name / ID</label>
+              <input type="text" value={params.roomName || ''} onChange={e => setParams({...params, roomName: e.target.value})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="e.g. Server Room A, Executive Office" />
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Room Type & Target Lux</label>
+                <button 
+                  type="button" 
+                  onClick={() => setShowLuxModal(true)}
+                  className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold uppercase tracking-wider flex items-center gap-0.5"
+                >
+                  <Settings className="w-3 h-3" /> Manage Library
+                </button>
+              </div>
+              <select value={params.targetRoomName || Object.entries(RECOMMENDED_LUX_LEVELS).find(([_, lux]) => lux === params.targetLux)?.[0] || ""} onChange={e => {
+                const val = e.target.value;
+                const standard = luxStandards.find(s => s.name === val);
+                if (standard) {
+                  setParams({...params, targetRoomName: val, targetLux: standard.lux, roomType: standard.category});
+                } else {
+                  // Fallback
+                  const fallbackLux = RECOMMENDED_LUX_LEVELS[val] || parseInt(val) || 150;
+                  setParams({...params, targetRoomName: val, targetLux: fallbackLux});
+                }
+              }} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                {categorizedLuxStandards && Object.entries(categorizedLuxStandards).map(([category, items]) => (
+                  <optgroup key={category} label={category} className="dark:bg-slate-900 dark:text-slate-100">
+                    {items.map(item => (
+                      <option key={item.name} value={item.name} className="dark:bg-slate-900 dark:text-slate-100">{item.name} ({item.lux} Lux)</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+
             {params.inputMode === 'dimensions' ? (
               <>
                 <div className="space-y-1.5">
@@ -2419,28 +2610,42 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                <input type="number" step="0.05" value={workingPlaneHeight} onChange={e => setParams({...params, workingPlaneHeight: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
             </div>
 
-            <div className="space-y-1.5 md:col-span-2">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Target Lux Standard</label>
-              <select value={params.targetRoomName || Object.entries(RECOMMENDED_LUX_LEVELS).find(([_, lux]) => lux === params.targetLux)?.[0] || ""} onChange={e => {
-                const val = e.target.value;
-                const luxVal = RECOMMENDED_LUX_LEVELS[val];
-                if (luxVal !== undefined) {
-                  setParams({...params, targetRoomName: val, targetLux: luxVal});
-                } else {
-                  // Fallback if parsing old state
-                  setParams({...params, targetLux: parseInt(val) || 0});
-                }
-              }} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
-                {RECOMMENDED_LUX_LEVELS_CATEGORIZED && Object.entries(RECOMMENDED_LUX_LEVELS_CATEGORIZED).map(([category, items]) => (
-                  <optgroup key={category} label={category} className="dark:bg-slate-900 dark:text-slate-100">
-                    {items.map(item => (
-                      <option key={item.name} value={item.name} className="dark:bg-slate-900 dark:text-slate-100">{item.name} ({item.lux} Lux)</option>
-                    ))}
-                  </optgroup>
-                ))}
+            <div className="space-y-1.5">
+               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Mounting Ht (m)</label>
+               <input type="number" step="0.1" value={params.mountingHeight !== undefined ? params.mountingHeight : Number((ceilingHeight - workingPlaneHeight).toFixed(2))} onChange={e => setParams({...params, mountingHeight: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" placeholder="Auto" />
+            </div>
+
+            {/* Surface Reflectances */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Ceiling Reflectance</label>
+              <select value={params.ceilingReflectance !== undefined ? params.ceilingReflectance : 0.7} onChange={e => setParams({...params, ceilingReflectance: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                <option value="0.8">80% (Pure White / Plaster)</option>
+                <option value="0.7">70% (Light Color / Acoustical)</option>
+                <option value="0.5">50% (Medium Color / Wood)</option>
+                <option value="0.3">30% (Dark Color / Dark Concrete)</option>
               </select>
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Wall Reflectance</label>
+              <select value={params.wallReflectance !== undefined ? params.wallReflectance : 0.5} onChange={e => setParams({...params, wallReflectance: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                <option value="0.7">70% (Very Light Wall)</option>
+                <option value="0.5">50% (Standard Office Wall)</option>
+                <option value="0.3">30% (Medium-Dark Wall)</option>
+                <option value="0.1">10% (Very Dark / Industrial)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Floor Reflectance</label>
+              <select value={params.floorReflectance !== undefined ? params.floorReflectance : 0.2} onChange={e => setParams({...params, floorReflectance: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none">
+                <option value="0.3">30% (Light Tiling / Marble)</option>
+                <option value="0.2">20% (Standard Carpet / Wood)</option>
+                <option value="0.1">10% (Dark Floor / Industrial Slate)</option>
+              </select>
+            </div>
+
+            {/* Design Factors */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Util. Coefficient (CU)</label>
               <input type="number" min="0.1" max="1.0" step="0.05" value={params.coefficientOfUtilization} onChange={e => setParams({...params, coefficientOfUtilization: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
@@ -4307,16 +4512,20 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                   </div>
 
                   {/* Operational Settings panel */}
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
-                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Operating Parameters</span>
-                     <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+                     <span className="text-[10px] font-black text-slate-455 uppercase tracking-widest block">Operating Parameters</span>
+                     <div className="grid grid-cols-3 gap-2 mt-2">
                        <div className="space-y-1">
-                         <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5"><Clock className="w-3 h-3 text-slate-450" /> Hours/Day</span>
-                         <input type="number" value={operatingHours} onChange={e => setOperatingHours(Math.max(1, parseInt(e.target.value)))} className="w-full h-7 px-2 bg-slate-50 border border-slate-200 rounded text-xs font-bold text-slate-700" />
+                         <span className="text-[9px] font-bold text-slate-500 dark:text-slate-450 flex items-center gap-0.5"><Clock className="w-3 h-3 text-slate-450" /> Hours/Day</span>
+                         <input type="number" value={operatingHours} onChange={e => setOperatingHours(Math.max(1, parseInt(e.target.value)))} className="w-full h-7 px-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded text-xs font-bold text-slate-700 dark:text-slate-200 animate-fade-in" />
                        </div>
                        <div className="space-y-1">
-                         <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5"><Calendar className="w-3 h-3 text-slate-450" /> Days/Year</span>
-                         <input type="number" value={operatingDays} onChange={e => setOperatingDays(Math.max(1, parseInt(e.target.value)))} className="w-full h-7 px-2 bg-slate-50 border border-slate-200 rounded text-xs font-bold text-slate-700" />
+                         <span className="text-[9px] font-bold text-slate-500 dark:text-slate-450 flex items-center gap-0.5"><Calendar className="w-3 h-3 text-slate-450" /> Days/Year</span>
+                         <input type="number" value={operatingDays} onChange={e => setOperatingDays(Math.max(1, parseInt(e.target.value)))} className="w-full h-7 px-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded text-xs font-bold text-slate-700 dark:text-slate-200 animate-fade-in" />
+                       </div>
+                       <div className="space-y-1">
+                         <span className="text-[9px] font-bold text-slate-500 dark:text-slate-450 flex items-center gap-0.5"><DollarSign className="w-3 h-3 text-emerald-500" /> Rate (₱/kWh)</span>
+                         <input type="number" step="0.1" value={electricityRate} onChange={e => setElectricityRate(Math.max(0.1, parseFloat(e.target.value) || 11.5))} className="w-full h-7 px-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded text-xs font-bold text-slate-700 dark:text-slate-200 animate-fade-in" />
                        </div>
                      </div>
                   </div>
@@ -5043,6 +5252,179 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
             ) : null)}
           </div>
         </section>
+      )}
+
+      {/* Lux Standards Library Modal */}
+      {showLuxModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in duration-200">
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-10 rounded-t-2xl">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-indigo-500" />
+                  Lux Standards Library
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                  View, add, edit, or remove Philippine & ASHRAE recommended lux standards.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowLuxModal(false);
+                  setEditingLuxStandard(null);
+                  setLuxForm({ name: '', lux: 150, category: 'Office & Educational' });
+                }}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Add / Edit Form */}
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                if (!luxForm.name.trim()) return;
+                
+                if (editingLuxStandard) {
+                  // Edit existing
+                  setLuxStandards(prev => prev.map(item => 
+                    item.name === editingLuxStandard.name ? { ...luxForm, lux: Number(luxForm.lux) } : item
+                  ));
+                  setEditingLuxStandard(null);
+                  setSuccessBanner("Standard updated successfully!");
+                } else {
+                  // Add new
+                  if (luxStandards.some(s => s.name.toLowerCase() === luxForm.name.toLowerCase())) {
+                    alert("A standard with this name already exists.");
+                    return;
+                  }
+                  setLuxStandards(prev => [...prev, { ...luxForm, lux: Number(luxForm.lux) }]);
+                  setSuccessBanner("Custom standard added successfully!");
+                }
+                
+                setLuxForm({ name: '', lux: 150, category: 'Office & Educational' });
+                setTimeout(() => setSuccessBanner(null), 3000);
+              }} className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+                <h4 className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">
+                  {editingLuxStandard ? '✍️ Edit Lux Standard' : '➕ Add Custom Lux Standard'}
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Category</label>
+                    <select 
+                      value={luxForm.category} 
+                      onChange={e => setLuxForm({ ...luxForm, category: e.target.value })}
+                      className="w-full h-9 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-xs outline-none"
+                    >
+                      <option value="Residential Lighting">Residential Lighting</option>
+                      <option value="Office & Educational">Office & Educational</option>
+                      <option value="Commercial & Retail">Commercial & Retail</option>
+                      <option value="Industrial">Industrial</option>
+                      <option value="Public Areas">Public Areas</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Standard Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Design Studio" 
+                      value={luxForm.name}
+                      onChange={e => setLuxForm({ ...luxForm, name: e.target.value })}
+                      className="w-full h-9 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-xs outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Required Lux</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="number" 
+                        min="1" 
+                        max="5000" 
+                        value={luxForm.lux}
+                        onChange={e => setLuxForm({ ...luxForm, lux: parseInt(e.target.value) || 0 })}
+                        className="w-full h-9 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-xs outline-none font-bold"
+                      />
+                      <button 
+                        type="submit"
+                        className="px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex-shrink-0"
+                      >
+                        {editingLuxStandard ? 'Save' : 'Add'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {editingLuxStandard && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setEditingLuxStandard(null);
+                      setLuxForm({ name: '', lux: 150, category: 'Office & Educational' });
+                    }} 
+                    className="text-xs text-slate-500 hover:text-slate-700 underline"
+                  >
+                    Cancel Editing
+                  </button>
+                )}
+              </form>
+
+              {/* Standards List Table */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/80 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200 dark:border-slate-800">
+                      <th className="p-3">Category</th>
+                      <th className="p-3">Name / Application</th>
+                      <th className="p-3 text-right">Lux Level</th>
+                      <th className="p-3 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {luxStandards.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-slate-700 dark:text-slate-300">
+                        <td className="p-3 font-semibold text-slate-400">{item.category}</td>
+                        <td className="p-3 font-bold text-slate-800 dark:text-slate-100">{item.name}</td>
+                        <td className="p-3 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">{item.lux} lx</td>
+                        <td className="p-3 text-center">
+                          <div className="flex justify-center items-center gap-2">
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                setEditingLuxStandard(item);
+                                setLuxForm({ name: item.name, lux: item.lux, category: item.category });
+                              }}
+                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 rounded transition-colors"
+                              title="Edit standard"
+                            >
+                              <PenBox className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Are you sure you want to delete the standard "${item.name}"?`)) {
+                                  setLuxStandards(prev => prev.filter(s => s.name !== item.name));
+                                  setSuccessBanner("Standard removed successfully!");
+                                  setTimeout(() => setSuccessBanner(null), 3000);
+                                }
+                              }}
+                              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-rose-600 rounded transition-colors"
+                              title="Delete standard"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Fixture Selection Modal */}

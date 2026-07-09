@@ -220,10 +220,19 @@ export interface LightFixture {
 export interface SavedLightingDetail {
   id: string;
   roomName: string;
+  roomType?: string;
   targetLux: number;
   area: number;
   roomWidth?: number;
   roomLength?: number;
+  ceilingHeight?: number;
+  workingPlaneHeight?: number;
+  mountingHeight?: number;
+  ceilingReflectance?: number;
+  wallReflectance?: number;
+  floorReflectance?: number;
+  coefficientOfUtilization?: number;
+  maintenanceFactor?: number;
   fixtureId?: string;
   fixtureLightType?: string;
   fixturesCount: number;
@@ -232,6 +241,8 @@ export interface SavedLightingDetail {
   circuitNo?: number; // optionally link to circuit
   fixtureWattage?: number;
   fixtureLumens?: number;
+  activeFixtures?: ActiveFixtureSelection[];
+  customPositions?: PlacedFixtureDragPosition[];
 }
 
 export interface ActiveFixtureSelection {
@@ -267,6 +278,7 @@ export interface PlacedFixtureDragPosition {
 export interface IlluminationParams {
   inputMode: 'dimensions' | 'area';
   roomName?: string;
+  roomType?: string;
   roomWidth: number;
   roomLength: number;
   userArea: number;
@@ -279,6 +291,11 @@ export interface IlluminationParams {
   lumensPerFixture: number;
   coefficientOfUtilization: number;
   maintenanceFactor: number;
+  ceilingReflectance?: number;
+  wallReflectance?: number;
+  floorReflectance?: number;
+  electricityRate?: number;
+  operatingHoursDaily?: number;
   savedRooms?: SavedLightingDetail[];
   isCustomFixture?: boolean;
   customLightType?: string;

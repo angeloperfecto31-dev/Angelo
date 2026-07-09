@@ -786,6 +786,8 @@ export const LIGHT_FIXTURES_LIBRARY: LightFixture[] = [
 
 export const INITIAL_ILLUMINATION_PARAMS: IlluminationParams = {
   inputMode: 'dimensions',
+  roomName: 'Office Room 1',
+  roomType: 'General Office',
   roomWidth: 4,
   roomLength: 5,
   userArea: 20,
@@ -796,7 +798,12 @@ export const INITIAL_ILLUMINATION_PARAMS: IlluminationParams = {
   selectedFixtureId: 'ind-panel',
   lumensPerFixture: 3600,
   coefficientOfUtilization: 0.6,
-  maintenanceFactor: 0.8
+  maintenanceFactor: 0.8,
+  ceilingReflectance: 0.7,
+  wallReflectance: 0.5,
+  floorReflectance: 0.2,
+  electricityRate: 11.5,
+  operatingHoursDaily: 10
 };
 
 export const DESCRIPTION_CODES = {
