@@ -75,6 +75,40 @@ const THHN_WIRE_AREAS: Record<number, number> = {
 
 const CONDUIT_FILL_TABLE = CONDUIT_LIBRARY.PVC;
 
+
+export const getValidPolesForSystem = (system: string): string[] => {
+  if (system.includes("3PH, 4W") || system.includes("3PH, 5W")) {
+    return ["1P", "1P+N", "2P", "2P+N", "3P", "3P+N", "4P"];
+  } else if (system.includes("1PH, 2W") || system.includes("1PH, 3W")) {
+    return ["1P", "1P+N", "2P"];
+  } else if (system.includes("3PH, 3W")) {
+    return ["2P", "3P"];
+  }
+  return ["1P", "2P", "3P", "4P"];
+};
+
+export const getActivePoles = (poleStr: string | number): number => {
+  if (typeof poleStr === "number") return poleStr;
+  if (!poleStr) return 1;
+  const match = poleStr.match(/^(\d)P/);
+  return match ? parseInt(match[1]) : 1;
+};
+
+export const getTotalPoles = (poleStr: string | number): number => {
+  if (typeof poleStr === "number") return poleStr;
+  if (!poleStr) return 1;
+  const match = poleStr.match(/^(\d)P/);
+  const active = match ? parseInt(match[1]) : 1;
+  const neutral = poleStr.includes("+N") ? 1 : 0;
+  return active + neutral;
+};
+
+export const getNeutralPoles = (poleStr: string | number): number => {
+  if (typeof poleStr === "number") return 0;
+  if (!poleStr) return 0;
+  return poleStr.includes("+N") ? 1 : 0;
+};
+
 export const getAdjustedWireForVoltageDrop = (
   baseSize: number,
   loadA: number,
@@ -263,7 +297,7 @@ export interface ConduitFillDetails {
 export const getConduitFillDetails = (
   wireSize: number,
   groundSizeString: string,
-  poles: number,
+  poles: number | string,
   systemName: string,
   conduitType: string = "PVC",
   wireSets: number = 1,
@@ -273,24 +307,26 @@ export const getConduitFillDetails = (
   const activeType = conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
   const table = CONDUIT_LIBRARY[activeType];
   const finalWireType = wireType || "THHN";
+  const activePoles = typeof poles === "string" ? getActivePoles(poles) : poles;
 
-  // Determine conductors in one set
-  let numPhases = poles === 1 ? 1 : poles;
-  if (poles === 1) {
+  let numPhases = activePoles === 1 ? 1 : activePoles;
+  if (activePoles === 1) {
     numPhases = 1;
   }
   const phaseArea = getConductorArea(wireSize, finalWireType);
 
-  let numNeutrals = 0;
-  if (poles === 1) {
-    numNeutrals = 1;
-  } else if (poles === 2) {
-    if (systemName.includes("1PH, 3W") || systemName.includes("3W") || systemName.includes("3-Wire")) {
+  let numNeutrals = typeof poles === "string" ? getNeutralPoles(poles) : 0;
+  if (typeof poles === "number" || !poles.toString().includes("+N")) {
+    if (activePoles === 1) {
       numNeutrals = 1;
-    }
-  } else if (poles === 3) {
-    if (systemName.includes("4W") || systemName.includes("5W") || systemName.includes("4-Wire") || systemName.includes("5-Wire")) {
-      numNeutrals = 1;
+    } else if (activePoles === 2) {
+      if (systemName.includes("1PH, 3W") || systemName.includes("3W") || systemName.includes("3-Wire")) {
+        numNeutrals = 1;
+      }
+    } else if (activePoles === 3) {
+      if (systemName.includes("4W") || systemName.includes("5W") || systemName.includes("4-Wire") || systemName.includes("5-Wire")) {
+        numNeutrals = 1;
+      }
     }
   }
   const neutralSize = wireSize;
@@ -415,7 +451,7 @@ export const getConduitFillDetails = (
 export const getConduitSizeForWiresLocal = (
   wireSize: number,
   groundSizeString: string,
-  poles: number,
+  poles: number | string,
   systemName: string,
   conduitType: string = "PVC",
   wireSets: number = 1,
@@ -701,14 +737,14 @@ export const calculateCircuitValues = (
         sp.panel.system,
         sp.panel.voltage || 230,
       );
-      let calculatedPoles = subMainFeeder.poles;
+      let calculatedPoles: string | number = subMainFeeder.poles || "1P";
       if (connValidation.isValid && connValidation.connectionType) {
         if (connValidation.connectionType === "Three-Phase") {
-          calculatedPoles = panel.system.includes("3PH") ? 3 : 2;
+          calculatedPoles = panel.system.includes("3PH") ? "3P" : "2P";
         } else if (connValidation.connectionType === "Line-to-Line") {
-          calculatedPoles = 2;
+          calculatedPoles = "2P";
         } else if (connValidation.connectionType === "Line-to-Neutral") {
-          calculatedPoles = 1;
+          calculatedPoles = "1P";
         }
       }
       c.mcbP = calculatedPoles;
@@ -728,23 +764,26 @@ export const calculateCircuitValues = (
     }
   }
 
-  let mcbP = c.mcbP || 1;
+  let mcbP = c.mcbP || "1P";
+  if (typeof mcbP === 'number') { mcbP = mcbP + "P"; }
+  const validPoles = getValidPolesForSystem(panel.system);
+  if (!validPoles.includes(mcbP.toString())) {
+    mcbP = validPoles[0];
+  }
 
-  // Auto-update poles for three-phase circuits when in a three-phase system
   if (panel.system.includes("3PH") && is3PhaseLoadFinal) {
-    if (mcbP !== 4) {
-      mcbP = 3;
+    if (mcbP !== "4P" && mcbP !== "3P+N") {
+      mcbP = "3P";
     }
   } else if (
     c.loadType !== LoadType.SUB_PANEL &&
     c.loadType !== LoadType.SUB_SUB_PANEL &&
     !panel.system.includes("3PH")
   ) {
-    // Auto-update poles based on global connection type for 1-phase systems
     if (panel.connectionType === "Line-to-Line") {
-      mcbP = 2;
+      if (!mcbP.toString().startsWith("2")) mcbP = "2P";
     } else if (panel.connectionType === "Line-to-Neutral") {
-      mcbP = 1;
+      if (!mcbP.toString().startsWith("1")) mcbP = "1P";
     }
   }
 
@@ -759,9 +798,9 @@ export const calculateCircuitValues = (
   }
 
   if (!c.mcbP) {
-    mcbP = 1;
+    mcbP = "1P";
     if (c.loadType === LoadType.AIR_CON || c.loadType === LoadType.MOTOR) {
-      mcbP = 2; // Default to 2-Pole for motors/AC regardless of panel type
+      mcbP = "2P";
     }
   }
 
@@ -1004,7 +1043,7 @@ export const calculateCircuitValues = (
   const conduitDetails = getConduitFillDetails(
     calcBaseWireSize,
     finalGroundSize,
-    mcbP,
+    mcbP.toString(),
     panel.system,
     finalConduitType,
     wire.runs,
@@ -1030,7 +1069,7 @@ export const calculateCircuitValues = (
     loadA: Number(loadA.toFixed(2)),
     mcbAT: mcbAT,
     mcbAF: mcbAF,
-    mcbP: mcbP,
+    mcbP: mcbP.toString(),
     mcbKAIC: mcbKAIC,
     mcbKAICCalculated: computedMcbKAIC,
     kaicOverride: c.kaicOverride,
@@ -1272,7 +1311,7 @@ export const computePanelScheduleValues = (
         cir.loadType === LoadType.SUB_PANEL ||
         cir.loadType === LoadType.SUB_SUB_PANEL
       ) {
-        effectiveConnType = cir.mcbP === 1 ? "Line-to-Neutral" : "Line-to-Line";
+        effectiveConnType = getActivePoles(cir.mcbP) === 1 ? "Line-to-Neutral" : "Line-to-Line";
       }
 
       if (effectiveConnType === "Line-to-Line") {
@@ -1390,7 +1429,7 @@ export const computePanelScheduleValues = (
       cir.subPanelReflectionMode === "phase_loads" &&
       cir.reflectedPhaseAmps
     ) {
-      const isSubL2L = cir.mcbP !== 1;
+      const isSubL2L = getActivePoles(cir.mcbP) !== 1;
       const ir = cir.reflectedPhaseAmps.R;
       const iy = cir.reflectedPhaseAmps.Y;
       const ib = cir.reflectedPhaseAmps.B;
@@ -1426,7 +1465,7 @@ export const computePanelScheduleValues = (
       let ib = cir.reflectedPhaseLoads.B / v1;
       const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
 
-      const isSubL2L = cir.mcbP !== 1;
+      const isSubL2L = getActivePoles(cir.mcbP) !== 1;
       if (isSubL2L) {
         ir = ir * 2;
         iy = iy * 2;
@@ -1597,7 +1636,7 @@ export const computePanelScheduleValues = (
       let ib = cir.reflectedPhaseLoads.B / v1;
       const i3 = cir.reflectedPhaseLoads.ThreePhase / v3;
 
-      const isSubL2L = cir.mcbP !== 1;
+      const isSubL2L = getActivePoles(cir.mcbP) !== 1;
       if (isSubL2L) {
         ir = ir * 2;
         iy = iy * 2;
@@ -1671,9 +1710,9 @@ export const computePanelScheduleValues = (
 
   let cb = Math.max(calculatedCb, 30);
 
-  let poles = p.system.includes("3PH") ? 3 : 2;
+  let poles: string | number = p.system.includes("3PH") ? "3P" : "2P";
   if (!p.system.includes("3PH") && p.connectionType === "Line-to-Neutral") {
-    poles = 1;
+    poles = "1P";
   }
   const wire = getWireForBreakerLocal(
     cb,
@@ -1755,7 +1794,7 @@ export const computePanelScheduleValues = (
   let finalAf = cbAF;
   let finalType = type;
   let finalKaic = kaic;
-  let finalPoles = poles;
+  let finalPoles: string | number = poles;
 
   let finalWireSize = baseWireSize;
   let finalWireRuns = wire.runs;

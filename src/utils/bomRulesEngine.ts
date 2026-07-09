@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { computePanelScheduleValues, getConduitSizeForWiresLocal } from "./computeEngine";
+import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal } from "./computeEngine";
 
 export interface BomItem {
   id: string;
@@ -634,7 +634,7 @@ export const runBomQuantityTakeoff = (
       // Breakers
       addItem({
         category: "Breakers",
-        name: `Circuit Breaker MCB, ${c.mcbAT || 20}AT/${c.mcbAF || 50}AF, ${c.mcbP || 2}P`,
+        name: `Circuit Breaker MCB, ${c.mcbAT || 20}AT/${c.mcbAF || 50}AF, ${typeof c.mcbP === "string" ? c.mcbP : (c.mcbP || 2) + "P"}`,
         description: `Branch circuit protection thermal-magnetic circuit breaker, ${c.mcbKAIC || "10"} kAIC`,
         brand: settings.preferredBrandBreakers,
         specification: `Molded Miniature Circuit Breaker (MCB), compliant with PEC Article 2.40`,
@@ -649,7 +649,7 @@ export const runBomQuantityTakeoff = (
       // Conductors (Phase wires)
       const bLength = getCircuitLength(c.id);
       const bPhaseSize = c.wireSizeOverride || c.calculatedWireSize || c.wireSize || "2.0";
-      const bPoles = c.mcbP || 2;
+      const bPoles = typeof c.mcbP === "string" ? getTotalPoles(c.mcbP) || 2 : c.mcbP || 2;
       const bPhaseMeters = bLength * bPoles * wasteConductorsFactor;
       const bPhaseCost = getWirePricePerMeter(bPhaseSize);
 

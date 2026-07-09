@@ -1,7 +1,7 @@
 // SingleLineDiagram.tsx
 import React from 'react';
 import { Circuit, PanelConfig } from '../types';
-import { parseSystemVoltage } from '../utils/computeEngine';
+import { parseSystemVoltage, getActivePoles, getTotalPoles } from '../utils/computeEngine';
 
 interface SingleLineDiagramProps {
   panel: PanelConfig;
@@ -35,14 +35,14 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
     if (!isSub) return "";
     
     let phaseText = "1-Φ L-N";
-    if (c.mcbP === 3) {
+    if (getActivePoles(c.mcbP) === 3) {
       phaseText = "3-Φ";
-    } else if (c.mcbP === 2) {
+    } else if (getActivePoles(c.mcbP) === 2) {
       phaseText = "1-Φ L-L";
     }
 
-    const pText = `${c.mcbP}P`;
-    const conductors = `${c.mcbP}-#${c.wireSize || '8.0'}mm²`;
+    const pText = typeof c.mcbP === "string" && c.mcbP.endsWith("P") ? c.mcbP : typeof c.mcbP === "string" && c.mcbP.includes("+N") ? c.mcbP : `${c.mcbP}P`;
+    const conductors = `${getTotalPoles(c.mcbP)}-#${c.wireSize || "8.0"}mm²`;
     const ground = c.groundSize ? ` + 1-#${c.groundSize}mm²(G)` : '';
     const conduit = c.conduitSize ? ` IN ${c.conduitSize}mmØ ${(c.conduitType || 'PVC').toUpperCase()}` : '';
     

@@ -2167,7 +2167,7 @@ export const exportToCAD = (
 
       // Col 10: P
       b.addText(
-        isSpace || isSpare ? "-" : `${cir.mcbP}P`,
+        isSpace || isSpare ? "-" : `${typeof cir.mcbP === "string" ? cir.mcbP : cir.mcbP + "P"}`,
         colPositions[baseIdx + 2] + cols[baseIdx + 2].w / 2,
         yText,
         metrics.dataFontSize,
@@ -4838,7 +4838,7 @@ export const exportDiagramToDXF = (
       phases: ["R"],
       mcbAT: 30,
       mcbAF: 50,
-      mcbP: 2,
+      mcbP: "2P",
       mcbKAIC: 10,
       mcbType: MCBType.BOLT_ON,
       wireSize: "3.5",

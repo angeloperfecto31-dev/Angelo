@@ -45,7 +45,7 @@ export interface Circuit {
   mcbAT: number;
   mcbATOverride?: number;
   mcbAF: number;
-  mcbP: number;
+  mcbP: number | string;
   mcbKAIC: number;
   kaicOverride?: number;
   mcbKAICCalculated?: number;
@@ -131,7 +131,7 @@ export interface PanelConfig {
     breakerAT?: number;
     breakerAF?: number;
     breakerType?: string;
-    poles?: number;
+    poles?: number | string;
     kaic?: number;
   };
   transferSwitchType?: 'None' | 'ATS' | 'MTS';

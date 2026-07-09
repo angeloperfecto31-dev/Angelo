@@ -84,7 +84,7 @@ import {
   getConduitFillDetails,
   getGroundWireForWireSizeLocal,
   getConduitSizeForWiresLocal,
-} from "../utils/computeEngine";
+getValidPolesForSystem} from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
   saveThreePhaseFLCEntry,
@@ -111,7 +111,7 @@ export const INITIAL_CIRCUITS: Circuit[] = [
     loadA: 5.22,
     mcbAT: 15,
     mcbAF: 50,
-    mcbP: 1,
+    mcbP: "1P",
     mcbKAIC: 10,
     mcbType: MCBType.BOLT_ON,
     wireSize: "2.0",
@@ -134,7 +134,7 @@ export const INITIAL_CIRCUITS: Circuit[] = [
     loadA: 15.65,
     mcbAT: 20,
     mcbAF: 50,
-    mcbP: 2,
+    mcbP: "2P",
     mcbKAIC: 10,
     mcbType: MCBType.BOLT_ON,
     wireSize: "3.5",
@@ -4851,25 +4851,25 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <select
-                          value={c.mcbP || ""}
+                          value={typeof c.mcbP === "number" ? c.mcbP + "P" : c.mcbP || "1P"}
                           disabled={
                             c.loadType === LoadType.SUB_PANEL ||
                             c.loadType === LoadType.SUB_SUB_PANEL
                           }
                           onChange={(e) =>
                             updateCircuit(c.id, {
-                              mcbP: parseInt(e.target.value),
+                              mcbP: e.target.value,
                             })
                           }
-                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-12 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-16 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
                         >
-                          {[1, 2, 3, 4].map((p) => (
+                          {getValidPolesForSystem(panel.system).map((p) => (
                             <option
                               key={p}
                               value={p}
                               className="dark:bg-slate-900 dark:text-slate-100"
                             >
-                              {p}P
+                              {p}
                             </option>
                           ))}
                         </select>

@@ -2354,7 +2354,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       loadA: Number((totalVA / targetVoltage).toFixed(2)),
       mcbAT: 15,
       mcbAF: 50,
-      mcbP: 1,
+      mcbP: "1P",
       mcbKAIC: 10,
       mcbType: MCBType.BOLT_ON,
       wireSize: '2.0',
