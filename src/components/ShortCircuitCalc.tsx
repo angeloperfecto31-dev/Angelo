@@ -717,9 +717,19 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                         <option value="Aluminum" className="dark:bg-slate-900 dark:text-slate-100">Aluminum</option>
                      </select>
                   </div>
-                  <div className="w-16">
+                  <div className="w-28">
                      <label className="text-xs font-bold text-slate-400 uppercase">Runs</label>
-                     <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value), isFeederRunsCustomized: true})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
+                     <select
+                        value={params.feederRuns || 1}
+                        onChange={e => setParams({...params, feederRuns: Number(e.target.value), isFeederRunsCustomized: true})}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none cursor-pointer"
+                     >
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((r) => (
+                           <option key={r} value={r} className="dark:bg-slate-900 dark:text-slate-100">
+                              {r > 1 ? `${r} Sets of` : "1 Set of"}
+                           </option>
+                        ))}
+                     </select>
                   </div>
                 </div>
 

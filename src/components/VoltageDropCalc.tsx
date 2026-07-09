@@ -2619,13 +2619,17 @@ export default function VoltageDropCalc({
                       <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
                         Conductor Sets (Runs)
                       </label>
-                      <input
-                        type="number"
-                        min="1"
+                      <select
                         value={segment.calc.wireSets || 1}
-                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { wireSets: Math.max(1, parseInt(e.target.value) || 1) })}
-                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
-                      />
+                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { wireSets: Number(e.target.value) })}
+                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-sans font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                          <option key={n} value={n} className="dark:bg-slate-900 dark:text-slate-100">
+                            {n > 1 ? `${n} Sets of` : "1 Set of"}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
                     {/* 4. Voltage (V) */}

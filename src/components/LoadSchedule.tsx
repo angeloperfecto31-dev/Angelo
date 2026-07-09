@@ -2720,15 +2720,11 @@ export default function LoadSchedule({
                     className="w-1/3 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                   >
                     <option value="">
-                      Auto (
-                      {mainFeeder.wire.runs > 1
-                        ? `${mainFeeder.wire.runs}x`
-                        : "1x"}
-                      )
+                      Auto ({mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} Sets of` : "1 Set of"})
                     </option>
                     {[1, 2, 3, 4, 5, 6, 7, 8].map((r) => (
                       <option key={r} value={r}>
-                        {r}x Sets
+                        {r > 1 ? `${r} Sets of` : "1 Set of"}
                       </option>
                     ))}
                   </select>
@@ -5039,11 +5035,11 @@ export default function LoadSchedule({
                                     wireSets: e.target.value === "" ? undefined : Number(e.target.value),
                                   })
                                 }
-                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none ${(c.wireSets || c.calculatedWireSets || 1) === 1 ? "print:hidden" : ""}`}
+                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none print:appearance-none print:bg-transparent print:border-none print:p-0 ${(c.wireSets || c.calculatedWireSets || 1) === 1 ? "print:hidden" : ""}`}
                                 title="Number of Cable Sets"
                               >
                                 <option value="">
-                                  Auto {c.calculatedWireSets && c.calculatedWireSets > 1 ? `(${c.calculatedWireSets} Sets of)` : ""}
+                                  Auto ({c.calculatedWireSets || 1} {(c.calculatedWireSets || 1) > 1 ? "Sets of" : "Set of"})
                                 </option>
                                 {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                                   <option key={n} value={n}>
