@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { computePanelScheduleValues } from "./computeEngine";
+import { computePanelScheduleValues, getConduitSizeForWiresLocal } from "./computeEngine";
 
 export interface BomItem {
   id: string;
@@ -97,28 +97,20 @@ const getEgcSizeStr = (breakerRating: number): string => {
   return "100.0";
 };
 
-// Sizing minimum conduit diameter (mm) based on conductor count and total area (simplified, complying with PEC Chapter 9, Table 1)
+// Sizing minimum conduit diameter (mm) based on conductor count and total area (complying with PEC Chapter 9, Table 1)
 const getMinimumConduitSize = (conductorSizeStr: string, conductorCount: number): string => {
   const cleanStr = conductorSizeStr.replace(/[^\d.]/g, "");
   const sizeNum = parseFloat(cleanStr) || 2.0;
-  if (sizeNum <= 5.5) return "20";
-  if (sizeNum <= 14.0) {
-    if (conductorCount <= 3) return "25";
-    return "32";
-  }
-  if (sizeNum <= 30.0) {
-    if (conductorCount <= 3) return "32";
-    return "40";
-  }
-  if (sizeNum <= 50.0) {
-    if (conductorCount <= 3) return "40";
-    return "50";
-  }
-  if (sizeNum <= 100.0) {
-    if (conductorCount <= 3) return "63";
-    return "75";
-  }
-  return "90";
+  const groundSize = "2.0";
+  return getConduitSizeForWiresLocal(
+    sizeNum,
+    groundSize,
+    conductorCount === 1 ? 1 : (conductorCount === 2 ? 2 : 3),
+    conductorCount === 4 ? "400V, 3PH, 4W" : "230V, 1PH, 2W",
+    "PVC",
+    1,
+    "THHN"
+  );
 };
 
 export const runBomQuantityTakeoff = (

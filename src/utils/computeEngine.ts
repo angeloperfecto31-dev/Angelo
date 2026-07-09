@@ -246,21 +246,30 @@ export const getConduitFillDetails = (
   const finalWireType = wireType || "THHN";
 
   // Determine conductors in one set
-  const numPhases = poles === 1 ? 1 : poles;
+  let numPhases = poles === 1 ? 1 : poles;
+  if (poles === 1) {
+    numPhases = 1;
+  }
   const phaseArea = getConductorArea(wireSize, finalWireType);
 
   let numNeutrals = 0;
   if (poles === 1) {
     numNeutrals = 1;
-  } else if (poles === 3 && (systemName.includes("4W") || systemName.includes("5W") || systemName.includes("4-Wire"))) {
-    numNeutrals = 1;
+  } else if (poles === 2) {
+    if (systemName.includes("1PH, 3W") || systemName.includes("3W") || systemName.includes("3-Wire")) {
+      numNeutrals = 1;
+    }
+  } else if (poles === 3) {
+    if (systemName.includes("4W") || systemName.includes("5W") || systemName.includes("4-Wire") || systemName.includes("5-Wire")) {
+      numNeutrals = 1;
+    }
   }
   const neutralSize = wireSize;
   const neutralArea = getConductorArea(neutralSize, finalWireType);
 
   const groundSize = parseFloat(groundSizeString) || 0;
   const numGrounds = groundSize > 0 ? 1 : 0;
-  const groundArea = groundSize > 0 ? getConductorArea(groundSize, "THHN") : 0;
+  const groundArea = groundSize > 0 ? getConductorArea(groundSize, finalWireType) : 0;
 
   // Number of parallel sets affects the calculation:
   // Usually, parallel feeders are placed in separate conduits (one conduit per set).
@@ -274,8 +283,8 @@ export const getConduitFillDetails = (
   // PEC Table 1 conduit fill limits: 1 wire = 53%, 2 wires = 31%, 3+ wires = 40%
   const allowablePercent = totalConductorCount === 1 ? 53 : (totalConductorCount === 2 ? 31 : 40);
 
-  // Find recommended conduit size
-  let recommendedSize = table[0].size;
+  // Find recommended conduit size (smallest code-compliant)
+  let recommendedSize = table[table.length - 1].size; // default to largest
   for (const entry of table) {
     const internalArea = entry.limit / 0.40;
     const allowableArea = (allowablePercent / 100) * internalArea;
@@ -283,10 +292,14 @@ export const getConduitFillDetails = (
       recommendedSize = entry.size;
       break;
     }
-    recommendedSize = entry.size;
   }
 
-  const activeSize = selectedSizeOverride || recommendedSize;
+  // Prevent undersized conduit recommendations under all circumstances:
+  // Lookup indices of recommended vs overridden size and ensure the selected size is at least recommended.
+  const recIndex = table.findIndex(e => e.size === recommendedSize);
+  const ovrIndex = selectedSizeOverride ? table.findIndex(e => e.size === selectedSizeOverride) : -1;
+  const activeSize = (selectedSizeOverride && ovrIndex >= recIndex) ? selectedSizeOverride : recommendedSize;
+
   const activeEntry = table.find(e => e.size === activeSize) || table[table.length - 1];
 
   const internalArea = activeEntry.limit / 0.40;
@@ -322,9 +335,10 @@ export const getConduitSizeForWiresLocal = (
   systemName: string,
   conduitType: string = "PVC",
   wireSets: number = 1,
-  wireType: string = "THHN"
+  wireType: string = "THHN",
+  selectedSizeOverride?: string,
 ): string => {
-  const details = getConduitFillDetails(wireSize, groundSizeString, poles, systemName, conduitType, wireSets, wireType);
+  const details = getConduitFillDetails(wireSize, groundSizeString, poles, systemName, conduitType, wireSets, wireType, selectedSizeOverride);
   return details.conduitSize;
 };
 
@@ -902,7 +916,18 @@ export const calculateCircuitValues = (
         finalWireType,
       );
 
-  const finalConduitSize = c.conduitSizeOverride || calculatedConduitSizeStr;
+  const finalConduitSize = isSubPanelLink && c.conduitSize
+    ? c.conduitSize
+    : getConduitSizeForWiresLocal(
+        calcBaseWireSize,
+        finalGroundSize,
+        mcbP,
+        panel.system,
+        finalConduitType,
+        c.wireSets || 1,
+        finalWireType,
+        c.conduitSizeOverride,
+      );
 
   return {
     ...c,
@@ -1651,7 +1676,16 @@ export const computePanelScheduleValues = (
     if (p.mainOverrides.groundSize)
       finalGroundSize = p.mainOverrides.groundSize;
     if (p.mainOverrides.conduitSize)
-      finalConduitSize = p.mainOverrides.conduitSize;
+      finalConduitSize = getConduitSizeForWiresLocal(
+        finalWireSize,
+        finalGroundSize,
+        finalPoles,
+        p.system,
+        finalConduitType,
+        finalWireRuns,
+        p.insulationType || "THHN",
+        p.mainOverrides.conduitSize
+      );
     if (p.mainOverrides.conduitType)
       finalConduitType = p.mainOverrides.conduitType;
   }
