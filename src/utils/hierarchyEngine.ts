@@ -173,7 +173,7 @@ function cleanObj(obj: any): any {
   if (Array.isArray(obj)) return obj.map(cleanObj);
   const result: any = {};
   for (const key in obj) {
-    if (obj[key] !== undefined) {
+    if (obj[key] !== undefined && !Number.isNaN(obj[key])) {
       result[key] = cleanObj(obj[key]);
     }
   }

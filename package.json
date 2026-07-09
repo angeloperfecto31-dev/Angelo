@@ -57,7 +57,8 @@
     "@types/katex": "^0.16.8",
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",
-    "@types/three": "^0.184.1"
+    "@types/three": "^0.184.1",
+    "puppeteer": "^25.3.0"
   },
   "overrides": {
     "node-domexception": "file:./patches/node-domexception"

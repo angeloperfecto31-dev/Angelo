@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { isEqual } from "lodash";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
@@ -1004,9 +1005,24 @@ export default function App() {
         }
       });
 
-      return changed ? updatedCalcs : prev;
+      const cleanObjForComparison = (obj: any): any => {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (Array.isArray(obj)) return obj.map(cleanObjForComparison);
+        const result: any = {};
+        for (const key in obj) {
+          if (obj[key] !== undefined && !Number.isNaN(obj[key])) {
+            result[key] = cleanObjForComparison(obj[key]);
+          }
+        }
+        return result;
+      };
+
+      if (!isEqual(cleanObjForComparison(prev || []), cleanObjForComparison(updatedCalcs))) {
+        return updatedCalcs;
+      }
+      return prev;
     });
-  }, [circuits, panel, subPanels, subPanels]);
+  }, [circuits, panel, subPanels]);
 
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
