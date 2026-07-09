@@ -1717,7 +1717,6 @@ export const exportToCAD = (
         { name: "W", w: 14 },
         { name: "QTY", w: 12 },
         { name: "VA", w: 18 },
-        { name: "PHASE", w: 16 },
         { name: "AMPS", w: 16 },
         { name: "AT", w: 12 },
         { name: "AF", w: 12 },
@@ -1997,38 +1996,40 @@ export const exportToCAD = (
         cols[4].w - 2
       );
 
-      // Col 6: PHASE
-      let phaseStr = "-";
-      if (!isSpace && !isSpare) {
-        const phases = cir.phases || [];
-        if (phases.length === 3) {
-          phaseStr = "3P";
-        } else if (phases.length > 0) {
-          phaseStr = phases.join(",");
+      // Col 6: PHASE / AMPS
+      if (isPanel3Phase) {
+        let phaseStr = "-";
+        if (!isSpace && !isSpare) {
+          const phases = cir.phases || [];
+          if (phases.length === 3) {
+            phaseStr = "3P";
+          } else if (phases.length > 0) {
+            phaseStr = phases.join(",");
+          }
         }
-      }
-      b.addText(
-        phaseStr,
-        colPositions[5] + cols[5].w / 2,
-        yText,
-        metrics.dataFontSize,
-        0,
-        "TEXT_DATA",
-        "center",
-        cols[5].w - 2
-      );
-
-      // Col 7: AMPS
-      if (!isPanel3Phase) {
         b.addText(
-          isSpace || isSpare ? "-" : `${cir.loadA.toFixed(2)}A`,
-          colPositions[6] + cols[6].w / 2,
+          phaseStr,
+          colPositions[5] + cols[5].w / 2,
           yText,
           metrics.dataFontSize,
           0,
           "TEXT_DATA",
           "center",
-          cols[6].w - 2
+          cols[5].w - 2
+        );
+      }
+
+      // Col 7: AMPS
+      if (!isPanel3Phase) {
+        b.addText(
+          isSpace || isSpare ? "-" : `${cir.loadA.toFixed(2)}A`,
+          colPositions[5] + cols[5].w / 2,
+          yText,
+          metrics.dataFontSize,
+          0,
+          "TEXT_DATA",
+          "center",
+          cols[5].w - 2
         );
       } else {
         const phases = cir.phases || [];
@@ -2120,7 +2121,7 @@ export const exportToCAD = (
         );
       }
 
-      const baseIdx = isPanel3Phase ? 10 : 7;
+      const baseIdx = isPanel3Phase ? 10 : 6;
 
       // Col 8: AT
       b.addText(
@@ -2237,44 +2238,25 @@ export const exportToCAD = (
       cols[4].w - 2
     );
 
-    // Divider at start of PHASE / kVA column
-    b.addLine(colPositions[5], ty - sumRowH, colPositions[5], ty, "TABLE_GRID");
-    // Phase / kVA total
-    b.addText(
-      `(${(currentCalcData.totalVA / 1000).toFixed(2)} kVA)`,
-      colPositions[5] + cols[5].w / 2,
-      ySumText,
-      metrics.summaryFontSize,
-      0,
-      "TEXT_HEADER",
-      "center",
-      cols[5].w - 2
-    );
-
-    // Divider at start of AMPS column(s)
-    b.addLine(colPositions[6], ty - sumRowH, colPositions[6], ty, "TABLE_GRID");
-
-    let ampsEndIdx = 7;
-    if (!isPanel3Phase) {
+    let ampsEndIdx = 6;
+    if (isPanel3Phase) {
+      // Divider at start of PHASE / kVA column
+      b.addLine(colPositions[5], ty - sumRowH, colPositions[5], ty, "TABLE_GRID");
+      // Phase / kVA total
       b.addText(
-        `${currentCalcData.mainCurrent.designAmp.toFixed(2)} A`,
-        colPositions[6] + cols[6].w / 2,
+        `(${(currentCalcData.totalVA / 1000).toFixed(2)} kVA)`,
+        colPositions[5] + cols[5].w / 2,
         ySumText,
         metrics.summaryFontSize,
         0,
         "TEXT_HEADER",
         "center",
-        cols[6].w - 2
+        cols[5].w - 2
       );
-      b.addLine(
-        colPositions[7],
-        ty - sumRowH,
-        colPositions[7],
-        ty,
-        "TABLE_GRID",
-      );
-      ampsEndIdx = 7;
-    } else {
+
+      // Divider at start of AMPS column(s)
+      b.addLine(colPositions[6], ty - sumRowH, colPositions[6], ty, "TABLE_GRID");
+
       // Draw vertical lines in AMPS region
       for (let i = 7; i <= 10; i++) {
         b.addLine(
@@ -2333,6 +2315,27 @@ export const exportToCAD = (
         cols[9].w - 2
       );
       ampsEndIdx = 10;
+    } else {
+      // Single-phase footer: PHASE column is removed. AMPS column is now at index 5.
+      b.addLine(colPositions[5], ty - sumRowH, colPositions[5], ty, "TABLE_GRID");
+      b.addText(
+        `${currentCalcData.mainCurrent.designAmp.toFixed(2)} A`,
+        colPositions[5] + cols[5].w / 2,
+        ySumText,
+        metrics.summaryFontSize,
+        0,
+        "TEXT_HEADER",
+        "center",
+        cols[5].w - 2
+      );
+      b.addLine(
+        colPositions[6],
+        ty - sumRowH,
+        colPositions[6],
+        ty,
+        "TABLE_GRID",
+      );
+      ampsEndIdx = 6;
     }
 
     // Merged block for Cols 8-13 (Summary specifications)

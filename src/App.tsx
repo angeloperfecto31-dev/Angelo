@@ -1975,8 +1975,9 @@ export default function App() {
         const is3Phase = p.system.includes("3PH");
         const headerRowIndex = wsData.length;
 
-        const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"];
+        const headers = ["NO.", "DESCRIPTION", "W", "QTY", "VA"];
         if (is3Phase) {
+          headers.push("PHASE");
           headers.push("AMPS", "", "", ""); // push 4 slots for AMPS
         } else {
           headers.push("AMPS");
@@ -2018,8 +2019,10 @@ export default function App() {
             isSpace ? "-" : cir.wattage,
             isSpace ? "-" : cir.quantity,
             isSpace ? "-" : cir.loadVA,
-            isSpace ? "-" : cir.phases ? cir.phases.join(", ") : "",
           ];
+          if (is3Phase) {
+            row.push(isSpace ? "-" : cir.phases ? cir.phases.join(", ") : "");
+          }
 
           if (is3Phase) {
             if (isSpace || cir.loadType === LoadType.SPARE) {
@@ -2088,10 +2091,10 @@ export default function App() {
           "",
           "",
           `${totalVA.toFixed(0)} VA`, // 4: VA
-          `(${(totalVA / 1000).toFixed(2)} kVA)`, // 5: PHASE
         ];
 
         if (is3Phase) {
+          baseTotalRow.push(`(${(totalVA / 1000).toFixed(2)} kVA)`); // 5: PHASE
           baseTotalRow.push(
             `${phaseAmps.R.toFixed(2)} A`, // 6: p1
             `${phaseAmps.Y.toFixed(2)} A`, // 7: p2
@@ -2101,10 +2104,10 @@ export default function App() {
               : "-", // 9: 3Ø
           );
         } else {
-          baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 6: AMPS
+          baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 5: AMPS
         }
 
-        const numCols = is3Phase ? 16 : 13;
+        const numCols = is3Phase ? 16 : 12;
         const baseRemainingCols = numCols - baseTotalRow.length;
         if (baseRemainingCols > 0) {
           for (let i = 0; i < baseRemainingCols; i++) {
@@ -2119,8 +2122,10 @@ export default function App() {
           "",
           "",
           `${(totalVA / 1000).toFixed(2)} kVA`, // 4: VA
-          "", // 5: PHASE
         ];
+        if (is3Phase) {
+          totalKvaRow.push(""); // 5: PHASE
+        }
         const remainingCols = numCols - totalKvaRow.length;
         if (remainingCols > 0) {
           for (let i = 0; i < remainingCols; i++) {

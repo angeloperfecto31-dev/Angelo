@@ -3550,7 +3550,7 @@ export default function LoadSchedule({
           <table className="w-full border-collapse text-sm table-auto print:!w-full whitespace-nowrap">
             <thead className="bg-slate-900 text-white print:bg-slate-200 print:text-slate-900">
               <tr>
-                {["NO.", "DESCRIPTION", "W", "QTY", "VA", "PHASE"].map(
+                {["NO.", "DESCRIPTION", "W", "QTY", "VA", ...(panel.system.includes("3PH") ? ["PHASE"] : [])].map(
                   (header) => (
                     <th
                       key={header}
@@ -4194,102 +4194,104 @@ export default function LoadSchedule({
                     <td className="px-1 py-3 text-center font-mono font-bold text-slate-400 dark:text-slate-500 truncate">
                       {isSpace ? "-" : c.loadVA}
                     </td>
-                    <td className="px-1 py-3 text-center">
-                      {isSpace ? (
-                        "-"
-                      ) : c.subPanelReflectionMode === "phase_loads" &&
-                        c.reflectedPhaseLoads ? (
-                        <div className="flex gap-0.5 justify-center flex-wrap">
-                          {["R", "Y", "B", "3Ø"].map((p) => {
-                            const isActive =
-                              (p === "R" && c.reflectedPhaseLoads!.R > 0) ||
-                              (p === "Y" && c.reflectedPhaseLoads!.Y > 0) ||
-                              (p === "B" && c.reflectedPhaseLoads!.B > 0) ||
-                              (p === "3Ø" &&
-                                c.reflectedPhaseLoads!.ThreePhase > 0);
-                            if (!isActive) return null;
-                            return (
-                              <span
-                                key={p}
-                                className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
-                                  p === "3Ø"
-                                    ? "bg-indigo-600 text-white"
-                                    : p === "R"
-                                      ? "bg-red-600 text-white"
-                                      : p === "Y"
-                                        ? "bg-yellow-400 text-black"
-                                        : "bg-blue-600 text-white"
-                                }`}
-                                style={{ fontSize: tableFontSize - 4 }}
-                              >
-                                {p}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 justify-center">
+                    {panel.system.includes("3PH") && (
+                      <td className="px-1 py-3 text-center">
+                        {isSpace ? (
+                          "-"
+                        ) : c.subPanelReflectionMode === "phase_loads" &&
+                          c.reflectedPhaseLoads ? (
                           <div className="flex gap-0.5 justify-center flex-wrap">
-                            {["R", "Y", "B", "3Ø"].map((p) => (
-                              <button
-                                key={p}
-                                onClick={() => {
-                                  if (p === "3Ø") {
-                                    updateCircuit(c.id, {
-                                      phases: ["R", "Y", "B"],
-                                      is3PhaseMarker: true,
-                                    });
-                                  } else {
-                                    // Single phase selection replaces other phases to ensure it's reflected correctly
-                                    updateCircuit(c.id, {
-                                      phases: [p as Phase],
-                                      is3PhaseMarker: false,
-                                    });
-                                  }
-                                }}
-                                className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
-                                  p === "3Ø" && c.phases.length === 3
-                                    ? "bg-indigo-600 text-white"
-                                    : p !== "3Ø" &&
-                                        c.phases.includes(p as Phase) &&
-                                        c.phases.length === 1
-                                      ? p === "R"
+                            {["R", "Y", "B", "3Ø"].map((p) => {
+                              const isActive =
+                                (p === "R" && c.reflectedPhaseLoads!.R > 0) ||
+                                (p === "Y" && c.reflectedPhaseLoads!.Y > 0) ||
+                                (p === "B" && c.reflectedPhaseLoads!.B > 0) ||
+                                (p === "3Ø" &&
+                                  c.reflectedPhaseLoads!.ThreePhase > 0);
+                              if (!isActive) return null;
+                              return (
+                                <span
+                                  key={p}
+                                  className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                                    p === "3Ø"
+                                      ? "bg-indigo-600 text-white"
+                                      : p === "R"
                                         ? "bg-red-600 text-white"
                                         : p === "Y"
                                           ? "bg-yellow-400 text-black"
                                           : "bg-blue-600 text-white"
-                                      : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
-                                } ${!panel.system.includes("3PH") && p !== "R" ? "hidden" : ""}`}
-                                style={{ fontSize: tableFontSize - 4 }}
-                              >
-                                {p}
-                              </button>
-                            ))}
+                                  }`}
+                                  style={{ fontSize: tableFontSize - 4 }}
+                                >
+                                  {p}
+                                </span>
+                              );
+                            })}
                           </div>
-                          {panel.system.includes("3PH") && c.phases.length === 1 && (
-                            <button
-                              onClick={() => {
-                                updateCircuit(c.id, {
-                                  isLocked: !c.isLocked,
-                                });
-                              }}
-                              className={`p-1 rounded transition-colors no-print shrink-0 ${
-                                c.isLocked
-                                  ? "text-amber-500 hover:text-amber-600 bg-amber-50 dark:bg-amber-950/20"
-                                  : "text-slate-300 dark:text-slate-600 hover:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
-                              }`}
-                              title={c.isLocked ? "Circuit locked to this phase during auto-balancing" : "Lock phase for auto-balancing"}
-                            >
-                              {c.isLocked ? (
-                                <Lock className="w-3.5 h-3.5 fill-amber-500/10" />
-                              ) : (
-                                <Unlock className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
+                        ) : (
+                          <div className="flex items-center gap-1.5 justify-center">
+                            <div className="flex gap-0.5 justify-center flex-wrap">
+                              {["R", "Y", "B", "3Ø"].map((p) => (
+                                <button
+                                  key={p}
+                                  onClick={() => {
+                                    if (p === "3Ø") {
+                                      updateCircuit(c.id, {
+                                        phases: ["R", "Y", "B"],
+                                        is3PhaseMarker: true,
+                                      });
+                                    } else {
+                                      // Single phase selection replaces other phases to ensure it's reflected correctly
+                                      updateCircuit(c.id, {
+                                        phases: [p as Phase],
+                                        is3PhaseMarker: false,
+                                      });
+                                    }
+                                  }}
+                                  className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                                    p === "3Ø" && c.phases.length === 3
+                                      ? "bg-indigo-600 text-white"
+                                      : p !== "3Ø" &&
+                                          c.phases.includes(p as Phase) &&
+                                          c.phases.length === 1
+                                        ? p === "R"
+                                          ? "bg-red-600 text-white"
+                                          : p === "Y"
+                                            ? "bg-yellow-400 text-black"
+                                            : "bg-blue-600 text-white"
+                                        : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                  } ${!panel.system.includes("3PH") && p !== "R" ? "hidden" : ""}`}
+                                  style={{ fontSize: tableFontSize - 4 }}
+                                >
+                                  {p}
+                                </button>
+                              ))}
+                            </div>
+                            {panel.system.includes("3PH") && c.phases.length === 1 && (
+                              <button
+                                onClick={() => {
+                                  updateCircuit(c.id, {
+                                    isLocked: !c.isLocked,
+                                  });
+                                }}
+                                className={`p-1 rounded transition-colors no-print shrink-0 ${
+                                  c.isLocked
+                                    ? "text-amber-500 hover:text-amber-600 bg-amber-50 dark:bg-amber-950/20"
+                                    : "text-slate-300 dark:text-slate-600 hover:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                  }`}
+                                title={c.isLocked ? "Circuit locked to this phase during auto-balancing" : "Lock phase for auto-balancing"}
+                              >
+                                {c.isLocked ? (
+                                  <Lock className="w-3.5 h-3.5 fill-amber-500/10" />
+                                ) : (
+                                  <Unlock className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    )}
                     {panel.system.includes("3PH") ? (
                       <>
                         <td className="px-1 py-3 text-center font-mono font-bold truncate text-red-600 print:text-slate-900">
