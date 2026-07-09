@@ -1940,6 +1940,18 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     };
   }, [params, activeFixture.lumens]);
 
+  const recommendedQuantity = calculation.fixtures;
+
+  const installedQuantity = useMemo(() => {
+    if (params.isManualQuantity && params.manualQuantity !== undefined) {
+      return params.manualQuantity;
+    }
+    if (params.activeFixtures && params.activeFixtures.length > 0) {
+      return params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0);
+    }
+    return recommendedQuantity;
+  }, [params.isManualQuantity, params.manualQuantity, params.activeFixtures, recommendedQuantity]);
+
   // Keep single active fixture's quantity in sync with dynamically calculated quantity for the room
   const prevCalcFixtures = useRef(calculation.fixtures);
   
@@ -1988,16 +2000,34 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   useEffect(() => {
     if (params.activeFixtures && params.activeFixtures.length === 1 && calculation.fixtures > 0) {
-      if (prevCalcFixtures.current !== calculation.fixtures || params.activeFixtures[0].quantity === 4 /* Initial seed */) {
-        prevCalcFixtures.current = calculation.fixtures;
-        if (params.activeFixtures[0].quantity !== calculation.fixtures) {
+      if (!params.isManualQuantity) {
+        if (prevCalcFixtures.current !== calculation.fixtures || params.activeFixtures[0].quantity === 4 /* Initial seed */) {
+          prevCalcFixtures.current = calculation.fixtures;
+          if (params.activeFixtures[0].quantity !== calculation.fixtures) {
+            setParams(prev => {
+              if (prev.activeFixtures && prev.activeFixtures.length === 1) {
+                return {
+                  ...prev,
+                  activeFixtures: [{
+                    ...prev.activeFixtures[0],
+                    quantity: calculation.fixtures
+                  }]
+                };
+              }
+              return prev;
+            });
+          }
+        }
+      } else {
+        const mQty = params.manualQuantity !== undefined ? params.manualQuantity : calculation.fixtures;
+        if (params.activeFixtures[0].quantity !== mQty) {
           setParams(prev => {
             if (prev.activeFixtures && prev.activeFixtures.length === 1) {
               return {
                 ...prev,
                 activeFixtures: [{
                   ...prev.activeFixtures[0],
-                  quantity: calculation.fixtures
+                  quantity: mQty
                 }]
               };
             }
@@ -2006,7 +2036,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         }
       }
     }
-  }, [calculation.fixtures, params.activeFixtures]);
+  }, [calculation.fixtures, params.activeFixtures, params.isManualQuantity, params.manualQuantity]);
 
   // Derived properties from Space Standard Limits (ASHRAE 90.1)
   const lpdLimitInfo = useMemo(() => {
@@ -2098,7 +2128,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         }
       });
     } else {
-      const fixturesCount = calculation.fixtures;
+      const fixturesCount = installedQuantity;
       let cols = Math.ceil(Math.sqrt(fixturesCount));
       let rows = Math.ceil(fixturesCount / cols);
       if (params.inputMode === 'dimensions') {
@@ -2187,7 +2217,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   const glareAnalysis = useMemo(() => {
     const fixtureCount = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
-      : calculation.fixtures;
+      : installedQuantity;
     const averageLumens = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0) / Math.max(1, fixtureCount)
       : activeFixture.lumens;
@@ -2222,7 +2252,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     }
 
     return { value: ugrValue, assessment, labelColor, description };
-  }, [params.activeFixtures, calculation.fixtures, activeFixture.lumens, params.roomWidth, params.roomLength, mountingHeight]);
+  }, [params.activeFixtures, calculation.fixtures, installedQuantity, params.isManualQuantity, params.manualQuantity, activeFixture.lumens, params.roomWidth, params.roomLength, mountingHeight]);
 
   // Smart Daylight Integration Energy Savings
   const daylightSavings = useMemo(() => {
@@ -2255,7 +2285,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   const energyAudit = useMemo(() => {
     const totalPowerW = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
-      : calculation.fixtures * (getFixtureById(params.selectedFixtureId || 'ind-panel')?.wattage || 15);
+      : installedQuantity * (getFixtureById(params.selectedFixtureId || 'ind-panel')?.wattage || 15);
     const roomAreaNum = parseFloat(calculation.area) || 1;
     
     // Lighting Power Density
@@ -2293,7 +2323,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       co2Optimized: Math.round(co2Optimized),
       co2SavedYearly: Math.round(co2SavedYearly)
     };
-  }, [calculation.fixtures, calculation.area, activeFixture, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
+  }, [calculation.fixtures, installedQuantity, params.isManualQuantity, params.manualQuantity, calculation.area, activeFixture, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
 
   const handleAddToSchedule = async () => {
     if (!setCircuits || !circuits) return;
@@ -2301,12 +2331,10 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     
     // Use active fixture spec or sum of activeFixtures of combined design
     const isCombined = params.activeFixtures && params.activeFixtures.length > 1;
+    const totalQty = installedQuantity;
     const totalVA = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
-      : activeFixture.wattage * calculation.fixtures;
-    const totalQty = params.activeFixtures && params.activeFixtures.length > 0
-      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
-      : calculation.fixtures;
+      : activeFixture.wattage * installedQuantity;
     
     const labelDescription = isCombined 
       ? `LIGHTING: COMBINED DESIGN (${params.activeFixtures?.length} Types) - ${lpdLimitInfo.roomName}`
@@ -2342,15 +2370,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   const handleAddToIlluminationTable = async () => {
     const isCombined = params.activeFixtures && params.activeFixtures.length > 1;
+    const totalQty = installedQuantity;
     const totalVA = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.wattage || 0), 0)
-      : activeFixture.wattage * calculation.fixtures;
-    const totalQty = params.activeFixtures && params.activeFixtures.length > 0
-      ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0), 0)
-      : calculation.fixtures;
+      : activeFixture.wattage * installedQuantity;
     const totalLumensVal = params.activeFixtures && params.activeFixtures.length > 0
       ? params.activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0)
-      : activeFixture.lumens * calculation.fixtures;
+      : activeFixture.lumens * installedQuantity;
     
     // Unified numbering with circuits
     const nextNo = circuits && circuits.length > 0 ? Math.max(...circuits.map(c => c.circuitNo)) + 1 : 1;
@@ -2869,30 +2895,62 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                             setParams(prev => {
                               const list = [...(prev.activeFixtures || [])];
                               if (list[idx] && list[idx].quantity > 1) {
-                                list[idx] = { ...list[idx], quantity: list[idx].quantity - 1 };
+                                const newVal = list[idx].quantity - 1;
+                                list[idx] = { ...list[idx], quantity: newVal };
+                                return { 
+                                  ...prev, 
+                                  activeFixtures: list,
+                                  isManualQuantity: true,
+                                  manualQuantity: list.length === 1 ? newVal : undefined
+                                };
                               }
-                              return { ...prev, activeFixtures: list };
+                              return prev;
                             });
                           }}
-                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition font-bold"
                         >
                           -
                         </button>
-                        <span className="w-8 text-center text-xs font-mono font-black text-indigo-600 dark:text-indigo-400">
-                          {af.quantity}
-                        </span>
+                        <input 
+                          type="number"
+                          min="1"
+                          value={af.quantity}
+                          onChange={(e) => {
+                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                            setParams(prev => {
+                              const list = [...(prev.activeFixtures || [])];
+                              if (list[idx]) {
+                                list[idx] = { ...list[idx], quantity: val };
+                              }
+                              return { 
+                                ...prev, 
+                                activeFixtures: list,
+                                isManualQuantity: true,
+                                manualQuantity: list.length === 1 ? val : undefined
+                              };
+                            });
+                          }}
+                          className="w-10 text-center text-xs font-mono font-black text-indigo-600 dark:text-indigo-400 bg-transparent outline-none p-0 border-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
                         <button 
                           type="button"
                           onClick={() => {
                             setParams(prev => {
                               const list = [...(prev.activeFixtures || [])];
                               if (list[idx]) {
-                                list[idx] = { ...list[idx], quantity: list[idx].quantity + 1 };
+                                const newVal = list[idx].quantity + 1;
+                                list[idx] = { ...list[idx], quantity: newVal };
+                                return { 
+                                  ...prev, 
+                                  activeFixtures: list,
+                                  isManualQuantity: true,
+                                  manualQuantity: list.length === 1 ? newVal : undefined
+                                };
                               }
-                              return { ...prev, activeFixtures: list };
+                              return prev;
                             });
                           }}
-                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+                          className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition font-bold"
                         >
                           +
                         </button>
@@ -2973,17 +3031,135 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
               </div>
             </div>
 
-            <div className="relative overflow-hidden bg-slate-900 dark:bg-slate-950 border border-slate-800 rounded-3xl p-6 text-white shadow-lg text-center">
-               <div className="relative z-10">
-                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1 block">{params.activeFixtures && params.activeFixtures.length > 1 ? 'Combined Quantity in Layout' : 'Quantity of Luminaires'}</span>
-                 <div className="flex items-baseline justify-center gap-1.5">
-                   <p className="text-[80px] leading-[1] font-mono font-black text-amber-400 tracking-tighter">
-                     {params.activeFixtures && params.activeFixtures.length > 1 
-                       ? params.activeFixtures.reduce((sum, f) => sum + (f.quantity || 0), 0)
-                       : calculation.fixtures}
-                   </p>
+            <div className="relative overflow-hidden bg-slate-900 dark:bg-slate-950 border border-slate-800 rounded-3xl p-6 text-white shadow-lg text-center flex flex-col items-center">
+               <div className="relative z-10 w-full">
+                 <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-2 block">{params.activeFixtures && params.activeFixtures.length > 1 ? 'Combined Quantity in Layout' : 'Quantity of Luminaires'}</span>
+                 
+                 {/* Main editable Installed Quantity display with - / + controls */}
+                 <div className="flex items-center justify-center gap-4 my-2 select-none">
+                   <button 
+                     type="button"
+                     onClick={() => {
+                       const currentQty = installedQuantity;
+                       if (currentQty > 1) {
+                         const newVal = currentQty - 1;
+                         setParams(prev => {
+                           const updatedActive = prev.activeFixtures && prev.activeFixtures.length === 1 
+                             ? [{ ...prev.activeFixtures[0], quantity: newVal }] 
+                             : prev.activeFixtures;
+                           return {
+                             ...prev,
+                             isManualQuantity: true,
+                             manualQuantity: newVal,
+                             activeFixtures: updatedActive
+                           };
+                         });
+                       }
+                     }}
+                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition text-xl font-bold cursor-pointer"
+                   >
+                     -
+                   </button>
+                   
+                   <input 
+                     type="number"
+                     min="1"
+                     value={installedQuantity}
+                     onChange={(e) => {
+                       const val = Math.max(1, parseInt(e.target.value) || 1);
+                       setParams(prev => {
+                         const updatedActive = prev.activeFixtures && prev.activeFixtures.length === 1 
+                           ? [{ ...prev.activeFixtures[0], quantity: val }] 
+                           : prev.activeFixtures;
+                         return {
+                           ...prev,
+                           isManualQuantity: true,
+                           manualQuantity: val,
+                           activeFixtures: updatedActive
+                         };
+                       });
+                     }}
+                     className="w-24 text-center font-mono text-5xl font-black text-amber-400 bg-transparent border-b-2 border-dashed border-slate-700 focus:border-amber-400 outline-none p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                   />
+                   
+                   <button 
+                     type="button"
+                     onClick={() => {
+                       const newVal = installedQuantity + 1;
+                       setParams(prev => {
+                         const updatedActive = prev.activeFixtures && prev.activeFixtures.length === 1 
+                           ? [{ ...prev.activeFixtures[0], quantity: newVal }] 
+                           : prev.activeFixtures;
+                         return {
+                           ...prev,
+                           isManualQuantity: true,
+                           manualQuantity: newVal,
+                           activeFixtures: updatedActive
+                         };
+                       });
+                     }}
+                     className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition text-xl font-bold cursor-pointer"
+                   >
+                     +
+                   </button>
                  </div>
-                 <p className="text-[10px] font-bold text-slate-500 uppercase mt-2 tracking-wider">Fixtures Distributed</p>
+                 
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Installed Quantity (Editable)</p>
+
+                 {/* Reference / System values */}
+                 <div className="bg-slate-850/50 border border-slate-800/80 rounded-2xl p-3 flex items-center justify-between gap-2 text-left mb-4 w-full">
+                   <div>
+                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block text-slate-400">Recommended (Calculated)</span>
+                     <span className="text-sm font-mono font-bold text-slate-200">{recommendedQuantity} Fixtures</span>
+                   </div>
+                   {params.isManualQuantity && (
+                     <button
+                       type="button"
+                       onClick={() => {
+                         setParams(prev => {
+                           const updatedActive = prev.activeFixtures && prev.activeFixtures.length === 1 
+                             ? [{ ...prev.activeFixtures[0], quantity: recommendedQuantity }] 
+                             : prev.activeFixtures;
+                           return {
+                             ...prev,
+                             isManualQuantity: false,
+                             manualQuantity: undefined,
+                             activeFixtures: updatedActive
+                           };
+                         });
+                       }}
+                       className="text-[10px] font-black text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 border border-indigo-900/50 px-2.5 py-1 rounded-lg transition-all cursor-pointer"
+                     >
+                       Reset to Recommended
+                     </button>
+                   )}
+                 </div>
+
+                 {/* Non-blocking compliance checks */}
+                 <div className="w-full text-xs font-semibold text-left mb-4">
+                   {installedQuantity < recommendedQuantity ? (
+                     <div className="bg-amber-950/30 border border-amber-900/50 text-amber-300 p-3 rounded-2xl flex items-start gap-2">
+                       <span className="text-sm shrink-0">⚠️</span>
+                       <p className="leading-normal text-[11px]">
+                         Warning: Installed fixture quantity is below the recommended value. The required illuminance may not be achieved.
+                       </p>
+                     </div>
+                   ) : installedQuantity > recommendedQuantity ? (
+                     <div className="bg-emerald-950/30 border border-emerald-900/50 text-emerald-300 p-3 rounded-2xl flex items-start gap-2">
+                       <span className="text-sm shrink-0">✓</span>
+                       <p className="leading-normal text-[11px]">
+                         Design exceeds the minimum illumination requirement. Achieved: <strong className="font-bold text-emerald-200">{luxGridData.averageLux} Lux</strong>.
+                       </p>
+                     </div>
+                   ) : (
+                     <div className="bg-slate-850/30 border border-slate-800/80 text-slate-300 p-3 rounded-2xl flex items-start gap-2">
+                       <span className="text-sm shrink-0">✓</span>
+                       <p className="leading-normal text-[11px]">
+                         Installed quantity matches calculated recommendation exactly.
+                       </p>
+                     </div>
+                   )}
+                 </div>
                  
                  <div className="w-full mt-6 pt-5 border-t border-slate-800 grid grid-cols-2 gap-4 text-center">
                     <div>

@@ -310,6 +310,8 @@ export interface IlluminationParams {
   fixtureDistributionType?: 'conical' | 'oblong' | 'omni' | 'linear';
   activeFixtures?: ActiveFixtureSelection[];
   customPositions?: PlacedFixtureDragPosition[];
+  isManualQuantity?: boolean;
+  manualQuantity?: number;
 }
 
 export interface FloorPlanImage {
