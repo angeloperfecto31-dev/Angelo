@@ -44,6 +44,8 @@ import {
   Network,
   Copy,
   X,
+  Sparkles,
+  Bell,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import * as XLSX from "xlsx-js-style";
@@ -60,6 +62,9 @@ import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
 import FloorPlanUploader from "./components/FloorPlanUploader";
 import InvoiceManager from "./components/InvoiceManager";
+import { NotificationBell } from "./components/NotificationBell";
+import { ReleaseNotes } from "./components/ReleaseNotes";
+import { UpdateManagement } from "./components/UpdateManagement";
 import {
   Circuit,
   PanelConfig,
@@ -536,6 +541,8 @@ export default function App() {
     | "power-suite"
     | "billing"
     | "module-management"
+    | "whats-new"
+    | "update-management"
   >("dashboard");
 
   const [showGroundingInfo, setShowGroundingInfo] = useState(false);
@@ -1855,6 +1862,13 @@ export default function App() {
       color: "text-violet-600",
       bg: "bg-violet-50",
     },
+    {
+      id: "whats-new",
+      label: "What's New",
+      icon: Sparkles,
+      color: "text-emerald-600",
+      bg: "bg-emerald-50",
+    },
     ...(isAdmin
       ? [
           {
@@ -1882,6 +1896,13 @@ export default function App() {
             id: "module-management",
             label: "Module Visibility",
             icon: Settings,
+            color: "text-amber-600",
+            bg: "bg-amber-50",
+          },
+          {
+            id: "update-management",
+            label: "Update Management",
+            icon: Bell,
             color: "text-amber-600",
             bg: "bg-amber-50",
           },
@@ -4797,6 +4818,14 @@ export default function App() {
                 </div>
               )}
 
+            {/* Mobile Notification Bell */}
+            <NotificationBell
+              user={user}
+              userPlan={userPlan}
+              isAdmin={isAdmin}
+              onViewAllPastUpdates={() => setActiveTab("whats-new")}
+            />
+
             {/* Mobile Theme Toggle Button */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
@@ -4865,6 +4894,14 @@ export default function App() {
                   </span>
                 </div>
               )}
+
+            {/* Desktop Notification Bell */}
+            <NotificationBell
+              user={user}
+              userPlan={userPlan}
+              isAdmin={isAdmin}
+              onViewAllPastUpdates={() => setActiveTab("whats-new")}
+            />
 
             {/* Desktop Theme Toggle */}
             <button
@@ -5267,6 +5304,51 @@ export default function App() {
                 }
               >
                 <ModuleManagement adminEmail={user?.email || undefined} />
+              </div>
+
+              {/* Release Notes / What's New Tab */}
+              <div
+                className={
+                  activeTab === "whats-new" ? "w-full animate-fade" : "hidden"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={
+                    activeTab === "whats-new" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full font-sans"
+                >
+                  <ReleaseNotes
+                    user={user}
+                    userPlan={userPlan}
+                    isAdmin={isAdmin}
+                    onBackToDashboard={() => setActiveTab("dashboard")}
+                  />
+                </motion.div>
+              </div>
+
+              {/* Admin Update Management Tab */}
+              <div
+                className={
+                  activeTab === "update-management" && isAdmin
+                    ? "w-full animate-fade"
+                    : "hidden"
+                }
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={
+                    activeTab === "update-management" && isAdmin
+                      ? { opacity: 1, y: 0 }
+                      : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full font-sans"
+                >
+                  <UpdateManagement adminEmail={user?.email || undefined} />
+                </motion.div>
               </div>
 
               {/* Dashboard Tab */}

@@ -172,6 +172,28 @@ service cloud.firestore {
         && (!("reason" in data) || data.reason == null || data.reason is string);
     }
 
+    function isValidWebsiteUpdate(data) {
+      return data.keys().hasAll(["title", "description", "category", "version", "releasedAt", "visibility"])
+        && data.title is string && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 500
+        && data.category in ["New Features", "Improvements", "Bug Fixes", "Maintenance", "Security Updates", "General Announcements"]
+        && data.version is string && data.version.size() <= 32
+        && data.releasedAt is string
+        && data.visibility in ["all", "premium", "basic"]
+        && (!("detailedNotes" in data) || data.detailedNotes is string && data.detailedNotes.size() <= 100000)
+        && (!("isPinned" in data) || data.isPinned is bool)
+        && (!("viewsCount" in data) || data.viewsCount is int)
+        && (!("createdBy" in data) || data.createdBy is string)
+        && (!("createdAt" in data) || data.createdAt is string);
+    }
+
+    function isValidUserUpdateReadState(data) {
+      return data.keys().hasAll(["updateId", "read"])
+        && data.keys().size() == 2
+        && data.updateId is string && data.updateId.size() <= 128
+        && data.read is bool;
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -241,6 +263,13 @@ service cloud.firestore {
         allow update: if isOwner(userId) && isValidId(fixtureId) && isValidFixture(incoming());
         allow delete: if isOwner(userId) || isAdmin();
       }
+
+      // 3.7 User Update States Subcollection
+      match /updateStates/{updateId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create, update: if isOwner(userId) && isValidId(updateId) && isValidUserUpdateReadState(incoming());
+        allow delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     // 4. Settings Collection Matched Rules (Pillar 6: Isolated Config and Admin Control)
@@ -303,6 +332,16 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if isAdmin() && isValidModuleAuditLog(incoming());
       allow update, delete: if false; // Append-only
+    }
+
+    // 10. Website Updates Notification System
+    match /websiteUpdates/{updateId} {
+      allow read: if true;
+      allow create, delete: if isAdmin() && isValidId(updateId) && isValidWebsiteUpdate(incoming());
+      allow update: if isValidId(updateId) && (
+        isAdmin() ||
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['viewsCount']) && incoming().viewsCount == existing().viewsCount + 1)
+      );
     }
   }
 }

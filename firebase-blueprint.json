@@ -359,9 +359,48 @@
         "reason": { "type": "string" }
       },
       "required": ["email", "blacklistedAt"]
+    },
+    "WebsiteUpdate": {
+      "title": "WebsiteUpdate",
+      "description": "A published website feature update or announcement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "version": { "type": "string" },
+        "detailedNotes": { "type": "string" },
+        "isPinned": { "type": "boolean" },
+        "visibility": { "type": "string" },
+        "releasedAt": { "type": "string" },
+        "viewsCount": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "description", "category", "version", "releasedAt", "visibility"]
+    },
+    "UserUpdateReadState": {
+      "title": "UserUpdateReadState",
+      "description": "Tracking of read state of a website update per user",
+      "type": "object",
+      "properties": {
+        "updateId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "readAt": { "type": "string" }
+      },
+      "required": ["updateId", "read"]
     }
   },
   "firestore": {
+    "websiteUpdates/{updateId}": {
+      "schema": "WebsiteUpdate",
+      "description": "Global website updates and announcements"
+    },
+    "users/{userId}/updateStates/{updateId}": {
+      "schema": "UserUpdateReadState",
+      "description": "Per-user read state for website updates"
+    },
     "blacklisted_emails/{emailId}": {
       "schema": "BlacklistedEmail",
       "description": "Records of emails restricted from auto-provisioning free trials"
