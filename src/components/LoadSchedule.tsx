@@ -81,6 +81,7 @@ import {
   calculatePanelFault,
   validateSubPanelConnection,
   parseSystemVoltage,
+  getConduitFillDetails,
 } from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
@@ -2991,6 +2992,234 @@ export default function LoadSchedule({
                 </div>
               );
             })}
+          </div>
+
+          {/* --- CONDUIT SIZING & FILL ANALYSIS SECTION --- */}
+          <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2050/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                  Conduit Sizing & Fill Analysis (PEC Chapter 9)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Verify compliance of conduit fill percentages against PEC 2017 Chapter 9, Table 1 limits.
+                </p>
+              </div>
+            </div>
+
+            {(() => {
+              const mainFill = getConduitFillDetails(
+                mainFeeder.wire.size,
+                mainFeeder.groundSize,
+                mainFeeder.poles,
+                panel.system,
+                mainFeeder.conduitType || "PVC",
+                mainFeeder.wire.runs || 1,
+                panel.insulationType || "THHN",
+                panel.mainOverrides?.conduitSize
+              );
+
+              const branchFills = circuits
+                .filter((c) => !isIdleSpareOrSpace(c))
+                .map((c) => {
+                  const finalType = c.conduitTypeOverride || c.conduitType || "PVC";
+                  const finalWireSize = parseFloat(c.wireSize) || 2.0;
+                  const finalGroundSize = c.groundSize;
+                  const finalWireType = c.wireTypeOverride || c.wireType || panel.insulationType || "THHN";
+                  const details = getConduitFillDetails(
+                    finalWireSize,
+                    finalGroundSize,
+                    c.mcbP || 1,
+                    panel.system,
+                    finalType,
+                    c.wireSets || 1,
+                    finalWireType,
+                    c.conduitSizeOverride
+                  );
+                  return {
+                    circuitNo: c.circuitNo,
+                    description: c.description,
+                    details
+                  };
+                });
+
+              const warningBranches = branchFills.filter(bf => bf.details.isUndersized || bf.details.utilizationStatus === "Warning");
+
+              return (
+                <div className="space-y-6">
+                  {/* Main Feeder Card */}
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                      <div>
+                        <span className="text-[10px] uppercase font-black tracking-widest text-indigo-600 dark:text-indigo-400">
+                          Primary Raceway
+                        </span>
+                        <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                          Main Service Entrance / Feeder Conduit
+                        </h4>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500">Status:</span>
+                        {mainFill.isUndersized ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-900/50 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse"></span>
+                            Exceeds Allowable Fill
+                          </span>
+                        ) : mainFill.utilizationStatus === "Warning" ? (
+                          <span className="px-2.5 py-1 rounded-full text-xs bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-900/50 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Warning (Near Limit)
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full text-xs bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 font-bold border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                            Safe Compliance
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Gauge Visualizer */}
+                      <div className="flex flex-col justify-center items-center p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800/50">
+                        <div className="relative flex items-center justify-center w-24 h-24">
+                          {/* Radial Ring */}
+                          <svg className="w-full h-full transform -rotate-90">
+                            <circle
+                              cx="48"
+                              cy="48"
+                              r="40"
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="transparent"
+                              className="text-slate-200 dark:text-slate-800"
+                            />
+                            <circle
+                              cx="48"
+                              cy="48"
+                              r="40"
+                              stroke="currentColor"
+                              strokeWidth="8"
+                              fill="transparent"
+                              strokeDasharray={251.2}
+                              strokeDashoffset={251.2 - (251.2 * Math.min(100, mainFill.fillPercentage)) / 100}
+                              className={`transition-all duration-500 ${
+                                mainFill.isUndersized
+                                  ? "text-rose-500"
+                                  : mainFill.utilizationStatus === "Warning"
+                                  ? "text-amber-500"
+                                  : "text-indigo-500"
+                              }`}
+                            />
+                          </svg>
+                          <div className="absolute flex flex-col items-center">
+                            <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">
+                              {mainFill.fillPercentage}%
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-bold uppercase">
+                              Fill Area
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-3 text-center text-xxs text-slate-500">
+                          Allowable: <span className="font-bold text-slate-700 dark:text-slate-300">{mainFill.allowableFillPercentage}%</span> (PEC Table 1)
+                        </div>
+                      </div>
+
+                      {/* Sizing Details List */}
+                      <div className="space-y-3 col-span-1 md:col-span-1 lg:col-span-3">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                          <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Conduit Size</span>
+                            <p className="text-sm font-black text-slate-800 dark:text-slate-100 mt-0.5">
+                              {mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}
+                            </p>
+                          </div>
+                          <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Total Conductors</span>
+                            <p className="text-sm font-black text-slate-800 dark:text-slate-100 mt-0.5">
+                              {mainFill.conductorCount} Wires
+                            </p>
+                          </div>
+                          <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Conductor Area</span>
+                            <p className="text-sm font-black text-slate-800 dark:text-slate-100 mt-0.5 font-mono">
+                              {mainFill.totalConductorArea} mm²
+                            </p>
+                          </div>
+                          <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Conduit Internal Area</span>
+                            <p className="text-sm font-black text-slate-800 dark:text-slate-100 mt-0.5 font-mono">
+                              {mainFill.internalArea} mm²
+                            </p>
+                          </div>
+                          <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg col-span-2">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Allowed Fill Area</span>
+                            <p className="text-sm font-black text-indigo-600 dark:text-indigo-400 mt-0.5 font-mono">
+                              {mainFill.allowableArea} mm² <span className="text-xxs font-normal text-slate-400">({mainFill.allowableFillPercentage}% max)</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Diagnostic Summary */}
+                        <div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 mt-2">
+                          {mainFill.isUndersized ? (
+                            <p className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1.5">
+                              <span>🚨</span>
+                              <strong>Conduit is OVER CAPACITY!</strong> The total conductor cross-sectional area ({mainFill.totalConductorArea} mm²) exceeds the PEC maximum allowable area of {mainFill.allowableArea} mm² for {mainFill.conduitSize} conduit. Please select a larger size.
+                            </p>
+                          ) : (
+                            <p className="text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                              <span>✓</span>
+                              All conductors fit safely inside the <strong>{mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}</strong> conduit. Calculated fill factor is <strong>{mainFill.fillPercentage}%</strong>, comfortably below the <strong>{mainFill.allowableFillPercentage}%</strong> PEC limit.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Branch Circuits Alerts Panel */}
+                  {warningBranches.length > 0 && (
+                    <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900/30 rounded-xl p-4">
+                      <h4 className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <span>⚠️</span>
+                        Branch Circuit Conduit Alerts ({warningBranches.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {warningBranches.map(wb => (
+                          <div key={wb.circuitNo} className="text-xs bg-white dark:bg-slate-900 p-3 rounded-lg border border-amber-200/50 dark:border-amber-900/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                            <div>
+                              <span className="font-bold text-slate-800 dark:text-slate-200">
+                                Circuit {wb.circuitNo} - {wb.description}
+                              </span>
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                Conduit: {wb.details.conduitSize} | Area: {wb.details.totalConductorArea} mm² / Allowed: {wb.details.allowableArea} mm²
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                                Fill: {wb.details.fillPercentage}%
+                              </span>
+                              {wb.details.isUndersized ? (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-400">
+                                  EXCEEDS {wb.details.allowableFillPercentage}%
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+                                  WARNING
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </section>

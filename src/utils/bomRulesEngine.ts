@@ -446,9 +446,10 @@ export const runBomQuantityTakeoff = (
   });
 
   // Service entrance conduit
+  const fWireRuns = mdpFeeder.wire.runs || 1;
   const fConduitType = mdpFeeder.conduitType || "PVC";
   const fConduitSize = mdpFeeder.conduitSize || "50";
-  const fConduitMeters = fLength * wasteConduitsFactor;
+  const fConduitMeters = fLength * wasteConduitsFactor * fWireRuns;
   const fConduitCost = getConduitPricePerMeter(fConduitSize, fConduitType);
   addItem({
     category: "Conduits",
@@ -460,14 +461,14 @@ export const runBomQuantityTakeoff = (
     unit: "meters",
     unitCost: fConduitCost,
     laborCostPerUnit: fConduitCost * 0.35,
-    remarks: `Service Feeder Raceway (${fLength}m)`,
+    remarks: `Service Feeder Raceway (${fLength}m x ${fWireRuns} runs)`,
     source: `Panel [${mdpId}] Feeder`
   });
 
   // Feeder accessories
   const totalFeederConductors = fPhaseCount + 2; // Phase + Neutral + Ground
-  const fCouplingCount = Math.ceil(fLength / 3) * wasteAccessoriesFactor;
-  const fStrapsCount = Math.ceil(fLength / 1.5) * wasteAccessoriesFactor;
+  const fCouplingCount = Math.ceil(fLength / 3) * wasteAccessoriesFactor * fWireRuns;
+  const fStrapsCount = Math.ceil(fLength / 1.5) * wasteAccessoriesFactor * fWireRuns;
   const fLugCount = totalFeederConductors * 2; // Lug on each end of conductor
 
   addItem({
@@ -480,7 +481,7 @@ export const runBomQuantityTakeoff = (
     unit: "pcs",
     unitCost: fConduitType === "PVC" ? 35 : 120,
     laborCostPerUnit: 15,
-    remarks: `Couplings for ${fConduitSize}mm feeder raceway`,
+    remarks: `Couplings for ${fConduitSize}mm feeder raceway (${fWireRuns} runs)`,
     source: `Panel [${mdpId}] Feeder Accessories`
   });
 
@@ -490,11 +491,11 @@ export const runBomQuantityTakeoff = (
     description: `Conduit fitting connectors with locking nuts for box termination knockout lock`,
     brand: settings.preferredBrandAccessories,
     specification: `Locknut, adapter, and protective throat collar connector assembly`,
-    quantity: 2,
+    quantity: 2 * fWireRuns,
     unit: "sets",
     unitCost: fConduitType === "PVC" ? 45 : 180,
     laborCostPerUnit: 25,
-    remarks: `Box termination adapters for feeder conduit`,
+    remarks: `Box termination adapters for feeder conduit (${fWireRuns} runs)`,
     source: `Panel [${mdpId}] Feeder Accessories`
   });
 
@@ -687,9 +688,10 @@ export const runBomQuantityTakeoff = (
       });
 
       // Conduit
+      const bWireSets = c.wireSets || 1;
       const bConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
       const bConduitSize = c.conduitSizeOverride || c.conduitSize || getMinimumConduitSize(bPhaseSize, bPoles);
-      const bConduitMeters = bLength * wasteConduitsFactor;
+      const bConduitMeters = bLength * wasteConduitsFactor * bWireSets;
       const bConduitCost = getConduitPricePerMeter(bConduitSize, bConduitType);
 
       addItem({
@@ -702,13 +704,13 @@ export const runBomQuantityTakeoff = (
         unit: "meters",
         unitCost: bConduitCost,
         laborCostPerUnit: bConduitCost * 0.35,
-        remarks: `Circuit ${c.circuitNo} Raceway Conduit (${bLength}m)`,
+        remarks: `Circuit ${c.circuitNo} Raceway Conduit (${bLength}m x ${bWireSets} runs)`,
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
 
       // Conduit Accessories
-      const bCouplingCount = Math.ceil(bLength / 3) * wasteAccessoriesFactor;
-      const bStrapsCount = Math.ceil(bLength / 1.5) * wasteAccessoriesFactor;
+      const bCouplingCount = Math.ceil(bLength / 3) * wasteAccessoriesFactor * bWireSets;
+      const bStrapsCount = Math.ceil(bLength / 1.5) * wasteAccessoriesFactor * bWireSets;
       const totalBranchConductors = bPoles + 1; // Phases + Ground
       const bLugCount = totalBranchConductors * 2;
 
@@ -732,7 +734,7 @@ export const runBomQuantityTakeoff = (
         description: `Knockout adapter connector with locking ring matching ${bConduitSize}mm`,
         brand: settings.preferredBrandAccessories,
         specification: "Connector fitting, locknut ring, and throat adapter assembly",
-        quantity: 2,
+        quantity: 2 * bWireSets,
         unit: "sets",
         unitCost: bConduitType === "PVC" ? 18 : 65,
         laborCostPerUnit: 15,
@@ -747,7 +749,7 @@ export const runBomQuantityTakeoff = (
           description: `Threaded metal conduit protective bushing for wire shielding, compliant with PEC 3.0.1.4`,
           brand: settings.preferredBrandAccessories,
           specification: "Galvanized zinc body, high temperature plastic liner throat",
-          quantity: 2,
+          quantity: 2 * bWireSets,
           unit: "pcs",
           unitCost: 85,
           laborCostPerUnit: 25,

@@ -869,6 +869,30 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "90mm", limit: 2980 },
     { size: "100mm", limit: 3870 },
   ],
+  FMC: [
+    { size: "15mm", limit: 80 },
+    { size: "20mm", limit: 135 },
+    { size: "25mm", limit: 222 },
+    { size: "32mm", limit: 385 },
+    { size: "40mm", limit: 520 },
+    { size: "50mm", limit: 858 },
+    { size: "65mm", limit: 1230 },
+    { size: "80mm", limit: 1890 },
+    { size: "90mm", limit: 2510 },
+    { size: "100mm", limit: 3260 },
+  ],
+  "Flexible Conduit": [
+    { size: "15mm", limit: 80 },
+    { size: "20mm", limit: 135 },
+    { size: "25mm", limit: 222 },
+    { size: "32mm", limit: 385 },
+    { size: "40mm", limit: 520 },
+    { size: "50mm", limit: 858 },
+    { size: "65mm", limit: 1230 },
+    { size: "80mm", limit: 1890 },
+    { size: "90mm", limit: 2510 },
+    { size: "100mm", limit: 3260 },
+  ],
 };
 
 // PEC Table 9 (Resistance and Reactance for 600V Cables)

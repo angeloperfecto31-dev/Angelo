@@ -159,29 +159,173 @@ export const getGroundWireForWireSizeLocal = (
   return formatWireSizeLocal(actualSize);
 };
 
+export const getConductorArea = (size: number, insulation: string = "THHN"): number => {
+  const normIns = (insulation || "THHN").toUpperCase();
+  const baseArea = THHN_WIRE_AREAS[size] || THHN_AREAS_FALLBACK[size] || size * 2.5;
+
+  if (normIns.includes("TW") || normIns === "THW" || normIns === "THW-2") {
+    if (size <= 2.0) return 12.0;
+    if (size <= 3.5) return 16.0;
+    if (size <= 5.5) return 21.0;
+    if (size <= 8.0) return 32.0;
+    if (size <= 14) return 59.0;
+    if (size <= 22) return 95.0;
+    if (size <= 30) return 128.0;
+    if (size <= 38) return 154.0;
+    if (size <= 50) return 200.0;
+    if (size <= 60) return 240.0;
+    if (size <= 80) return 310.0;
+    if (size <= 100) return 380.0;
+    if (size <= 125) return 480.0;
+    if (size <= 150) return 570.0;
+    if (size <= 175) return 660.0;
+    if (size <= 200) return 760.0;
+    if (size <= 250) return 940.0;
+    if (size <= 325) return 1220.0;
+    if (size <= 375) return 1390.0;
+    if (size <= 400) return 1460.0;
+    if (size <= 500) return 1800.0;
+    return baseArea * 1.30;
+  }
+  
+  if (normIns.includes("XHHW") || normIns.includes("XHHW-2")) {
+    return baseArea * 0.95;
+  }
+
+  return baseArea;
+};
+
+const THHN_AREAS_FALLBACK: Record<number, number> = {
+  2.0: 8.5,
+  3.5: 11.5,
+  5.5: 17.5,
+  8.0: 28.3,
+  14: 50.3,
+  22: 85.0,
+  30: 115.0,
+  38: 140.0,
+  50: 180.0,
+  60: 220.0,
+  80: 290.0,
+  100: 350.0,
+  125: 450.0,
+  150: 530.0,
+  175: 620.0,
+  200: 710.0,
+  250: 880.0,
+  325: 1150.0,
+  375: 1300.0,
+  400: 1380.0,
+  500: 1700.0,
+};
+
+export interface ConduitFillDetails {
+  conduitSize: string;
+  fillPercentage: number;
+  allowableFillPercentage: number;
+  utilizationStatus: "Safe" | "Warning" | "Exceeds Allowable Fill";
+  totalConductorArea: number;
+  allowableArea: number;
+  internalArea: number;
+  conductorCount: number;
+  isUndersized: boolean;
+}
+
+export const getConduitFillDetails = (
+  wireSize: number,
+  groundSizeString: string,
+  poles: number,
+  systemName: string,
+  conduitType: string = "PVC",
+  wireSets: number = 1,
+  wireType: string = "THHN",
+  selectedSizeOverride?: string,
+): ConduitFillDetails => {
+  const activeType = conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
+  const table = CONDUIT_LIBRARY[activeType];
+  const finalWireType = wireType || "THHN";
+
+  // Determine conductors in one set
+  const numPhases = poles === 1 ? 1 : poles;
+  const phaseArea = getConductorArea(wireSize, finalWireType);
+
+  let numNeutrals = 0;
+  if (poles === 1) {
+    numNeutrals = 1;
+  } else if (poles === 3 && (systemName.includes("4W") || systemName.includes("5W") || systemName.includes("4-Wire"))) {
+    numNeutrals = 1;
+  }
+  const neutralSize = wireSize;
+  const neutralArea = getConductorArea(neutralSize, finalWireType);
+
+  const groundSize = parseFloat(groundSizeString) || 0;
+  const numGrounds = groundSize > 0 ? 1 : 0;
+  const groundArea = groundSize > 0 ? getConductorArea(groundSize, "THHN") : 0;
+
+  // Number of parallel sets affects the calculation:
+  // Usually, parallel feeders are placed in separate conduits (one conduit per set).
+  // Each conduit carries 1 set.
+  const condCountPerConduit = numPhases + numNeutrals + numGrounds;
+  const condAreaPerConduit = (numPhases * phaseArea) + (numNeutrals * neutralArea) + (numGrounds * groundArea);
+
+  const totalConductorCount = condCountPerConduit;
+  const totalConductorArea = condAreaPerConduit;
+
+  // PEC Table 1 conduit fill limits: 1 wire = 53%, 2 wires = 31%, 3+ wires = 40%
+  const allowablePercent = totalConductorCount === 1 ? 53 : (totalConductorCount === 2 ? 31 : 40);
+
+  // Find recommended conduit size
+  let recommendedSize = table[0].size;
+  for (const entry of table) {
+    const internalArea = entry.limit / 0.40;
+    const allowableArea = (allowablePercent / 100) * internalArea;
+    if (allowableArea >= totalConductorArea) {
+      recommendedSize = entry.size;
+      break;
+    }
+    recommendedSize = entry.size;
+  }
+
+  const activeSize = selectedSizeOverride || recommendedSize;
+  const activeEntry = table.find(e => e.size === activeSize) || table[table.length - 1];
+
+  const internalArea = activeEntry.limit / 0.40;
+  const allowableArea = (allowablePercent / 100) * internalArea;
+  const fillPercentage = internalArea > 0 ? Number(((totalConductorArea / internalArea) * 100).toFixed(1)) : 0;
+
+  let utilizationStatus: "Safe" | "Warning" | "Exceeds Allowable Fill" = "Safe";
+  if (fillPercentage > allowablePercent) {
+    utilizationStatus = "Exceeds Allowable Fill";
+  } else if (fillPercentage > allowablePercent * 0.9) {
+    utilizationStatus = "Warning";
+  }
+
+  const isUndersized = fillPercentage > allowablePercent;
+
+  return {
+    conduitSize: activeSize,
+    fillPercentage,
+    allowableFillPercentage: allowablePercent,
+    utilizationStatus,
+    totalConductorArea: Number(totalConductorArea.toFixed(1)),
+    allowableArea: Number(allowableArea.toFixed(1)),
+    internalArea: Number(internalArea.toFixed(1)),
+    conductorCount: totalConductorCount,
+    isUndersized
+  };
+};
+
 export const getConduitSizeForWiresLocal = (
   wireSize: number,
   groundSizeString: string,
   poles: number,
   systemName: string,
   conduitType: string = "PVC",
+  wireSets: number = 1,
+  wireType: string = "THHN"
 ): string => {
-  let activePhaseCount = poles === 1 ? 2 : poles;
-  if (poles === 3 && (systemName.includes("4W") || systemName.includes("5W"))) {
-    activePhaseCount = 4;
-  }
-
-  const phaseArea = THHN_WIRE_AREAS[wireSize] || wireSize * 2.5;
-  const groundSize = parseFloat(groundSizeString) || 2.0;
-  const groundArea = THHN_WIRE_AREAS[groundSize] || groundSize * 2.5;
-
-  const totalArea = phaseArea * activePhaseCount + groundArea;
-  const selectedType =
-    conduitType && CONDUIT_LIBRARY[conduitType] ? conduitType : "PVC";
-  const table = CONDUIT_LIBRARY[selectedType];
-  const conduit =
-    table.find((c) => c.limit >= totalArea) || table[table.length - 1];
-  return conduit.size;
+  const details = getConduitFillDetails(wireSize, groundSizeString, poles, systemName, conduitType, wireSets, wireType);
+  return details.conduitSize;
 };
 
 const getSystemVoltage = (system: string): number => {
@@ -754,6 +898,8 @@ export const calculateCircuitValues = (
         mcbP,
         panel.system,
         finalConduitType,
+        c.wireSets || 1,
+        finalWireType,
       );
 
   const finalConduitSize = c.conduitSizeOverride || calculatedConduitSizeStr;
@@ -1448,6 +1594,8 @@ export const computePanelScheduleValues = (
     poles,
     p.system,
     selectedMainConduitType,
+    wire.runs || 1,
+    p.insulationType || "THHN",
   );
 
   const branchTypeCounts = c.reduce(
