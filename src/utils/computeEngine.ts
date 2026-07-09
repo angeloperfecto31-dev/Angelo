@@ -900,7 +900,18 @@ export const calculateCircuitValues = (
         panel.conductorMaterial || "Copper",
       );
 
-  const finalGroundSize = c.groundSizeOverride || calculatedGroundSizeStr;
+  // Auto-synchronize and sanitize grounding conductor manual override when wire size changes
+  let finalGroundSizeOverride = c.groundSizeOverride;
+  if (finalGroundSizeOverride) {
+    const overrideVal = parseFloat(finalGroundSizeOverride) || 0;
+    const minVal = parseFloat(calculatedGroundSizeStr) || 0;
+    const maxVal = parseFloat(finalWireSize) || 0;
+    if (overrideVal < minVal || overrideVal > maxVal) {
+      finalGroundSizeOverride = undefined;
+    }
+  }
+
+  const finalGroundSize = finalGroundSizeOverride || calculatedGroundSizeStr;
 
   const finalConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
   
@@ -916,6 +927,16 @@ export const calculateCircuitValues = (
         finalWireType,
       );
 
+  // Auto-synchronize and sanitize conduit manual override when wire size, grounding, or conduit parameters change
+  let finalConduitSizeOverride = c.conduitSizeOverride;
+  if (finalConduitSizeOverride) {
+    const overrideVal = parseInt(finalConduitSizeOverride) || 0;
+    const minVal = parseInt(calculatedConduitSizeStr) || 0;
+    if (overrideVal < minVal) {
+      finalConduitSizeOverride = undefined;
+    }
+  }
+
   const finalConduitSize = isSubPanelLink && c.conduitSize
     ? c.conduitSize
     : getConduitSizeForWiresLocal(
@@ -926,7 +947,7 @@ export const calculateCircuitValues = (
         finalConduitType,
         c.wireSets || 1,
         finalWireType,
-        c.conduitSizeOverride,
+        finalConduitSizeOverride,
       );
 
   return {
@@ -946,8 +967,10 @@ export const calculateCircuitValues = (
     wireType: finalWireType,
     calculatedWireType: calculatedWireTypeStr,
     groundSize: finalGroundSize,
+    groundSizeOverride: finalGroundSizeOverride,
     calculatedGroundSize: calculatedGroundSizeStr,
     conduitSize: finalConduitSize,
+    conduitSizeOverride: finalConduitSizeOverride,
     calculatedConduitSize: calculatedConduitSizeStr,
     conduitType: finalConduitType,
   };
@@ -1673,21 +1696,66 @@ export const computePanelScheduleValues = (
     if (p.mainOverrides.wireSize)
       finalWireSize = Number(p.mainOverrides.wireSize);
     if (p.mainOverrides.wireRuns) finalWireRuns = p.mainOverrides.wireRuns;
-    if (p.mainOverrides.groundSize)
-      finalGroundSize = p.mainOverrides.groundSize;
-    if (p.mainOverrides.conduitSize)
-      finalConduitSize = getConduitSizeForWiresLocal(
-        finalWireSize,
-        finalGroundSize,
-        finalPoles,
-        p.system,
-        finalConduitType,
-        finalWireRuns,
-        p.insulationType || "THHN",
-        p.mainOverrides.conduitSize
-      );
+    
+    // Recalculate compliant main grounding conductor size
+    const calculatedMainGroundSizeStr = getGroundWireForWireSizeLocal(
+      finalWireSize,
+      finalCb,
+      p.conductorMaterial || "Copper"
+    );
+
+    let finalGroundSizeOverride = p.mainOverrides.groundSize;
+    if (finalGroundSizeOverride) {
+      const overrideVal = parseFloat(finalGroundSizeOverride) || 0;
+      const minVal = parseFloat(calculatedMainGroundSizeStr) || 0;
+      const maxVal = finalWireSize || 0;
+      if (overrideVal < minVal || overrideVal > maxVal) {
+        finalGroundSizeOverride = undefined;
+      }
+    }
+
+    finalGroundSize = finalGroundSizeOverride || calculatedMainGroundSizeStr;
+
     if (p.mainOverrides.conduitType)
       finalConduitType = p.mainOverrides.conduitType;
+
+    const calculatedMainConduitSizeStr = getConduitSizeForWiresLocal(
+      finalWireSize,
+      finalGroundSize,
+      finalPoles,
+      p.system,
+      finalConduitType,
+      finalWireRuns,
+      p.insulationType || "THHN"
+    );
+
+    let finalConduitSizeOverride = p.mainOverrides.conduitSize;
+    if (finalConduitSizeOverride) {
+      const overrideVal = parseInt(finalConduitSizeOverride) || 0;
+      const minVal = parseInt(calculatedMainConduitSizeStr) || 0;
+      if (overrideVal < minVal) {
+        finalConduitSizeOverride = undefined;
+      }
+    }
+
+    finalConduitSize = getConduitSizeForWiresLocal(
+      finalWireSize,
+      finalGroundSize,
+      finalPoles,
+      p.system,
+      finalConduitType,
+      finalWireRuns,
+      p.insulationType || "THHN",
+      finalConduitSizeOverride
+    );
+
+    // Sync any auto-cleared overrides back to the panel's mainOverrides mutable config
+    if (p.mainOverrides.groundSize !== finalGroundSizeOverride) {
+      p.mainOverrides.groundSize = finalGroundSizeOverride;
+    }
+    if (p.mainOverrides.conduitSize !== finalConduitSizeOverride) {
+      p.mainOverrides.conduitSize = finalConduitSizeOverride;
+    }
   }
 
   const mat = p.conductorMaterial || "Copper";

@@ -82,6 +82,8 @@ import {
   validateSubPanelConnection,
   parseSystemVoltage,
   getConduitFillDetails,
+  getGroundWireForWireSizeLocal,
+  getConduitSizeForWiresLocal,
 } from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
@@ -2732,18 +2734,62 @@ export default function LoadSchedule({
                   </select>
                   <select
                     value={panel.mainOverrides.wireSize || ""}
-                    onChange={(e) =>
-                      setPanel((prev) => ({
-                        ...prev,
-                        mainOverrides: {
-                          ...prev.mainOverrides,
-                          wireSize: e.target.value
-                            ? Number(e.target.value)
-                            : undefined,
+                    onChange={(e) => {
+                      const newWireSize = e.target.value ? Number(e.target.value) : undefined;
+                      setPanel((prev) => {
+                        const nextOverrides = {
+                          ...(prev.mainOverrides || {}),
+                          wireSize: newWireSize,
                           isOverrideEnabled: true,
-                        },
-                      }))
-                    }
+                        };
+                        
+                        if (newWireSize) {
+                          const finalCb = prev.mainOverrides?.breakerAT || 30;
+                          const computedGround = getGroundWireForWireSizeLocal(
+                            newWireSize,
+                            finalCb,
+                            prev.conductorMaterial || "Copper"
+                          );
+                          
+                          if (prev.mainOverrides?.groundSize) {
+                            const overrideVal = parseFloat(prev.mainOverrides.groundSize) || 0;
+                            const minVal = parseFloat(computedGround) || 0;
+                            const maxVal = newWireSize || 0;
+                            if (overrideVal < minVal || overrideVal > maxVal) {
+                              nextOverrides.groundSize = undefined;
+                            }
+                          }
+
+                          const activeGround = nextOverrides.groundSize || computedGround;
+                          const activePoles = prev.mainOverrides?.poles || (prev.system.includes("3PH") ? 3 : 2);
+                          const activeRuns = prev.mainOverrides?.wireRuns || 1;
+                          const activeConduitType = prev.mainConduitType || prev.mainOverrides?.conduitType || "PVC";
+                          
+                          const computedConduit = getConduitSizeForWiresLocal(
+                            newWireSize,
+                            activeGround,
+                            activePoles,
+                            prev.system,
+                            activeConduitType,
+                            activeRuns,
+                            prev.insulationType || "THHN"
+                          );
+
+                          if (prev.mainOverrides?.conduitSize) {
+                            const overrideVal = parseInt(prev.mainOverrides.conduitSize) || 0;
+                            const minVal = parseInt(computedConduit) || 0;
+                            if (overrideVal < minVal) {
+                              nextOverrides.conduitSize = undefined;
+                            }
+                          }
+                        }
+                        
+                        return {
+                          ...prev,
+                          mainOverrides: nextOverrides as any,
+                        };
+                      });
+                    }}
                     className="w-2/3 px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
                   >
                     <option value="">
