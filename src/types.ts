@@ -158,6 +158,8 @@ export interface ShortCircuitParams {
   isFeederRunsCustomized?: boolean;
   isFeederSizeCustomized?: boolean;
   connectionType?: 'Series' | 'Parallel';
+  phaseTypeOverrideEnabled?: boolean;
+  phaseTypeOverride?: '1PH' | '3PH';
   parallelTransformersCount?: number;
   parallelTransformersZMatch?: boolean;
   parallelTransformerskVAMatch?: boolean;

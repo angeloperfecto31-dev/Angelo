@@ -1123,16 +1123,34 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
   const feederZ = eqFeeder.z;
   const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
 
+  const detectPhaseTypeLocal = (system: string) => {
+    if (!system) return '3PH';
+    const clean = system.toUpperCase();
+    if (clean.includes('3-PHASE') || clean.includes('3PH') || clean.includes('3Ø') || clean.includes('3 PHASE')) {
+      return '3PH';
+    }
+    if (clean.includes('1-PHASE') || clean.includes('1PH') || clean.includes('1Ø') || clean.includes('1 PHASE') || clean.includes('SINGLE')) {
+      return '1PH';
+    }
+    return '3PH';
+  };
+  const detectedPhase = detectPhaseTypeLocal(panel?.system || '');
+  const selectedPhaseType = params.phaseTypeOverrideEnabled && params.phaseTypeOverride
+    ? params.phaseTypeOverride
+    : detectedPhase;
+  const is3Phase = selectedPhaseType === '3PH';
+  const phaseFactor = is3Phase ? 1.732 : 2.0;
+
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = totalTransformerKVA / (1.732 * baseKV);
-  const iFullLoadBase = baseKVA / (1.732 * baseKV);
+  const iFullLoad = totalTransformerKVA / (phaseFactor * baseKV);
+  const iFullLoadBase = baseKVA / (phaseFactor * baseKV);
 
   const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
   const iscFaultPoint = iFullLoadBase / totalZpu;
 
   // Subtransient motor feedback contribution computation (4 * standard full load current)
   const scMotorLoadVA = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
-  const motorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (1.732 * (params.transformerVoltage || 230))) * 4 : 0;
+  const motorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (phaseFactor * (params.transformerVoltage || 230))) * 4 : 0;
   
   const combinedSymmetricalCurrent = iscFaultPoint + motorContribution;
   const combinedAsymmetricalCurrent = combinedSymmetricalCurrent * 1.25;
@@ -1165,11 +1183,12 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
   const tableRows = [
     new TableRow({ children: scInputHeaders }),
-    createSCInputRow("Utility Source Short Circuit MVA Rating", params.utilityShortCircuitMVA?.toString() || "500", "MVA", false),
-    createSCInputRow("Substation Primary Line Voltage", params.primaryVoltage?.toString() || "34,500", "Volts", true),
-    createSCInputRow("Substation Secondary Rated Voltage", params.transformerVoltage?.toString() || "230", "Volts", false),
-    createSCInputRow("Transformer 1 Solid Power Rating", baseKVA.toString(), "kVA", true),
-    createSCInputRow("Transformer 1 Reactance Rating (%Z)", (params.transformerZ || 5.0).toString(), "% Impedance", false)
+    createSCInputRow("System Phase Configuration Type", is3Phase ? "Three-Phase (3Ø)" : "Single-Phase (1Ø)", "Phases", false),
+    createSCInputRow("Utility Source Short Circuit MVA Rating", params.utilityShortCircuitMVA?.toString() || "500", "MVA", true),
+    createSCInputRow("Substation Primary Line Voltage", params.primaryVoltage?.toString() || "34,500", "Volts", false),
+    createSCInputRow("Substation Secondary Rated Voltage", params.transformerVoltage?.toString() || "230", "Volts", true),
+    createSCInputRow("Transformer 1 Solid Power Rating", baseKVA.toString(), "kVA", false),
+    createSCInputRow("Transformer 1 Reactance Rating (%Z)", (params.transformerZ || 5.0).toString(), "% Impedance", true)
   ];
 
   if (ptCount > 1) {
@@ -1203,8 +1222,11 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`C. Step-by-Step Per-Unit Impedance & Symmetrical Calculations`),
     
-    createParagraph(`1. Transformer Full Load Amperes ($I_{\\text{FLA}}$) - Based on total combined bank rating (${totalTransformerKVA} kVA):`),
-    createFormulaCallout(`I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}} = \\frac{${totalTransformerKVA} \\times 1000}{${params.transformerVoltage || 230} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}`),
+    createParagraph(`1. Transformer Full Load Amperes ($I_{\\text{FLA}}$) - Based on total combined bank rating (${totalTransformerKVA} kVA) - ${is3Phase ? 'Three-Phase (3Ø)' : 'Single-Phase (1Ø)'}:`),
+    createFormulaCallout(is3Phase
+      ? `I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}} = \\frac{${totalTransformerKVA} \\times 1000}{${params.transformerVoltage || 230} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}`
+      : `I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary}} \\times 2.0} = \\frac{${totalTransformerKVA} \\times 1000}{${params.transformerVoltage || 230} \\times 2.0} = ${iFullLoad.toFixed(2)}\\text{ A}`
+    ),
     
     createParagraph(`2. Utility Source Grid Impedance ($Z_{\\text{util, pu}}$):`),
     createFormulaCallout(`Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA || 500} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}`),

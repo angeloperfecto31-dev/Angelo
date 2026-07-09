@@ -16,7 +16,38 @@ export interface ShortCircuitCalcProps {
   setSource: React.Dispatch<React.SetStateAction<string>>;
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
+  setPanel?: (val: React.SetStateAction<PanelConfig>) => void;
 }
+
+export const detectPhaseType = (system: string | undefined): '1PH' | '3PH' => {
+  if (!system) return '1PH';
+  const s = system.toLowerCase();
+  if (s.includes('3ph') || s.includes('3ø') || s.includes('three-phase') || s.includes('three phase')) {
+    return '3PH';
+  }
+  return '1PH';
+};
+
+export const getMappedSystemForPhase = (currentSystem: string, targetPhase: '1PH' | '3PH'): string => {
+  if (!currentSystem) return targetPhase === '1PH' ? '230V, 1PH, 2W' : '230V, 3PH, 3W';
+  if (targetPhase === '1PH') {
+    if (currentSystem.includes('230V') || currentSystem.includes('220V') || currentSystem.includes('240V')) {
+      return '230V, 1PH, 2W';
+    }
+    return '230V, 1PH, 2W';
+  } else {
+    if (currentSystem.includes('230V')) {
+      return '230V, 3PH, 3W';
+    } else if (currentSystem.includes('400V')) {
+      return '400V/230V, 3PH, 4W';
+    } else if (currentSystem.includes('480V')) {
+      return '480V, 3PH, 3W';
+    } else if (currentSystem.includes('380V')) {
+      return '380V/220V, 3PH, 4W';
+    }
+    return '230V, 3PH, 3W';
+  }
+};
 
 export const getRunsBySystem = (system?: string): number => {
   if (!system) return 1;
@@ -102,9 +133,15 @@ const DraggableBox = ({
   );
 };
 
-export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPanels, params, setParams, source, setSource, isPremium = true, onRequestUpgrade }: ShortCircuitCalcProps) {
+export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPanels, params, setParams, source, setSource, isPremium = true, onRequestUpgrade, setPanel }: ShortCircuitCalcProps) {
 
   const [isBWMode, setIsBWMode] = useState(false);
+
+  const selectedPhaseType = useMemo(() => {
+    return params.phaseTypeOverrideEnabled 
+      ? (params.phaseTypeOverride || '3PH') 
+      : detectPhaseType(panel?.system);
+  }, [params.phaseTypeOverrideEnabled, params.phaseTypeOverride, panel?.system]);
 
   const { motorLoadVA, nonMotorLoadVA } = useMemo(() => {
     let mVA = 0;
@@ -160,6 +197,9 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
 
 
   const calculation = useMemo(() => {
+    const is3Phase = selectedPhaseType === '3PH';
+    const factor = is3Phase ? 1.732 : 2.0;
+
     // Determine connection phase factors based on Philippine Electrical Code (PEC) Practices
     let connectionMultiplier = 1.0; // Default symmetrical 3-phase fault
     let groundFaultFactor = 1.0;
@@ -247,21 +287,42 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     const totalZpu = zUtilitypu + zTranspu + zFeederpu;
     
     // FLA based on combined capacity
-    const iFullLoad = totalTransformerKVA / (1.732 * baseKV);
-    const iFullLoadBase = baseKVA / (1.732 * baseKV); // base FLA for pu
+    const iFullLoad = totalTransformerKVA / (factor * baseKV);
+    const iFullLoadBase = baseKVA / (factor * baseKV); // base FLA for pu
     
     // Isc at different points
     const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
     const iscFaultPoint = iFullLoadBase / totalZpu;
 
-    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (1.732 * (params.transformerVoltage || 230))) * 4 : 0;
+    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (factor * (params.transformerVoltage || 230))) * 4 : 0;
     const multiplier = 1 / totalZpu;
 
     // Fault 1 (HV side or Primary Service Entrance)
-    const fault1Isc = ((params.utilityShortCircuitMVA || 500) * 1000000) / (1.732 * (params.primaryVoltage || 34500));
+    const fault1Isc = ((params.utilityShortCircuitMVA || 500) * 1000000) / (factor * (params.primaryVoltage || 34500));
 
     // Validations & Safety Warnings
     const warnings: string[] = [];
+
+    // Phase Type & Equipment Compatibility Checks
+    if (!is3Phase) {
+      if (panel?.system?.includes("3PH")) {
+        warnings.push("CRITICAL: Distribution Panel is configured for Three-Phase (3Ø) but calculation is running as Single-Phase (1Ø). Please update the system voltage in the Load Schedule.");
+      }
+      if (params.transformerConnection && !params.transformerConnection.includes("Single-Phase") && !params.transformerConnection.includes("Open")) {
+        warnings.push("WARNING: Selected transformer connection is typically three-phase. For single-phase installations, a Single-Phase Transformer or Open Delta connection is recommended.");
+      }
+      if (params.feederRuns === 3) {
+        warnings.push("WARNING: Feeder configuration has 3 runs/conductors, which is unusual for a standard Single-Phase (1Ø) system.");
+      }
+    } else {
+      if (panel?.system && (panel.system.includes("1PH") || panel.system.includes("1Ø"))) {
+        warnings.push("CRITICAL: Distribution Panel is configured for Single-Phase (1Ø) but calculation is running as Three-Phase (3Ø). Please update the system voltage in the Load Schedule.");
+      }
+      if (params.transformerConnection && params.transformerConnection.includes("Single-Phase")) {
+        warnings.push("CRITICAL: Single-Phase Transformer connection cannot be used for a Three-Phase (3Ø) system.");
+      }
+    }
+
     if (ptCount > 1) {
       if (params.parallelTransformersVoltageMatch === false) {
         warnings.push("CRITICAL: Secondary voltage mismatch detected. Paralleling is prohibited due to risk of destructive circulating currents.");
@@ -322,7 +383,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       eqFeeder,
       warnings
     };
-  }, [params, motorLoadVA]);
+  }, [params, motorLoadVA, panel, selectedPhaseType]);
 
   const kaicValidationData = useMemo(() => {
     const list: Array<{
@@ -661,6 +722,78 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                      <input type="number" value={params.feederRuns} onChange={e => setParams({...params, feederRuns: parseFloat(e.target.value), isFeederRunsCustomized: true})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-slate-100 transition-all focus:ring-2 focus:ring-red-500 outline-none" />
                   </div>
                 </div>
+
+                {/* Phase Type and Selection Field */}
+                <div className="col-span-1 md:col-span-4 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                        Phase Type Selection
+                      </span>
+                      {selectedPhaseType === '3PH' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-500/10 text-sky-500 dark:text-sky-400 border border-sky-500/20 shadow-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                          Three-Phase (3Ø) Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          Single-Phase (1Ø) Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xxs text-slate-400 dark:text-slate-500">
+                      Synchronized with the Load Flow, Voltage Drop, Single Line Diagram, and Protection Coordination modules.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-500 dark:text-slate-400 font-bold uppercase select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!params.phaseTypeOverrideEnabled}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          const defaultPhase = panel?.system ? detectPhaseType(panel.system) : '3PH';
+                          setParams({
+                            ...params,
+                            phaseTypeOverrideEnabled: checked,
+                            phaseTypeOverride: checked ? defaultPhase : undefined
+                          });
+                        }}
+                        className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-slate-300 dark:border-slate-700 cursor-pointer"
+                      />
+                      <span>Manual Override</span>
+                    </label>
+
+                    <div className="w-48">
+                      <select
+                        disabled={!params.phaseTypeOverrideEnabled}
+                        value={selectedPhaseType}
+                        onChange={e => {
+                          const newPhase = e.target.value as '1PH' | '3PH';
+                          setParams({ ...params, phaseTypeOverride: newPhase });
+                          
+                          // Automatic bi-directional synchronization with connected modules (like Load Schedule)
+                          if (panel && setPanel) {
+                            const updatedSystem = getMappedSystemForPhase(panel.system, newPhase);
+                            setPanel(prev => ({
+                              ...prev,
+                              system: updatedSystem
+                            }));
+                          }
+                        }}
+                        className={`w-full px-3 py-1.5 border rounded-lg text-xs font-bold transition-all outline-none ${
+                          !params.phaseTypeOverrideEnabled 
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 cursor-not-allowed' 
+                            : 'bg-white dark:bg-slate-800 text-slate-950 dark:text-slate-100 border-red-200 dark:border-red-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 cursor-pointer'
+                        }`}
+                      >
+                        <option value="1PH">Single-Phase (1Ø)</option>
+                        <option value="3PH">Three-Phase (3Ø)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
           </div>
 
           {/* ADVANCED PARALLEL CONFIGURATION SECTION */}
@@ -917,9 +1050,36 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
         <div className="relative p-8 flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-600"></div>
           <div className="space-y-1">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400">
-              <ShieldAlert className="w-3.5 h-3.5 animate-pulse" /> Point-To-Point Fault Analysis
-            </span>
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-400">
+                <ShieldAlert className="w-3.5 h-3.5 animate-pulse" /> Point-To-Point Fault Analysis
+              </span>
+              {params.phaseTypeOverrideEnabled ? (
+                params.phaseTypeOverride === '3PH' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-500/10 text-sky-500 dark:text-sky-400 border border-sky-500/20 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                    Three-Phase (3Ø)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Single-Phase (1Ø)
+                  </span>
+                )
+              ) : (
+                detectPhaseType(panel?.system) === '3PH' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-sky-500/10 text-sky-500 dark:text-sky-400 border border-sky-500/20 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                    Three-Phase (3Ø)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    Single-Phase (1Ø)
+                  </span>
+                )
+              )}
+            </div>
             <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight font-sans">Short Circuit Calculation Report</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">PEC 2017 Requirement Section 1.10.1.24 — Electrical Safety Conformity</p>
           </div>
@@ -1049,6 +1209,97 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                 <ShieldAlert className="w-72 h-72 text-white" />
               </div>
 
+            </div>
+
+            {/* PEC Compliant Fault Type Analyses */}
+            <div className="bg-slate-50 dark:bg-slate-850/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <Calculator className="w-4 h-4 text-indigo-500" />
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">PEC Fault Type Analyses</h4>
+                </div>
+                <span className="text-[10px] font-black tracking-widest text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded uppercase">
+                  {((params.phaseTypeOverrideEnabled ? params.phaseTypeOverride : detectPhaseType(panel?.system)) === '3PH') ? 'Three-Phase (3Ø)' : 'Single-Phase (1Ø)'}
+                </span>
+              </div>
+
+              {((params.phaseTypeOverrideEnabled ? params.phaseTypeOverride : detectPhaseType(panel?.system)) === '3PH') ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Three-Phase Symmetrical Fault */}
+                  <div className="bg-white dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">3Ø Symmetrical Fault (I_3ph)</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-mono font-bold text-slate-900 dark:text-white">{calculation.totalFaultM} A</span>
+                      <span className="text-[10px] text-slate-400 font-mono">1.0 x I_sc</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 leading-snug">
+                      Formula: I_3ph = I_base / Z_pu
+                    </div>
+                  </div>
+
+                  {/* Line-to-Line Fault */}
+                  <div className="bg-white dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Line-to-Line Fault (I_LL)</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">{(parseFloat(calculation.totalFaultM) * 0.866).toLocaleString(undefined, { maximumFractionDigits: 1 })} A</span>
+                      <span className="text-[10px] text-slate-400 font-mono">0.866 x I_3ph</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 leading-snug">
+                      Formula: I_LL = 0.866 * I_3ph
+                    </div>
+                  </div>
+
+                  {/* Double Line-to-Ground Fault */}
+                  <div className="bg-white dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Double Line-to-Ground (I_2LG)</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">{(parseFloat(calculation.totalFaultM) * 0.90).toLocaleString(undefined, { maximumFractionDigits: 1 })} A</span>
+                      <span className="text-[10px] text-slate-400 font-mono">~0.90 x I_3ph</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 leading-snug">
+                      Formula: I_2LG ≈ 0.90 * I_3ph
+                    </div>
+                  </div>
+
+                  {/* Single Line-to-Ground Fault */}
+                  <div className="bg-white dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Single Line-to-Ground (I_SLG)</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400">{(parseFloat(calculation.totalFaultM) * parseFloat(calculation.groundFaultFactor)).toLocaleString(undefined, { maximumFractionDigits: 1 })} A</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{calculation.groundFaultFactor} x I_3ph</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 leading-snug">
+                      Formula: I_SLG = groundFaultFactor * I_3ph
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Line-to-Line Fault */}
+                  <div className="bg-white dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Line-to-Line Loop Fault (I_LL)</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400">{calculation.totalFaultM} A</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Active (3-wire)</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 leading-snug">
+                      Formula: I_LL = I_base / (2 * Z_pu)
+                    </div>
+                  </div>
+
+                  {/* Line-to-Neutral Fault */}
+                  <div className="bg-white dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Line-to-Neutral Loop Fault (I_LN)</span>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-sm font-mono font-bold text-blue-600 dark:text-blue-400">{calculation.totalFaultM} A</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Active (2-wire)</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-400 leading-snug">
+                      Formula: I_LN = I_base / (2 * Z_pu)
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

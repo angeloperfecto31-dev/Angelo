@@ -882,8 +882,17 @@ export const calculatePanelFault = (
   feederSize?: string,
   feederRuns?: number,
   motorLoadVA: number = 0,
+  phaseType?: '1PH' | '3PH',
 ): number => {
   if (!iscParams) return 10000; // 10 kA default if no short circuit params
+
+  const is3Phase = phaseType 
+    ? (phaseType === '3PH') 
+    : (iscParams.phaseTypeOverrideEnabled 
+        ? (iscParams.phaseTypeOverride === '3PH') 
+        : !(panel.system?.toLowerCase().includes("1ph") || panel.system?.toLowerCase().includes("1ø") || panel.system?.toLowerCase().includes("single-phase") || panel.system?.toLowerCase().includes("single phase")));
+        
+  const factor = is3Phase ? 1.732 : 2.0;
 
   let connectionMultiplier = 1.0;
   if (iscParams.transformerConnection?.includes("Open")) {
@@ -945,11 +954,11 @@ export const calculatePanelFault = (
   }
 
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = baseKVA / (1.732 * baseKV);
+  const iFullLoad = baseKVA / (factor * baseKV);
   const iscFaultPoint = iFullLoad / totalZpu;
 
   const motorContribution =
-    motorLoadVA > 0 ? (motorLoadVA / (1.732 * (baseKV * 1000))) * 4 : 0;
+    motorLoadVA > 0 ? (motorLoadVA / (factor * (baseKV * 1000))) * 4 : 0;
   return iscFaultPoint + motorContribution;
 };
 
