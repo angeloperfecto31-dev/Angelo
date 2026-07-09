@@ -218,6 +218,11 @@ export interface LightFixture {
   isFavorite?: boolean; // favorited status
   inputVoltage?: string; // e.g., '220-240V AC'
   mountingHeight?: number; // default mounting height
+  ipRating?: string; // IP Rating, e.g. IP65
+  dimensions?: string; // dimensions, e.g. 600x600x12 mm
+  typicalApplication?: string; // typical application description
+  lifespan?: string; // average lifespan, e.g. 50,000 hrs
+  dimmable?: string; // dimming compatibility info
 }
 
 export interface SavedLightingDetail {

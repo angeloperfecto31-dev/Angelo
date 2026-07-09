@@ -601,6 +601,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   const [filterMaxLumen, setFilterMaxLumen] = useState<string>('');
   const [filterOnlyFavs, setFilterOnlyFavs] = useState<boolean>(false);
 
+  // New multi-faceted filters & sorting states
+  const [filterBrand, setFilterBrand] = useState<string>('All');
+  const [filterCct, setFilterCct] = useState<string>('All');
+  const [filterIpRating, setFilterIpRating] = useState<string>('All');
+  const [filterApplication, setFilterApplication] = useState<string>('All');
+  const [sortBy, setSortBy] = useState<string>('none');
+
   // Custom fixture creation/editing state
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingFormFixtureId, setEditingFormFixtureId] = useState<string | null>(null);
@@ -619,7 +626,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     description: '',
     manufacturerReference: '',
     inputVoltage: '220-240V AC',
-    mountingHeight: 2.7
+    mountingHeight: 2.7,
+    ipRating: 'IP20',
+    dimensions: '',
+    typicalApplication: '',
+    lifespan: '',
+    dimmable: false
   });
 
   useEffect(() => {
@@ -712,11 +724,54 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   const [onlineSearchError, setOnlineSearchError] = useState<string | null>(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
+  // Dynamic dynamic lists for filters
+  const availableBrands = useMemo(() => {
+    const brandsSet = new Set<string>();
+    allFixtures.forEach(f => {
+      if (f.manufacturer) {
+        brandsSet.add(f.manufacturer);
+      } else if (f.brands) {
+        f.brands.split(',').forEach(b => brandsSet.add(b.trim()));
+      }
+    });
+    return Array.from(brandsSet).filter(Boolean).sort();
+  }, [allFixtures]);
+
+  const availableCcts = useMemo(() => {
+    const cctsSet = new Set<string>();
+    allFixtures.forEach(f => {
+      if (f.cct) {
+        cctsSet.add(String(f.cct));
+      }
+    });
+    return Array.from(cctsSet).filter(Boolean).sort();
+  }, [allFixtures]);
+
+  const availableIpRatings = useMemo(() => {
+    const ipSet = new Set<string>();
+    allFixtures.forEach(f => {
+      if (f.ipRating) {
+        ipSet.add(f.ipRating);
+      }
+    });
+    return Array.from(ipSet).filter(Boolean).sort();
+  }, [allFixtures]);
+
+  const availableApplications = useMemo(() => {
+    const appSet = new Set<string>();
+    allFixtures.forEach(f => {
+      if (f.typicalApplication) {
+        appSet.add(f.typicalApplication);
+      }
+    });
+    return Array.from(appSet).filter(Boolean).sort();
+  }, [allFixtures]);
+
   // Filter local fixtures recursively with advanced multi-faceted search/filters
   const filteredLocalFixtures = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     
-    return allFixtures.filter((fixture) => {
+    let result = allFixtures.filter((fixture) => {
       // 1. Text Search matching
       if (q) {
         const matchBrand = (fixture.brands || '').toLowerCase().includes(q);
@@ -763,9 +818,73 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         return false;
       }
 
+      // 7. Brand Filter
+      if (filterBrand !== 'All') {
+        const brandLower = filterBrand.toLowerCase();
+        const fBrand = (fixture.brands || fixture.manufacturer || '').toLowerCase();
+        if (!fBrand.includes(brandLower)) return false;
+      }
+
+      // 8. CCT Filter
+      if (filterCct !== 'All') {
+        const cctLower = filterCct.toLowerCase();
+        const fCct = String(fixture.cct || '').toLowerCase();
+        if (!fCct.includes(cctLower)) return false;
+      }
+
+      // 9. IP Rating Filter
+      if (filterIpRating !== 'All') {
+        const ipLower = filterIpRating.toLowerCase();
+        const fIp = (fixture.ipRating || '').toLowerCase();
+        if (!fIp.includes(ipLower)) return false;
+      }
+
+      // 10. Application Filter
+      if (filterApplication !== 'All') {
+        const appLower = filterApplication.toLowerCase();
+        const fApp = (fixture.typicalApplication || fixture.description || '').toLowerCase();
+        if (!fApp.includes(appLower)) return false;
+      }
+
       return true;
     });
-  }, [searchQuery, allFixtures, filterCategory, filterMounting, filterMinWatt, filterMaxWatt, filterMinLumen, filterMaxLumen, filterOnlyFavs]);
+
+    // Apply Sorting
+    if (sortBy === 'wattage-asc') {
+      result.sort((a, b) => a.wattage - b.wattage);
+    } else if (sortBy === 'wattage-desc') {
+      result.sort((a, b) => b.wattage - a.wattage);
+    } else if (sortBy === 'lumens-asc') {
+      result.sort((a, b) => a.lumens - b.lumens);
+    } else if (sortBy === 'lumens-desc') {
+      result.sort((a, b) => b.lumens - a.lumens);
+    } else if (sortBy === 'efficacy-asc') {
+      result.sort((a, b) => (a.efficacy || 0) - (b.efficacy || 0));
+    } else if (sortBy === 'efficacy-desc') {
+      result.sort((a, b) => (b.efficacy || 0) - (a.efficacy || 0));
+    } else if (sortBy === 'manufacturer-asc') {
+      result.sort((a, b) => (a.manufacturer || a.brands || '').localeCompare(b.manufacturer || b.brands || ''));
+    } else if (sortBy === 'manufacturer-desc') {
+      result.sort((a, b) => (b.manufacturer || b.brands || '').localeCompare(a.manufacturer || a.brands || ''));
+    }
+
+    return result;
+  }, [
+    searchQuery,
+    allFixtures,
+    filterCategory,
+    filterMounting,
+    filterMinWatt,
+    filterMaxWatt,
+    filterMinLumen,
+    filterMaxLumen,
+    filterOnlyFavs,
+    filterBrand,
+    filterCct,
+    filterIpRating,
+    filterApplication,
+    sortBy
+  ]);
 
   // Favorite toggle helper
   const toggleFavorite = (id: string, e: React.MouseEvent) => {
@@ -803,7 +922,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       lumensRange: `${fixtureForm.lumens} lm`,
       isCustom: true,
       inputVoltage: fixtureForm.inputVoltage || '220-240V AC',
-      mountingHeight: Number(fixtureForm.mountingHeight) || 2.7
+      mountingHeight: Number(fixtureForm.mountingHeight) || 2.7,
+      ipRating: fixtureForm.ipRating || 'IP20',
+      dimensions: fixtureForm.dimensions || '',
+      typicalApplication: fixtureForm.typicalApplication || '',
+      lifespan: fixtureForm.lifespan || '',
+      dimmable: fixtureForm.dimmable !== undefined ? fixtureForm.dimmable : false
     };
 
     if (user) {
@@ -853,7 +977,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       description: '',
       manufacturerReference: '',
       inputVoltage: '220-240V AC',
-      mountingHeight: 2.7
+      mountingHeight: 2.7,
+      ipRating: 'IP20',
+      dimensions: '',
+      typicalApplication: '',
+      lifespan: '',
+      dimmable: false
     });
   };
 
@@ -875,7 +1004,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       description: fixture.description || '',
       manufacturerReference: fixture.manufacturerReference || '',
       inputVoltage: fixture.inputVoltage || '220-240V AC',
-      mountingHeight: fixture.mountingHeight || 2.7
+      mountingHeight: fixture.mountingHeight || 2.7,
+      ipRating: fixture.ipRating || 'IP20',
+      dimensions: fixture.dimensions || '',
+      typicalApplication: fixture.typicalApplication || '',
+      lifespan: fixture.lifespan || '',
+      dimmable: fixture.dimmable !== undefined ? fixture.dimmable : false
     });
     setShowCreateForm(true);
   };
@@ -5703,12 +5837,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                     >
                       <Filter className="w-3.5 h-3.5 text-slate-500" />
                       <span>{showAdvancedFilters ? "Hide Filters" : "Show Advanced Filters"}</span>
-                      {(filterCategory !== 'All' || filterMounting !== 'All' || filterMinWatt || filterMaxWatt || filterMinLumen || filterMaxLumen || filterOnlyFavs) && (
+                      {(filterCategory !== 'All' || filterMounting !== 'All' || filterMinWatt || filterMaxWatt || filterMinLumen || filterMaxLumen || filterOnlyFavs || filterBrand !== 'All' || filterCct !== 'All' || filterIpRating !== 'All' || filterApplication !== 'All') && (
                         <span className="w-2 h-2 bg-indigo-600 rounded-full" />
                       )}
                     </button>
                     
-                    {(filterCategory !== 'All' || filterMounting !== 'All' || filterMinWatt || filterMaxWatt || filterMinLumen || filterMaxLumen || filterOnlyFavs) && (
+                    {(filterCategory !== 'All' || filterMounting !== 'All' || filterMinWatt || filterMaxWatt || filterMinLumen || filterMaxLumen || filterOnlyFavs || filterBrand !== 'All' || filterCct !== 'All' || filterIpRating !== 'All' || filterApplication !== 'All' || sortBy !== 'none') && (
                       <button
                         type="button"
                         onClick={() => {
@@ -5719,6 +5853,11 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                           setFilterMinLumen('');
                           setFilterMaxLumen('');
                           setFilterOnlyFavs(false);
+                          setFilterBrand('All');
+                          setFilterCct('All');
+                          setFilterIpRating('All');
+                          setFilterApplication('All');
+                          setSortBy('none');
                         }}
                         className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
                       >
@@ -5750,7 +5889,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                             description: '',
                             manufacturerReference: '',
                             inputVoltage: '220-240V AC',
-                            mountingHeight: 2.7
+                            mountingHeight: 2.7,
+                            ipRating: 'IP20',
+                            dimensions: '',
+                            typicalApplication: '',
+                            lifespan: '',
+                            dimmable: false
                           });
                         }
                       }}
@@ -5855,6 +5999,86 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                           className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 focus:outline-none focus:border-indigo-500"
                         />
                       </div>
+                    </div>
+
+                    {/* Brand Filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">Brand / Manufacturer</label>
+                      <select
+                        value={filterBrand}
+                        onChange={(e) => setFilterBrand(e.target.value)}
+                        className="w-full text-xs font-bold text-slate-750 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-indigo-550 focus:outline-none"
+                      >
+                        <option value="All">All Brands ({availableBrands.length})</option>
+                        {availableBrands.map(b => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* CCT Filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">Color Temp (CCT)</label>
+                      <select
+                        value={filterCct}
+                        onChange={(e) => setFilterCct(e.target.value)}
+                        className="w-full text-xs font-bold text-slate-750 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-indigo-550 focus:outline-none"
+                      >
+                        <option value="All">All CCTs ({availableCcts.length})</option>
+                        {availableCcts.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* IP Rating Filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">IP Rating</label>
+                      <select
+                        value={filterIpRating}
+                        onChange={(e) => setFilterIpRating(e.target.value)}
+                        className="w-full text-xs font-bold text-slate-750 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-indigo-550 focus:outline-none"
+                      >
+                        <option value="All">All IP Ratings ({availableIpRatings.length})</option>
+                        {availableIpRatings.map(ip => (
+                          <option key={ip} value={ip}>{ip}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Application Filter */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">Typical Application</label>
+                      <select
+                        value={filterApplication}
+                        onChange={(e) => setFilterApplication(e.target.value)}
+                        className="w-full text-xs font-bold text-slate-750 bg-slate-50 border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-indigo-550 focus:outline-none"
+                      >
+                        <option value="All">All Applications ({availableApplications.length})</option>
+                        {availableApplications.map(app => (
+                          <option key={app} value={app}>{app}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Sort Selector */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-500 font-black">Sort By</label>
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="w-full text-xs font-bold text-indigo-950 bg-indigo-50/50 border border-indigo-150 rounded-lg p-2 focus:ring-1 focus:ring-indigo-550 focus:outline-none"
+                      >
+                        <option value="none">Default Ordering</option>
+                        <option value="wattage-asc">Wattage: Low to High</option>
+                        <option value="wattage-desc">Wattage: High to Low</option>
+                        <option value="lumens-asc">Lumens: Low to High</option>
+                        <option value="lumens-desc">Lumens: High to Low</option>
+                        <option value="efficacy-asc">Efficacy: Low to High</option>
+                        <option value="efficacy-desc">Efficacy: High to Low</option>
+                        <option value="manufacturer-asc">Manufacturer: A-Z</option>
+                        <option value="manufacturer-desc">Manufacturer: Z-A</option>
+                      </select>
                     </div>
 
                     {/* Starred Favorites Toggle */}
@@ -6114,6 +6338,67 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                     />
                   </div>
 
+                  {/* IP Rating */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">IP Rating</label>
+                    <input
+                      type="text"
+                      value={fixtureForm.ipRating}
+                      onChange={(e) => setFixtureForm({ ...fixtureForm, ipRating: e.target.value })}
+                      placeholder="e.g. IP65"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Dimensions */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Dimensions</label>
+                    <input
+                      type="text"
+                      value={fixtureForm.dimensions}
+                      onChange={(e) => setFixtureForm({ ...fixtureForm, dimensions: e.target.value })}
+                      placeholder="e.g. 1200 x 300 x 50 mm"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Typical Application */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Typical Application</label>
+                    <input
+                      type="text"
+                      value={fixtureForm.typicalApplication}
+                      onChange={(e) => setFixtureForm({ ...fixtureForm, typicalApplication: e.target.value })}
+                      placeholder="e.g. Commercial Office"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Lifespan */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Lifespan</label>
+                    <input
+                      type="text"
+                      value={fixtureForm.lifespan}
+                      onChange={(e) => setFixtureForm({ ...fixtureForm, lifespan: e.target.value })}
+                      placeholder="e.g. 50,000 hrs"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  {/* Dimmable Checkbox */}
+                  <div className="flex items-center gap-2 pt-5">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={fixtureForm.dimmable}
+                        onChange={(e) => setFixtureForm({ ...fixtureForm, dimmable: e.target.checked })}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      />
+                      <span>Is Dimmable / Adjustable</span>
+                    </label>
+                  </div>
+
                   {/* Description */}
                   <div className="col-span-full flex flex-col gap-1">
                     <label className="text-[10px] font-black uppercase text-slate-400">Description</label>
@@ -6359,7 +6644,17 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                           )}
                           <div className="p-5 w-full flex flex-col h-full">
                             <div className="flex items-center justify-between mb-2 gap-1.5">
-                              <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wider truncate max-w-[130px]">{fixture.category}</span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-wider truncate max-w-[130px]">{fixture.category}</span>
+                                {fixture.ipRating && (
+                                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md uppercase tracking-wider">{fixture.ipRating}</span>
+                                )}
+                                {fixture.dimmable !== undefined && (
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider ${fixture.dimmable ? 'text-teal-600 bg-teal-50' : 'text-slate-400 bg-slate-50'}`}>
+                                    {fixture.dimmable ? 'Dimmable' : 'Non-Dim'}
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-1">
                                 {/* Favorite Button */}
                                 <button
@@ -6425,6 +6720,29 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                   <span className="font-bold text-slate-700 block">{fixture.beamAngle || 120}°</span>
                                 </div>
                               </div>
+
+                              {(fixture.dimensions || fixture.lifespan || fixture.typicalApplication) && (
+                                <div className="mt-2 pt-2 border-t border-slate-100/50 text-[9px] space-y-1">
+                                  {fixture.dimensions && (
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-400">Dimensions:</span>
+                                      <span className="font-semibold text-slate-600 truncate max-w-[140px]" title={fixture.dimensions}>{fixture.dimensions}</span>
+                                    </div>
+                                  )}
+                                  {fixture.lifespan && (
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-400">Lifespan:</span>
+                                      <span className="font-semibold text-slate-600">{fixture.lifespan}</span>
+                                    </div>
+                                  )}
+                                  {fixture.typicalApplication && (
+                                    <div className="flex flex-col pt-0.5">
+                                      <span className="text-slate-400">Application:</span>
+                                      <span className="font-semibold text-indigo-950 leading-tight truncate" title={fixture.typicalApplication}>{fixture.typicalApplication}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
