@@ -188,7 +188,7 @@ export const getConductorArea = (size: number, insulation: string = "THHN"): num
     return baseArea * 1.30;
   }
   
-  if (normIns.includes("XHHW") || normIns.includes("XHHW-2")) {
+  if (normIns.includes("XHHW") || normIns.includes("XHHW-2") || normIns.includes("XLPE")) {
     return baseArea * 0.95;
   }
 

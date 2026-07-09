@@ -10,9 +10,10 @@ interface SingleLineDiagramProps {
   formatWireSize: (size: number) => number | string;
   isSubPanel?: boolean;
   iscParams?: any;
+  parentDesignation?: string;
 }
 
-export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, xOffset = 0, yOffset = 0 }) => {
+export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, xOffset = 0, yOffset = 0 }) => {
   // SVG Dimensions Calculation
   const startY = 320;
   const rowHeight = 60;
@@ -73,7 +74,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <circle cx="270" cy="100" r="5" fill="#1e293b" />
           <text x="250" y="95" className="sld-text" textAnchor="end">{voltage}V {phaseText}</text>
           <text x="250" y="115" className="sld-text" textAnchor="end">60Hz</text>
-          <text x="250" y="75" className="sld-text" textAnchor="end">CONNECTED TO MDP</text>
+          <text x="250" y="75" className="sld-text" textAnchor="end">CONNECTED TO {parentDesignation || 'MDP'}</text>
         </>
       ) : (() => {
         const ptCount = iscParams?.parallelTransformersCount || 1;

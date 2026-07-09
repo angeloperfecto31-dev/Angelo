@@ -2608,7 +2608,7 @@ export default function VoltageDropCalc({
                       >
                         {Object.keys(WIRE_IMPEDANCE_TABLE).map((size) => (
                           <option key={size} value={size}>
-                            {size} mm² (THHN/THWN)
+                            {size} mm² ({getInsulationTypeForCalculation(segment.calc)})
                           </option>
                         ))}
                       </select>

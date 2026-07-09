@@ -211,16 +211,58 @@ export default function SystemSLD({
       let feedingCircuit: Circuit | null = null;
       let rowIndex = 0;
       let isLeft = true;
+      let foundFeeder = false;
 
-      // Check if fed from MDP
-      let mdpFeederIndex = circuits.findIndex(
-        (c) =>
-          c.linkedSubPanelId === sp.id ||
-          (sp.panel.designation && c.description === sp.panel.designation),
-      );
+      // 1. Check for explicit link by ID across all panels (MDP and subpanels)
+      const mdpExplicitIndex = circuits.findIndex(c => c.linkedSubPanelId === sp.id);
+      if (mdpExplicitIndex >= 0) {
+        feedingCircuit = circuits[mdpExplicitIndex];
+        parentId = "mdp";
+        foundFeeder = true;
+      } else {
+        // Check other subpanels
+        for (const otherSp of allSubPanels) {
+          const spExplicitIndex = otherSp.circuits.findIndex(c => c.linkedSubPanelId === sp.id);
+          if (spExplicitIndex >= 0) {
+            feedingCircuit = otherSp.circuits[spExplicitIndex];
+            parentId = otherSp.id;
+            foundFeeder = true;
+            break;
+          }
+        }
+      }
 
-      // Positional fallback: map idx-th subpanel to idx-th circuit of type SUB_PANEL
-      if (mdpFeederIndex < 0) {
+      // 2. If no explicit ID link, check for designation description match
+      if (!foundFeeder && sp.panel.designation) {
+        const mdpDescIndex = circuits.findIndex(
+          (c) => c.description === sp.panel.designation
+        );
+        if (mdpDescIndex >= 0) {
+          feedingCircuit = circuits[mdpDescIndex];
+          parentId = "mdp";
+          foundFeeder = true;
+        } else {
+          for (const otherSp of allSubPanels) {
+            const spDescIndex = otherSp.circuits.findIndex(
+              (c) => c.description === sp.panel.designation
+            );
+            if (spDescIndex >= 0) {
+              feedingCircuit = otherSp.circuits[spDescIndex];
+              parentId = otherSp.id;
+              foundFeeder = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // 3. Positional fallback if still not found
+      if (!foundFeeder) {
+        let mdpFeederIndex = circuits.findIndex(
+          (c) =>
+            c.loadType === LoadType.SUB_PANEL ||
+            c.loadType === LoadType.SUB_SUB_PANEL,
+        );
         const mdpSubCircuits = circuits.filter(
           (c) =>
             c.loadType === LoadType.SUB_PANEL ||
@@ -232,39 +274,37 @@ export default function SystemSLD({
             (c) => c.id === matchingCircuit.id,
           );
         }
+        if (mdpFeederIndex >= 0) {
+          feedingCircuit = circuits[mdpFeederIndex];
+          parentId = "mdp";
+        }
       }
 
-      if (mdpFeederIndex >= 0) {
-        feedingCircuit = circuits[mdpFeederIndex];
-        parentId = "mdp";
-        rowIndex = mdpRows.findIndex(
-          (r) =>
-            r.left?.id === feedingCircuit!.id ||
-            r.right?.id === feedingCircuit!.id,
-        );
-        isLeft =
-          rowIndex >= 0
-            ? mdpRows[rowIndex]?.left?.id === feedingCircuit!.id
-            : true;
-      } else {
-        // Check if fed from another subpanel (or sub-sub panel)
-        for (const otherSp of allSubPanels) {
-          const spFeederIndex = otherSp.circuits.findIndex(
-            (c) =>
-              c.linkedSubPanelId === sp.id ||
-              (sp.panel.designation && c.description === sp.panel.designation),
+      // Now determine rowIndex and isLeft based on the resolved parent
+      if (feedingCircuit) {
+        if (parentId === "mdp") {
+          rowIndex = mdpRows.findIndex(
+            (r) =>
+              r.left?.id === feedingCircuit!.id ||
+              r.right?.id === feedingCircuit!.id,
           );
-          if (spFeederIndex >= 0) {
-            feedingCircuit = otherSp.circuits[spFeederIndex];
-            parentId = otherSp.id;
-
-            const pRows = getPanelRows(otherSp.circuits, otherSp.panel.system);
+          isLeft =
+            rowIndex >= 0
+              ? mdpRows[rowIndex]?.left?.id === feedingCircuit!.id
+              : true;
+        } else {
+          const parentSp = allSubPanels.find(p => p.id === parentId);
+          if (parentSp) {
+            const pRows = getPanelRows(parentSp.circuits, parentSp.panel.system);
             rowIndex = pRows.findIndex(
               (r) =>
                 r.left?.id === feedingCircuit!.id ||
                 r.right?.id === feedingCircuit!.id,
             );
-            break;
+            isLeft =
+              rowIndex >= 0
+                ? pRows[rowIndex]?.left?.id === feedingCircuit!.id
+                : true;
           }
         }
       }
@@ -722,6 +762,10 @@ export default function SystemSLD({
               const label =
                 depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
 
+              const parentDesignation = parentId === "mdp"
+                ? (panel.designation || "MDP")
+                : (subPanels.find((p) => p.id === parentId)?.panel.designation || "SUB-PANEL");
+
               return (
                 <g key={`page-l${depth}-${id}`}>
                   {/* Routing Line connects branch to feed */}
@@ -768,6 +812,7 @@ export default function SystemSLD({
                     panelRows={layout.spRows}
                     formatWireSize={formatWireSize}
                     isSubPanel={true}
+                    parentDesignation={parentDesignation}
                     xOffset={spXOffset}
                     yOffset={yOffset + 50}
                   />
@@ -1018,6 +1063,10 @@ export default function SystemSLD({
                   const label =
                     depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
 
+                  const parentDesignation = parentId === "mdp"
+                    ? (panel.designation || "MDP")
+                    : (subPanels.find((p) => p.id === parentId)?.panel.designation || "SUB-PANEL");
+
                   return (
                     <g key={`max-l${depth}-${id}`}>
                       {/* Routing Line connects branch to feed */}
@@ -1065,6 +1114,7 @@ export default function SystemSLD({
                         panelRows={layout.spRows}
                         formatWireSize={formatWireSize}
                         isSubPanel={true}
+                        parentDesignation={parentDesignation}
                         xOffset={spXOffset}
                         yOffset={yOffset + 50}
                       />

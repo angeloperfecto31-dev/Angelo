@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { isEqual } from "lodash";
 import {
   Plus,
@@ -177,6 +177,8 @@ export interface LoadScheduleProps {
     panel: PanelConfig;
     circuits: Circuit[];
   }[];
+  mdpCircuits?: Circuit[];
+  panelId?: string;
   readOnly?: boolean;
   iscParams?: ShortCircuitParams;
   isPremium?: boolean;
@@ -539,6 +541,8 @@ export default function LoadSchedule({
   onRemoveSubPanel,
   onDuplicateSubPanel,
   availableSubPanels,
+  mdpCircuits,
+  panelId,
   readOnly = false,
   iscParams,
   vdCalculations,
@@ -550,6 +554,88 @@ export default function LoadSchedule({
   setTransformerPrimaryVoltage,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
+
+  // Helper to determine eligible subpanels for selection on circuit `c`
+  const getEligibleSubPanels = useCallback((circuitId: string) => {
+    if (!availableSubPanels) return [];
+
+    const actualCurrentId = panelId || "mdp";
+    const mdpCircuitsList = mdpCircuits || circuits || [];
+
+    // Helper to find parent ancestors of a panel
+    const getPanelAncestors = (startId: string): string[] => {
+      const ancestors: string[] = [];
+      let currId = startId;
+      const visited = new Set<string>();
+
+      while (currId && currId !== "mdp" && !visited.has(currId)) {
+        visited.add(currId);
+        let foundParentId: string | null = null;
+
+        // Check if parent is MDP
+        const isMdpParent = mdpCircuitsList.some(
+          (rc) => rc.linkedSubPanelId === currId
+        );
+        if (isMdpParent) {
+          foundParentId = "mdp";
+        } else {
+          // Check if parent is another subpanel
+          for (const sp of availableSubPanels) {
+            if (sp.circuits.some((rc) => rc.linkedSubPanelId === currId)) {
+              foundParentId = sp.id;
+              break;
+            }
+          }
+        }
+
+        if (foundParentId) {
+          ancestors.push(foundParentId);
+          currId = foundParentId;
+        } else {
+          break;
+        }
+      }
+
+      return ancestors;
+    };
+
+    const ancestors = getPanelAncestors(actualCurrentId);
+
+    // Identify all subpanels already assigned to any OTHER circuit in the project
+    const assignedSubPanelIds = new Set<string>();
+
+    // Check MDP circuits
+    mdpCircuitsList.forEach((rc) => {
+      const isCurrentCircuit = actualCurrentId === "mdp" && rc.id === circuitId;
+      if (!isCurrentCircuit && rc.linkedSubPanelId) {
+        assignedSubPanelIds.add(rc.linkedSubPanelId);
+      }
+    });
+
+    // Check all sub-panel circuits
+    availableSubPanels.forEach((sp) => {
+      sp.circuits.forEach((rc) => {
+        const isCurrentCircuit = actualCurrentId === sp.id && rc.id === circuitId;
+        if (!isCurrentCircuit && rc.linkedSubPanelId) {
+          assignedSubPanelIds.add(rc.linkedSubPanelId);
+        }
+      });
+    });
+
+    return availableSubPanels.filter((sp) => {
+      // Cannot select self
+      if (sp.id === actualCurrentId) return false;
+
+      // Cannot select an ancestor (circular reference prevention)
+      if (ancestors.includes(sp.id)) return false;
+
+      // Cannot select if already assigned to another circuit
+      if (assignedSubPanelIds.has(sp.id)) return false;
+
+      return true;
+    });
+  }, [availableSubPanels, panelId, mdpCircuits, circuits]);
+
   const [customKaicCircuitIds, setCustomKaicCircuitIds] = useState<string[]>(
     [],
   );
@@ -2314,6 +2400,7 @@ export default function LoadSchedule({
                 className="dark:bg-slate-900 font-semibold text-slate-500"
               >
                 <option value="THHN">THHN</option>
+                <option value="XLPE">XLPE</option>
                 <option value="THWN-2">THWN-2</option>
                 <option value="THW-2">THW-2</option>
                 <option value="THHW-2">THHW-2</option>
@@ -3907,20 +3994,12 @@ export default function LoadSchedule({
                             if (
                               (nextType === LoadType.SUB_PANEL ||
                                 nextType === LoadType.SUB_SUB_PANEL) &&
-                              !fallbackSubId &&
-                              availableSubPanels?.length
+                              !fallbackSubId
                             ) {
-                              const existingSubCount = circuits.filter(
-                                (circ) =>
-                                  circ.loadType === nextType &&
-                                  circ.id !== c.id,
-                              ).length;
-                              const targetIndex = Math.min(
-                                existingSubCount,
-                                availableSubPanels.length - 1,
-                              );
-                              fallbackSubId =
-                                availableSubPanels[targetIndex].id;
+                              const eligible = getEligibleSubPanels(c.id);
+                              if (eligible.length > 0) {
+                                fallbackSubId = eligible[0].id;
+                              }
                             }
                             const is3P =
                               (nextType === LoadType.MOTOR ||
@@ -3984,7 +4063,7 @@ export default function LoadSchedule({
                                   ? "Sub-Sub Panel"
                                   : "Sub-Panel"}
                               </option>
-                              {availableSubPanels?.map((sp) => (
+                              {getEligibleSubPanels(c.id).map((sp) => (
                                 <option
                                   key={sp.id}
                                   value={sp.id}

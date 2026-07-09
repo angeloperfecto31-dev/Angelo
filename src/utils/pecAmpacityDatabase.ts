@@ -73,7 +73,8 @@ export const INSULATION_TEMPERATURE_MAP: InsulationTypeMap = {
   'USE-2': 90,
   'XHH': 90,
   'XHHW-2': 90,
-  'ZW-2': 90
+  'ZW-2': 90,
+  'XLPE': 90
 };
 
 /**

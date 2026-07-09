@@ -281,6 +281,24 @@ export const exportToWord = async (
     return "Copper";
   };
 
+  const getInsulationTypeForCalculation = (calc: import('../types').VoltageDropCalculation) => {
+    if (calc.source === "main") {
+      return panel?.insulationType || "THHN";
+    }
+    const subPanel = subPanels.find(sp => sp.id === calc.source);
+    if (subPanel) {
+      return subPanel.panel?.insulationType || "THHN";
+    }
+    if (circuits?.some(c => c.id === calc.source)) {
+      return panel?.insulationType || "THHN";
+    }
+    const spWithCircuit = subPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
+    if (spWithCircuit) {
+      return spWithCircuit.panel?.insulationType || "THHN";
+    }
+    return "THHN";
+  };
+
   const addImageToDoc = async (dataUrl: string | null, isFullPageDiagram = false) => {
     if (!dataUrl) return;
     try {
@@ -830,7 +848,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
       createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
-      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ THHN/THWN copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
+      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ ${p.insulationType || "THHN/THWN"} copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
       
       ...(p.transferSwitchType && p.transferSwitchType !== "None" ? [
          createParagraph(`4. Transfer Switch Selection (${p.transferSwitchType}):`),
@@ -1202,7 +1220,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
   tableRows.push(
     createSCInputRow("Feeder Connection Architecture", connType, "Topology", true),
-    createSCInputRow("Active Main Feeder Conductor Size", (params.feederSize || "30").toString(), "mm² THHN", false),
+    createSCInputRow("Active Main Feeder Conductor Size", (params.feederSize || "30").toString(), `mm² ${panel?.insulationType || "THHN"}`, false),
     createSCInputRow("Active Main Feeder Conductor Length", (params.feederLength || 10).toString(), "Meters", true),
     createSCInputRow("Conductor Multi-runs in Parallel", feederRuns.toString(), "Runs", false)
   );
@@ -1541,7 +1559,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
            docChildren.push(createParagraph(`   • System Type = ${calc.systemType}`));
            docChildren.push(createParagraph(`   • Load Current ($I$) = ${cLoad.toFixed(2)} A`));
            docChildren.push(createParagraph(`   • Feeder Length ($L$) = ${cLength.toFixed(2)} m`));
-           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ''}${calc.wireSize} mm² ${material === "Copper" ? "CU" : "AL"} THHN`));
+           docChildren.push(createParagraph(`   • Conductor Size = ${calc.wireSets && calc.wireSets > 1 ? `${calc.wireSets} Sets of ` : ''}${calc.wireSize} mm² ${material === "Copper" ? "CU" : "AL"} ${getInsulationTypeForCalculation(calc)}`));
            docChildren.push(createParagraph(`   • AC Resistance ($R_{\\text{ohms}}$) = ${R} \\Omega/km`));
            docChildren.push(createParagraph(`   • Nominal Voltage ($V_{\\text{nominal}}$) = ${cVoltage} V`));
            

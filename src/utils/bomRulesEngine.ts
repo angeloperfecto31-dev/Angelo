@@ -147,6 +147,12 @@ export const runBomQuantityTakeoff = (
   const wasteConduitsFactor = 1 + (settings.wasteConduits || 8) / 100;
   const wasteAccessoriesFactor = 1 + (settings.wasteAccessories || 5) / 100;
 
+  const formatInsulationLabel = (ins: string) => {
+    if (!ins || ins.toUpperCase() === "THHN") return "THHN/THWN-2";
+    return ins;
+  };
+  const mdpInsulationLabel = formatInsulationLabel(panel.insulationType || "THHN");
+
   // Helper to safely push / consolidate items
   const addItem = (item: Omit<BomItem, "id" | "isLocked">) => {
     const existing = generatedItems.find(
@@ -397,7 +403,7 @@ export const runBomQuantityTakeoff = (
 
   addItem({
     category: "Conductors",
-    name: `Feeder Conductor, Copper THHN/THWN-2, ${fPhaseSize} mm²`,
+    name: `Feeder Conductor, Copper ${mdpInsulationLabel}, ${fPhaseSize} mm²`,
     description: "Primary service entrance power phase conductor wires",
     brand: settings.preferredBrandConductors,
     specification: "99.9% pure annealed copper, lead-free PVC/Nylon jacket, 90°C thermal rated",
@@ -415,7 +421,7 @@ export const runBomQuantityTakeoff = (
   const fNeutralCost = getWirePricePerMeter(fNeutralSize);
   addItem({
     category: "Conductors",
-    name: `Neutral Conductor, Copper THHN/THWN-2, ${fNeutralSize} mm²`,
+    name: `Neutral Conductor, Copper ${mdpInsulationLabel}, ${fNeutralSize} mm²`,
     description: "Service entrance feeder system neutral conductor wire",
     brand: settings.preferredBrandConductors,
     specification: "Lead-free PVC/Nylon jacket white insulation, 90°C thermal rated",
@@ -433,7 +439,7 @@ export const runBomQuantityTakeoff = (
   const fGecCost = getWirePricePerMeter(fGecSize);
   addItem({
     category: "Grounding",
-    name: `Grounding Conductor GEC, Copper THHN/THWN-2, ${fGecSize} mm²`,
+    name: `Grounding Conductor GEC, Copper ${mdpInsulationLabel}, ${fGecSize} mm²`,
     description: "System Grounding Electrode Conductor to primary ground rod grid",
     brand: settings.preferredBrandConductors,
     specification: "Lead-free PVC/Nylon jacket green insulation, 90°C rated",
@@ -630,6 +636,7 @@ export const runBomQuantityTakeoff = (
   // 5. BRANCH CIRCUITS TAKE-OFF ENGINE (MDP + SUBPANELS)
   const processPanelCircuits = (p: PanelConfig, panelCircuits: Circuit[], panelId: string) => {
     logs.push(`[${timestamp}] Rules Engine: Sizing branch materials for Panelboard: ${panelId}`);
+    const pInsulationLabel = formatInsulationLabel(p.insulationType || "THHN");
 
     panelCircuits.forEach(c => {
       // Breakers
@@ -656,7 +663,7 @@ export const runBomQuantityTakeoff = (
 
       addItem({
         category: "Conductors",
-        name: `Copper Conductor THHN/THWN-2, ${bPhaseSize} mm²`,
+        name: `Copper Conductor ${pInsulationLabel}, ${bPhaseSize} mm²`,
         description: "Branch circuit phase power wire cables",
         brand: settings.preferredBrandConductors,
         specification: "Annealed copper wire, lead-free PVC/Nylon jacket insulation, 90°C thermal rated",
@@ -675,7 +682,7 @@ export const runBomQuantityTakeoff = (
 
       addItem({
         category: "Grounding",
-        name: `Equipment Grounding Conductor EGC, Copper THHN/THWN-2, ${bEgcSize} mm²`,
+        name: `Equipment Grounding Conductor EGC, Copper ${pInsulationLabel}, ${bEgcSize} mm²`,
         description: "Branch circuit equipment ground safety green wire cable",
         brand: settings.preferredBrandConductors,
         specification: "Solid or stranded annealed copper, green jacket, compliant with PEC Sec 2.50.6.13",
@@ -935,6 +942,7 @@ export const runBomQuantityTakeoff = (
     });
 
     // Subpanel Feeder conductors
+    const spInsulationLabel = formatInsulationLabel(sp.panel.insulationType || "THHN");
     const computedSP = computePanelScheduleValues(sp.panel, sp.circuits);
     const spFeeder = computedSP.mainFeeder;
     const sfLength = getFeederLength(sp.id);
@@ -945,7 +953,7 @@ export const runBomQuantityTakeoff = (
 
     addItem({
       category: "Conductors",
-      name: `Subpanel Feeder Conductor, Copper THHN/THWN-2, ${sfPhaseSize} mm²`,
+      name: `Subpanel Feeder Conductor, Copper ${spInsulationLabel}, ${sfPhaseSize} mm²`,
       description: "Distribution subpanel power feeder phase wires",
       brand: settings.preferredBrandConductors,
       specification: "annealed copper stranded cable, PVC/Nylon lead-free jacket, 90°C thermal rated",
@@ -963,7 +971,7 @@ export const runBomQuantityTakeoff = (
     const sfNeutralCost = getWirePricePerMeter(sfNeutralSize);
     addItem({
       category: "Conductors",
-      name: `Subpanel Neutral Conductor, Copper THHN/THWN-2, ${sfNeutralSize} mm²`,
+      name: `Subpanel Neutral Conductor, Copper ${spInsulationLabel}, ${sfNeutralSize} mm²`,
       description: "Distribution subpanel neutral wire cable",
       brand: settings.preferredBrandConductors,
       specification: "annealed copperstranded wire, lead-free white jacket, 90°C rated",
@@ -981,7 +989,7 @@ export const runBomQuantityTakeoff = (
     const sfEgcCost = getWirePricePerMeter(sfEgcSize);
     addItem({
       category: "Grounding",
-      name: `Subpanel Ground Conductor EGC, Copper THHN/THWN-2, ${sfEgcSize} mm²`,
+      name: `Subpanel Ground Conductor EGC, Copper ${spInsulationLabel}, ${sfEgcSize} mm²`,
       description: "Distribution subpanel equipment ground safety green wire cable",
       brand: settings.preferredBrandConductors,
       specification: "Solid copper, green lead-free insulation jacket, compliant with PEC Table 2.50.6.13",

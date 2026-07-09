@@ -10,6 +10,80 @@ export interface PanelNode {
   level: number;
 }
 
+export function sanitizePanelHierarchy(
+  mdpCircuits: Circuit[],
+  subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[]
+): {
+  sanitizedMdpCircuits: Circuit[];
+  sanitizedSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[];
+  hasSanitizationChanges: boolean;
+} {
+  let hasChanges = false;
+  const seenSubPanels = new Set<string>();
+
+  // parentMap: childId -> parentId
+  const parentMap = new Map<string, string>();
+
+  const isAncestor = (ancestorId: string, descendantId: string): boolean => {
+    let curr = parentMap.get(descendantId);
+    const visited = new Set<string>();
+    while (curr && !visited.has(curr)) {
+      if (curr === ancestorId) return true;
+      visited.add(curr);
+      curr = parentMap.get(curr);
+    }
+    return false;
+  };
+
+  const processCircuits = (circuits: Circuit[], currentPanelId: string): Circuit[] => {
+    return circuits.map((c) => {
+      if ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) && c.linkedSubPanelId) {
+        const childId = c.linkedSubPanelId;
+
+        // 1. Self-parenting check
+        if (childId === currentPanelId) {
+          hasChanges = true;
+          return { ...c, linkedSubPanelId: undefined };
+        }
+
+        // 2. Multi-parent check (Each subpanel can have only one parent)
+        if (seenSubPanels.has(childId)) {
+          hasChanges = true;
+          return { ...c, linkedSubPanelId: undefined };
+        }
+
+        // 3. Circular reference check
+        if (currentPanelId !== "mdp" && isAncestor(childId, currentPanelId)) {
+          hasChanges = true;
+          return { ...c, linkedSubPanelId: undefined };
+        }
+
+        // Track valid connection
+        seenSubPanels.add(childId);
+        parentMap.set(childId, currentPanelId);
+      }
+      return c;
+    });
+  };
+
+  const sanitizedMdpCircuits = processCircuits(mdpCircuits, "mdp");
+
+  const sanitizedSubPanels = subPanels.map((sp) => {
+    const nextCircuits = processCircuits(sp.circuits, sp.id);
+    if (!isEqual(sp.circuits, nextCircuits)) {
+      hasChanges = true;
+      return { ...sp, circuits: nextCircuits };
+    }
+    return sp;
+  });
+
+  return {
+    sanitizedMdpCircuits,
+    sanitizedSubPanels,
+    hasSanitizationChanges: hasChanges,
+  };
+}
+
 export function buildHierarchy(
   mdpCircuits: Circuit[],
   subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[]
@@ -101,16 +175,30 @@ export function syncHierarchyData(
   vdCalculations: VoltageDropCalculation[]
 ): { updatedMdpCircuits: Circuit[], updatedSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[], hasChanges: boolean } {
   
-  const { nodes, sortedNodeIds, hasCircular } = buildHierarchy(mdpCircuits, subPanels);
+  // 1. Sanitize the hierarchy first (prune self-parenting, duplicate, or circular references)
+  const {
+    sanitizedMdpCircuits,
+    sanitizedSubPanels,
+    hasSanitizationChanges,
+  } = sanitizePanelHierarchy(mdpCircuits, subPanels);
+
+  const activeMdpCircuits = hasSanitizationChanges ? sanitizedMdpCircuits : mdpCircuits;
+  const activeSubPanels = hasSanitizationChanges ? sanitizedSubPanels : subPanels;
+
+  const { nodes, sortedNodeIds, hasCircular } = buildHierarchy(activeMdpCircuits, activeSubPanels);
   if (hasCircular) {
-    // If circular, return unmodified
-    return { updatedMdpCircuits: mdpCircuits, updatedSubPanels: subPanels, hasChanges: false };
+    // Should not happen as we just sanitized it, but as a safe fallback
+    return {
+      updatedMdpCircuits: activeMdpCircuits,
+      updatedSubPanels: activeSubPanels,
+      hasChanges: hasSanitizationChanges,
+    };
   }
 
   const updatedNodes = new Map<string, { id: string; panel: PanelConfig; circuits: Circuit[] }>();
-  subPanels.forEach(sp => updatedNodes.set(sp.id, { ...sp, circuits: [...sp.circuits] }));
+  activeSubPanels.forEach(sp => updatedNodes.set(sp.id, { ...sp, circuits: [...sp.circuits] }));
   
-  let currentMdpCircuits = [...mdpCircuits];
+  let currentMdpCircuits = [...activeMdpCircuits];
 
   // Process from leaves to root
   for (const id of sortedNodeIds) {
@@ -133,7 +221,7 @@ export function syncHierarchyData(
   }
 
   // Finally recalculate MDP circuits itself
-  let hasChanges = false;
+  let hasChanges = hasSanitizationChanges;
   currentMdpCircuits = currentMdpCircuits.map((c, i) => {
     const updated = calculateCircuitValues(c, mdpPanel, Array.from(updatedNodes.values()), vdCalculations);
     const newCircuit = { ...c, ...updated };

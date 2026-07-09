@@ -409,7 +409,7 @@ const drawCadPanelSLD = (
   const conduitType = (mainFeeder.conduitType || "PVC").toUpperCase();
 
   b.addText(
-    `${runsStr}${wireNumber}x${wireSize} mm² THHN +`,
+    `${runsStr}${wireNumber}x${wireSize} mm² ${panel.insulationType || "THHN"} +`,
     xBase + 10,
     yBase - 2,
     1.6,
@@ -418,7 +418,7 @@ const drawCadPanelSLD = (
     "left",
   );
   b.addText(
-    `1x${groundSize} mm² THHN(G) IN`,
+    `1x${groundSize} mm² ${panel.insulationType || "THHN"}(G) IN`,
     xBase + 10,
     yBase - 7,
     1.6,
@@ -1068,6 +1068,24 @@ export const exportToCAD = (
       return spWithCircuit.panel?.conductorMaterial || "Copper";
     }
     return "Copper";
+  };
+
+  const getInsulationTypeForCalculation = (calc: VoltageDropCalculation) => {
+    if (calc.source === "main") {
+      return panel?.insulationType || "THHN";
+    }
+    const subPanel = subPanels.find(sp => sp.id === calc.source);
+    if (subPanel) {
+      return subPanel.panel?.insulationType || "THHN";
+    }
+    if (circuits?.some(c => c.id === calc.source)) {
+      return panel?.insulationType || "THHN";
+    }
+    const spWithCircuit = subPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
+    if (spWithCircuit) {
+      return spWithCircuit.panel?.insulationType || "THHN";
+    }
+    return "THHN";
   };
 
   // Run Load Schedule calculations
@@ -2339,7 +2357,7 @@ export const exportToCAD = (
     }
 
     // Merged block for Cols 8-13 (Summary specifications)
-    const summarySpecStr = `FEEDER: ${currentCalcData.mainFeeder.wire.runs}x${currentCalcData.mainFeeder.wire.size}mm² THHN + ${currentCalcData.mainFeeder.groundSize}mm² GND | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
+    const summarySpecStr = `FEEDER: ${currentCalcData.mainFeeder.wire.runs}x${currentCalcData.mainFeeder.wire.size}mm² ${currentPanel.insulationType || "THHN"} + ${currentCalcData.mainFeeder.groundSize}mm² GND | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
     
     const ySumTextSpec = ty - sumRowH / 2 - metrics.splitHeaderFontSize / 2;
 
@@ -2359,7 +2377,7 @@ export const exportToCAD = (
     // Main feeder layout details (Box with specifications under the table)
     b.addRect(xOffset + 20, ty - metrics.mainFeederBoxH, tableRight, ty, "BORDER");
     b.addText(
-      `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² THHN + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} ${currentCalcData.mainFeeder.conduitType || "PVC"}.`,
+      `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² ${currentPanel.insulationType || "THHN"} + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} ${currentCalcData.mainFeeder.conduitType || "PVC"}.`,
       xOffset + 23,
       ty - metrics.mainFeederBoxH / 2 + 3.5,
       metrics.mainFeederFontSize,
@@ -3009,7 +3027,7 @@ export const exportToCAD = (
           const limit = isFeeder ? 5.0 : 3.0;
 
           writeEqVD([
-            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2 ${material === "Copper" ? "CU" : "AL"} THHN\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
+            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2 ${material === "Copper" ? "CU" : "AL"} ${getInsulationTypeForCalculation(calc)}\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
             `R_{ohms} = ${R.toFixed(4)} \\ \\Omega\\text{/km}`,
             `VD = \\frac{${factorMath} \\times ${R.toFixed(4)} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
             `VD_{\\%} = \\left(\\frac{${vd.toFixed(2)}}{${calc.voltage}}\\right) \\times 100\\% = ${vdPerc.toFixed(2)} \\%`,
@@ -3594,7 +3612,7 @@ export const exportToCAD = (
       "left",
     );
     b.addText(
-      `${scParams.feederRuns}x SETS OF ${scParams.feederSize} mm² THHN (${scParams.feederLength}m)`,
+      `${scParams.feederRuns}x SETS OF ${scParams.feederSize} mm² ${panel?.insulationType || "THHN"} (${scParams.feederLength}m)`,
       xLeft + 10,
       y5 - 2,
       4.0,
@@ -4266,7 +4284,7 @@ export const exportToCAD = (
 
     scRows.push(
       { label: "Feeder Connection Architecture", val: connType, unit: "Topology" },
-      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize || "3.5", unit: "mm² THHN" },
+      { label: "Feeder Conductor Cross-Section", val: scParams.feederSize || "3.5", unit: `mm² ${panel?.insulationType || "THHN"}` },
       { label: "Feeder Distance Length", val: scParams.feederLength || 10, unit: "Meters" },
       { label: "Parallel Feeder Conductors", val: feederRuns, unit: "Runs" },
       { label: "Active Conductor Metal Type", val: scParams.conductorType || "Copper", unit: "Copper/Aluminum" },
@@ -4824,7 +4842,7 @@ export const exportDiagramToDXF = (
       mcbKAIC: 10,
       mcbType: MCBType.BOLT_ON,
       wireSize: "3.5",
-      wireType: "THHN",
+      wireType: panel.insulationType || "THHN",
       groundSize: "3.5",
       conduitSize: "20mm",
       conduitType: "PVC",

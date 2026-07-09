@@ -2138,7 +2138,7 @@ export default function App() {
         wsData.push(["SUMMARY & MAIN FEEDER"]);
         wsData.push([
           "Main Feeder:",
-          `${wire.runs && wire.runs > 1 ? `${wire.runs} Sets of ` : ""}${formatWireSize(wire.size)}mm² THHN, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
+          `${wire.runs && wire.runs > 1 ? `${wire.runs} Sets of ` : ""}${formatWireSize(wire.size)}mm² ${p.insulationType || "THHN"}, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
         ]);
         wsData.push([
           "Main Breaker:",
@@ -2914,7 +2914,7 @@ export default function App() {
         scData.push([
           "Feeder Conductor Cross-Section",
           scParams.feederSize || "30",
-          "mm² THHN",
+          `mm² ${panel.insulationType || "THHN"}`,
         ]);
         scData.push([
           "Feeder Distance Length",
@@ -6357,6 +6357,8 @@ export default function App() {
                         circuits={circuits}
                         setCircuits={handleSetMdpCircuits}
                         availableSubPanels={uniqueSubPanels}
+                        mdpCircuits={circuits}
+                        panelId="mdp"
                         iscParams={iscParams}
                         vdCalculations={vdCalculations}
                         isPremium={
@@ -6433,6 +6435,8 @@ export default function App() {
                             }
                             isSubPanel={true}
                             availableSubPanels={uniqueSubPanels}
+                            mdpCircuits={circuits}
+                            panelId={sp.id}
                             onRemoveSubPanel={() => {
                               setSubPanels((prev) =>
                                 prev.filter((p) => p.id !== sp.id),
