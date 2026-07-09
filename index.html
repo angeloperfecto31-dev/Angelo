@@ -11,6 +11,15 @@
     <meta name="theme-color" content="#FACC15" />
   </head>
   <body>
+    <div id="error-log" style="color: red; position: fixed; top: 0; left: 0; z-index: 9999; background: white; padding: 10px; font-family: monospace;"></div>
+    <script>
+      window.addEventListener('error', function(e) {
+        document.getElementById('error-log').innerText += e.message + '\n' + e.filename + ':' + e.lineno + '\n';
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        document.getElementById('error-log').innerText += 'Promise rejection: ' + e.reason + '\n';
+      });
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

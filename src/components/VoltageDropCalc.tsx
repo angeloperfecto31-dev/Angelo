@@ -149,7 +149,7 @@ export default function VoltageDropCalc({
             loadA: c.loadA,
             length: getLength(c.id),
             wireSize: getWireSize(c.id, c.wireSize),
-            wireSets: getWireSets(c.id, c.wireSets),
+            wireSets: getWireSets(c.id, c.wireSets || c.calculatedWireSets || 1),
             voltage: getVoltage(c.id, c.voltage || panel.voltage || 230),
             systemType: getSystemType(c.id, (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH"),
          });
@@ -180,7 +180,7 @@ export default function VoltageDropCalc({
             loadA: c.loadA,
             length: getLength(c.id),
             wireSize: getWireSize(c.id, c.wireSize),
-            wireSets: getWireSets(c.id, c.wireSets),
+            wireSets: getWireSets(c.id, c.wireSets || c.calculatedWireSets || 1),
             voltage: getVoltage(c.id, c.voltage || sp.panel.voltage || panel.voltage || 230),
             systemType: getSystemType(c.id, (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH"),
          });

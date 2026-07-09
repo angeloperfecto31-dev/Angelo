@@ -56,6 +56,7 @@ export interface Circuit {
   calculatedWireType?: string; // System recommended wire type
   wireSizeOverride?: string; // User-selected wire size override
   calculatedWireSize?: string; // System recommended wire size
+  calculatedWireSets?: number; // System recommended number of wire sets
   groundSize: string; // mm² (final size)
   groundSizeOverride?: string; // User-selected ground size override
   calculatedGroundSize?: string; // System recommended ground size

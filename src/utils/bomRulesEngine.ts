@@ -687,7 +687,7 @@ export const runBomQuantityTakeoff = (
       });
 
       // Conduit
-      const bWireSets = c.wireSets || 1;
+      const bWireSets = c.wireSets || c.calculatedWireSets || 1;
       const bConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
       const bConduitSize = c.conduitSizeOverride || c.conduitSize || getMinimumConduitSize(bPhaseSize, bPoles);
       const bConduitMeters = bLength * wasteConduitsFactor;

@@ -839,7 +839,7 @@ export default function App() {
             existingBranch.name !== branchName ||
             isLoadADiff ||
             existingBranch.wireSize !== c.wireSize ||
-            existingBranch.wireSets !== c.wireSets ||
+            existingBranch.wireSets !== (c.wireSets || c.calculatedWireSets || 1) ||
             isVoltageDiff ||
             existingBranch.systemType !== branchSystemType;
           if (hasBranchChanged) {
@@ -850,7 +850,7 @@ export default function App() {
             name: branchName,
             loadA: c.loadA,
             wireSize: c.wireSize,
-            wireSets: c.wireSets,
+            wireSets: c.wireSets || c.calculatedWireSets || 1,
             voltage: c.voltage,
             systemType: branchSystemType,
           });
@@ -863,7 +863,7 @@ export default function App() {
             loadA: c.loadA,
             length: 30, // Default to 30 meters
             wireSize: c.wireSize,
-            wireSets: c.wireSets,
+            wireSets: c.wireSets || c.calculatedWireSets || 1,
             voltage: c.voltage,
             systemType: branchSystemType,
           });
@@ -964,7 +964,7 @@ export default function App() {
                 existingBranch.name !== branchName ||
                 isLoadADiff ||
                 existingBranch.wireSize !== c.wireSize ||
-                existingBranch.wireSets !== c.wireSets ||
+                existingBranch.wireSets !== (c.wireSets || c.calculatedWireSets || 1) ||
                 isVoltageDiff ||
                 existingBranch.systemType !== branchSystemType;
               if (hasBranchChanged) {
@@ -975,7 +975,7 @@ export default function App() {
                 name: branchName,
                 loadA: c.loadA,
                 wireSize: c.wireSize,
-                wireSets: c.wireSets,
+                wireSets: c.wireSets || c.calculatedWireSets || 1,
                 voltage: c.voltage,
                 systemType: branchSystemType,
               });
@@ -988,7 +988,7 @@ export default function App() {
                 loadA: c.loadA,
                 length: 30, // Default to 30 meters
                 wireSize: c.wireSize,
-                wireSets: c.wireSets,
+                wireSets: c.wireSets || c.calculatedWireSets || 1,
                 voltage: c.voltage,
                 systemType: branchSystemType,
               });

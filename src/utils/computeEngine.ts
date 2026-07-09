@@ -136,16 +136,40 @@ export const getWireForBreakerLocal = (
   isMultioutlet?: boolean,
   wireSets?: number
 ) => {
-  return sizeConductor(
+  // First, calculate the ideal baseline size without user forced runs
+  const autoWire = sizeConductor(
     cbRating,
     designAmpacity,
     material,
     insulation,
     tempRating,
     isMotor,
-    isMultioutlet,
-    wireSets
+    isMultioutlet
   );
+
+  // If the user specifies a number of sets
+  if (wireSets !== undefined && wireSets !== autoWire.runs) {
+    if (wireSets >= autoWire.runs) {
+      // User is specifying MORE sets than strictly required.
+      // Do NOT recalculate or reduce the wire size. Preserve the conductor size and just distribute it.
+      return { ...autoWire, runs: wireSets };
+    } else {
+      // User is specifying FEWER sets than auto-calculated.
+      // We MUST recalculate to find a larger conductor size capable of carrying the load with fewer sets.
+      return sizeConductor(
+        cbRating,
+        designAmpacity,
+        material,
+        insulation,
+        tempRating,
+        isMotor,
+        isMultioutlet,
+        wireSets
+      );
+    }
+  }
+
+  return autoWire;
 };
 
 export const formatWireSizeLocal = (size: number): string =>
@@ -983,7 +1007,7 @@ export const calculateCircuitValues = (
     mcbP,
     panel.system,
     finalConduitType,
-    c.wireSets || 1,
+    wire.runs,
     finalWireType,
     c.conduitSizeOverride,
   );
@@ -1013,6 +1037,7 @@ export const calculateCircuitValues = (
     mcbType: c.mcbType || ("Bolt-on" as any),
     wireSize: finalWireSize,
     calculatedWireSize: calculatedWireSizeStr,
+    calculatedWireSets: wire.runs,
     wireType: finalWireType,
     calculatedWireType: calculatedWireTypeStr,
     groundSize: finalGroundSize,

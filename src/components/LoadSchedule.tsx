@@ -5033,13 +5033,13 @@ export default function LoadSchedule({
                           <div className="flex flex-col items-center gap-1">
                             <div className="flex items-center justify-center gap-1">
                               <select
-                                value={c.wireSets || 1}
+                                value={c.wireSets || c.calculatedWireSets || 1}
                                 onChange={(e) =>
                                   updateCircuit(c.id, {
                                     wireSets: Number(e.target.value),
                                   })
                                 }
-                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none ${!c.wireSets || c.wireSets === 1 ? "print:hidden" : ""}`}
+                                className={`bg-transparent text-slate-500 dark:text-slate-400 font-bold text-xxs border-none cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none ${(c.wireSets || c.calculatedWireSets || 1) === 1 ? "print:hidden" : ""}`}
                                 title="Number of Cable Sets"
                               >
                                 {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (

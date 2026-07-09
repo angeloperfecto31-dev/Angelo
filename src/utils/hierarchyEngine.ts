@@ -70,7 +70,7 @@ export function sanitizePanelHierarchy(
 
   const sanitizedSubPanels = subPanels.map((sp) => {
     const nextCircuits = processCircuits(sp.circuits, sp.id);
-    if (!isEqual(sp.circuits, nextCircuits)) {
+    if (!isEqual(cleanObj(sp.circuits), cleanObj(nextCircuits))) {
       hasChanges = true;
       return { ...sp, circuits: nextCircuits };
     }
@@ -168,6 +168,18 @@ export function buildHierarchy(
   return { nodes: Array.from(nodes.values()), sortedNodeIds, hasCircular };
 }
 
+function cleanObj(obj: any): any {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(cleanObj);
+  const result: any = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      result[key] = cleanObj(obj[key]);
+    }
+  }
+  return result;
+};
+
 export function syncHierarchyData(
   mdpPanel: PanelConfig,
   mdpCircuits: Circuit[],
@@ -225,14 +237,14 @@ export function syncHierarchyData(
   currentMdpCircuits = currentMdpCircuits.map((c, i) => {
     const updated = calculateCircuitValues(c, mdpPanel, Array.from(updatedNodes.values()), vdCalculations);
     const newCircuit = { ...c, ...updated };
-    if (!isEqual(c, newCircuit)) {
+    if (!isEqual(cleanObj(c), cleanObj(newCircuit))) {
       hasChanges = true;
     }
     return newCircuit;
   });
 
   const finalSubPanels = Array.from(updatedNodes.values());
-  if (!isEqual(subPanels, finalSubPanels)) {
+  if (!isEqual(cleanObj(subPanels), cleanObj(finalSubPanels))) {
     hasChanges = true;
   }
 

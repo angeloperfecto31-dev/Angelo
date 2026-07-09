@@ -118,7 +118,7 @@ export const sizeConductor = (
   customTemp?: 60 | 75 | 90,
   isMotor?: boolean,
   isMultioutlet?: boolean,
-  forcedRuns?: number,
+  forcedRuns?: number
 ): { size: number; ampacity: number; runs: number } => {
   const tempRating = customTemp || getTemperatureForInsulation(insulation);
 
@@ -171,8 +171,17 @@ export const sizeConductor = (
     }
   }
 
-  // Handle paralleling (forced runs OR auto-paralleling for large breakers)
-  const runs = forcedRuns !== undefined ? forcedRuns : (cbRating > 250 ? (cbRating > 800 ? (cbRating > 1200 ? Math.ceil(designAmpacity / 300) : 4) : (cbRating > 500 ? 3 : 2)) : 1);
+  // Handle paralleling for large breakers per PEC Article 3.10.1.10 (50 mm² or larger required)
+  let runs = 1;
+  if (cbRating > 250) {
+    runs = 2;
+    if (cbRating > 500) runs = 3;
+    if (cbRating > 800) runs = 4;
+    if (cbRating > 1200) runs = Math.ceil(designAmpacity / 300); // Dynamic scaling
+  }
+  if (forcedRuns !== undefined) {
+    runs = forcedRuns;
+  }
 
   if (runs > 1) {
     const row = PEC_AMPACITY_TABLE.find(r => {
