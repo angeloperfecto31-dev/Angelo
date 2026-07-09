@@ -3264,10 +3264,26 @@ export default function LoadSchedule({
                       <div className="space-y-3 col-span-1 md:col-span-1 lg:col-span-3">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                           <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
-                            <span className="text-[10px] uppercase font-bold text-slate-400">Conduit Size</span>
-                            <p className="text-sm font-black text-slate-800 dark:text-slate-100 mt-0.5">
-                              {mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}
-                            </p>
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Conduit Size Specs</span>
+                            <div className="mt-1 space-y-1">
+                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex justify-between gap-2">
+                                <span className="text-slate-400">Minimum:</span>
+                                <span>{mainFill.minimumSize}</span>
+                              </p>
+                              <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex justify-between gap-2">
+                                <span className="text-slate-400">Recommended:</span>
+                                <span>{mainFill.recommendedSize}</span>
+                              </p>
+                              <p className="text-xs font-black text-slate-800 dark:text-slate-100 border-t border-slate-100 dark:border-slate-800/80 pt-1 flex justify-between gap-2">
+                                <span className="text-slate-500">Active Selected:</span>
+                                <span className="flex items-center gap-1">
+                                  {mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}
+                                  {panel.mainOverrides?.conduitSize && (
+                                    <span className="text-[9px] bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 px-1 rounded uppercase font-bold">Manual</span>
+                                  )}
+                                </span>
+                              </p>
+                            </div>
                           </div>
                           <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Total Conductors</span>
@@ -3305,7 +3321,7 @@ export default function LoadSchedule({
                           ) : (
                             <p className="text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                               <span>✓</span>
-                              All conductors fit safely inside the <strong>{mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}</strong> conduit. Calculated fill factor is <strong>{mainFill.fillPercentage}%</strong>, comfortably below the <strong>{mainFill.allowableFillPercentage}%</strong> PEC limit.
+                              All conductors fit safely inside the <strong>{mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}</strong> conduit. Calculated fill factor is <strong>{mainFill.fillPercentage}%</strong> (PEC limit: <strong>{mainFill.allowableFillPercentage}%</strong>). Recommended: <strong>{mainFill.recommendedSize}</strong>.
                             </p>
                           )}
                         </div>
@@ -3328,7 +3344,7 @@ export default function LoadSchedule({
                                 Circuit {wb.circuitNo} - {wb.description}
                               </span>
                               <p className="text-[10px] text-slate-500 mt-0.5">
-                                Conduit: {wb.details.conduitSize} | Area: {wb.details.totalConductorArea} mm² / Allowed: {wb.details.allowableArea} mm²
+                                Conduit: {wb.details.conduitSize} (PEC Min: {wb.details.minimumSize} | Rec: {wb.details.recommendedSize}) | Area: {wb.details.totalConductorArea} mm² / Allowed: {wb.details.allowableArea} mm²
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -5093,15 +5109,19 @@ export default function LoadSchedule({
                                     conduitSizeOverride: e.target.value || undefined,
                                   })
                                 }
-                                className={`bg-transparent font-semibold font-sans cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xxs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.conduitSizeOverride ? (parseInt(c.conduitSizeOverride) < parseInt(c.calculatedConduitSize || c.conduitSize) ? "text-rose-600 dark:text-rose-400 border border-rose-200 bg-rose-50" : "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50") : "text-slate-500 dark:text-slate-400 border border-transparent"}`}
-                                title={c.conduitSizeOverride ? (parseInt(c.conduitSizeOverride) < parseInt(c.calculatedConduitSize || c.conduitSize) ? `⚠️ Undersized! System Calculated: ${c.calculatedConduitSize}` : `System Calculated: ${c.calculatedConduitSize}`) : "System Calculated Conduit Size"}
+                                className={`bg-transparent font-semibold font-sans cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 rounded px-1 py-0.5 outline-none text-xxs print:appearance-none print:bg-transparent print:border-none print:p-0 ${c.conduitSizeOverride ? (c.minimumConduitSize && parseInt(c.conduitSizeOverride) < parseInt(c.minimumConduitSize) ? "text-rose-600 dark:text-rose-400 border border-rose-200 bg-rose-50 font-bold" : "text-amber-600 dark:text-amber-400 border border-amber-200 bg-amber-50") : "text-slate-500 dark:text-slate-400 border border-transparent"}`}
+                                title={c.conduitSizeOverride ? (c.minimumConduitSize && parseInt(c.conduitSizeOverride) < parseInt(c.minimumConduitSize) ? `⚠️ Undersized! Minimum PEC Required: ${c.minimumConduitSize}` : `Manual Override. Recommended: ${c.recommendedConduitSize || c.calculatedConduitSize}`) : `System Auto: Minimum PEC ${c.minimumConduitSize || c.conduitSize} | Recommended ${c.recommendedConduitSize || c.calculatedConduitSize}`}
                               >
-                                <option value="">Auto ({c.calculatedConduitSize || c.conduitSize})</option>
-                                {CONDUIT_SIZES.map((size) => (
-                                  <option key={size} value={size}>
-                                    {size} {c.calculatedConduitSize && parseInt(size) < parseInt(c.calculatedConduitSize) ? "⚠️" : ""}
-                                  </option>
-                                ))}
+                                <option value="">Auto ({c.recommendedConduitSize || c.calculatedConduitSize || c.conduitSize})</option>
+                                {CONDUIT_SIZES.map((size) => {
+                                  const isUndersized = c.minimumConduitSize && parseInt(size) < parseInt(c.minimumConduitSize);
+                                  const isRecommended = c.recommendedConduitSize && size === c.recommendedConduitSize;
+                                  return (
+                                    <option key={size} value={size}>
+                                      {size} {isUndersized ? "⚠️ (PEC Undersized)" : isRecommended ? "★ (Recommended)" : ""}
+                                    </option>
+                                  );
+                                })}
                               </select>
                               <select
                                 value={c.conduitTypeOverride || c.conduitType || "PVC"}

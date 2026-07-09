@@ -221,6 +221,8 @@ const THHN_AREAS_FALLBACK: Record<number, number> = {
 
 export interface ConduitFillDetails {
   conduitSize: string;
+  minimumSize: string;
+  recommendedSize: string;
   fillPercentage: number;
   allowableFillPercentage: number;
   utilizationStatus: "Safe" | "Warning" | "Exceeds Allowable Fill";
@@ -229,6 +231,7 @@ export interface ConduitFillDetails {
   internalArea: number;
   conductorCount: number;
   isUndersized: boolean;
+  isOverrideUndersized: boolean;
 }
 
 export const getConduitFillDetails = (
@@ -284,39 +287,96 @@ export const getConduitFillDetails = (
   const allowablePercent = totalConductorCount === 1 ? 53 : (totalConductorCount === 2 ? 31 : 40);
 
   // Find recommended conduit size (smallest code-compliant)
-  let recommendedSize = table[table.length - 1].size; // default to largest
+  let minimumSize = table[table.length - 1].size; // default to largest
   for (const entry of table) {
     const internalArea = entry.limit / 0.40;
     const allowableArea = (allowablePercent / 100) * internalArea;
     if (allowableArea >= totalConductorArea) {
-      recommendedSize = entry.size;
+      minimumSize = entry.size;
       break;
     }
   }
 
-  // Prevent undersized conduit recommendations under all circumstances:
-  // Lookup indices of recommended vs overridden size and ensure the selected size is at least recommended.
-  const recIndex = table.findIndex(e => e.size === recommendedSize);
+  // Practical Engineering Floor Rules for Minimum Sizing to avoid tight mechanical squeezes
+  // E.g., for thick stiff wires, we need a minimum physical size.
+  const maxWireInConduit = Math.max(wireSize, groundSize);
+  let minimumSizeIndex = table.findIndex(e => e.size === minimumSize);
+
+  if (maxWireInConduit >= 8.0 && maxWireInConduit < 22) {
+    if (totalConductorCount >= 3) {
+      const floorIndex = table.findIndex(e => e.size === "20mm");
+      if (minimumSizeIndex !== -1 && minimumSizeIndex < floorIndex) minimumSizeIndex = floorIndex;
+    }
+    if (totalConductorCount >= 5) {
+      const floorIndex = table.findIndex(e => e.size === "25mm");
+      if (minimumSizeIndex !== -1 && minimumSizeIndex < floorIndex) minimumSizeIndex = floorIndex;
+    }
+  } else if (maxWireInConduit >= 22 && maxWireInConduit < 50) {
+    if (totalConductorCount >= 2) {
+      const floorIndex = table.findIndex(e => e.size === "25mm");
+      if (minimumSizeIndex !== -1 && minimumSizeIndex < floorIndex) minimumSizeIndex = floorIndex;
+    }
+  } else if (maxWireInConduit >= 50) {
+    if (totalConductorCount >= 2) {
+      const floorIndex = table.findIndex(e => e.size === "32mm");
+      if (minimumSizeIndex !== -1 && minimumSizeIndex < floorIndex) minimumSizeIndex = floorIndex;
+    }
+  }
+
+  if (minimumSizeIndex !== -1) {
+    minimumSize = table[minimumSizeIndex].size;
+  }
+
+  // Derive recommended size
+  let recommendedSize = minimumSize;
+  const minSizeIndex = table.findIndex(e => e.size === minimumSize);
+
+  if (minimumSize === "15mm") {
+    if (totalConductorArea > 30 || maxWireInConduit >= 5.5) {
+      const nextIndex = minSizeIndex + 1;
+      if (nextIndex < table.length) {
+        recommendedSize = table[nextIndex].size;
+      }
+    }
+  } else {
+    // General engineering recommendation: If the fill factor of the minimum size exceeds 30%, recommend the next standard size up.
+    const minEntry = table[minSizeIndex] || table[table.length - 1];
+    const minInternalArea = minEntry.limit / 0.40;
+    const minFillPercentage = minInternalArea > 0 ? (totalConductorArea / minInternalArea) * 100 : 0;
+    if (minFillPercentage > 30) {
+      const nextIndex = minSizeIndex + 1;
+      if (nextIndex < table.length) {
+        recommendedSize = table[nextIndex].size;
+      }
+    }
+  }
+
+  // Manual Override processing:
+  // If user provides a manual override, allow it as the active sizing.
+  // We compare manual override against the calculated minimumSize to see if it is undersized.
+  const activeSize = selectedSizeOverride || recommendedSize;
   const ovrIndex = selectedSizeOverride ? table.findIndex(e => e.size === selectedSizeOverride) : -1;
-  const activeSize = (selectedSizeOverride && ovrIndex >= recIndex) ? selectedSizeOverride : recommendedSize;
+  const minIndex = table.findIndex(e => e.size === minimumSize);
+
+  const isOverrideUndersized = selectedSizeOverride ? (ovrIndex < minIndex) : false;
+  const isUndersized = isOverrideUndersized;
 
   const activeEntry = table.find(e => e.size === activeSize) || table[table.length - 1];
-
   const internalArea = activeEntry.limit / 0.40;
   const allowableArea = (allowablePercent / 100) * internalArea;
   const fillPercentage = internalArea > 0 ? Number(((totalConductorArea / internalArea) * 100).toFixed(1)) : 0;
 
   let utilizationStatus: "Safe" | "Warning" | "Exceeds Allowable Fill" = "Safe";
-  if (fillPercentage > allowablePercent) {
+  if (isUndersized || fillPercentage > allowablePercent) {
     utilizationStatus = "Exceeds Allowable Fill";
   } else if (fillPercentage > allowablePercent * 0.9) {
     utilizationStatus = "Warning";
   }
 
-  const isUndersized = fillPercentage > allowablePercent;
-
   return {
     conduitSize: activeSize,
+    minimumSize,
+    recommendedSize,
     fillPercentage,
     allowableFillPercentage: allowablePercent,
     utilizationStatus,
@@ -324,7 +384,8 @@ export const getConduitFillDetails = (
     allowableArea: Number(allowableArea.toFixed(1)),
     internalArea: Number(internalArea.toFixed(1)),
     conductorCount: totalConductorCount,
-    isUndersized
+    isUndersized: isUndersized || fillPercentage > allowablePercent,
+    isOverrideUndersized
   };
 };
 
@@ -915,40 +976,28 @@ export const calculateCircuitValues = (
 
   const finalConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
   
-  const calculatedConduitSizeStr = isSubPanelLink && c.conduitSize
-    ? c.conduitSize
-    : getConduitSizeForWiresLocal(
-        calcBaseWireSize,
-        finalGroundSize,
-        mcbP,
-        panel.system,
-        finalConduitType,
-        c.wireSets || 1,
-        finalWireType,
-      );
+  // Calculate standard conduit details using the custom-built engine
+  const conduitDetails = getConduitFillDetails(
+    calcBaseWireSize,
+    finalGroundSize,
+    mcbP,
+    panel.system,
+    finalConduitType,
+    c.wireSets || 1,
+    finalWireType,
+    c.conduitSizeOverride,
+  );
 
-  // Auto-synchronize and sanitize conduit manual override when wire size, grounding, or conduit parameters change
   let finalConduitSizeOverride = c.conduitSizeOverride;
-  if (finalConduitSizeOverride) {
-    const overrideVal = parseInt(finalConduitSizeOverride) || 0;
-    const minVal = parseInt(calculatedConduitSizeStr) || 0;
-    if (overrideVal < minVal) {
-      finalConduitSizeOverride = undefined;
-    }
-  }
-
+  // If user has a manual override and it is smaller than the PEC minimum, we allow it (meaning we don't force-clear it) 
+  // but the UI will display a prominent warning since isUndersized / isOverrideUndersized will be set to true.
+  
   const finalConduitSize = isSubPanelLink && c.conduitSize
     ? c.conduitSize
-    : getConduitSizeForWiresLocal(
-        calcBaseWireSize,
-        finalGroundSize,
-        mcbP,
-        panel.system,
-        finalConduitType,
-        c.wireSets || 1,
-        finalWireType,
-        finalConduitSizeOverride,
-      );
+    : conduitDetails.conduitSize;
+
+  const minimumConduitSizeStr = conduitDetails.minimumSize;
+  const recommendedConduitSizeStr = conduitDetails.recommendedSize;
 
   return {
     ...c,
@@ -971,7 +1020,9 @@ export const calculateCircuitValues = (
     calculatedGroundSize: calculatedGroundSizeStr,
     conduitSize: finalConduitSize,
     conduitSizeOverride: finalConduitSizeOverride,
-    calculatedConduitSize: calculatedConduitSizeStr,
+    calculatedConduitSize: recommendedConduitSizeStr,
+    minimumConduitSize: minimumConduitSizeStr,
+    recommendedConduitSize: recommendedConduitSizeStr,
     conduitType: finalConduitType,
   };
 };
@@ -1719,26 +1770,29 @@ export const computePanelScheduleValues = (
     if (p.mainOverrides.conduitType)
       finalConduitType = p.mainOverrides.conduitType;
 
-    const calculatedMainConduitSizeStr = getConduitSizeForWiresLocal(
+    // Retrieve full conduit details to get the minimum size for safe validation
+    const mainConduitDetails = getConduitFillDetails(
       finalWireSize,
       finalGroundSize,
       finalPoles,
       p.system,
       finalConduitType,
       finalWireRuns,
-      p.insulationType || "THHN"
+      p.insulationType || "THHN",
+      p.mainOverrides.conduitSize
     );
 
     let finalConduitSizeOverride = p.mainOverrides.conduitSize;
     if (finalConduitSizeOverride) {
       const overrideVal = parseInt(finalConduitSizeOverride) || 0;
-      const minVal = parseInt(calculatedMainConduitSizeStr) || 0;
+      const minVal = parseInt(mainConduitDetails.minimumSize) || 0;
       if (overrideVal < minVal) {
         finalConduitSizeOverride = undefined;
       }
     }
 
-    finalConduitSize = getConduitSizeForWiresLocal(
+    // Recompute final conduit size with sanitized override
+    const finalConduitDetails = getConduitFillDetails(
       finalWireSize,
       finalGroundSize,
       finalPoles,
@@ -1748,6 +1802,7 @@ export const computePanelScheduleValues = (
       p.insulationType || "THHN",
       finalConduitSizeOverride
     );
+    finalConduitSize = finalConduitDetails.conduitSize;
 
     // Sync any auto-cleared overrides back to the panel's mainOverrides mutable config
     if (p.mainOverrides.groundSize !== finalGroundSizeOverride) {

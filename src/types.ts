@@ -62,6 +62,8 @@ export interface Circuit {
   conduitSize: string; // mm (final size)
   conduitSizeOverride?: string; // User-selected conduit size override
   calculatedConduitSize?: string; // System recommended conduit size
+  minimumConduitSize?: string; // Minimum PEC-compliant conduit size
+  recommendedConduitSize?: string; // Recommended conduit size for easier wire pulling
   conduitType: string;
   conduitTypeOverride?: string;
   loadType: LoadType;
