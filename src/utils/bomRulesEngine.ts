@@ -390,7 +390,8 @@ export const runBomQuantityTakeoff = (
   const fLength = getFeederLength(mdpId);
   const fPhaseSize = mdpFeeder.wire.size.toString() || "30";
   const fPhaseCount = is3Phase ? 3 : 2;
-  const fPhaseMeters = fLength * fPhaseCount * wasteConductorsFactor;
+  const fWireRuns = mdpFeeder.wire.runs || 1;
+  const fPhaseMeters = fLength * fPhaseCount * fWireRuns * wasteConductorsFactor;
   const fPhaseCost = getWirePricePerMeter(fPhaseSize);
 
   addItem({
@@ -403,13 +404,13 @@ export const runBomQuantityTakeoff = (
     unit: "meters",
     unitCost: fPhaseCost,
     laborCostPerUnit: fPhaseCost * 0.25,
-    remarks: `Service Feeder Phases (${fPhaseCount} x ${fLength}m)`,
+    remarks: `Service Feeder Phases (${fPhaseCount} x ${fLength}m x ${fWireRuns} runs)`,
     source: `Panel [${mdpId}] Feeder`
   });
 
   // Neutral wire
   const fNeutralSize = fPhaseSize;
-  const fNeutralMeters = fLength * 1 * wasteConductorsFactor;
+  const fNeutralMeters = fLength * 1 * fWireRuns * wasteConductorsFactor;
   const fNeutralCost = getWirePricePerMeter(fNeutralSize);
   addItem({
     category: "Conductors",
@@ -421,7 +422,7 @@ export const runBomQuantityTakeoff = (
     unit: "meters",
     unitCost: fNeutralCost,
     laborCostPerUnit: fNeutralCost * 0.25,
-    remarks: `Service Feeder Neutral (1 x ${fLength}m)`,
+    remarks: `Service Feeder Neutral (1 x ${fLength}m x ${fWireRuns} runs)`,
     source: `Panel [${mdpId}] Feeder`
   });
 
@@ -444,10 +445,9 @@ export const runBomQuantityTakeoff = (
   });
 
   // Service entrance conduit
-  const fWireRuns = mdpFeeder.wire.runs || 1;
   const fConduitType = mdpFeeder.conduitType || "PVC";
   const fConduitSize = mdpFeeder.conduitSize || "50";
-  const fConduitMeters = fLength * wasteConduitsFactor * fWireRuns;
+  const fConduitMeters = fLength * wasteConduitsFactor;
   const fConduitCost = getConduitPricePerMeter(fConduitSize, fConduitType);
   addItem({
     category: "Conduits",
@@ -459,14 +459,14 @@ export const runBomQuantityTakeoff = (
     unit: "meters",
     unitCost: fConduitCost,
     laborCostPerUnit: fConduitCost * 0.35,
-    remarks: `Service Feeder Raceway (${fLength}m x ${fWireRuns} runs)`,
+    remarks: `Service Feeder Raceway (${fLength}m)`,
     source: `Panel [${mdpId}] Feeder`
   });
 
   // Feeder accessories
-  const totalFeederConductors = fPhaseCount + 2; // Phase + Neutral + Ground
-  const fCouplingCount = Math.ceil(fLength / 3) * wasteAccessoriesFactor * fWireRuns;
-  const fStrapsCount = Math.ceil(fLength / 1.5) * wasteAccessoriesFactor * fWireRuns;
+  const totalFeederConductors = (fPhaseCount + 1) * fWireRuns + 1; // Phases + Neutral * runs + Ground
+  const fCouplingCount = Math.ceil(fLength / 3) * wasteAccessoriesFactor;
+  const fStrapsCount = Math.ceil(fLength / 1.5) * wasteAccessoriesFactor;
   const fLugCount = totalFeederConductors * 2; // Lug on each end of conductor
 
   addItem({
@@ -690,7 +690,7 @@ export const runBomQuantityTakeoff = (
       const bWireSets = c.wireSets || 1;
       const bConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
       const bConduitSize = c.conduitSizeOverride || c.conduitSize || getMinimumConduitSize(bPhaseSize, bPoles);
-      const bConduitMeters = bLength * wasteConduitsFactor * bWireSets;
+      const bConduitMeters = bLength * wasteConduitsFactor;
       const bConduitCost = getConduitPricePerMeter(bConduitSize, bConduitType);
 
       addItem({
@@ -703,13 +703,13 @@ export const runBomQuantityTakeoff = (
         unit: "meters",
         unitCost: bConduitCost,
         laborCostPerUnit: bConduitCost * 0.35,
-        remarks: `Circuit ${c.circuitNo} Raceway Conduit (${bLength}m x ${bWireSets} runs)`,
+        remarks: `Circuit ${c.circuitNo} Raceway Conduit (${bLength}m)`,
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
 
       // Conduit Accessories
-      const bCouplingCount = Math.ceil(bLength / 3) * wasteAccessoriesFactor * bWireSets;
-      const bStrapsCount = Math.ceil(bLength / 1.5) * wasteAccessoriesFactor * bWireSets;
+      const bCouplingCount = Math.ceil(bLength / 3) * wasteAccessoriesFactor;
+      const bStrapsCount = Math.ceil(bLength / 1.5) * wasteAccessoriesFactor;
       const totalBranchConductors = bPoles + 1; // Phases + Ground
       const bLugCount = totalBranchConductors * 2;
 
@@ -940,7 +940,8 @@ export const runBomQuantityTakeoff = (
     const sfLength = getFeederLength(sp.id);
     const sfPhaseSize = spFeeder.wire.size.toString() || "8.0";
     const sfPhaseCount = sp.panel.system.includes("3PH") ? 3 : 2;
-    const sfPhaseMeters = sfLength * sfPhaseCount * wasteConductorsFactor;
+    const sfWireRuns = spFeeder.wire.runs || 1;
+    const sfPhaseMeters = sfLength * sfPhaseCount * sfWireRuns * wasteConductorsFactor;
     const sfPhaseCost = getWirePricePerMeter(sfPhaseSize);
 
     addItem({
@@ -953,13 +954,13 @@ export const runBomQuantityTakeoff = (
       unit: "meters",
       unitCost: sfPhaseCost,
       laborCostPerUnit: sfPhaseCost * 0.25,
-      remarks: `Subpanel Feeder Phases (${sfPhaseCount} x ${sfLength}m)`,
+      remarks: `Subpanel Feeder Phases (${sfPhaseCount} x ${sfLength}m x ${sfWireRuns} runs)`,
       source: `Panel [${spId}] Feeder`
     });
 
     // Neutral wire
     const sfNeutralSize = sfPhaseSize;
-    const sfNeutralMeters = sfLength * 1 * wasteConductorsFactor;
+    const sfNeutralMeters = sfLength * 1 * sfWireRuns * wasteConductorsFactor;
     const sfNeutralCost = getWirePricePerMeter(sfNeutralSize);
     addItem({
       category: "Conductors",
@@ -971,7 +972,7 @@ export const runBomQuantityTakeoff = (
       unit: "meters",
       unitCost: sfNeutralCost,
       laborCostPerUnit: sfNeutralCost * 0.25,
-      remarks: `Subpanel Feeder Neutral (1 x ${sfLength}m)`,
+      remarks: `Subpanel Feeder Neutral (1 x ${sfLength}m x ${sfWireRuns} runs)`,
       source: `Panel [${spId}] Feeder`
     });
 
@@ -1015,7 +1016,7 @@ export const runBomQuantityTakeoff = (
     // Feeder conduit accessories
     const sfCouplingCount = Math.ceil(sfLength / 3) * wasteAccessoriesFactor;
     const sfStrapsCount = Math.ceil(sfLength / 1.5) * wasteAccessoriesFactor;
-    const totalSfConductors = sfPhaseCount + 2; // Phase + Neutral + Ground
+    const totalSfConductors = (sfPhaseCount + 1) * sfWireRuns + 1; // Phases + Neutral * runs + Ground
     const sfLugCount = totalSfConductors * 2;
 
     addItem({

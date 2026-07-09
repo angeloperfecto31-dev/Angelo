@@ -117,7 +117,8 @@ export const sizeConductor = (
   insulation: string = 'THHN',
   customTemp?: 60 | 75 | 90,
   isMotor?: boolean,
-  isMultioutlet?: boolean
+  isMultioutlet?: boolean,
+  forcedRuns?: number,
 ): { size: number; ampacity: number; runs: number } => {
   const tempRating = customTemp || getTemperatureForInsulation(insulation);
 
@@ -170,14 +171,12 @@ export const sizeConductor = (
     }
   }
 
-  // Handle paralleling for large breakers per PEC Article 3.10.1.10 (50 mm² or larger required)
-  if (cbRating > 250) {
-    let runs = 2;
-    if (cbRating > 500) runs = 3;
-    if (cbRating > 800) runs = 4;
-    if (cbRating > 1200) runs = Math.ceil(designAmpacity / 300); // Dynamic scaling
+  // Handle paralleling (forced runs OR auto-paralleling for large breakers)
+  const runs = forcedRuns !== undefined ? forcedRuns : (cbRating > 250 ? (cbRating > 800 ? (cbRating > 1200 ? Math.ceil(designAmpacity / 300) : 4) : (cbRating > 500 ? 3 : 2)) : 1);
 
+  if (runs > 1) {
     const row = PEC_AMPACITY_TABLE.find(r => {
+      // PEC Article 3.10.1.10 parallel conductors rule: size 50 mm² and larger
       if (r.size < 50) return false;
       if (r.size < minSize) return false;
       const singleAmp = material === 'Copper' ? r.copper[sizingTempRating] : r.aluminum[sizingTempRating];

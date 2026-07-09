@@ -427,7 +427,7 @@ const drawCadPanelSLD = (
     "left",
   );
   b.addText(
-    `${runsSfxComp}Ø ${conduitSize} ${conduitType} CONDUIT`,
+    `Ø ${conduitSize} ${conduitType} CONDUIT`,
     xBase + 10,
     yBase - 12,
     1.6,

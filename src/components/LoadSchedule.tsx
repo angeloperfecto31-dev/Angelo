@@ -2762,7 +2762,7 @@ export default function LoadSchedule({
 
                           const activeGround = nextOverrides.groundSize || computedGround;
                           const activePoles = prev.mainOverrides?.poles || (prev.system.includes("3PH") ? 3 : 2);
-                          const activeRuns = prev.mainOverrides?.wireRuns || 1;
+                          const activeRuns = prev.mainOverrides?.wireRuns || mainFeeder.wire.runs || 1;
                           const activeConduitType = prev.mainConduitType || prev.mainOverrides?.conduitType || "PVC";
                           
                           const computedConduit = getConduitSizeForWiresLocal(

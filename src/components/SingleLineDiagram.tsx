@@ -161,7 +161,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
          )}
          <tspan x="410" dy="18">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² {panel.insulationType || 'THHN'} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'} +</tspan>
          <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² {panel.insulationType || 'THHN'}(G) IN</tspan>
-         <tspan x="410" dy="20">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs}-` : ''}{mainFeeder.conduitSize.toUpperCase()}Ø {(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT</tspan>
+         <tspan x="410" dy="20">{mainFeeder.conduitSize.toUpperCase()}Ø {(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT</tspan>
       </text>
 
       {/* Meter */}

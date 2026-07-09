@@ -133,7 +133,8 @@ export const getWireForBreakerLocal = (
   insulation: string = "THHN",
   tempRating?: 60 | 75 | 90,
   isMotor?: boolean,
-  isMultioutlet?: boolean
+  isMultioutlet?: boolean,
+  wireSets?: number
 ) => {
   return sizeConductor(
     cbRating,
@@ -142,7 +143,8 @@ export const getWireForBreakerLocal = (
     insulation,
     tempRating,
     isMotor,
-    isMultioutlet
+    isMultioutlet,
+    wireSets
   );
 };
 
@@ -275,13 +277,10 @@ export const getConduitFillDetails = (
   const groundArea = groundSize > 0 ? getConductorArea(groundSize, finalWireType) : 0;
 
   // Number of parallel sets affects the calculation:
-  // Usually, parallel feeders are placed in separate conduits (one conduit per set).
-  // Each conduit carries 1 set.
-  const condCountPerConduit = numPhases + numNeutrals + numGrounds;
-  const condAreaPerConduit = (numPhases * phaseArea) + (numNeutrals * neutralArea) + (numGrounds * groundArea);
-
-  const totalConductorCount = condCountPerConduit;
-  const totalConductorArea = condAreaPerConduit;
+  // As requested, conduit sizing must be determined using the total number of conductors from all cable sets
+  // (including phase conductors, neutral if applicable, and grounding conductors) in a single conduit.
+  const totalConductorCount = (numPhases + numNeutrals) * wireSets + numGrounds;
+  const totalConductorArea = ((numPhases * phaseArea) + (numNeutrals * neutralArea)) * wireSets + (numGrounds * groundArea);
 
   // PEC Table 1 conduit fill limits: 1 wire = 53%, 2 wires = 31%, 3+ wires = 40%
   const allowablePercent = totalConductorCount === 1 ? 53 : (totalConductorCount === 2 ? 31 : 40);
@@ -916,7 +915,8 @@ export const calculateCircuitValues = (
     finalWireType,
     c.wireTypeOverride ? undefined : (panel.temperatureRating as any),
     isMotor,
-    isMultioutlet
+    isMultioutlet,
+    c.wireSets
   );
 
   let baseWireSize = wire.size;
@@ -1657,7 +1657,8 @@ export const computePanelScheduleValues = (
     p.insulationType || "THHN",
     p.temperatureRating as any,
     false,
-    false
+    false,
+    p.mainOverrides?.isOverrideEnabled ? p.mainOverrides?.wireRuns : undefined
   );
 
   let baseWireSize = wire.size;
