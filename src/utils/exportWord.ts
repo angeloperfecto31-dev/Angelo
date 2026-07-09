@@ -23,7 +23,7 @@ import { Document, Packer, PageOrientation,
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance } from './computeEngine';
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel } from './computeEngine';
 
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
 function getMathSymbol(macro: string): string {
@@ -954,7 +954,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           createCell(cir.loadVA?.toString() || "0"),
           createCell(ampsContent),
           createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${typeof cir.mcbP === "string" ? cir.mcbP : (cir.mcbP || 2) + "P"}`),
-          createCell(isSpace ? "-" : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize || '3.5'} mm² ${cir.wireType || 'THHN'}`),
+          createCell(isSpace ? "-" : getConductorLabel(cir.wireSize || "3.5", cir.groundSize || "2.0", cir.mcbP, cir.wireSets || cir.calculatedWireSets || 1, cir.wireType || "THHN")),
           createCell(isSpace ? "-" : `${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
         ]
       }));

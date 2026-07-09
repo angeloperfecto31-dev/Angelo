@@ -7,7 +7,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance } from "./computeEngine";
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel } from "./computeEngine";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -2206,7 +2206,7 @@ export const exportToCAD = (
         ? "SPACE"
         : isSpare
           ? "SPARE"
-          : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ''}${cir.wireSize} mm² ${cir.wireType || "THHN"} / ${cir.groundSize} mm² GND in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
+          : `${getConductorLabel(cir.wireSize || "2.0", cir.groundSize || "2.0", cir.mcbP, cir.wireSets || cir.calculatedWireSets || 1, cir.wireType || "THHN")} in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
       
       const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
       b.addText(

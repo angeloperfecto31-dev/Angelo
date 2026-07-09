@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal } from "./computeEngine";
+import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles } from "./computeEngine";
 
 export interface BomItem {
   id: string;
@@ -646,10 +646,13 @@ export const runBomQuantityTakeoff = (
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
 
-      // Conductors (Phase wires)
+      // Conductors (Phase/Neutral wires)
+      const bWireSets = c.wireSets || c.calculatedWireSets || 1;
       const bLength = getCircuitLength(c.id);
       const bPhaseSize = c.wireSizeOverride || c.calculatedWireSize || c.wireSize || "2.0";
-      const bPoles = typeof c.mcbP === "string" ? getTotalPoles(c.mcbP) || 2 : c.mcbP || 2;
+      const numPhases = getActivePoles(c.mcbP);
+      const numNeutrals = getNeutralPoles(c.mcbP);
+      const bPoles = (numPhases + numNeutrals) * bWireSets;
       const bPhaseMeters = bLength * bPoles * wasteConductorsFactor;
       const bPhaseCost = getWirePricePerMeter(bPhaseSize);
 
@@ -669,7 +672,7 @@ export const runBomQuantityTakeoff = (
 
       // Grounding conductor (EGC) - sized according to PEC Table 2.50.6.13
       const bEgcSize = getEgcSizeStr(c.mcbAT || 20);
-      const bEgcMeters = bLength * 1 * wasteConductorsFactor;
+      const bEgcMeters = bLength * bWireSets * wasteConductorsFactor;
       const bEgcCost = getWirePricePerMeter(bEgcSize);
 
       addItem({
@@ -682,12 +685,11 @@ export const runBomQuantityTakeoff = (
         unit: "meters",
         unitCost: bEgcCost,
         laborCostPerUnit: bEgcCost * 0.30,
-        remarks: `Circuit ${c.circuitNo} Ground Wire (1 x ${bLength}m)`,
+        remarks: `Circuit ${c.circuitNo} Ground Wire (${bWireSets} x ${bLength}m)`,
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
 
       // Conduit
-      const bWireSets = c.wireSets || c.calculatedWireSets || 1;
       const bConduitType = c.conduitTypeOverride || c.conduitType || "PVC";
       const bConduitSize = c.conduitSizeOverride || c.conduitSize || getMinimumConduitSize(bPhaseSize, bPoles);
       const bConduitMeters = bLength * wasteConduitsFactor;

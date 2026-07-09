@@ -1,7 +1,7 @@
 // SingleLineDiagram.tsx
 import React from 'react';
-import { Circuit, PanelConfig } from '../types';
-import { parseSystemVoltage, getActivePoles, getTotalPoles } from '../utils/computeEngine';
+import { Circuit, PanelConfig, LoadType } from '../types';
+import { parseSystemVoltage, getActivePoles, getTotalPoles, getConductorLabel } from '../utils/computeEngine';
 
 interface SingleLineDiagramProps {
   panel: PanelConfig;
@@ -31,7 +31,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
 
   // Helpers to describe sub-panel dynamic connection configurations
   const getFeederText = (c: Circuit) => {
-    const isSub = c.loadType === 'SUB' || c.loadType === 'SUBSUB';
+    const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
     if (!isSub) return "";
     
     let phaseText = "1-Φ L-N";
@@ -42,11 +42,10 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
     }
 
     const pText = typeof c.mcbP === "string" && c.mcbP.endsWith("P") ? c.mcbP : typeof c.mcbP === "string" && c.mcbP.includes("+N") ? c.mcbP : `${c.mcbP}P`;
-    const conductors = `${getTotalPoles(c.mcbP)}-#${c.wireSize || "8.0"}mm²`;
-    const ground = c.groundSize ? ` + 1-#${c.groundSize}mm²(G)` : '';
+    const conductorLabel = getConductorLabel(c.wireSize || "2.0", c.groundSize || "2.0", c.mcbP, c.wireSets || c.calculatedWireSets || 1, c.wireType || "THHN");
     const conduit = c.conduitSize ? ` IN ${c.conduitSize}mmØ ${(c.conduitType || 'PVC').toUpperCase()}` : '';
     
-    return `${phaseText}, ${c.voltage}V | ${pText}, ${conductors}${ground}${conduit}`;
+    return `${phaseText}, ${c.voltage}V | ${pText}, ${conductorLabel}${conduit}`;
   };
 
   // Dynamically calculate recommended transformer size for Main panel
@@ -159,9 +158,18 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
          ) : (
            <tspan x="410" dy="0" className="fill-slate-400 font-bold text-xxs tracking-wider">[SERIES FEEDER CONNECTION]</tspan>
          )}
-         <tspan x="410" dy="18">{mainFeeder.wire.runs > 1 ? `${mainFeeder.wire.runs} SETS OF ` : ''}{wireNumber}-{formatWireSize(Number(mainFeeder.wire.size))}MM² {panel.insulationType || 'THHN'} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'} +</tspan>
-         <tspan x="410" dy="20">1-{mainFeeder.groundSize}MM² {panel.insulationType || 'THHN'}(G) IN</tspan>
-         <tspan x="410" dy="20">{mainFeeder.conduitSize.toUpperCase()}Ø {(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT</tspan>
+         <tspan x="410" dy="18">
+           {getConductorLabel(
+             mainFeeder.wire.size,
+             mainFeeder.groundSize,
+             mainFeeder.poles,
+             mainFeeder.wire.runs,
+             panel.insulationType || "THHN"
+           )} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'}
+         </tspan>
+         <tspan x="410" dy="20">
+           IN {mainFeeder.conduitSize.toUpperCase()}Ø {(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT
+         </tspan>
       </text>
 
       {/* Meter */}

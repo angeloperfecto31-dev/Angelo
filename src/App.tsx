@@ -90,6 +90,7 @@ import {
   isIdleSpareOrSpace,
   setGlobalSubPanels,
   calculateEquivalentFeederImpedance,
+  getConductorLabel,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 import {
@@ -2092,7 +2093,7 @@ export default function App() {
             isSpace ? "-" : cir.mcbType,
             isSpace
               ? "-"
-              : `${cir.wireSets && cir.wireSets > 1 ? `${cir.wireSets} Sets of ` : ""}${cir.wireSize}mm² ${cir.wireType} / ${cir.groundSize}mm² GND in ${cir.conduitSize} ${cir.conduitType}`,
+              : `${getConductorLabel(cir.wireSize || "2.0", cir.groundSize || "2.0", cir.mcbP, cir.wireSets || cir.calculatedWireSets || 1, cir.wireType || "THHN")} in ${cir.conduitSize} ${cir.conduitType}`,
           );
           wsData.push(row);
         });

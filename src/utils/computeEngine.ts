@@ -77,36 +77,97 @@ const CONDUIT_FILL_TABLE = CONDUIT_LIBRARY.PVC;
 
 
 export const getValidPolesForSystem = (system: string): string[] => {
-  if (system.includes("3PH, 4W") || system.includes("3PH, 5W")) {
+  if (!system) return ["1P", "1P+N", "2P", "2P+N", "3P", "3P+N", "4P"];
+  const s = system.toUpperCase();
+  if (s.includes("3PH, 4W") || s.includes("3PH, 5W") || s.includes("4W") || s.includes("5W")) {
     return ["1P", "1P+N", "2P", "2P+N", "3P", "3P+N", "4P"];
-  } else if (system.includes("1PH, 2W") || system.includes("1PH, 3W")) {
-    return ["1P", "1P+N", "2P"];
-  } else if (system.includes("3PH, 3W")) {
-    return ["2P", "3P"];
+  } else if (s.includes("1PH, 2W") || s.includes("1PH, 3W") || s.includes("2W") || s.includes("3W")) {
+    if (s.includes("3PH")) {
+      return ["2P", "3P"];
+    }
+    return ["1P", "1P+N", "2P", "2P+N"];
   }
-  return ["1P", "2P", "3P", "4P"];
+  return ["1P", "1P+N", "2P", "2P+N", "3P", "3P+N", "4P"];
 };
 
 export const getActivePoles = (poleStr: string | number): number => {
-  if (typeof poleStr === "number") return poleStr;
+  if (typeof poleStr === "number") {
+    if (poleStr === 4) return 3;
+    return poleStr;
+  }
   if (!poleStr) return 1;
-  const match = poleStr.match(/^(\d)P/);
-  return match ? parseInt(match[1]) : 1;
+  const s = poleStr.toString().trim().toUpperCase();
+  if (s === "4P") return 3;
+  if (s === "3P" || s === "3P+N") return 3;
+  if (s === "2P" || s === "2P+N") return 2;
+  if (s === "1P" || s === "1P+N") return 1;
+
+  const match = s.match(/^(\d)P/);
+  if (match) {
+    const val = parseInt(match[1]);
+    if (val === 4) return 3;
+    return val;
+  }
+  return 1;
 };
 
 export const getTotalPoles = (poleStr: string | number): number => {
   if (typeof poleStr === "number") return poleStr;
   if (!poleStr) return 1;
-  const match = poleStr.match(/^(\d)P/);
+  const s = poleStr.toString().trim().toUpperCase();
+  if (s === "4P") return 4;
+  const match = s.match(/^(\d)P/);
   const active = match ? parseInt(match[1]) : 1;
-  const neutral = poleStr.includes("+N") ? 1 : 0;
+  const neutral = s.includes("+N") ? 1 : 0;
   return active + neutral;
 };
 
 export const getNeutralPoles = (poleStr: string | number): number => {
-  if (typeof poleStr === "number") return 0;
+  if (typeof poleStr === "number") {
+    if (poleStr === 4) return 1;
+    return 0;
+  }
   if (!poleStr) return 0;
-  return poleStr.includes("+N") ? 1 : 0;
+  const s = poleStr.toString().trim().toUpperCase();
+  if (s === "4P" || s.includes("+N")) return 1;
+  return 0;
+};
+
+export const getConductorLabel = (
+  wireSize: string | number,
+  groundSize: string | number,
+  poles: string | number,
+  wireSets: number = 1,
+  wireType: string = "THHN"
+): string => {
+  const sets = wireSets && wireSets > 1 ? wireSets : 1;
+  const numPhases = getActivePoles(poles);
+  const numNeutrals = getNeutralPoles(poles);
+
+  const wSizeStr = typeof wireSize === "number" ? formatWireSizeLocal(wireSize) : wireSize;
+  const gSizeStr = typeof groundSize === "number" ? formatWireSizeLocal(groundSize) : groundSize;
+
+  let label = "";
+  if (sets > 1) {
+    label += `${sets} Sets of `;
+  }
+
+  label += `${numPhases} × ${wSizeStr} mm²`;
+
+  if (numNeutrals > 0) {
+    label += ` + ${numNeutrals} × ${wSizeStr} mm² N`;
+  }
+
+  const gSizeNum = parseFloat(gSizeStr.toString()) || 0;
+  if (gSizeNum > 0) {
+    label += ` + 1 × ${gSizeStr} mm² G`;
+  }
+
+  if (wireType) {
+    label += ` ${wireType}`;
+  }
+
+  return label;
 };
 
 export const getAdjustedWireForVoltageDrop = (
@@ -309,15 +370,18 @@ export const getConduitFillDetails = (
   const finalWireType = wireType || "THHN";
   const activePoles = typeof poles === "string" ? getActivePoles(poles) : poles;
 
-  let numPhases = activePoles === 1 ? 1 : activePoles;
-  if (activePoles === 1) {
-    numPhases = 1;
-  }
-  const phaseArea = getConductorArea(wireSize, finalWireType);
+  let numPhases = 1;
+  let numNeutrals = 0;
 
-  let numNeutrals = typeof poles === "string" ? getNeutralPoles(poles) : 0;
-  if (typeof poles === "number" || !poles.toString().includes("+N")) {
-    if (activePoles === 1) {
+  if (typeof poles === "string") {
+    numPhases = getActivePoles(poles);
+    numNeutrals = getNeutralPoles(poles);
+  } else {
+    const activePoles = poles;
+    numPhases = activePoles === 4 ? 3 : (activePoles === 1 ? 1 : activePoles);
+    if (activePoles === 4) {
+      numNeutrals = 1;
+    } else if (activePoles === 1) {
       numNeutrals = 1;
     } else if (activePoles === 2) {
       if (systemName.includes("1PH, 3W") || systemName.includes("3W") || systemName.includes("3-Wire")) {
@@ -329,6 +393,7 @@ export const getConduitFillDetails = (
       }
     }
   }
+  const phaseArea = getConductorArea(wireSize, finalWireType);
   const neutralSize = wireSize;
   const neutralArea = getConductorArea(neutralSize, finalWireType);
 
@@ -339,8 +404,8 @@ export const getConduitFillDetails = (
   // Number of parallel sets affects the calculation:
   // As requested, conduit sizing must be determined using the total number of conductors from all cable sets
   // (including phase conductors, neutral if applicable, and grounding conductors) in a single conduit.
-  const totalConductorCount = (numPhases + numNeutrals) * wireSets + numGrounds;
-  const totalConductorArea = ((numPhases * phaseArea) + (numNeutrals * neutralArea)) * wireSets + (numGrounds * groundArea);
+  const totalConductorCount = (numPhases + numNeutrals + numGrounds) * wireSets;
+  const totalConductorArea = ((numPhases * phaseArea) + (numNeutrals * neutralArea) + (numGrounds * groundArea)) * wireSets;
 
   // PEC Table 1 conduit fill limits: 1 wire = 53%, 2 wires = 31%, 3+ wires = 40%
   const allowablePercent = totalConductorCount === 1 ? 53 : (totalConductorCount === 2 ? 31 : 40);
