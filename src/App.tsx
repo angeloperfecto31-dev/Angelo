@@ -1952,6 +1952,7 @@ export default function App() {
         // Extract accurate calculations matching the system's UI engine
         const {
           totalVA,
+          totalConnectedAmps,
           phaseImbalance,
           phaseAmps,
           mainCurrent,
@@ -2150,7 +2151,7 @@ export default function App() {
               : "-", // 9: 3Ø
           );
         } else {
-          baseTotalRow.push(`${mainCurrent.baseAmp.toFixed(2)} A`); // 5: AMPS
+          baseTotalRow.push(`${totalConnectedAmps.toFixed(2)} A`); // 5: AMPS
         }
 
         const numCols = is3Phase ? 16 : 12;

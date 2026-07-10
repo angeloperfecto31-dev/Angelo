@@ -28,7 +28,7 @@ import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEqu
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
 function getMathSymbol(macro: string): string {
   switch (macro) {
-    case "times": return " × ";
+    case "times": return " x ";
     case "cdot":
     case "mid": return " ∙ ";
     case "approx": return " ≈ ";
@@ -1359,7 +1359,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       }[] = [];
 
       if (panel && circuits) {
-        const { mainCurrent, totalVA } = computePanelScheduleValues(panel, circuits, { availableSubPanels: subPanels });
+        const { mainCurrent, totalVA, totalConnectedAmps } = computePanelScheduleValues(panel, circuits, { availableSubPanels: subPanels });
         const mainFeederCalc = vdCalculations.find(c => c.source === "main");
         const mainCircuits = vdCalculations.filter(c => circuits.some(circuit => circuit.id === c.source));
         
@@ -1370,13 +1370,13 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           type: panel.type || "MDP",
           feederCalc: mainFeederCalc,
           circuitCalcs: mainCircuits,
-          totalLoadA: mainCurrent.designAmp,
+          totalLoadA: totalConnectedAmps,
           totalLoadKVA: totalVA / 1000,
         });
       }
 
       subPanels.forEach(sp => {
-        const { mainCurrent, totalVA } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: subPanels });
+        const { mainCurrent, totalVA, totalConnectedAmps } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: subPanels });
         const feederCalc = vdCalculations.find(c => c.source === sp.id);
         const circuitCalcs = vdCalculations.filter(c => sp.circuits.some(circuit => circuit.id === c.source));
         
@@ -1400,7 +1400,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           type: sp.panel.type || "DP",
           feederCalc,
           circuitCalcs,
-          totalLoadA: mainCurrent.designAmp,
+          totalLoadA: totalConnectedAmps,
           totalLoadKVA: totalVA / 1000,
         });
       });

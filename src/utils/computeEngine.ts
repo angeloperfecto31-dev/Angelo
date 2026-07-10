@@ -201,15 +201,15 @@ export const getConductorLabel = (
     label += `${sets} Sets of `;
   }
 
-  label += `${numPhases} × ${wSizeStr} mm²`;
+  label += `${numPhases} x ${wSizeStr} mm²`;
 
   if (numNeutrals > 0) {
-    label += ` + ${numNeutrals} × ${wSizeStr} mm² N`;
+    label += ` + ${numNeutrals} x ${wSizeStr} mm² N`;
   }
 
   const gSizeNum = parseFloat(gSizeStr.toString()) || 0;
   if (gSizeNum > 0) {
-    label += ` + 1 × ${gSizeStr} mm² G`;
+    label += ` + 1 x ${gSizeStr} mm² G`;
   }
 
   if (wireType) {
@@ -2006,8 +2006,13 @@ export const computePanelScheduleValues = (
         100
       : 0;
 
+  const isPanel3Phase = p.system.includes("3PH");
+  const totalConnectedAmps = isPanel3Phase
+    ? totalVA / (systemVoltage * 1.732)
+    : totalVA / systemVoltage;
+
   const maxDemandDetails = {
-    is3PH: p.system.includes("3PH"),
+    is3PH: isPanel3Phase,
     systemVoltage,
     phaseR: phaseAmps.R,
     phaseY: phaseAmps.Y,
@@ -2015,6 +2020,7 @@ export const computePanelScheduleValues = (
     total3Phase: phaseAmps.threePhase,
     totalAmpere: Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B),
     totalConnectedVA: totalVA,
+    totalConnectedAmps,
     internalConnectedVA,
     HML: globalHML,
     baseAmp: maxBaseAmp,
@@ -2025,6 +2031,7 @@ export const computePanelScheduleValues = (
 
   return {
     totalVA,
+    totalConnectedAmps,
     phaseLoads,
     explicitPhaseVAs,
     maxPhaseLoad,

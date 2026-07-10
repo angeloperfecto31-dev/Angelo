@@ -41,7 +41,7 @@ function sanitizeStringForDxf(text: any): string {
     .replace(/[“”]/g, '"') // Curly double quotes
     .replace(/[ΩΩ]/g, " Ohms") // Omega Symbol
     .replace(/[µμ]/g, "u") // Micro
-    .replace(/×/g, " * ") // Times
+    .replace(/×/g, " x ") // Times
     .replace(/√/g, "sqrt") // Square root
     .replace(/≥/g, " >= ") // Greater than or equal to
     .replace(/≤/g, " <= ") // Less than or equal to
@@ -1142,7 +1142,7 @@ export const exportToCAD = (
     res = res
       .replace(/Ω/g, " Ohms")
       .replace(/√/g, "sqrt")
-      .replace(/×/g, " * ")
+      .replace(/×/g, " x ")
       .replace(/≥/g, " >= ")
       .replace(/≤/g, " <= ")
       .replace(/≈/g, " = approx ")
@@ -2340,7 +2340,7 @@ export const exportToCAD = (
       // Single-phase footer: PHASE column is removed. AMPS column is now at index 5.
       b.addLine(colPositions[5], ty - sumRowH, colPositions[5], ty, "TABLE_GRID");
       b.addText(
-        `${currentCalcData.mainCurrent.designAmp.toFixed(2)} A`,
+        `${currentCalcData.totalConnectedAmps.toFixed(2)} A`,
         colPositions[5] + cols[5].w / 2,
         ySumText,
         metrics.summaryFontSize,
