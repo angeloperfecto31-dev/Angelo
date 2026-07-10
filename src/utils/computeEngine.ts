@@ -133,6 +133,55 @@ export const getNeutralPoles = (poleStr: string | number): number => {
   return 0;
 };
 
+export const formatStandardCableDescription = (
+  sets: number | string,
+  wireSize: number | string,
+  insulation: string,
+  groundSize: number | string,
+  conduitSize: number | string,
+  conduitType: string
+): string => {
+  const sNum = parseInt(sets?.toString() || "1", 10) || 1;
+
+  let wStr = wireSize?.toString().trim() || "";
+  wStr = wStr.replace(/(mm²|mm2|mm)/gi, "").trim();
+  const wNum = parseFloat(wStr);
+  if (!isNaN(wNum)) {
+    if (wNum % 1 === 0) {
+      wStr = wNum.toFixed(0);
+    } else {
+      wStr = wNum.toFixed(1);
+    }
+  }
+  const phaseConductorSizeFormatted = `${wStr} mm²`;
+
+  const ins = (insulation || "THHN").trim();
+
+  let gStr = groundSize?.toString().trim() || "";
+  gStr = gStr.replace(/(mm²|mm2|mm)/gi, "").trim();
+  const gNum = parseFloat(gStr);
+  if (!isNaN(gNum)) {
+    if (gNum <= 8.0) {
+      gStr = gNum.toFixed(1);
+    } else if (gNum % 1 === 0) {
+      gStr = gNum.toFixed(0);
+    } else {
+      gStr = gNum.toFixed(1);
+    }
+  }
+  const groundConductorSizeFormatted = `1 × ${gStr} mm² G`;
+
+  let cSizeStr = conduitSize?.toString().trim() || "";
+  const match = cSizeStr.match(/^([\d.]+)/);
+  if (match) {
+    cSizeStr = `${match[1]} mm`;
+  }
+
+  const cType = (conduitType || "PVC").trim();
+
+  return `${sNum} × ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
+};
+
 export const getConductorLabel = (
   wireSize: string | number,
   groundSize: string | number,

@@ -23,7 +23,7 @@ import { Document, Packer, PageOrientation,
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel } from './computeEngine';
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription } from './computeEngine';
 
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
 function getMathSymbol(macro: string): string {
@@ -848,7 +848,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
       createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
-      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ ${p.insulationType || "THHN/THWN"} copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$.`),
+      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ ${p.insulationType || "THHN/THWN"} copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$ (Standardized Cable Description: ${formatStandardCableDescription(wire.runs || 1, wire.size, p.insulationType || "THHN", groundSize, conduitSize, conduitType || "PVC")}).`),
       
       ...(p.transferSwitchType && p.transferSwitchType !== "None" ? [
          createParagraph(`4. Transfer Switch Selection (${p.transferSwitchType}):`),
@@ -893,7 +893,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
     // Circuit Schedules Table
     const tableHeaderCells = [
-      "Cir No", "Description / Load Name", "Load Type", "Volts", "VA", is3PH ? "Ampere\n(R, Y, B, 3Ø)" : "Ampere", "CB Rating", "Conductors", "Conduit"
+      "Cir No", "Description / Load Name", "Load Type", "Volts", "VA", is3PH ? "Ampere\n(R, Y, B, 3Ø)" : "Ampere", "CB Rating", "Cable & Conduit Sizing"
     ].map(t => {
       const texts = t.split("\n");
       return new TableCell({ 
@@ -954,8 +954,14 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
           createCell(cir.loadVA?.toString() || "0"),
           createCell(ampsContent),
           createCell(isSpace ? "-" : `${cir.mcbAT || 20} AT / ${cir.mcbAF || 50} AF, ${typeof cir.mcbP === "string" ? cir.mcbP : (cir.mcbP || 2) + "P"}`),
-          createCell(isSpace ? "-" : getConductorLabel(cir.wireSize || "3.5", cir.groundSize || "2.0", cir.mcbP, cir.wireSets || cir.calculatedWireSets || 1, cir.wireType || "THHN")),
-          createCell(isSpace ? "-" : `${cir.conduitSize || '20'}mm ${cir.conduitType || 'PVC'}`),
+          createCell(isSpace ? "-" : formatStandardCableDescription(
+            cir.wireSets || cir.calculatedWireSets || 1,
+            cir.wireSize || "2.0",
+            cir.wireType || "THHN",
+            cir.groundSize || "2.0",
+            cir.conduitSize || "20",
+            cir.conduitType || "PVC"
+          )),
         ]
       }));
     });

@@ -7,7 +7,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel } from "./computeEngine";
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription } from "./computeEngine";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -2207,7 +2207,14 @@ export const exportToCAD = (
         ? "SPACE"
         : isSpare
           ? "SPARE"
-          : `${getConductorLabel(cir.wireSize || "2.0", cir.groundSize || "2.0", cir.mcbP, cir.wireSets || cir.calculatedWireSets || 1, cir.wireType || "THHN")} in ${cir.conduitSize} ${cir.conduitType || "PVC"}`;
+          : formatStandardCableDescription(
+              cir.wireSets || cir.calculatedWireSets || 1,
+              cir.wireSize || "2.0",
+              cir.wireType || "THHN",
+              cir.groundSize || "2.0",
+              cir.conduitSize || "20",
+              cir.conduitType || "PVC"
+            );
       
       const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
       b.addText(
@@ -2358,7 +2365,15 @@ export const exportToCAD = (
     }
 
     // Merged block for Cols 8-13 (Summary specifications)
-    const summarySpecStr = `FEEDER: ${currentCalcData.mainFeeder.wire.runs}x${currentCalcData.mainFeeder.wire.size}mm² ${currentPanel.insulationType || "THHN"} + ${currentCalcData.mainFeeder.groundSize}mm² GND | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
+    const mainFeederCableStandard = formatStandardCableDescription(
+      currentCalcData.mainFeeder.wire.runs || 1,
+      currentCalcData.mainFeeder.wire.size,
+      currentPanel.insulationType || "THHN",
+      currentCalcData.mainFeeder.groundSize,
+      currentCalcData.mainFeeder.conduitSize,
+      currentCalcData.mainFeeder.conduitType || "PVC"
+    );
+    const summarySpecStr = `FEEDER: ${mainFeederCableStandard} | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
     
     const ySumTextSpec = ty - sumRowH / 2 - metrics.splitHeaderFontSize / 2;
 
@@ -2378,7 +2393,7 @@ export const exportToCAD = (
     // Main feeder layout details (Box with specifications under the table)
     b.addRect(xOffset + 20, ty - metrics.mainFeederBoxH, tableRight, ty, "BORDER");
     b.addText(
-      `MAIN FEEDER CONDUCTORS: ${currentCalcData.mainFeeder.wire.runs} runs x ${currentCalcData.mainFeeder.wire.size} mm² ${currentPanel.insulationType || "THHN"} + ${currentCalcData.mainFeeder.groundSize} mm² GND in ${currentCalcData.mainFeeder.conduitSize} ${currentCalcData.mainFeeder.conduitType || "PVC"}.`,
+      `MAIN FEEDER CONDUCTORS: ${mainFeederCableStandard}.`,
       xOffset + 23,
       ty - metrics.mainFeederBoxH / 2 + 3.5,
       metrics.mainFeederFontSize,

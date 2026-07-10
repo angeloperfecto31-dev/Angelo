@@ -84,7 +84,9 @@ import {
   getConduitFillDetails,
   getGroundWireForWireSizeLocal,
   getConduitSizeForWiresLocal,
-getValidPolesForSystem} from "../utils/computeEngine";
+  getValidPolesForSystem,
+  formatStandardCableDescription
+} from "../utils/computeEngine";
 import {
   getThreePhaseFLCDatabaseList,
   saveThreePhaseFLCEntry,
@@ -5225,14 +5227,14 @@ export default function LoadSchedule({
                   >
                     <span>
                       Main Feeder:{" "}
-                      {mainFeeder.wire.runs > 1
-                        ? `${mainFeeder.wire.runs} sets of `
-                        : ""}
-                      {formatWireSize(mainFeeder.wire.size)}mm²{" "}
-                      {panel.insulationType || "THHN"} (
-                      {panel.conductorMaterial || "Copper"}),{" "}
-                      {mainFeeder.groundSize}mm² GND in {mainFeeder.conduitSize}{" "}
-                      {mainFeeder.conduitType || "PVC"}
+                      {formatStandardCableDescription(
+                        mainFeeder.wire.runs || 1,
+                        mainFeeder.wire.size,
+                        panel.insulationType || "THHN",
+                        mainFeeder.groundSize,
+                        mainFeeder.conduitSize,
+                        mainFeeder.conduitType || "PVC"
+                      )}
                       {panel.mainOverrides?.isOverrideEnabled &&
                       panel.mainOverrides.wireSize
                         ? " (Manual)"
@@ -5881,18 +5883,15 @@ export default function LoadSchedule({
               </span>
               <span>Selected Main Breaker: {mainFeeder.cb} AT</span>
               <span>
-                Selected Main Wire:{" "}
-                {mainFeeder.wire.runs > 1
-                  ? `${mainFeeder.wire.runs} sets of `
-                  : ""}
-                {formatWireSize(mainFeeder.wire.size)} mm²{" "}
-                {panel.insulationType || "THHN"} (
-                {panel.conductorMaterial || "Copper"}) (Ampacity:{" "}
-                {mainFeeder.wire.ampacity} A)
-              </span>
-              <span>
-                Selected Main Conduit: {mainFeeder.conduitSize}{" "}
-                {mainFeeder.conduitType || "PVC"}
+                Selected Main Cable & Conduit:{" "}
+                {formatStandardCableDescription(
+                  mainFeeder.wire.runs || 1,
+                  mainFeeder.wire.size,
+                  panel.insulationType || "THHN",
+                  mainFeeder.groundSize,
+                  mainFeeder.conduitSize,
+                  mainFeeder.conduitType || "PVC"
+                )} (Ampacity: {mainFeeder.wire.ampacity} A)
               </span>
             </div>
           </div>

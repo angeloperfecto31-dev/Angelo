@@ -96,6 +96,7 @@ import {
   setGlobalSubPanels,
   calculateEquivalentFeederImpedance,
   getConductorLabel,
+  formatStandardCableDescription,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 import {
@@ -2114,7 +2115,14 @@ export default function App() {
             isSpace ? "-" : cir.mcbType,
             isSpace
               ? "-"
-              : `${getConductorLabel(cir.wireSize || "2.0", cir.groundSize || "2.0", cir.mcbP, cir.wireSets || cir.calculatedWireSets || 1, cir.wireType || "THHN")} in ${cir.conduitSize} ${cir.conduitType}`,
+              : formatStandardCableDescription(
+                  cir.wireSets || cir.calculatedWireSets || 1,
+                  cir.wireSize || "2.0",
+                  cir.wireType || "THHN",
+                  cir.groundSize || "2.0",
+                  cir.conduitSize || "20",
+                  cir.conduitType || "PVC"
+                ),
           );
           wsData.push(row);
         });
@@ -2176,7 +2184,14 @@ export default function App() {
         wsData.push(["SUMMARY & MAIN FEEDER"]);
         wsData.push([
           "Main Feeder:",
-          `${wire.runs && wire.runs > 1 ? `${wire.runs} Sets of ` : ""}${formatWireSize(wire.size)}mm² ${p.insulationType || "THHN"}, ${groundSize}mm² GND in ${conduitSize} ${conduitType || "PVC"}`,
+          formatStandardCableDescription(
+            wire.runs || 1,
+            wire.size,
+            p.insulationType || "THHN",
+            groundSize,
+            conduitSize,
+            conduitType || "PVC"
+          ),
         ]);
         wsData.push([
           "Main Breaker:",
