@@ -1949,9 +1949,6 @@ export const exportToCAD = (
       const isSpace =
         (cir.description && cir.description.toUpperCase() === "SPACE") ||
         cir.loadType === LoadType.SPACE;
-      const isSpare =
-        (cir.description && cir.description.toUpperCase() === "SPARE") ||
-        cir.loadType === LoadType.SPARE;
 
       const yText = ty - rowH / 2 - metrics.dataFontSize / 2;
 
@@ -1981,7 +1978,7 @@ export const exportToCAD = (
 
       // Col 3: W
       b.addText(
-        isSpace || isSpare ? "-" : cir.wattage.toString(),
+        isSpace ? "-" : cir.wattage.toString(),
         colPositions[2] + cols[2].w / 2,
         yText,
         metrics.dataFontSize,
@@ -1993,7 +1990,7 @@ export const exportToCAD = (
 
       // Col 4: QTY
       b.addText(
-        isSpace || isSpare ? "-" : cir.quantity.toString(),
+        isSpace ? "-" : cir.quantity.toString(),
         colPositions[3] + cols[3].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2005,7 +2002,7 @@ export const exportToCAD = (
 
       // Col 5: VA
       b.addText(
-        isSpace || isSpare ? "-" : cir.loadVA.toString(),
+        isSpace ? "-" : cir.loadVA.toString(),
         colPositions[4] + cols[4].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2018,7 +2015,7 @@ export const exportToCAD = (
       // Col 6: PHASE / AMPS
       if (isPanel3Phase) {
         let phaseStr = "-";
-        if (!isSpace && !isSpare) {
+        if (!isSpace) {
           const phases = cir.phases || [];
           if (phases.length === 3) {
             phaseStr = "3P";
@@ -2041,7 +2038,7 @@ export const exportToCAD = (
       // Col 7: AMPS
       if (!isPanel3Phase) {
         b.addText(
-          isSpace || isSpare ? "-" : `${cir.loadA.toFixed(2)}A`,
+          isSpace ? "-" : `${cir.loadA.toFixed(2)}A`,
           colPositions[5] + cols[5].w / 2,
           yText,
           metrics.dataFontSize,
@@ -2053,7 +2050,7 @@ export const exportToCAD = (
       } else {
         const phases = cir.phases || [];
         const phRVal =
-          isSpace || isSpare
+          isSpace
             ? "-"
             : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
             ? cir.reflectedPhaseAmps.R > 0
@@ -2064,7 +2061,7 @@ export const exportToCAD = (
             : "-";
             
         const phYVal =
-          isSpace || isSpare
+          isSpace
             ? "-"
             : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
             ? cir.reflectedPhaseAmps.Y > 0
@@ -2075,7 +2072,7 @@ export const exportToCAD = (
             : "-";
             
         const phBVal =
-          isSpace || isSpare
+          isSpace
             ? "-"
             : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
             ? cir.reflectedPhaseAmps.B > 0
@@ -2086,7 +2083,7 @@ export const exportToCAD = (
             : "-";
             
         const ph3PVal =
-          isSpace || isSpare
+          isSpace
             ? "-"
             : cir.subPanelReflectionMode === "phase_loads" && cir.reflectedPhaseAmps
             ? cir.reflectedPhaseAmps.ThreePhase > 0
@@ -2144,7 +2141,7 @@ export const exportToCAD = (
 
       // Col 8: AT
       b.addText(
-        isSpace || isSpare ? "-" : `${cir.mcbAT} AT`,
+        isSpace ? "-" : `${cir.mcbAT} AT`,
         colPositions[baseIdx] + cols[baseIdx].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2156,7 +2153,7 @@ export const exportToCAD = (
 
       // Col 9: AF
       b.addText(
-        isSpace || isSpare ? "-" : `${cir.mcbAF} AF`,
+        isSpace ? "-" : `${cir.mcbAF} AF`,
         colPositions[baseIdx + 1] + cols[baseIdx + 1].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2168,7 +2165,7 @@ export const exportToCAD = (
 
       // Col 10: P
       b.addText(
-        isSpace || isSpare ? "-" : `${typeof cir.mcbP === "string" ? cir.mcbP : cir.mcbP + "P"}`,
+        isSpace ? "-" : `${typeof cir.mcbP === "string" ? cir.mcbP : cir.mcbP + "P"}`,
         colPositions[baseIdx + 2] + cols[baseIdx + 2].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2180,7 +2177,7 @@ export const exportToCAD = (
 
       // Col 11: KAIC
       b.addText(
-        isSpace || isSpare ? "-" : `${cir.mcbKAIC}`,
+        isSpace ? "-" : `${cir.mcbKAIC}`,
         colPositions[baseIdx + 3] + cols[baseIdx + 3].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2192,7 +2189,7 @@ export const exportToCAD = (
 
       // Col 12: TYPE
       b.addText(
-        isSpace || isSpare ? "-" : `${cir.mcbType}`,
+        isSpace ? "-" : `${cir.mcbType}`,
         colPositions[baseIdx + 4] + cols[baseIdx + 4].w / 2,
         yText,
         metrics.dataFontSize,
@@ -2205,16 +2202,14 @@ export const exportToCAD = (
       // Col 13: WIRE / CONDUIT SIZING
       const sizeStr = isSpace
         ? "SPACE"
-        : isSpare
-          ? "SPARE"
-          : formatStandardCableDescription(
-              cir.wireSets || cir.calculatedWireSets || 1,
-              cir.wireSize || "2.0",
-              cir.wireType || "THHN",
-              cir.groundSize || "2.0",
-              cir.conduitSize || "20",
-              cir.conduitType || "PVC"
-            );
+        : formatStandardCableDescription(
+            cir.wireSets || cir.calculatedWireSets || 1,
+            cir.wireSize || "2.0",
+            cir.wireType || "THHN",
+            cir.groundSize || "2.0",
+            cir.conduitSize || "20",
+            cir.conduitType || "PVC"
+          );
       
       const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
       b.addText(

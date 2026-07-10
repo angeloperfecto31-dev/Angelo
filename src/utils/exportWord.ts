@@ -919,7 +919,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
          });
       };
 
-      const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE || cir.loadType === LoadType.SPARE;
+      const isSpace = (cir.description && cir.description.toUpperCase() === 'SPACE') || cir.loadType === LoadType.SPACE;
 
       let ampsContent: string | string[];
       if (isSpace) {

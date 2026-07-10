@@ -169,7 +169,7 @@ export const formatStandardCableDescription = (
       gStr = gNum.toFixed(1);
     }
   }
-  const groundConductorSizeFormatted = `1 × ${gStr} mm² G`;
+  const groundConductorSizeFormatted = `1 x ${gStr} mm² G`;
 
   let cSizeStr = conduitSize?.toString().trim() || "";
   const match = cSizeStr.match(/^([\d.]+)/);
@@ -179,7 +179,7 @@ export const formatStandardCableDescription = (
 
   const cType = (conduitType || "PVC").trim();
 
-  return `${sNum} × ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
+  return `${sNum} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
 };
 
 export const getConductorLabel = (

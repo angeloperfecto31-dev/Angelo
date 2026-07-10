@@ -2064,7 +2064,7 @@ export default function App() {
           }
 
           if (is3Phase) {
-            if (isSpace || cir.loadType === LoadType.SPARE) {
+            if (isSpace) {
               row.push("-", "-", "-", "-");
             } else if (
               cir.subPanelReflectionMode === "phase_loads" &&
@@ -2101,7 +2101,7 @@ export default function App() {
             }
           } else {
             row.push(
-              isSpace || cir.loadType === LoadType.SPARE
+              isSpace
                 ? "-"
                 : cir.loadA.toFixed(2),
             );
