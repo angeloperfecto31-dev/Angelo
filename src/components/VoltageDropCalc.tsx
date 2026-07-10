@@ -1203,6 +1203,8 @@ export default function VoltageDropCalc({
                   {} as any,
                   "VOLTAGE_DROP",
                   calculations,
+                  undefined,
+                  selectedEndpointId
                 );
               }}
               className={`flex items-center justify-center gap-2 px-4 py-2 font-bold rounded-lg text-xs transition border w-full sm:w-auto ${
