@@ -7358,11 +7358,15 @@ export default function App() {
                             <p className="text-xs font-black text-amber-400 uppercase">
                               {userPlan === "enterprise"
                                 ? "ENTERPRISE (LIFETIME)"
+                                : userPlan === "premium" && isLifetime
+                                  ? "PREMIUM (LIFETIME)"
                                 : userPlan === "premium"
                                   ? "PREMIUM (30 DAYS)"
-                                  : userPlan === "basic"
-                                    ? "BASIC (30 DAYS)"
-                                    : "STANDARD ACCESS"}
+                                : userPlan === "basic" && isLifetime
+                                  ? "BASIC (LIFETIME)"
+                                : userPlan === "basic"
+                                  ? "BASIC (30 DAYS)"
+                                : "STANDARD ACCESS"}
                             </p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
                               Enterprise licenses unlock complete single-line

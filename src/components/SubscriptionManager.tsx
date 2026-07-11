@@ -22,6 +22,7 @@ export default function SubscriptionManager() {
   const [editIsLifetime, setEditIsLifetime] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [showConvertConfirm, setShowConvertConfirm] = useState<{show: boolean, user: any | null}>({show: false, user: null});
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
@@ -37,6 +38,50 @@ export default function SubscriptionManager() {
     });
     return () => unsubscribe();
   }, []);
+
+  const handleConvertToLifetime = (u: any) => {
+    setShowConvertConfirm({show: true, user: u});
+  };
+
+  const confirmConvertToLifetime = async () => {
+    if (!showConvertConfirm.user) return;
+    const userToConvert = showConvertConfirm.user;
+    setShowConvertConfirm({show: false, user: null});
+    
+    try {
+      const updateData = {
+        subscription_type: "Lifetime",
+        is_lifetime: true,
+        status: "Active",
+        expires_at: null,
+        expiresAt: null,
+        upgraded_by_admin: true,
+        last_modified_by: "Admin",
+        modified_at: new Date().toISOString(),
+        isActive: true,
+        paymentStatus: "paid"
+      };
+
+      await setDoc(doc(db, "users", userToConvert.uid), updateData, { merge: true });
+
+      await addDoc(collection(db, "admin_activity_logs"), {
+        action: "convert_to_lifetime",
+        adminEmail: auth.currentUser?.email || "Unknown Admin",
+        timestamp: new Date().toISOString(),
+        targetUserUid: userToConvert.uid,
+        targetUserEmail: userToConvert.email,
+        targetUserName: userToConvert.name || "N/A",
+        details: {
+          previousPlan: userToConvert.plan || "N/A",
+          newPlan: userToConvert.plan,
+          previousSubscriptionType: userToConvert.subscription_type || "Standard",
+          newSubscriptionType: "Lifetime",
+        }
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const openEditModal = (u: any) => {
     setTargetUsers([u]);
@@ -257,12 +302,23 @@ export default function SubscriptionManager() {
                   {u.is_lifetime ? "Never Expires" : ((u.expiresAt || u.expires_at) ? new Date(u.expiresAt || u.expires_at).toLocaleDateString() : "N/A")}
                 </td>
                 <td className="py-3 px-4 text-right">
-                  <button
-                    onClick={() => openEditModal(u)}
-                    className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors"
-                  >
-                    Edit
-                  </button>
+                  <div className="flex justify-end gap-2">
+                    {((u.plan || u.plan_name || "").toLowerCase() === "basic" && !u.is_lifetime && u.subscription_type !== "Lifetime") && (
+                      <button
+                        onClick={() => handleConvertToLifetime(u)}
+                        className="px-3 py-1.5 text-[10px] font-black uppercase text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors border border-amber-200"
+                        title="Convert to Lifetime Basic Plan"
+                      >
+                        Convert to Lifetime
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openEditModal(u)}
+                      className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-100"
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -403,6 +459,46 @@ export default function SubscriptionManager() {
                 className="px-6 py-2 text-sm font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConvertConfirm.show && showConvertConfirm.user && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-amber-200">
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="font-black text-amber-800 uppercase tracking-tight flex items-center gap-2">
+                Convert to Lifetime
+              </h3>
+              <button onClick={() => setShowConvertConfirm({show: false, user: null})} className="text-amber-600 hover:text-amber-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <p className="text-sm font-semibold text-slate-700">
+                Are you sure you want to convert this user's Basic Plan from a 30-day subscription to Lifetime Access? This action will remove the expiration date.
+              </p>
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <p className="text-xs font-bold text-slate-500 uppercase">User</p>
+                <p className="text-sm font-bold text-slate-800">{showConvertConfirm.user.email}</p>
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowConvertConfirm({show: false, user: null})}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmConvertToLifetime}
+                className="px-6 py-2 text-sm font-black uppercase tracking-wider text-white bg-amber-500 hover:bg-amber-600 rounded-xl shadow-md transition-all"
+              >
+                Confirm Conversion
               </button>
             </div>
           </div>
