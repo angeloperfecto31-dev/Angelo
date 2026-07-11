@@ -46,6 +46,7 @@ export interface Circuit {
   mcbATOverride?: number;
   mcbAF: number;
   mcbP: number | string;
+  mcbPOverride?: string;
   mcbKAIC: number;
   kaicOverride?: number;
   mcbKAICCalculated?: number;

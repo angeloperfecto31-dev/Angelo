@@ -4849,19 +4849,17 @@ export default function LoadSchedule({
                         "-"
                       ) : (
                         <select
-                          value={typeof c.mcbP === "number" ? c.mcbP + "P" : c.mcbP || "1P"}
-                          disabled={
-                            c.loadType === LoadType.SUB_PANEL ||
-                            c.loadType === LoadType.SUB_SUB_PANEL
-                          }
+                          value={c.mcbPOverride || ""}
                           onChange={(e) =>
                             updateCircuit(c.id, {
-                              mcbP: e.target.value,
+                              mcbPOverride: e.target.value || undefined,
+                              mcbP: e.target.value ? e.target.value : c.mcbP
                             })
                           }
-                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-16 max-w-full mx-auto dark:bg-slate-900 ${c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL ? "text-slate-400 dark:text-slate-500" : ""}`}
+                          className={`bg-transparent text-center text-slate-800 dark:text-slate-100 appearance-none w-16 max-w-full mx-auto dark:bg-slate-900 ${c.mcbPOverride ? "text-amber-600 dark:text-amber-400 font-bold" : ""}`}
                         >
-                          {getValidPolesForSystem(panel.system).map((p) => (
+                          <option value="">Auto ({typeof c.mcbP === "number" ? c.mcbP + "P" : c.mcbP || "1P"})</option>
+                          {["1P", "1P+N", "2P", "2P+N", "3P", "3P+N", "4P"].map((p) => (
                             <option
                               key={p}
                               value={p}

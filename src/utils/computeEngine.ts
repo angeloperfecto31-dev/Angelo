@@ -880,24 +880,29 @@ export const calculateCircuitValues = (
 
   let mcbP = c.mcbP || "1P";
   if (typeof mcbP === 'number') { mcbP = mcbP + "P"; }
-  const validPoles = getValidPolesForSystem(panel.system);
-  if (!validPoles.includes(mcbP.toString())) {
-    mcbP = validPoles[0];
-  }
 
-  if (panel.system.includes("3PH") && is3PhaseLoadFinal) {
-    if (mcbP !== "4P" && mcbP !== "3P+N") {
-      mcbP = "3P";
+  if (c.mcbPOverride) {
+    mcbP = c.mcbPOverride;
+  } else {
+    const validPoles = getValidPolesForSystem(panel.system);
+    if (!validPoles.includes(mcbP.toString())) {
+      mcbP = validPoles[0];
     }
-  } else if (
-    c.loadType !== LoadType.SUB_PANEL &&
-    c.loadType !== LoadType.SUB_SUB_PANEL &&
-    !panel.system.includes("3PH")
-  ) {
-    if (panel.connectionType === "Line-to-Line") {
-      if (!mcbP.toString().startsWith("2")) mcbP = "2P";
-    } else if (panel.connectionType === "Line-to-Neutral") {
-      if (!mcbP.toString().startsWith("1")) mcbP = "1P";
+
+    if (panel.system.includes("3PH") && is3PhaseLoadFinal) {
+      if (mcbP !== "4P" && mcbP !== "3P+N") {
+        mcbP = "3P";
+      }
+    } else if (
+      c.loadType !== LoadType.SUB_PANEL &&
+      c.loadType !== LoadType.SUB_SUB_PANEL &&
+      !panel.system.includes("3PH")
+    ) {
+      if (panel.connectionType === "Line-to-Line") {
+        if (!mcbP.toString().startsWith("2")) mcbP = "2P";
+      } else if (panel.connectionType === "Line-to-Neutral") {
+        if (!mcbP.toString().startsWith("1")) mcbP = "1P";
+      }
     }
   }
 
