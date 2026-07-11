@@ -206,18 +206,17 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
         </>
       )}
 
-      {/* Main Breaker form: NECA 11.003 Enclosed CB */}
-      <rect x="388" y="180" width="24" height="30" rx="3" className="sld-line" fill="none" />
-      <line x1="400" y1="180" x2="400" y2="188" className="sld-line" />
-      <circle cx="400" cy="188" r="2" fill="#1e293b" />
-      <line x1="400" y1="188" x2="410" y2="202" className="sld-line" strokeWidth="2" />
-      <circle cx="400" cy="202" r="2" fill="#1e293b" />
-      <line x1="400" y1="210" x2="400" y2="260" className="sld-line" />
+      {/* Main Breaker form */}
+      <line x1="400" y1="180" x2="400" y2="195" className="sld-line" />
+      <circle cx="400" cy="195" r="3" fill="#1e293b" />
+      <path d="M 400,195 A 15 15 0 0 1 400,225" className="sld-line" strokeWidth="2.5" fill="none" />
+      <circle cx="400" cy="225" r="3" fill="#1e293b" />
+      <line x1="400" y1="225" x2="400" y2="260" className="sld-line" />
       
       {/* Main Breaker Text */}
-      <text x="420" y="195" className="sld-text">
+      <text x="420" y="202" className="sld-text">
          <tspan x="420" dy="0">{mainFeeder.cb} AT / {mainFeeder.af} AF</tspan>
-         <tspan x="420" dy="20">{mainFeeder.poles}P, {voltage}V, 60HZ</tspan>
+         <tspan x="420" dy="16">{mainFeeder.poles}P, {voltage}V, 60HZ</tspan>
       </text>
 
       {/* Panel Box */}
@@ -236,17 +235,17 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                  <g>
                     {/* Left side connection point */}
                     <circle cx="400" cy={y} r="2" fill="#1e293b" />
-                    <line x1="400" y1={y} x2="360" y2={y} className="sld-line" />
+                    <line x1="400" y1={y} x2="375" y2={y} className="sld-line" />
                     
                     {/* Circuit Breaker: NECA 11.002 */}
-                    <circle cx="360" cy={y} r="2.5" fill="#1e293b" />
-                    <path d={`M 360,${y} L 345,${y - 8}`} className="sld-line" strokeWidth="2" />
-                    <circle cx="340" cy={y} r="2.5" fill="#1e293b" />
+                    <circle cx="375" cy={y} r="3" fill="#1e293b" />
+                    <path d={`M 375,${y} A 15 15 0 0 0 345,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
+                    <circle cx="345" cy={y} r="3" fill="#1e293b" />
                     {row.left.description.toUpperCase() !== 'SPACE' && (
-                      <text x="350" y={y - 12} className="sld-text" textAnchor="middle">{row.left.mcbAT} AT</text>
+                      <text x="360" y={y - 18} className="sld-text" textAnchor="middle">{row.left.mcbAT} AT</text>
                     )}
                     
-                    <line x1="340" y1={y} x2="295" y2={y} className="sld-line" />
+                    <line x1="345" y1={y} x2="295" y2={y} className="sld-line" />
                     
                     {/* Circuit Number Circle */}
                     <circle cx="280" cy={y} r="15" className="sld-line" fill="white" />
@@ -271,17 +270,17 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                  <g>
                     {/* Right side connection point */}
                     <circle cx="400" cy={y} r="2" fill="#1e293b" />
-                    <line x1="400" y1={y} x2="440" y2={y} className="sld-line" />
+                    <line x1="400" y1={y} x2="425" y2={y} className="sld-line" />
                     
                     {/* Circuit Breaker: NECA 11.002 */}
-                    <circle cx="440" cy={y} r="2.5" fill="#1e293b" />
-                    <path d={`M 440,${y} L 455,${y - 8}`} className="sld-line" strokeWidth="2" />
-                    <circle cx="460" cy={y} r="2.5" fill="#1e293b" />
+                    <circle cx="425" cy={y} r="3" fill="#1e293b" />
+                    <path d={`M 425,${y} A 15 15 0 0 1 455,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
+                    <circle cx="455" cy={y} r="3" fill="#1e293b" />
                     {row.right.description.toUpperCase() !== 'SPACE' && (
-                      <text x="450" y={y - 12} className="sld-text" textAnchor="middle">{row.right.mcbAT} AT</text>
+                      <text x="440" y={y - 18} className="sld-text" textAnchor="middle">{row.right.mcbAT} AT</text>
                     )}
                     
-                    <line x1="460" y1={y} x2="505" y2={y} className="sld-line" />
+                    <line x1="455" y1={y} x2="505" y2={y} className="sld-line" />
                     
                     {/* Circuit Number Circle */}
                     <circle cx="520" cy={y} r="15" className="sld-line" fill="white" />

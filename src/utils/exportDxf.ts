@@ -229,6 +229,11 @@ class DxfBuilder {
     this.drawing.drawCircle(cx, cy, r);
   }
 
+  addArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number, layer: string = "0") {
+    this.drawing.setActiveLayer(layer);
+    this.drawing.drawArc(cx, cy, r, startAngle, endAngle);
+  }
+
   addText(
     text: any,
     x: number,
@@ -585,7 +590,7 @@ const drawCadPanelSLD = (
       if (!isLeftSpace) {
         // High fidelity NECA dual-circle & diagonal Lever branch breaker
         b.addCircle(xBase - 15, yRow, 0.6, "SLD_GEOMETRY");
-        b.addLine(xBase - 15, yRow, xBase - 10, yRow + 2.0, "SLD_GEOMETRY");
+        b.addArc(xBase - 12, yRow, 3, 0, 180, "SLD_GEOMETRY");
         b.addCircle(xBase - 9, yRow, 0.6, "SLD_GEOMETRY");
 
         b.addText(
@@ -646,7 +651,7 @@ const drawCadPanelSLD = (
       if (!isRightSpace) {
         // High fidelity NECA dual-circle & diagonal Lever branch breaker
         b.addCircle(xBase + 15, yRow, 0.6, "SLD_GEOMETRY");
-        b.addLine(xBase + 15, yRow, xBase + 10, yRow + 2.0, "SLD_GEOMETRY");
+        b.addArc(xBase + 12, yRow, 3, 0, 180, "SLD_GEOMETRY");
         b.addCircle(xBase + 9, yRow, 0.6, "SLD_GEOMETRY");
 
         b.addText(
@@ -3466,9 +3471,10 @@ export const exportToCAD = (
     // Left System: secondary wire down and Main Breaker
     b.addLine(xLeft, tfY - 14.5, xLeft, y4, "SLD_GEOMETRY");
     // Main Breaker
-    const mbY = (tfY + y4) / 2 - 5;
-    b.addRect(xLeft - 3, mbY - 5, xLeft + 3, mbY + 4, "SLD_GEOMETRY");
-    b.addLine(xLeft, mbY - 5, xLeft, mbY + 4, "SLD_GEOMETRY");
+    const mbY = (tfY + y4) / 2 + 5;
+    b.addCircle(xLeft, mbY + 3, 1.2, "SLD_GEOMETRY");
+    b.addArc(xLeft, mbY, 3, 270, 90, "SLD_GEOMETRY");
+    b.addCircle(xLeft, mbY - 3, 1.2, "SLD_GEOMETRY");
     b.addText(
       `${panel.mainBreakerAT} AT / ${panel.mainBreakerAF} AF`,
       xLeft + 10,
