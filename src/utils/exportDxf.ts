@@ -807,13 +807,28 @@ const drawSystemSLD = (
     widths.set(l.sp.id, getWidth(l.sp.id));
   });
 
-  const layoutAreaW = sheetWidth - 140;
-  let xBase_MDP = xOffset + layoutAreaW / 2;
+  const usableLeft = xOffset + 10;
+  const usableRight = xOffset + sheetWidth - 130;
+  const usableWidth = usableRight - usableLeft;
+  
+  let xBase_MDP = usableLeft + usableWidth / 2;
+  
   if (spLayouts.length === 0 && sheetWidth === 841) {
-    xBase_MDP = xOffset + 355;
+    xBase_MDP = usableLeft + usableWidth / 2;
   }
 
-  const yBase_MDP = 120 + (maxDepth - 1) * 200;
+
+  let maxRows = 0;
+  [mdpCircuits, ...subPanelsData.map(s => s.circuits)].forEach(circs => {
+    const maxCircuitNo = circs.reduce((max, c) => Math.max(max, c.circuitNo), 0);
+    const numRows = Math.ceil(Math.max(maxCircuitNo, 2) / 2);
+    if (numRows > maxRows) maxRows = numRows;
+  });
+  const maxPanelHeight = 81 + maxRows * 16;
+  const totalHeight = (maxDepth - 1) * 150 + maxPanelHeight; // use 150 vertical gap
+  const topY = 297 + totalHeight / 2;
+  const yBase_MDP = topY;
+
   const mdpCircuitCoords = drawCadPanelSLD(
     b, mdpPanel, mdpCircuits, mdpCalcData.mainFeeder, xBase_MDP, yBase_MDP, false
   );
@@ -878,7 +893,7 @@ const drawSystemSLD = (
   });
 
   const rightTotalWidth = rightRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 180), 0);
-  const rightSpan = (xOffset + layoutAreaW - 60) - (xBase_MDP + 100);
+  const rightSpan = (usableRight - 50) - (xBase_MDP + 100);
   const rightS = rightSpan - rightTotalWidth;
   const rightGap = rightRoots.length > 0 ? rightS / (rightRoots.length + 1) : 0;
 
@@ -897,7 +912,7 @@ const drawSystemSLD = (
 
   for (let d = 2; d <= maxDepth; d++) {
     const layoutsAtDepth = spLayouts.filter(l => depths.get(l.sp.id) === d);
-    const yBase = 120 + (maxDepth - d) * 200;
+    const yBase = topY - (d - 1) * 150;
     
     layoutsAtDepth.forEach((layout, index) => {
       const sp = layout.sp;
