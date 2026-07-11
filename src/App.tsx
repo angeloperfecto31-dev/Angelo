@@ -152,6 +152,7 @@ export default function App() {
   >(null);
   const [activatedAt, setActivatedAt] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [isLifetime, setIsLifetime] = useState<boolean>(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showRenew, setShowRenew] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -207,7 +208,8 @@ export default function App() {
 
             // Check expiration for basic and premium plans
             let isExpired = false;
-            if (plan === "basic" || plan === "premium") {
+            const isPlanLifetime = data.is_lifetime || data.subscription_type === 'Lifetime';
+            if ((plan === "basic" || plan === "premium") && !isPlanLifetime) {
               if (data.expiresAt) {
                 const expires = new Date(data.expiresAt);
                 if (new Date() >= expires) {
@@ -227,6 +229,7 @@ export default function App() {
               setUserPlan(plan);
               setActivatedAt(data.activatedAt || null);
               setExpiresAt(data.expiresAt || null);
+              setIsLifetime(isPlanLifetime);
               setShowRenew(true); // Redirect to Subscription/Upgrade Page
               setAuthLoading(false);
 
@@ -248,6 +251,7 @@ export default function App() {
             setUserPlan(plan);
             setActivatedAt(data.activatedAt || null);
             setExpiresAt(data.expiresAt || null);
+            setIsLifetime(isPlanLifetime);
             setIsActive(userIsActive);
             isActiveRef.current = userIsActive;
             if (userIsActive) {
@@ -446,7 +450,7 @@ export default function App() {
 
   // Periodic expiration check
   useEffect(() => {
-    if (!isActive || (userPlan !== "basic" && userPlan !== "premium")) return;
+    if (!isActive || (userPlan !== "basic" && userPlan !== "premium") || isLifetime) return;
 
     const checkExpiration = () => {
       let expired = false;
@@ -481,15 +485,17 @@ export default function App() {
     // Check immediately and then every minute
     checkExpiration();
     const intervalId = setInterval(checkExpiration, 60000);
+
     return () => clearInterval(intervalId);
-  }, [isActive, expiresAt, userPlan]);
+  }, [isActive, expiresAt, userPlan, isLifetime, isAdmin]);
 
   // Real-time countdown timer effect
   useEffect(() => {
     if (
       !expiresAt ||
       !isActive ||
-      (userPlan !== "basic" && userPlan !== "premium")
+      (userPlan !== "basic" && userPlan !== "premium") ||
+      isLifetime
     ) {
       setCountdownTime(null);
       return;
@@ -4230,6 +4236,7 @@ export default function App() {
           {/* Active Subscription Countdown Card */}
           {!isSidebarCollapsed &&
             isActive &&
+            !isLifetime &&
             expiresAt &&
             (userPlan === "basic" ||
               userPlan === "premium" ||
@@ -4342,6 +4349,41 @@ export default function App() {
                     </div>
                   );
                 })()}
+              </div>
+            )}
+            
+          {/* Active Lifetime Subscription Card */}
+          {!isSidebarCollapsed &&
+            isActive &&
+            isLifetime &&
+            (userPlan === "basic" ||
+              userPlan === "premium" ||
+              false) && (
+              <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                      LIFETIME ACCESS
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
+                      userPlan === "premium"
+                        ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                        : userPlan === "basic"
+                          ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                          : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                    }`}
+                  >
+                    {userPlan}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                    <div className="text-sm font-bold text-emerald-400 tracking-tight leading-none pt-1">
+                      Always Active
+                    </div>
+                </div>
               </div>
             )}
 
@@ -4624,6 +4666,7 @@ export default function App() {
                         {(userPlan === "basic" ||
                           userPlan === "premium" ||
                           false) &&
+                          !isLifetime &&
                           expiresAt && (
                             <span
                               className={`inline-block text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
@@ -4674,6 +4717,7 @@ export default function App() {
                       {(userPlan === "basic" ||
                         userPlan === "premium" ||
                         false) &&
+                        !isLifetime &&
                         expiresAt && (
                           <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
                             <div className="flex justify-between items-center mb-1">
@@ -4732,6 +4776,12 @@ export default function App() {
                             </div>
                           </div>
                         )}
+                      {((userPlan === "basic" || userPlan === "premium" || false) && isLifetime) && (
+                        <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800 flex items-center justify-between">
+                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Access</span>
+                           <span className="text-[10px] font-black text-emerald-400">LIFETIME</span>
+                        </div>
+                      )}
                     </div>
 
                     <button
@@ -4907,6 +4957,20 @@ export default function App() {
                     {String(countdownTime.hours).padStart(2, "0")}:
                     {String(countdownTime.minutes).padStart(2, "0")}:
                     {String(countdownTime.seconds).padStart(2, "0")}
+                  </span>
+                </div>
+              )}
+
+            {isActive &&
+              isLifetime &&
+              (userPlan === "basic" || userPlan === "premium" || false) && (
+                <div
+                  className="flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-black font-mono border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm cursor-default select-none"
+                  title="Lifetime Access"
+                >
+                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="tracking-tight text-slate-900 dark:text-white">
+                    LIFETIME ACCESS
                   </span>
                 </div>
               )}
@@ -7327,6 +7391,7 @@ export default function App() {
                           )}
                         </div>
                         {(userPlan === "basic" || userPlan === "premium") &&
+                          !isLifetime &&
                           expiresAt && (
                             <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
                               <div className="bg-slate-950/50 px-2 py-1 rounded">
@@ -7370,6 +7435,21 @@ export default function App() {
                               </div>
                             </div>
                           )}
+                        {((userPlan === "basic" || userPlan === "premium") && isLifetime) && (
+                            <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
+                              <div className="bg-slate-950/50 px-2 py-1 rounded">
+                                <span className="text-slate-500 mr-1">
+                                  Activated:
+                                </span>{" "}
+                                {new Date(
+                                  activatedAt || "",
+                                ).toLocaleDateString()}
+                              </div>
+                              <div className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded font-bold border border-emerald-500/20">
+                                Lifetime Access
+                              </div>
+                            </div>
+                        )}
                       </div>
                     </div>
 

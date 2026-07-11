@@ -1,0 +1,11 @@
+                  <span className="tracking-tight text-slate-900 dark:text-white">
+                    {countdownTime.days > 0 ? `${countdownTime.days}d ` : ""}
+                    {String(countdownTime.hours).padStart(2, "0")}:
+                    {String(countdownTime.minutes).padStart(2, "0")}:
+                    {String(countdownTime.seconds).padStart(2, "0")}
+                  </span>
+                </div>
+              )}
+
+            {/* Desktop Notification Bell */}
+            <NotificationBell
