@@ -4158,12 +4158,12 @@ export default function PaymentScreen({
                                       <Clock className="w-2.5 h-2.5 text-slate-300 shrink-0" />
                                       Sub Date: {getSubscriptionDate(u).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                                     </span>
-                                    {isUserActive && u.plan !== "enterprise" && (
+                                    {isUserActive && (u.plan !== "enterprise" && !u.is_lifetime && u.subscription_type !== 'Lifetime') && (
                                       <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100/50 self-start mt-0.5">
                                         {u.expiresAt ? `Expires: ${new Date(u.expiresAt).toLocaleDateString()}` : `Subscription: 30 DAYS`}
                                       </span>
                                     )}
-                                    {isUserActive && u.plan === "enterprise" && (
+                                    {isUserActive && (u.plan === "enterprise" || u.is_lifetime || u.subscription_type === 'Lifetime') && (
                                       <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/50 self-start mt-0.5">
                                         Lifetime Access
                                       </span>
@@ -4474,12 +4474,12 @@ export default function PaymentScreen({
                             <div className="flex flex-col gap-0.5 mt-0.5">
                               <span className="text-[9px] font-mono text-slate-350 tracking-wider">UID: {u.uid.slice(0, 10)}...</span>
                               <span className="text-[9px] font-bold text-slate-400">Sub Date: {getSubscriptionDate(u).toLocaleDateString()}</span>
-                              {isUserActive && u.plan !== "enterprise" && (
+                              {isUserActive && (u.plan !== "enterprise" && !u.is_lifetime && u.subscription_type !== 'Lifetime') && (
                                 <span className="text-[9px] font-black uppercase text-amber-600">
                                   {u.expiresAt ? `Expires: ${new Date(u.expiresAt).toLocaleDateString()}` : `Subscription: 30 DAYS`}
                                 </span>
                               )}
-                              {isUserActive && u.plan === "enterprise" && (
+                              {isUserActive && (u.plan === "enterprise" || u.is_lifetime || u.subscription_type === 'Lifetime') && (
                                 <span className="text-[9px] font-black uppercase text-emerald-600">Subscription Type: Lifetime Access</span>
                               )}
                             </div>

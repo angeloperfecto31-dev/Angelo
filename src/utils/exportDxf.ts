@@ -480,17 +480,16 @@ const drawCadPanelSLD = (
   }
 
   // 4. Main Overcurrent Protective Device (CB, professional graphic matching web UI)
-  b.addRect(xBase - 3.5, yBase - 48, xBase + 3.5, yBase - 38, "SLD_GEOMETRY");
   b.addLine(xBase, yBase - 38, xBase, yBase - 40, "SLD_GEOMETRY");
-  b.addCircle(xBase, yBase - 40, 0.5, "SLD_GEOMETRY");
-  b.addLine(xBase, yBase - 40, xBase + 2, yBase - 45, "SLD_GEOMETRY");
-  b.addCircle(xBase, yBase - 45, 0.5, "SLD_GEOMETRY");
-  b.addLine(xBase, yBase - 45, xBase, yBase - 48, "SLD_GEOMETRY");
+  b.addCircle(xBase, yBase - 40, 1.2, "SLD_GEOMETRY");
+  b.addArc(xBase, yBase - 44, 4, 270, 90, "SLD_GEOMETRY");
+  b.addCircle(xBase, yBase - 48, 1.2, "SLD_GEOMETRY");
+  b.addLine(xBase, yBase - 48, xBase, yBase - 55, "SLD_GEOMETRY");
 
   b.addText(
     `${mainFeeder.cb || "100"} AT / ${mainFeeder.af || "100"} AF`,
     xBase + 10,
-    yBase - 41,
+    yBase - 43,
     1.6,
     0,
     "TEXT_HEADER",
@@ -584,28 +583,30 @@ const drawCadPanelSLD = (
 
     if (row.left) {
       b.addCircle(xBase, yRow, 0.7, "SLD_BUSBAR");
-      b.addLine(xBase, yRow, xBase - 20, yRow, "SLD_GEOMETRY");
+      b.addLine(xBase, yRow, xBase - 7, yRow, "SLD_GEOMETRY");
 
       const isLeftSpace = row.left.description?.toUpperCase() === "SPACE";
       if (!isLeftSpace) {
-        // High fidelity NECA dual-circle & diagonal Lever branch breaker
-        b.addCircle(xBase - 15, yRow, 0.6, "SLD_GEOMETRY");
-        b.addArc(xBase - 12, yRow, 3, 0, 180, "SLD_GEOMETRY");
-        b.addCircle(xBase - 9, yRow, 0.6, "SLD_GEOMETRY");
+        // High fidelity NECA dual-circle & arc Lever branch breaker
+        b.addCircle(xBase - 15, yRow, 0.8, "SLD_GEOMETRY");
+        b.addArc(xBase - 11, yRow, 4, 0, 180, "SLD_GEOMETRY");
+        b.addCircle(xBase - 7, yRow, 0.8, "SLD_GEOMETRY");
 
         b.addText(
           `${row.left.mcbAT}AT`,
-          xBase - 12,
-          yRow + 2.5,
+          xBase - 11,
+          yRow + 4.5,
           1.8,
           0,
           "TEXT_HEADER",
           "center",
         );
       } else {
-        b.addLine(xBase - 15, yRow, xBase - 9, yRow, "SLD_DASHED");
+        b.addLine(xBase - 15, yRow, xBase - 7, yRow, "SLD_DASHED");
       }
-
+      
+      b.addLine(xBase - 15, yRow, xBase - 20, yRow, "SLD_GEOMETRY");
+      
       b.addCircle(xBase - 23, yRow, 2.5, "SLD_GEOMETRY");
       b.addText(
         row.left.circuitNo.toString(),
@@ -645,27 +646,29 @@ const drawCadPanelSLD = (
 
     if (row.right) {
       b.addCircle(xBase, yRow, 0.7, "SLD_BUSBAR");
-      b.addLine(xBase, yRow, xBase + 20, yRow, "SLD_GEOMETRY");
+      b.addLine(xBase, yRow, xBase + 7, yRow, "SLD_GEOMETRY");
 
       const isRightSpace = row.right.description?.toUpperCase() === "SPACE";
       if (!isRightSpace) {
-        // High fidelity NECA dual-circle & diagonal Lever branch breaker
-        b.addCircle(xBase + 15, yRow, 0.6, "SLD_GEOMETRY");
-        b.addArc(xBase + 12, yRow, 3, 0, 180, "SLD_GEOMETRY");
-        b.addCircle(xBase + 9, yRow, 0.6, "SLD_GEOMETRY");
+        // High fidelity NECA dual-circle & arc Lever branch breaker
+        b.addCircle(xBase + 15, yRow, 0.8, "SLD_GEOMETRY");
+        b.addArc(xBase + 11, yRow, 4, 0, 180, "SLD_GEOMETRY");
+        b.addCircle(xBase + 7, yRow, 0.8, "SLD_GEOMETRY");
 
         b.addText(
           `${row.right.mcbAT}AT`,
-          xBase + 12,
-          yRow + 2.5,
+          xBase + 11,
+          yRow + 4.5,
           1.8,
           0,
           "TEXT_HEADER",
           "center",
         );
       } else {
-        b.addLine(xBase + 9, yRow, xBase + 15, yRow, "SLD_DASHED");
+        b.addLine(xBase + 7, yRow, xBase + 15, yRow, "SLD_DASHED");
       }
+
+      b.addLine(xBase + 15, yRow, xBase + 20, yRow, "SLD_GEOMETRY");
 
       b.addCircle(xBase + 23, yRow, 2.5, "SLD_GEOMETRY");
       b.addText(

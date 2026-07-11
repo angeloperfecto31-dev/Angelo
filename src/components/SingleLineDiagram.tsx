@@ -209,7 +209,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
       {/* Main Breaker form */}
       <line x1="400" y1="180" x2="400" y2="195" className="sld-line" />
       <circle cx="400" cy="195" r="3" fill="#1e293b" />
-      <path d="M 400,195 A 15 15 0 0 1 400,225" className="sld-line" strokeWidth="2.5" fill="none" />
+      <path d="M 400,195 A 15 15 0 0 0 400,225" className="sld-line" strokeWidth="2.5" fill="none" />
       <circle cx="400" cy="225" r="3" fill="#1e293b" />
       <line x1="400" y1="225" x2="400" y2="260" className="sld-line" />
       
@@ -239,7 +239,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                     
                     {/* Circuit Breaker: NECA 11.002 */}
                     <circle cx="375" cy={y} r="3" fill="#1e293b" />
-                    <path d={`M 375,${y} A 15 15 0 0 0 345,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
+                    <path d={`M 375,${y} A 15 15 0 0 1 345,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
                     <circle cx="345" cy={y} r="3" fill="#1e293b" />
                     {row.left.description.toUpperCase() !== 'SPACE' && (
                       <text x="360" y={y - 18} className="sld-text" textAnchor="middle">{row.left.mcbAT} AT</text>
@@ -274,7 +274,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                     
                     {/* Circuit Breaker: NECA 11.002 */}
                     <circle cx="425" cy={y} r="3" fill="#1e293b" />
-                    <path d={`M 425,${y} A 15 15 0 0 1 455,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
+                    <path d={`M 425,${y} A 15 15 0 0 0 455,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
                     <circle cx="455" cy={y} r="3" fill="#1e293b" />
                     {row.right.description.toUpperCase() !== 'SPACE' && (
                       <text x="440" y={y - 18} className="sld-text" textAnchor="middle">{row.right.mcbAT} AT</text>
