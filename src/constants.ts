@@ -1871,7 +1871,7 @@ export const DESCRIPTION_CODES = {
   SUBSUB: 'Sub-Sub Panel',
 };
 
-export const CONDUIT_SIZES = ['15mm', '20mm', '25mm', '32mm', '40mm', '50mm', '65mm', '80mm', '90mm', '100mm'];
+export const CONDUIT_SIZES = ['15mm', '20mm', '25mm', '32mm', '40mm', '50mm', '65mm', '80mm', '90mm', '100mm', '125mm', '150mm', '200mm'];
 
 export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> = {
   PVC: [
@@ -1885,6 +1885,9 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "80mm", limit: 1880 },
     { size: "90mm", limit: 2500 },
     { size: "100mm", limit: 3240 },
+    { size: "125mm", limit: 5160 },
+    { size: "150mm", limit: 7460 },
+    { size: "200mm", limit: 12900 },
   ],
   EMT: [
     { size: "15mm", limit: 98 },
@@ -1897,6 +1900,9 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "80mm", limit: 2210 },
     { size: "90mm", limit: 2920 },
     { size: "100mm", limit: 3800 },
+    { size: "125mm", limit: 6040 },
+    { size: "150mm", limit: 8730 },
+    { size: "200mm", limit: 15100 },
   ],
   RSC: [
     { size: "15mm", limit: 82 },
@@ -1909,6 +1915,9 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "80mm", limit: 1960 },
     { size: "90mm", limit: 2610 },
     { size: "100mm", limit: 3400 },
+    { size: "125mm", limit: 5420 },
+    { size: "150mm", limit: 7830 },
+    { size: "200mm", limit: 13500 },
   ],
   IMC: [
     { size: "15mm", limit: 91 },
@@ -1921,6 +1930,9 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "80mm", limit: 2230 },
     { size: "90mm", limit: 2980 },
     { size: "100mm", limit: 3870 },
+    { size: "125mm", limit: 6140 },
+    { size: "150mm", limit: 8870 },
+    { size: "200mm", limit: 15350 },
   ],
   FMC: [
     { size: "15mm", limit: 80 },
@@ -1933,6 +1945,9 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "80mm", limit: 1890 },
     { size: "90mm", limit: 2510 },
     { size: "100mm", limit: 3260 },
+    { size: "125mm", limit: 5160 },
+    { size: "150mm", limit: 7460 },
+    { size: "200mm", limit: 12900 },
   ],
   "Flexible Conduit": [
     { size: "15mm", limit: 80 },
@@ -1945,6 +1960,9 @@ export const CONDUIT_LIBRARY: Record<string, { size: string, limit: number }[]> 
     { size: "80mm", limit: 1890 },
     { size: "90mm", limit: 2510 },
     { size: "100mm", limit: 3260 },
+    { size: "125mm", limit: 5160 },
+    { size: "150mm", limit: 7460 },
+    { size: "200mm", limit: 12900 },
   ],
 };
 
