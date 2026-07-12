@@ -2221,7 +2221,7 @@ export default function App() {
         }
         wsData.push([
           "Max Demand Current:",
-          `${mainCurrent.baseAmp.toFixed(2)} A`,
+          `${mainCurrent.designAmp.toFixed(2)} A`,
         ]);
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
