@@ -315,6 +315,17 @@ export default function PaymentScreen({
   const [activeDropdownUid, setActiveDropdownUid] = useState<string | null>(null);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState<{ uid: string; email: string } | null>(null);
 
+  useEffect(() => {
+    if (!activeDropdownUid) return;
+    const handleDocumentClick = () => {
+      setActiveDropdownUid(null);
+    };
+    document.addEventListener("click", handleDocumentClick);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+    };
+  }, [activeDropdownUid]);
+
   const isAdminUser =
     user?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
 
@@ -4187,14 +4198,6 @@ export default function PaymentScreen({
             </div>
           </div>
 
-          {/* User List Dropdown Click Closer Mask */}
-          {activeDropdownUid && (
-            <div 
-              className="fixed inset-0 z-40 bg-transparent no-print" 
-              onClick={() => setActiveDropdownUid(null)} 
-            />
-          )}
-
           {/* Compact Modern SaaS Table/List container */}
           <div className={`bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] md:overflow-visible overflow-hidden animate-fade-in no-print transition-all duration-300 ${
             isFiltering ? "opacity-40 scale-[0.99] blur-[0.5px]" : "opacity-100 scale-100"
@@ -4481,7 +4484,10 @@ export default function PaymentScreen({
                                 </button>
 
                                 {activeDropdownUid === u.uid && (
-                                  <div className="absolute right-0 mt-1.5 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-55 py-2 overflow-hidden animate-scale-up text-left">
+                                  <div 
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="absolute right-0 mt-1.5 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-[60] py-2 overflow-hidden animate-scale-up text-left"
+                                  >
                                     <p className="px-3.5 py-1.5 text-[8px] font-extrabold text-slate-400 uppercase tracking-widest border-b border-slate-100 mb-1 select-none">
                                       System Actions
                                     </p>
