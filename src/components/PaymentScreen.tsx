@@ -49,6 +49,9 @@ import {
   ArrowUpDown,
   CalendarRange,
   Settings,
+  Eye,
+  EyeOff,
+  SlidersHorizontal,
 } from "lucide-react";
 import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
@@ -252,6 +255,14 @@ export default function PaymentScreen({
       return "all";
     }
   });
+  const [showFilterEngine, setShowFilterEngine] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem("admin_showFilterEngine");
+      return stored !== "false";
+    } catch (e) {
+      return true;
+    }
+  });
   const [adminStatusMsg, setAdminStatusMsg] = useState("");
   const [isFiltering, setIsFiltering] = useState(false);
 
@@ -290,6 +301,12 @@ export default function PaymentScreen({
       localStorage.setItem("admin_planFilter", planFilter);
     } catch (e) {}
   }, [planFilter]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("admin_showFilterEngine", String(showFilterEngine));
+    } catch (e) {}
+  }, [showFilterEngine]);
 
   useEffect(() => {
     setIsFiltering(true);
@@ -2835,6 +2852,14 @@ export default function PaymentScreen({
 
   const showAdminDashboard = (forceAdmin || isAdminMode) && isAdminUser;
 
+  const activeFiltersCount = [
+    planFilter !== "all" ? 1 : 0,
+    adminFilter !== "all" ? 1 : 0,
+    startDate || endDate ? 1 : 0,
+    searchQuery ? 1 : 0,
+    sortOrder !== "newest" ? 1 : 0
+  ].reduce((a, b) => a + b, 0);
+
   if (showAdminDashboard) {
     return (
       <div
@@ -2949,8 +2974,8 @@ export default function PaymentScreen({
                 ) : (
                   <div className="space-y-4">
                     <div className="overflow-hidden border border-rose-100 rounded-xl">
-                      <div className="hidden md:block overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                      <div className="hidden lg:block overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[850px]">
                           <thead>
                             <tr className="bg-rose-50/50 border-b border-rose-100">
                               <th className="px-4 py-2.5 text-[9px] font-black uppercase tracking-wider text-rose-700">Subscriber / Email</th>
@@ -3010,7 +3035,7 @@ export default function PaymentScreen({
                       </div>
 
                       {/* Mobile View of Discrepancies */}
-                      <div className="block md:hidden divide-y divide-rose-100 bg-rose-50/10">
+                      <div className="block lg:hidden divide-y divide-rose-100 bg-rose-50/10">
                         {discrepancies.map((disp: any) => {
                           const deviation = (disp.actualAmountPaid || 0) - (disp.expectedAmount || 0);
                           return (
@@ -3965,6 +3990,40 @@ export default function PaymentScreen({
 
               {/* Right group: Clean Action Panel */}
               <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-end lg:self-center">
+                {/* Active Filters indicators when collapsed */}
+                {!showFilterEngine && activeFiltersCount > 0 && (
+                  <div className="hidden sm:flex items-center gap-1.5 text-slate-500 bg-amber-50/80 dark:bg-amber-950/20 px-3 py-2 rounded-xl border border-amber-200/50 text-[10px] font-black uppercase tracking-wider select-none animate-fade-in">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span>Filters Active:</span>
+                    <span className="text-indigo-600 dark:text-indigo-400 font-extrabold font-mono">
+                      {activeFiltersCount}
+                    </span>
+                  </div>
+                )}
+
+                {/* Toggle Filter Engine Button */}
+                <button
+                  onClick={() => setShowFilterEngine(!showFilterEngine)}
+                  className={`px-4 py-2.5 font-bold uppercase tracking-wider rounded-xl transition-all shadow-sm active:scale-[0.98] flex items-center gap-2 hover:shadow text-xxs cursor-pointer border ${
+                    showFilterEngine 
+                      ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200/80 hover:border-slate-300" 
+                      : "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 hover:border-indigo-800"
+                  }`}
+                  title={showFilterEngine ? "Hide Unified Filter Engine" : "Show Unified Filter Engine"}
+                >
+                  {showFilterEngine ? (
+                    <>
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                      Hide Filters
+                    </>
+                  ) : (
+                    <>
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-white" />
+                      Show Filters
+                    </>
+                  )}
+                </button>
+
                 {/* Export Excel with icon */}
                 <button
                   onClick={handleExportToExcel}
@@ -3988,218 +4047,220 @@ export default function PaymentScreen({
             </div>
 
             {/* Redesigned Premium SaaS Filter Card Container */}
-            <div className="mt-4 bg-white dark:bg-[#1F2937] border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.2)] rounded-2xl p-6 no-print flex flex-col gap-6 transition-all duration-300">
-              
-              {/* Header Block of the Filter Card */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/85">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                    <Filter className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
-                      Unified Filter Engine
-                    </h3>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">Refining administrative subscriber registry</p>
-                  </div>
-                </div>
+            {showFilterEngine && (
+              <div className="mt-4 bg-white dark:bg-[#1F2937] border border-slate-200/80 dark:border-slate-800/80 shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.2)] rounded-2xl p-6 no-print flex flex-col gap-6 transition-all duration-300">
                 
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Filter Counter */}
-                  <span className="px-3 py-1.5 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/40 rounded-xl text-xs font-bold font-mono">
-                    Showing {sortedUsers.length} of {allUsers.length} Users
-                  </span>
-
-                  {/* Reset Filters / Clear Filters Button */}
-                  {(searchQuery || planFilter !== "all" || adminFilter !== "all" || startDate || endDate || sortOrder !== "newest") && (
-                    <button
-                      onClick={() => {
-                        setSearchQuery("");
-                        setPlanFilter("all");
-                        setAdminFilter("all");
-                        setStartDate("");
-                        setEndDate("");
-                        setSortOrder("newest");
-                      }}
-                      className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-sm hover:shadow"
-                      title="Reset all filters to default"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      Reset Filters
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Responsive Grid for Filter Groups */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
-                {/* PLAN Filter Group */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Plan</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200/40 dark:border-slate-800/80">
-                    {(["all", "basic", "premium", "enterprise"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => setPlanFilter(mode)}
-                        aria-label={`Filter by ${mode === "all" ? "All Plans" : mode}`}
-                        className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 select-none cursor-pointer flex-1 text-center min-w-[80px] h-9 flex items-center justify-center active:scale-95 ${
-                          planFilter === mode
-                            ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-bold"
-                            : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40"
-                        }`}
-                      >
-                        {mode === "all" ? "All Plans" : mode}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* STATUS Filter Group */}
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0"></span>
-                    <span>Status</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200/40 dark:border-slate-800/80">
-                    {(["all", "pending", "paid", "lifetime", "unpaid"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => setAdminFilter(mode)}
-                        aria-label={`Filter by ${mode === "all" ? "All Statuses" : mode}`}
-                        className={`px-3 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 select-none cursor-pointer flex-1 text-center min-w-[70px] h-9 flex items-center justify-center active:scale-95 ${
-                          adminFilter === mode
-                            ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-bold"
-                            : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40"
-                        }`}
-                      >
-                        {mode === "all"
-                          ? "All Status"
-                          : mode === "pending"
-                            ? "Pending"
-                            : mode === "paid"
-                              ? "Active"
-                              : mode === "lifetime"
-                                ? "Lifetime"
-                                : "Unpaid"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Bottom Section containing Sort and Date Picker */}
-              <div className="border-t border-slate-100 dark:border-slate-850/80 pt-6 flex flex-col md:flex-row md:items-end justify-between gap-6">
-                
-                {/* SORT Filter Group */}
-                <div className="flex flex-col gap-3 w-full md:w-auto">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
-                    <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Sort</span>
-                  </div>
-                  <div className="flex gap-1.5 bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200/40 dark:border-slate-800/80 max-w-sm">
-                    {(["newest", "oldest"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        onClick={() => setSortOrder(mode)}
-                        aria-label={`Sort by ${mode === "newest" ? "Newest First" : "Oldest First"}`}
-                        className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 select-none cursor-pointer flex-1 text-center min-w-[120px] h-9 flex items-center justify-center active:scale-95 ${
-                          sortOrder === mode
-                            ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-bold"
-                            : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40"
-                        }`}
-                      >
-                        {mode === "newest" ? "Newest to Oldest" : "Oldest to Newest"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Date Range Block */}
-                <div className="flex flex-col gap-3 w-full md:w-auto">
-                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
-                    <CalendarRange className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>Subscription Date Range</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <input
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-indigo-600 dark:focus:border-indigo-500 rounded-xl outline-none shadow-sm transition-all text-center select-none cursor-pointer h-9"
-                        title="Start registration/subscription date"
-                      />
+                {/* Header Block of the Filter Card */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/85">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                      <Filter className="w-4 h-4" />
                     </div>
-                    <span className="text-slate-400 text-xs font-bold font-mono">to</span>
-                    <div className="relative">
-                      <input
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-indigo-600 dark:focus:border-indigo-500 rounded-xl outline-none shadow-sm transition-all text-center select-none cursor-pointer h-9"
-                        title="End registration/subscription date"
-                      />
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                        Unified Filter Engine
+                      </h3>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">Refining administrative subscriber registry</p>
                     </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Filter Counter */}
+                    <span className="px-3 py-1.5 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100/60 dark:border-indigo-900/40 rounded-xl text-xs font-bold font-mono">
+                      Showing {sortedUsers.length} of {allUsers.length} Users
+                    </span>
 
-                    {(startDate || endDate) && (
+                    {/* Reset Filters / Clear Filters Button */}
+                    {(searchQuery || planFilter !== "all" || adminFilter !== "all" || startDate || endDate || sortOrder !== "newest") && (
                       <button
                         onClick={() => {
+                          setSearchQuery("");
+                          setPlanFilter("all");
+                          setAdminFilter("all");
                           setStartDate("");
                           setEndDate("");
+                          setSortOrder("newest");
                         }}
-                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-colors cursor-pointer"
-                        title="Clear Date Filters"
+                        className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-900/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-sm hover:shadow"
+                        title="Reset all filters to default"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-3.5 h-3.5" />
+                        Reset Filters
                       </button>
                     )}
                   </div>
                 </div>
 
-              </div>
+                {/* Responsive Grid for Filter Groups */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  
+                  {/* PLAN Filter Group */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Plan</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200/40 dark:border-slate-800/80">
+                      {(["all", "basic", "premium", "enterprise"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setPlanFilter(mode)}
+                          aria-label={`Filter by ${mode === "all" ? "All Plans" : mode}`}
+                          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 select-none cursor-pointer flex-1 text-center min-w-[80px] h-9 flex items-center justify-center active:scale-95 ${
+                            planFilter === mode
+                              ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-bold"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40"
+                          }`}
+                        >
+                          {mode === "all" ? "All Plans" : mode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* Active Filter Summary */}
-              <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-slate-100 dark:border-slate-850/80 text-[11px] text-slate-500 select-none">
-                <span className="font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">Applied Filters:</span>
-                
-                <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
-                  Plan: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{planFilter === "all" ? "All Plans" : planFilter.toUpperCase()}</span>
-                </span>
-                
-                <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
-                
-                <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
-                  Status: <span className="text-indigo-600 dark:text-indigo-400 font-bold">
-                    {adminFilter === "all" ? "All Statuses" : adminFilter === "pending" ? "Pending" : adminFilter === "paid" ? "Active" : adminFilter === "lifetime" ? "Lifetime" : "Unpaid"}
+                  {/* STATUS Filter Group */}
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0"></span>
+                      <span>Status</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200/40 dark:border-slate-800/80">
+                      {(["all", "pending", "paid", "lifetime", "unpaid"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setAdminFilter(mode)}
+                          aria-label={`Filter by ${mode === "all" ? "All Statuses" : mode}`}
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 select-none cursor-pointer flex-1 text-center min-w-[70px] h-9 flex items-center justify-center active:scale-95 ${
+                            adminFilter === mode
+                              ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-bold"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40"
+                          }`}
+                        >
+                          {mode === "all"
+                            ? "All Status"
+                            : mode === "pending"
+                              ? "Pending"
+                              : mode === "paid"
+                                ? "Active"
+                                : mode === "lifetime"
+                                  ? "Lifetime"
+                                  : "Unpaid"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Bottom Section containing Sort and Date Picker */}
+                <div className="border-t border-slate-100 dark:border-slate-850/80 pt-6 flex flex-col md:flex-row md:items-end justify-between gap-6">
+                  
+                  {/* SORT Filter Group */}
+                  <div className="flex flex-col gap-3 w-full md:w-auto">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
+                      <ArrowUpDown className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Sort</span>
+                    </div>
+                    <div className="flex gap-1.5 bg-slate-100/80 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200/40 dark:border-slate-800/80 max-w-sm">
+                      {(["newest", "oldest"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setSortOrder(mode)}
+                          aria-label={`Sort by ${mode === "newest" ? "Newest First" : "Oldest First"}`}
+                          className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all duration-200 select-none cursor-pointer flex-1 text-center min-w-[120px] h-9 flex items-center justify-center active:scale-95 ${
+                            sortOrder === mode
+                              ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-bold"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/40 dark:hover:bg-slate-800/40"
+                          }`}
+                        >
+                          {mode === "newest" ? "Newest to Oldest" : "Oldest to Newest"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Date Range Block */}
+                  <div className="flex flex-col gap-3 w-full md:w-auto">
+                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 select-none">
+                      <CalendarRange className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Subscription Date Range</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="relative">
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-indigo-600 dark:focus:border-indigo-500 rounded-xl outline-none shadow-sm transition-all text-center select-none cursor-pointer h-9"
+                          title="Start registration/subscription date"
+                        />
+                      </div>
+                      <span className="text-slate-400 text-xs font-bold font-mono">to</span>
+                      <div className="relative">
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="px-3.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:border-indigo-600 dark:focus:border-indigo-500 rounded-xl outline-none shadow-sm transition-all text-center select-none cursor-pointer h-9"
+                          title="End registration/subscription date"
+                        />
+                      </div>
+
+                      {(startDate || endDate) && (
+                        <button
+                          onClick={() => {
+                            setStartDate("");
+                            setEndDate("");
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-xl transition-colors cursor-pointer"
+                          title="Clear Date Filters"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Active Filter Summary */}
+                <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-slate-100 dark:border-slate-850/80 text-[11px] text-slate-500 select-none">
+                  <span className="font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">Applied Filters:</span>
+                  
+                  <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
+                    Plan: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{planFilter === "all" ? "All Plans" : planFilter.toUpperCase()}</span>
                   </span>
-                </span>
-                
-                <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
-                
-                <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
-                  Sort: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{sortOrder === "newest" ? "Newest First" : "Oldest First"}</span>
-                </span>
-
-                {(startDate || endDate) && (
-                  <>
-                    <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
-                    <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
-                      Dates: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{startDate || "Start"} to {endDate || "End"}</span>
+                  
+                  <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
+                  
+                  <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
+                    Status: <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                      {adminFilter === "all" ? "All Statuses" : adminFilter === "pending" ? "Pending" : adminFilter === "paid" ? "Active" : adminFilter === "lifetime" ? "Lifetime" : "Unpaid"}
                     </span>
-                  </>
-                )}
-              </div>
+                  </span>
+                  
+                  <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
+                  
+                  <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
+                    Sort: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{sortOrder === "newest" ? "Newest First" : "Oldest First"}</span>
+                  </span>
 
-            </div>
+                  {(startDate || endDate) && (
+                    <>
+                      <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>
+                      <span className="px-2.5 py-1 bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 rounded-lg font-medium border border-slate-200/30 dark:border-slate-800/80">
+                        Dates: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{startDate || "Start"} to {endDate || "End"}</span>
+                      </span>
+                    </>
+                  )}
+                </div>
+
+              </div>
+            )}
           </div>
 
           {/* Compact Modern SaaS Table/List container */}
-          <div className={`bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] md:overflow-visible overflow-hidden animate-fade-in no-print transition-all duration-300 ${
+          <div className={`bg-white rounded-2xl border border-slate-200/75 shadow-[0_8px_24px_rgba(0,0,0,0.04)] lg:overflow-visible overflow-hidden animate-fade-in no-print transition-all duration-300 ${
             isFiltering ? "opacity-40 scale-[0.99] blur-[0.5px]" : "opacity-100 scale-100"
           }`}>
             {sortedUsers.length === 0 ? (
@@ -4228,8 +4289,8 @@ export default function PaymentScreen({
             ) : (
               <>
                 {/* Desktop and Tablet Responsive Table */}
-                <div className="hidden md:block md:overflow-visible">
-                  <table className="w-full text-left border-collapse">
+                <div className="hidden lg:block lg:overflow-visible overflow-x-auto scrollbar-thin">
+                  <table className="w-full text-left border-collapse min-w-[950px]">
                     <thead>
                       <tr className="bg-slate-50/85 border-b border-slate-200/60 select-none">
                         <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider first:rounded-tl-2xl">
@@ -4268,7 +4329,7 @@ export default function PaymentScreen({
 
                         return (
                           <tr 
-                            key={u.uid} 
+                             key={u.uid} 
                             className={`hover:bg-slate-50/50 transition-colors duration-150 ${isPending ? "bg-amber-50/10" : ""} ${activeDropdownUid === u.uid ? "relative z-50 pointer-events-auto" : ""}`}
                           >
                             {/* USER COLUMN */}
@@ -4448,12 +4509,12 @@ export default function PaymentScreen({
                                   </div>
                                 </div>
                               ) : u.approvedAt ? (
-                                <div className="text-[10px] shrink-0">
+                                <div className="text-[10px] shrink-0 max-w-[220px]">
                                   <div className="font-extrabold text-slate-800 flex items-center gap-1">
                                     <Check className="w-3.5 h-3.5 text-emerald-500" />
                                     APPROVED SYSTEM
                                   </div>
-                                  <div className="text-slate-400 mt-0.5 font-semibold text-[9px] uppercase tracking-wider">
+                                  <div className="text-slate-400 mt-0.5 font-semibold text-[9px] uppercase tracking-wider truncate" title={`By ${u.approvedBy || "Admin"} • ${new Date(u.approvedAt).toLocaleDateString()}`}>
                                     By {u.approvedBy || "Admin"} • {new Date(u.approvedAt).toLocaleDateString()}
                                   </div>
                                   {u.expiresAt && (
@@ -4582,7 +4643,7 @@ export default function PaymentScreen({
                 </div>
 
                 {/* Mobile View: High density visual cards layout */}
-                <div className="block md:hidden divide-y divide-slate-100">
+                <div className="block lg:hidden divide-y divide-slate-100">
                   {sortedUsers.map((u) => {
                     const isPending = u.paymentStatus === "pending_verification";
                     const isUserActive = u.isActive === true;
