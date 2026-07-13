@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Save, FolderOpen, FilePlus, Copy, Trash2, X, Server } from 'lucide-react';
+import { Save, FolderOpen, FilePlus, Copy, Trash2, X, Server, Search, ChevronDown } from 'lucide-react';
 import { SavedProject, ProjectData } from '../types/project';
 import { db, auth } from '../firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from "../utils/firestoreError";
+import { getInstitutionsForType } from '../utils/institutionLibrary';
 
 interface ProjectManagerModalProps {
   isOpen: boolean;
@@ -33,6 +34,8 @@ export default function ProjectManagerModal({
   const [showNewConfirm, setShowNewConfirm] = useState(false);
   const [newProjectForm, setNewProjectForm] = useState<Partial<import("../types").PanelConfig>>({
     projectType: 'Residential',
+    institution: '',
+    customInstitutionName: '',
     project: 'NEW PROJECT',
     owner: '',
     location: '',
@@ -45,9 +48,23 @@ export default function ProjectManagerModal({
   });
   
   const [filterType, setFilterType] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState('');
+  const [modalSearchTerm, setModalSearchTerm] = useState('');
+  const [isModalDropdownOpen, setIsModalDropdownOpen] = useState(false);
 
   const filteredProjects = projects
-    .filter(p => filterType === "All" || p.data?.panel?.projectType === filterType)
+    .filter(p => {
+      const matchesType = filterType === "All" || p.data?.panel?.projectType === filterType;
+      const searchLower = searchQuery.toLowerCase();
+      const projName = p.name?.toLowerCase() || '';
+      const projType = p.data?.panel?.projectType?.toLowerCase() || '';
+      const instName = p.data?.panel?.institution === 'Custom...'
+        ? (p.data?.panel?.customInstitutionName?.toLowerCase() || '')
+        : (p.data?.panel?.institution?.toLowerCase() || '');
+      
+      const matchesSearch = projName.includes(searchLower) || projType.includes(searchLower) || instName.includes(searchLower);
+      return matchesType && matchesSearch;
+    })
     .sort((a, b) => b.lastModified - a.lastModified);
 
   useEffect(() => {
@@ -232,8 +249,20 @@ export default function ProjectManagerModal({
   };
 
   const confirmNew = () => {
-    if (!newProjectForm.project || !newProjectForm.projectType) {
-      alert("Project Name and Project Type are required.");
+    if (!newProjectForm.projectType) {
+      alert("Project Type is required.");
+      return;
+    }
+    if (!newProjectForm.institution) {
+      alert("Institution is required.");
+      return;
+    }
+    if (newProjectForm.institution === 'Custom...' && (!newProjectForm.customInstitutionName || !newProjectForm.customInstitutionName.trim())) {
+      alert("Custom Institution Name is required.");
+      return;
+    }
+    if (!newProjectForm.project || !newProjectForm.project.trim()) {
+      alert("Project Name is required.");
       return;
     }
     setCurrentProjectId(null);
@@ -305,18 +334,30 @@ export default function ProjectManagerModal({
 
           {/* Saved Projects List */}
           <div className="space-y-3">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
               <h3 className="text-sm font-bold tracking-wider text-slate-500 uppercase">Saved Projects</h3>
-              <select 
-                value={filterType}
-                onChange={e => setFilterType(e.target.value)}
-                className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs dark:text-white"
-              >
-                <option value="All">All Types</option>
-                <option value="Residential">Residential</option>
-                <option value="Commercial">Commercial</option>
-                <option value="Industrial">Industrial</option>
-              </select>
+              <div className="flex gap-2 flex-1 sm:flex-initial">
+                <div className="relative flex-1 sm:w-60">
+                  <input
+                    type="text"
+                    placeholder="Search name, type, or institution..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs dark:text-white outline-none focus:border-indigo-500"
+                  />
+                  <Search className="w-3 h-3 text-slate-450 dark:text-slate-500 absolute left-2.5 top-2" />
+                </div>
+                <select 
+                  value={filterType}
+                  onChange={e => setFilterType(e.target.value)}
+                  className="px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs dark:text-white"
+                >
+                  <option value="All">All Types</option>
+                  <option value="Residential">Residential</option>
+                  <option value="Commercial">Commercial</option>
+                  <option value="Industrial">Industrial</option>
+                </select>
+              </div>
             </div>
             {filteredProjects.length === 0 ? (
               <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No saved projects found.</p>
@@ -329,11 +370,16 @@ export default function ProjectManagerModal({
                     className="p-3 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between hover:border-indigo-500 cursor-pointer transition-all bg-white dark:bg-slate-800/50 group"
                   >
                     <div>
-                      <h4 className={`font-bold flex items-center gap-2 ${currentProjectId === p.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-white'}`}>
+                      <h4 className={`font-bold flex items-center flex-wrap gap-2 ${currentProjectId === p.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-white'}`}>
                         {p.name}
                         {p.data?.panel?.projectType && (
                           <span className="text-[9px] uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                             {p.data.panel.projectType}
+                          </span>
+                        )}
+                        {p.data?.panel?.institution && (
+                          <span className="text-[9px] uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-100/50 dark:border-indigo-900/50">
+                            {p.data.panel.institution === 'Custom...' ? (p.data.panel.customInstitutionName || 'Custom') : p.data.panel.institution}
                           </span>
                         )}
                         {currentProjectId === p.id && <span className="text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full">Current</span>}
@@ -408,8 +454,17 @@ export default function ProjectManagerModal({
                     <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Project Type *</label>
                     <select 
                       value={newProjectForm.projectType}
-                      onChange={e => setNewProjectForm({...newProjectForm, projectType: e.target.value})}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
+                      onChange={e => {
+                        setNewProjectForm({
+                          ...newProjectForm,
+                          projectType: e.target.value,
+                          institution: '',
+                          customInstitutionName: ''
+                        });
+                        setModalSearchTerm('');
+                        setIsModalDropdownOpen(false);
+                      }}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none focus:border-indigo-500"
                       required
                     >
                       <option value="Residential">Residential</option>
@@ -417,6 +472,82 @@ export default function ProjectManagerModal({
                       <option value="Industrial">Industrial</option>
                     </select>
                   </div>
+
+                  <div className="space-y-1.5 md:col-span-2 relative">
+                    <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Institution *</label>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => newProjectForm.projectType && setIsModalDropdownOpen(!isModalDropdownOpen)}
+                        disabled={!newProjectForm.projectType}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white text-left flex justify-between items-center disabled:opacity-50 disabled:cursor-not-allowed outline-none focus:border-indigo-500 border-solid"
+                      >
+                        <span className="truncate">
+                          {newProjectForm.institution ? (
+                            newProjectForm.institution === 'Custom...' ? (
+                              newProjectForm.customInstitutionName ? `Custom: ${newProjectForm.customInstitutionName}` : 'Custom...'
+                            ) : newProjectForm.institution
+                          ) : 'Select Institution...'}
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      </button>
+
+                      {isModalDropdownOpen && newProjectForm.projectType && (
+                        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col">
+                          <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+                            <input
+                              type="text"
+                              placeholder="Search institution..."
+                              value={modalSearchTerm}
+                              onChange={e => setModalSearchTerm(e.target.value)}
+                              className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-700 border border-slate-250 dark:border-slate-600 rounded text-xs dark:text-white outline-none focus:border-indigo-500"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="overflow-y-auto flex-1 py-1 max-h-48">
+                            {getInstitutionsForType(newProjectForm.projectType)
+                              .filter(inst => inst.toLowerCase().includes(modalSearchTerm.toLowerCase()))
+                              .map(inst => (
+                                <button
+                                  key={inst}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewProjectForm({
+                                      ...newProjectForm,
+                                      institution: inst,
+                                      customInstitutionName: inst === 'Custom...' ? '' : undefined
+                                    });
+                                    setIsModalDropdownOpen(false);
+                                    setModalSearchTerm('');
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 transition-colors"
+                                >
+                                  {inst}
+                                </button>
+                              ))}
+                            {getInstitutionsForType(newProjectForm.projectType)
+                              .filter(inst => inst.toLowerCase().includes(modalSearchTerm.toLowerCase())).length === 0 && (
+                              <div className="px-3 py-2 text-xs text-slate-500 text-center">No matching institutions found</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {newProjectForm.institution === 'Custom...' && (
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Custom Institution Name *</label>
+                      <input
+                        type="text"
+                        value={newProjectForm.customInstitutionName || ''}
+                        onChange={e => setNewProjectForm({...newProjectForm, customInstitutionName: e.target.value})}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white outline-none focus:border-indigo-500"
+                        placeholder="e.g. Data Center"
+                        required
+                      />
+                    </div>
+                  )}
                   
                   <div className="space-y-1.5 md:col-span-2">
                     <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Project Name *</label>

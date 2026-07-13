@@ -1986,6 +1986,8 @@ export default function App() {
         wsData.push([]);
         if (p.projectType)
           wsData.push(["PROJECT TYPE:", p.projectType.toUpperCase()]);
+        if (p.institution)
+          wsData.push(["INSTITUTION:", (p.institution === 'Custom...' ? p.customInstitutionName || 'Custom' : p.institution).toUpperCase()]);
         if (p.owner) wsData.push(["OWNER:", p.owner.toUpperCase()]);
         wsData.push([
           "PROJECT:",

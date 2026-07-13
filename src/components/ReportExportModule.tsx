@@ -338,6 +338,16 @@ export default function ReportExportModule({
           })
         );
       }
+      if (panel.institution) {
+        docxChildren.push(
+          new docx.Paragraph({
+            children: [
+              new docx.TextRun({ text: "Specific Institution: ", bold: true }),
+              new docx.TextRun({ text: (panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution).toUpperCase() }),
+            ],
+          })
+        );
+      }
       if (panel.owner) {
         docxChildren.push(
           new docx.Paragraph({
@@ -998,6 +1008,11 @@ export default function ReportExportModule({
         doc.setFontSize(9.5);
         if (panel.projectType) {
           doc.text(`Project Classification: ${panel.projectType.toUpperCase()} FACILITY`, 15, currentY);
+          currentY += 6;
+        }
+        if (panel.institution) {
+          const instText = (panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution).toUpperCase();
+          doc.text(`Specific Institution: ${instText}`, 15, currentY);
           currentY += 6;
         }
         doc.text(`Client Enterprise Name: ${clientName}`, 15, currentY);

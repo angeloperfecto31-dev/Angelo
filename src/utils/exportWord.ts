@@ -596,6 +596,13 @@ export const exportToWord = async (
         spacing: { after: 200 },
       })
     ] : []),
+    ...(panel.institution ? [
+      new Paragraph({
+        children: [new TextRun({ text: "Specific Institution: " + (panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution).toUpperCase(), font: "Segoe UI", size: 20, color: "334155", bold: true })],
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      })
+    ] : []),
     ...(panel.owner ? [
       new Paragraph({
         children: [new TextRun({ text: "Project Owner: " + panel.owner, font: "Segoe UI", size: 20, color: "334155", bold: true })],

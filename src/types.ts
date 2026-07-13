@@ -99,6 +99,8 @@ export interface Circuit {
 export interface PanelConfig {
   project: string;
   projectType?: 'Residential' | 'Commercial' | 'Industrial' | string;
+  institution?: string;
+  customInstitutionName?: string;
   owner?: string;
   location: string;
   voltageSystem?: string; // alias or derived for main system

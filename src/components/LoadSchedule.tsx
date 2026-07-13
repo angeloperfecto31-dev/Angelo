@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { isEqual } from "lodash";
+import { getInstitutionsForType } from "../utils/institutionLibrary";
 import {
   Plus,
   Trash2,
@@ -25,6 +26,7 @@ import {
   Sparkles,
   RefreshCw,
   Scale,
+  ChevronDown,
 } from "lucide-react";
 import {
   DndContext,
@@ -558,6 +560,8 @@ export default function LoadSchedule({
   setTransformerPrimaryVoltage,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
   const [tableFontSize, setTableFontSize] = useState<number>(11);
+  const [isInstDropdownOpen, setIsInstDropdownOpen] = useState(false);
+  const [instSearchTerm, setInstSearchTerm] = useState('');
 
   // Helper to determine eligible subpanels for selection on circuit `c`
   const getEligibleSubPanels = useCallback((circuitId: string) => {
@@ -2015,7 +2019,12 @@ export default function LoadSchedule({
             <select
               value={panel.projectType || "Residential"}
               onChange={(e) =>
-                setPanel({ ...panel, projectType: e.target.value })
+                setPanel({
+                  ...panel,
+                  projectType: e.target.value,
+                  institution: "",
+                  customInstitutionName: ""
+                })
               }
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
@@ -2024,6 +2033,86 @@ export default function LoadSchedule({
               <option value="Industrial">Industrial</option>
             </select>
           </div>
+
+          <div className="space-y-1.5 relative">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Institution
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => panel.projectType && setIsInstDropdownOpen(!isInstDropdownOpen)}
+                disabled={!panel.projectType}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors text-left flex justify-between items-center disabled:opacity-50 disabled:cursor-not-allowed outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              >
+                <span className="truncate">
+                  {panel.institution ? (
+                    panel.institution === 'Custom...' ? (
+                      panel.customInstitutionName ? `Custom: ${panel.customInstitutionName}` : 'Custom...'
+                    ) : panel.institution
+                  ) : 'Select Institution...'}
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              </button>
+
+              {isInstDropdownOpen && panel.projectType && (
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col">
+                  <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+                    <input
+                      type="text"
+                      placeholder="Search institution..."
+                      value={instSearchTerm}
+                      onChange={e => setInstSearchTerm(e.target.value)}
+                      className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-700 border border-slate-250 dark:border-slate-600 rounded text-xs text-slate-800 dark:text-white outline-none focus:border-indigo-500"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="overflow-y-auto flex-1 py-1 max-h-48">
+                    {getInstitutionsForType(panel.projectType)
+                      .filter(inst => inst.toLowerCase().includes(instSearchTerm.toLowerCase()))
+                      .map(inst => (
+                        <button
+                          key={inst}
+                          type="button"
+                          onClick={() => {
+                            setPanel({
+                              ...panel,
+                              institution: inst,
+                              customInstitutionName: inst === 'Custom...' ? '' : undefined
+                            });
+                            setIsInstDropdownOpen(false);
+                            setInstSearchTerm('');
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-indigo-50 dark:hover:bg-slate-700 text-slate-750 dark:text-slate-200 transition-colors"
+                        >
+                          {inst}
+                        </button>
+                      ))}
+                    {getInstitutionsForType(panel.projectType)
+                      .filter(inst => inst.toLowerCase().includes(instSearchTerm.toLowerCase())).length === 0 && (
+                      <div className="px-3 py-2 text-xs text-slate-500 text-center">No matching institutions found</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {panel.institution === 'Custom...' && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Custom Institution Name
+              </label>
+              <input
+                type="text"
+                value={panel.customInstitutionName || ''}
+                onChange={e => setPanel({ ...panel, customInstitutionName: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                placeholder="e.g. Data Center"
+                required
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Owner
@@ -3856,6 +3945,16 @@ export default function LoadSchedule({
                     </span>
                     <span className="text-slate-900 dark:text-slate-200 uppercase font-bold">
                       {panel.projectType}
+                    </span>
+                  </div>
+                )}
+                {panel.institution && (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-wider">
+                      INSTITUTION
+                    </span>
+                    <span className="text-slate-900 dark:text-slate-200 uppercase font-bold">
+                      {panel.institution === 'Custom...' ? panel.customInstitutionName : panel.institution}
                     </span>
                   </div>
                 )}

@@ -1530,8 +1530,14 @@ export const exportToCAD = (
 
     // Project metadata
     b.addText("PROJECT:", tx, 312, 1.8, 0, "TEXT_HEADER", "left");
+    const classification = panel.projectType 
+      ? (panel.institution 
+          ? `[${panel.projectType} - ${panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution}] `
+          : `[${panel.projectType}] `)
+      : "";
+
     b.addText(
-      (panel.projectType ? `[${panel.projectType}] ` : "") + (panel.project || "UNSPECIFIED DESIGN PROJECT"),
+      classification + (panel.project || "UNSPECIFIED DESIGN PROJECT"),
       tx,
       301,
       2.0,
