@@ -855,7 +855,7 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
       
       createParagraph(`3. The sized Overcurrent Protection Device (OCPD) is selected upwards matching standard ratings:`),
       createFormulaCallout(`I_{\\text{OCPD}} \\geq I_{\\text{design}} \\implies I_{\\text{OCPD}} = ${cb}\\text{ A}`),
-      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ ${p.insulationType || "THHN/THWN"} copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$ (Standardized Cable Description: ${formatStandardCableDescription(wire.runs || 1, wire.size, p.insulationType || "THHN", groundSize, conduitSize, conduitType || "PVC")}).`),
+      createParagraph(`Based on these computations, the corresponding main conductor wire feed is sized at $A_{\\text{wire}} = ${runsText}${wire.size}\\text{ mm}^2$ ${p.insulationType || "THHN/THWN"} copper conductor, backed by a main equipment grounding copper conductor sized at $A_{\\text{ground}} = ${groundSizeString}\\text{ mm}^2$ and run in a $${conduitSizeString}$ ${conduitTypeString} conduit, with a main circuit breaker trip of $${cb}\\text{ A}$ (Standardized Cable Description: ${formatStandardCableDescription(wire.runs || 1, wire.size, p.insulationType || "THHN", groundSize, conduitSize, conduitType || "PVC", p.system)}).`),
       
       ...(p.transferSwitchType && p.transferSwitchType !== "None" ? [
          createParagraph(`4. Transfer Switch Selection (${p.transferSwitchType}):`),
@@ -967,7 +967,8 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
             cir.wireType || "THHN",
             cir.groundSize || "2.0",
             cir.conduitSize || "20",
-            cir.conduitType || "PVC"
+            cir.conduitType || "PVC",
+            cir.mcbP
           )),
         ]
       }));

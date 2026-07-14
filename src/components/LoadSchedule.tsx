@@ -5330,7 +5330,8 @@ export default function LoadSchedule({
                         panel.insulationType || "THHN",
                         mainFeeder.groundSize,
                         mainFeeder.conduitSize,
-                        mainFeeder.conduitType || "PVC"
+                        mainFeeder.conduitType || "PVC",
+                        panel.system
                       )}
                       {panel.mainOverrides?.isOverrideEnabled &&
                       panel.mainOverrides.wireSize
@@ -5987,7 +5988,8 @@ export default function LoadSchedule({
                   panel.insulationType || "THHN",
                   mainFeeder.groundSize,
                   mainFeeder.conduitSize,
-                  mainFeeder.conduitType || "PVC"
+                  mainFeeder.conduitType || "PVC",
+                  panel.system
                 )} (Ampacity: {mainFeeder.wire.ampacity} A)
               </span>
             </div>

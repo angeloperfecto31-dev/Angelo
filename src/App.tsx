@@ -2132,7 +2132,8 @@ export default function App() {
                   cir.wireType || "THHN",
                   cir.groundSize || "2.0",
                   cir.conduitSize || "20",
-                  cir.conduitType || "PVC"
+                  cir.conduitType || "PVC",
+                  cir.mcbP
                 ),
           );
           wsData.push(row);
@@ -2201,7 +2202,8 @@ export default function App() {
             p.insulationType || "THHN",
             groundSize,
             conduitSize,
-            conduitType || "PVC"
+            conduitType || "PVC",
+            p.system
           ),
         ]);
         wsData.push([

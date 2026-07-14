@@ -133,13 +133,49 @@ export const getNeutralPoles = (poleStr: string | number): number => {
   return 0;
 };
 
+export const getActiveWireCount = (systemOrPoles?: string | number): number => {
+  if (!systemOrPoles) return 2; // Default fallback to 2 active wires (standard 1PH 2W)
+
+  const s = systemOrPoles.toString().trim().toUpperCase();
+
+  // Check system string first
+  if (s.includes("3PH")) {
+    if (s.includes("3W")) return 3;
+    if (s.includes("4W")) return 4;
+    if (s.includes("5W")) return 4; // 3 phases + 1 neutral. The 5th is Ground.
+    return 3; // Default 3PH to 3 wires
+  }
+  if (s.includes("1PH")) {
+    if (s.includes("2W")) return 2;
+    if (s.includes("3W")) return 3; // 2 phases + 1 neutral
+    return 2; // Default 1PH to 2 wires
+  }
+
+  // Check poles
+  if (s === "3P" || s === "3") {
+    return 3;
+  }
+  if (s === "4P" || s === "4" || s.includes("4P") || s.includes("3P+N")) {
+    return 4;
+  }
+  if (s === "2P" || s === "2") {
+    return 2;
+  }
+  if (s === "1P" || s === "1") {
+    return 2; // A 1P branch circuit has Phase + Neutral = 2 active wires
+  }
+
+  return 2; // Fallback
+};
+
 export const formatStandardCableDescription = (
   sets: number | string,
   wireSize: number | string,
   insulation: string,
   groundSize: number | string,
   conduitSize: number | string,
-  conduitType: string
+  conduitType: string,
+  systemOrPoles?: string | number
 ): string => {
   const sNum = parseInt(sets?.toString() || "1", 10) || 1;
 
@@ -179,7 +215,13 @@ export const formatStandardCableDescription = (
 
   const cType = (conduitType || "PVC").trim();
 
-  return `${sNum} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
+  const activeCount = getActiveWireCount(systemOrPoles);
+
+  if (sNum > 1) {
+    return `${sNum} Sets - ${activeCount} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
+  }
+
+  return `${activeCount} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
 };
 
 export const getConductorLabel = (

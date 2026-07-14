@@ -2237,7 +2237,8 @@ export const exportToCAD = (
             cir.wireType || "THHN",
             cir.groundSize || "2.0",
             cir.conduitSize || "20",
-            cir.conduitType || "PVC"
+            cir.conduitType || "PVC",
+            cir.mcbP
           );
       
       const yTextWire = ty - rowH / 2 - metrics.splitHeaderFontSize / 2;
@@ -2395,7 +2396,8 @@ export const exportToCAD = (
       currentPanel.insulationType || "THHN",
       currentCalcData.mainFeeder.groundSize,
       currentCalcData.mainFeeder.conduitSize,
-      currentCalcData.mainFeeder.conduitType || "PVC"
+      currentCalcData.mainFeeder.conduitType || "PVC",
+      currentPanel.system
     );
     const summarySpecStr = `FEEDER: ${mainFeederCableStandard} | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
     
