@@ -183,6 +183,7 @@ export default function BomModule({
   // Dialog / Edit states
   const [editingItem, setEditingItem] = useState<BomItem | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [libSearchQuery, setLibSearchQuery] = useState("");
   const [newItem, setNewItem] = useState<Partial<BomItem>>({
     category: "Conductors",
     name: "",
@@ -379,6 +380,7 @@ export default function BomModule({
     const updated = [...bomItems, finalItem];
     setBomItems(updated);
     setShowAddModal(false);
+    setLibSearchQuery("");
     setNewItem({
       category: "Conductors",
       name: "",
@@ -1528,10 +1530,158 @@ export default function BomModule({
                 <Plus className="w-4 h-4 text-indigo-500" />
                 Add Custom Material Line
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold cursor-pointer">Close</button>
+              <button 
+                onClick={() => {
+                  setShowAddModal(false);
+                  setLibSearchQuery("");
+                }} 
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold cursor-pointer"
+              >
+                Close
+              </button>
             </div>
 
             <div className="p-5 space-y-3 max-h-[75vh] overflow-y-auto">
+              {/* Optional Base Price Database Selector */}
+              <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/60 rounded-2xl space-y-2">
+                <label className="block text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1">
+                  <Database className="w-3 h-3 text-indigo-500" />
+                  Select from Base Price Database (Optional)
+                </label>
+                
+                {/* Search field */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={libSearchQuery}
+                    onChange={(e) => setLibSearchQuery(e.target.value)}
+                    placeholder="Search standard base materials index..."
+                    className="w-full pl-7 pr-7 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:ring-1 focus:ring-indigo-500/30"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                  {libSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setLibSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold font-sans cursor-pointer h-4 w-4 flex items-center justify-center bg-slate-100 dark:bg-slate-700 rounded-full"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <select
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    const selectedItem = library.find(item => item.id === selectedId);
+                    if (selectedItem) {
+                      let normalizedCategory = selectedItem.category;
+                      const lowerCat = selectedItem.category.toLowerCase();
+                      if (lowerCat.includes("wire") || lowerCat.includes("conductor")) {
+                        normalizedCategory = "Conductors";
+                      } else if (lowerCat.includes("conduit")) {
+                        normalizedCategory = "Conduits";
+                      } else if (lowerCat.includes("breaker")) {
+                        normalizedCategory = "Breakers";
+                      } else if (lowerCat.includes("box")) {
+                        normalizedCategory = "Boxes";
+                      } else if (lowerCat.includes("ground")) {
+                        normalizedCategory = "Grounding";
+                      } else if (lowerCat.includes("switch")) {
+                        normalizedCategory = "Switches";
+                      } else if (lowerCat.includes("device")) {
+                        normalizedCategory = "Devices";
+                      } else if (lowerCat.includes("light")) {
+                        normalizedCategory = "Lighting";
+                      } else if (lowerCat.includes("protect")) {
+                        normalizedCategory = "Protection";
+                      } else if (lowerCat.includes("equip")) {
+                        normalizedCategory = "Equipment";
+                      } else if (lowerCat.includes("distribution")) {
+                        normalizedCategory = "Distribution Equipment";
+                      } else if (lowerCat.includes("access")) {
+                        normalizedCategory = "Accessories";
+                      }
+
+                      const validCategories = ["Conductors", "Grounding", "Conduits", "Breakers", "Switches", "Distribution Equipment", "Boxes", "Lighting", "Devices", "Protection", "Equipment", "Accessories"];
+                      if (!validCategories.includes(normalizedCategory)) {
+                        normalizedCategory = "Accessories";
+                      }
+
+                      setNewItem(prev => ({
+                        ...prev,
+                        category: normalizedCategory as any,
+                        name: selectedItem.name,
+                        brand: selectedItem.brand,
+                        unit: selectedItem.unit,
+                        unitCost: selectedItem.unitCost,
+                        specification: selectedItem.specification || "Standard build",
+                      }));
+                    }
+                  }}
+                  value=""
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] outline-none text-slate-800 dark:text-slate-100 font-medium cursor-pointer focus:ring-1 focus:ring-indigo-500/30"
+                >
+                  <option value="">-- Choose standard item to pre-fill --</option>
+                  {(() => {
+                    const filtered = library.filter(item => {
+                      const q = libSearchQuery.toLowerCase();
+                      if (!q) return true;
+                      return (
+                        item.name.toLowerCase().includes(q) ||
+                        item.category.toLowerCase().includes(q) ||
+                        (item.brand && item.brand.toLowerCase().includes(q)) ||
+                        (item.specification && item.specification.toLowerCase().includes(q))
+                      );
+                    });
+
+                    const sameCategory = filtered.filter(item => {
+                      const itemCatLower = item.category.toLowerCase();
+                      const currentCatLower = (newItem.category || "").toLowerCase();
+                      // Check for wire/conductor loose matching too
+                      if (currentCatLower === "conductors" && (itemCatLower.includes("wire") || itemCatLower.includes("conductor"))) {
+                        return true;
+                      }
+                      return itemCatLower === currentCatLower;
+                    });
+                    const otherCategories = filtered.filter(item => {
+                      const itemCatLower = item.category.toLowerCase();
+                      const currentCatLower = (newItem.category || "").toLowerCase();
+                      if (currentCatLower === "conductors" && (itemCatLower.includes("wire") || itemCatLower.includes("conductor"))) {
+                        return false;
+                      }
+                      return itemCatLower !== currentCatLower;
+                    });
+
+                    return (
+                      <>
+                        {sameCategory.length > 0 && (
+                          <optgroup label={`Matches in "${newItem.category}"`}>
+                            {sameCategory.map(item => (
+                              <option key={item.id} value={item.id}>
+                                {item.name} {item.brand ? `(${item.brand})` : ""} - ₱{item.unitCost}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {otherCategories.length > 0 && (
+                          <optgroup label="Other Categories">
+                            {otherCategories.map(item => (
+                              <option key={item.id} value={item.id}>
+                                [{item.category}] {item.name} {item.brand ? `(${item.brand})` : ""} - ₱{item.unitCost}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {filtered.length === 0 && (
+                          <option disabled>No matching base price items found</option>
+                        )}
+                      </>
+                    );
+                  })()}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 mb-1">Category</label>
                 <select
