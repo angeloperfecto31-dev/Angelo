@@ -40,7 +40,7 @@ export default function PECCurrentCalculator({ panel, setPanel }: Props) {
     let IL = 0;
     let bankCapacity = S;
 
-    const isSinglePhase = panel.system === '230V, 1PH, 2W';
+    const isSinglePhase = !panel.system || panel.system.includes('1PH');
 
     if (isSinglePhase) {
       VPH = VL;
@@ -154,7 +154,7 @@ export default function PECCurrentCalculator({ panel, setPanel }: Props) {
               <ShieldAlert className="w-3.5 h-3.5" /> Formula Guidelines Evaluated
             </h4>
             <div className="space-y-2 relative text-xs text-slate-700 dark:text-slate-300">
-              {panel.system === '230V, 1PH, 2W' ? (
+              {(!panel.system || panel.system.includes('1PH')) ? (
                 <>
                   <div className="flex flex-col gap-1">
                     <LatexRenderer tex="S = V \times I" displayMode={false} />
