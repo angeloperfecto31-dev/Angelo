@@ -46,6 +46,7 @@ import {
   X,
   Sparkles,
   Bell,
+  Menu,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import * as XLSX from "xlsx-js-style";
@@ -553,6 +554,7 @@ export default function App() {
   >("dashboard");
 
   const [showGroundingInfo, setShowGroundingInfo] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [systemModules, setSystemModules] =
     useState<SystemModule[]>(DEFAULT_MODULES);
@@ -4840,11 +4842,295 @@ export default function App() {
         </div>
       </aside>
 
+      {/* Mobile Drawer Navigation Backdrop & Content */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 md:hidden no-print animate-fade"
+        />
+      )}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ x: "-100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "-100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 220 }}
+            className="fixed top-0 bottom-0 left-0 w-80 max-w-[85vw] bg-slate-900 dark:bg-slate-950 text-white z-50 flex flex-col justify-between border-r border-slate-800 md:hidden shadow-2xl h-full no-print"
+          >
+            {/* Drawer Container */}
+            <div className="flex flex-col h-full overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              {/* Header */}
+              <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800/60 bg-slate-900/40 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-gradient-to-tr from-yellow-300 to-amber-500 rounded-xl shadow-md shadow-amber-500/10">
+                    <Zap className="w-5 h-5 text-slate-950 fill-slate-950" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="font-extrabold text-white tracking-tight text-base font-sans">
+                      ElectricalPH
+                    </span>
+                    <p className="text-[9px] text-emerald-400 font-extrabold uppercase tracking-widest -mt-1 font-mono">
+                      Engineering Tool
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  title="Close Menu"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modules Navigation list */}
+              <div className="flex-1 py-4 px-4 space-y-6">
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 px-2">
+                    MODULES
+                  </p>
+                  <div className="space-y-1">
+                    {[
+                      { id: "dashboard", label: "Dashboard", icon: Gauge, requiresPremium: false },
+                      { id: "schedule", label: "Load Schedule", icon: Layout, requiresPremium: false },
+                      { id: "power-suite", label: "Power Analysis Suite", icon: Zap, requiresPremium: true },
+                      { id: "isc", label: "Short Circuit", icon: ShieldAlert, requiresPremium: false },
+                      { id: "vd", label: "Voltage Drop", icon: Ruler, requiresPremium: false },
+                      { id: "lighting", label: "Illumination", icon: Lightbulb, requiresPremium: false },
+                      { id: "system-sld", label: "System SLD", icon: Network, requiresPremium: false },
+                      { id: "floor-plan", label: "Floor Plan", icon: Map, requiresPremium: false },
+                      { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
+                      { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
+                      { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: false },
+                      { id: "bom", label: "Bill of Materials", icon: FileSpreadsheet, requiresPremium: true },
+                    ]
+                      .filter((item) => {
+                        if (isAdmin) return true;
+                        const mod = systemModules.find((m) => m.id === item.id);
+                        if (!mod) return true;
+                        return mod.status !== "hidden";
+                      })
+                      .map((item) => {
+                        const isActive = activeTab === item.id;
+                        const IconComponent = item.icon;
+                        const mod = systemModules.find((m) => m.id === item.id);
+                        const isMaintenance = !isAdmin && mod?.status === "maintenance";
+                        const isDisabled = !isAdmin && mod?.status === "disabled";
+
+                        const handleClick = () => {
+                          if (isDisabled) {
+                            alert(`Module Disabled\n\nThe ${mod?.name || item.label} module has been disabled by the administrator.`);
+                            return;
+                          }
+                          if (isMaintenance) {
+                            alert(`Module Under Maintenance\n\nThe ${mod?.name || item.label} module is currently under maintenance:\n${mod?.maintenanceMessage || "Please try again later."}`);
+                            return;
+                          }
+                          if (item.id === "bom" && userPlan === "basic" && !isAdmin) {
+                            alert(`Premium Module Required\n\nThe Bill of Materials (BOM) module is available exclusively in the Premium and Enterprise plans. Please upgrade your subscription to unlock this module.`);
+                            setShowUpgrade(true);
+                            return;
+                          }
+                          setActiveTab(item.id as any);
+                          setIsMobileMenuOpen(false);
+                        };
+
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={handleClick}
+                            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${
+                              isActive
+                                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shadow-inner"
+                                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                            }`}
+                          >
+                            {isActive && (
+                              <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-emerald-500 rounded-r" />
+                            )}
+                            <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-emerald-400" : "text-slate-500"}`} />
+                            <span className="ml-3 truncate flex items-center justify-between w-full">
+                              <span>{item.label}</span>
+                              {isMaintenance && (
+                                <span className="text-[8px] font-black bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1 py-0.2 rounded shrink-0">
+                                  MAINT
+                                </span>
+                              )}
+                              {isDisabled && (
+                                <span className="text-[8px] font-black bg-rose-500/10 text-rose-500 border border-rose-500/20 px-1 py-0.2 rounded shrink-0">
+                                  LOCK
+                                </span>
+                              )}
+                              {item.requiresPremium && userPlan === "basic" && !isAdmin && (
+                                <span className="text-[8px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded shrink-0">
+                                  PREMIUM
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Admin options inside mobile drawer! */}
+                {isAdmin && (
+                  <div className="pt-2 border-t border-slate-800/65 px-4">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 px-2">
+                      ACCOUNT / ADMIN
+                    </p>
+                    <div className="space-y-1">
+                      {[
+                        { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
+                        { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
+                        { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" },
+                        { id: "module-management", label: "Module Visibility", icon: Settings, restricted: !isAdmin, badge: null },
+                      ].map((item) => {
+                        const isActive = activeTab === item.id;
+                        const IconComponent = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (item.restricted) {
+                                alert("Administrator Access Required\n\nThis module contains confidential billing ledgers, verify queues, and user registration directories.");
+                                return;
+                              }
+                              setActiveTab(item.id as any);
+                              setIsMobileMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${
+                              isActive
+                                ? "bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-inner"
+                                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                            }`}
+                          >
+                            {isActive && (
+                              <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-amber-500 rounded-r" />
+                            )}
+                            <IconComponent className={`w-4 h-4 shrink-0 ${isActive ? "text-amber-400" : "text-slate-500"}`} />
+                            <span className="ml-3 truncate flex items-center justify-between w-full">
+                              <span>{item.label}</span>
+                              {item.badge && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-sans font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                                  {item.badge}
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom section with Upgrade and User Profile */}
+            <div className="p-4 border-t border-slate-800/60 bg-slate-950/60 space-y-3 shrink-0">
+              {/* Upgrade Button */}
+              {((userPlan !== "premium" && userPlan !== "enterprise") || isAdmin) && (
+                <button
+                  onClick={() => {
+                    setShowUpgrade(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white font-extrabold uppercase tracking-wider text-xs transition-all active:scale-98 border border-amber-300/20 shadow-lg"
+                >
+                  <Zap className="w-4 h-4 fill-white animate-pulse animate-bounce" />
+                  <span>Upgrade to Premium</span>
+                </button>
+              )}
+
+              {/* Additional Quick Actions Stack */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setIsProjectManagerOpen(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-[10px] font-bold uppercase tracking-wider border border-slate-700/50 cursor-pointer"
+                >
+                  <FolderOpen className="w-4 h-4 text-slate-400" />
+                  <span>Projects</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (userPlan === "premium" || userPlan === "enterprise" || isAdmin) {
+                      handleExportWord();
+                    } else {
+                      alert("Word and PDF exports require Premium Plan.");
+                      setShowUpgrade(true);
+                    }
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex flex-col items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-[10px] font-bold uppercase tracking-wider border border-slate-700/50 cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 text-slate-400" />
+                  <span>Report</span>
+                </button>
+              </div>
+
+              {/* User Profile Info */}
+              {user ? (
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm relative shrink-0">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt="Avatar" className="w-full h-full rounded-xl object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      user.displayName?.charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || "?"
+                    )}
+                    <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-200 truncate">{user.displayName || "Authorized User"}</p>
+                    <p className="text-[9px] text-slate-500 truncate">{user.email}</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setIsMobileMenuOpen(false);
+                      try {
+                        await signOut(auth);
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
+                    className="p-2 text-rose-400 hover:text-rose-350 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer shrink-0"
+                    title="Sign Out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowUpgrade(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full h-11 flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-xl border border-slate-800 cursor-pointer"
+                >
+                  <Users className="w-4 h-4 text-slate-400" />
+                  <span className="text-xs font-bold">Sign in / Sign up</span>
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Layout Wrapper */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 relative transition-colors duration-200">
         {/* Mobile Navbar */}
         <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sticky top-0 z-20 shrink-0 shadow-sm no-print">
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 -ml-1.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+              aria-label="Open Navigation Drawer"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <div className="p-1.5 bg-yellow-400 rounded-md">
               <Zap className="w-4 h-4 text-yellow-900" />
             </div>
