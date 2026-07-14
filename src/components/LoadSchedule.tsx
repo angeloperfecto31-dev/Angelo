@@ -1042,8 +1042,13 @@ export default function LoadSchedule({
     200: 710.0,
     250: 880.0,
     325: 1150.0,
+    375: 1300.0,
     400: 1380.0,
     500: 1700.0,
+    600: 2100.0,
+    625: 2180.0,
+    750: 2600.0,
+    1000: 3400.0,
   };
 
   const CONDUIT_FILL_TABLE = CONDUIT_LIBRARY.PVC;
@@ -2889,6 +2894,73 @@ export default function LoadSchedule({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider">
+                  Main Ground Size (mm²)
+                </label>
+                <select
+                  value={panel.mainOverrides.groundSize || ""}
+                  onChange={(e) => {
+                    const newGround = e.target.value || undefined;
+                    setPanel((prev) => {
+                      const nextOverrides = {
+                        ...(prev.mainOverrides || {}),
+                        groundSize: newGround,
+                        isOverrideEnabled: true,
+                      };
+
+                      if (newGround) {
+                        const activeWireSize = prev.mainOverrides?.wireSize || mainFeeder.raw.wireSize;
+                        const activePoles = prev.mainOverrides?.poles || (prev.system.includes("3PH") ? 3 : 2);
+                        const activeRuns = prev.mainOverrides?.wireRuns || mainFeeder.wire.runs || 1;
+                        const activeConduitType = prev.mainConduitType || prev.mainOverrides?.conduitType || "PVC";
+                        
+                        const computedConduit = getConduitSizeForWiresLocal(
+                          activeWireSize,
+                          newGround,
+                          activePoles,
+                          prev.system,
+                          activeConduitType,
+                          activeRuns,
+                          prev.insulationType || "THHN"
+                        );
+
+                        if (prev.mainOverrides?.conduitSize) {
+                          const overrideVal = parseInt(prev.mainOverrides.conduitSize) || 0;
+                          const minVal = parseInt(computedConduit) || 0;
+                          if (overrideVal < minVal) {
+                            nextOverrides.conduitSize = undefined;
+                          }
+                        }
+                      }
+
+                      return {
+                        ...prev,
+                        mainOverrides: nextOverrides as any,
+                      };
+                    });
+                  }}
+                  className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/50 rounded-lg text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                >
+                  <option value="">
+                    Auto ({getGroundWireForWireSizeLocal(
+                      panel.mainOverrides.wireSize || mainFeeder.raw.wireSize,
+                      panel.mainOverrides.breakerAT || mainFeeder.raw.cb,
+                      panel.conductorMaterial || "Copper"
+                    )} mm²)
+                  </option>
+                  {PEC_AMPACITY_TABLE.filter(
+                    (w) =>
+                      w.size <=
+                      (panel.mainOverrides.wireSize || mainFeeder.raw.wireSize)
+                  ).map((w) => (
+                    <option key={w.size} value={String(w.size)}>
+                      {formatWireSize(w.size)} mm²
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1.5">

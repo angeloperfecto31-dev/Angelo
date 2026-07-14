@@ -69,8 +69,13 @@ const THHN_WIRE_AREAS: Record<number, number> = {
   200: 710.0,
   250: 880.0,
   325: 1150.0,
+  375: 1300.0,
   400: 1380.0,
   500: 1700.0,
+  600: 2100.0,
+  625: 2180.0,
+  750: 2600.0,
+  1000: 3400.0,
 };
 
 const CONDUIT_FILL_TABLE = CONDUIT_LIBRARY.PVC;
@@ -397,6 +402,10 @@ export const getConductorArea = (size: number, insulation: string = "THHN"): num
     if (size <= 375) return 1390.0;
     if (size <= 400) return 1460.0;
     if (size <= 500) return 1800.0;
+    if (size <= 600) return 2150.0;
+    if (size <= 625) return 2240.0;
+    if (size <= 750) return 2700.0;
+    if (size <= 1000) return 3500.0;
     return baseArea * 1.30;
   }
   
@@ -429,6 +438,10 @@ const THHN_AREAS_FALLBACK: Record<number, number> = {
   375: 1300.0,
   400: 1380.0,
   500: 1700.0,
+  600: 2100.0,
+  625: 2180.0,
+  750: 2600.0,
+  1000: 3400.0,
 };
 
 export interface ConduitFillDetails {
@@ -1984,9 +1997,8 @@ export const computePanelScheduleValues = (
     let finalGroundSizeOverride = p.mainOverrides.groundSize;
     if (finalGroundSizeOverride) {
       const overrideVal = parseFloat(finalGroundSizeOverride) || 0;
-      const minVal = parseFloat(calculatedMainGroundSizeStr) || 0;
       const maxVal = finalWireSize || 0;
-      if (overrideVal < minVal || overrideVal > maxVal) {
+      if (overrideVal > maxVal) {
         finalGroundSizeOverride = undefined;
       }
     }

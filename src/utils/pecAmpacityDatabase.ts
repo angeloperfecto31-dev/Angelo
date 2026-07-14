@@ -40,7 +40,11 @@ export const PEC_AMPACITY_TABLE: ConductorAmpacityRow[] = [
   { size: 325,  copper: { 60: 370, 75: 435, 90: 490 }, aluminum: { 60: 300, 75: 355, 90: 405 } },
   { size: 375,  copper: { 60: 395, 75: 470, 90: 530 }, aluminum: { 60: 315, 75: 380, 90: 430 } },
   { size: 400,  copper: { 60: 400, 75: 480, 90: 535 }, aluminum: { 60: 320, 75: 385, 90: 440 } },
-  { size: 500,  copper: { 60: 445, 75: 530, 90: 595 }, aluminum: { 60: 365, 75: 435, 90: 485 } }
+  { size: 500,  copper: { 60: 445, 75: 530, 90: 595 }, aluminum: { 60: 365, 75: 435, 90: 485 } },
+  { size: 600,  copper: { 60: 455, 75: 610, 90: 680 }, aluminum: { 60: 385, 75: 515, 90: 570 } },
+  { size: 625,  copper: { 60: 465, 75: 620, 90: 690 }, aluminum: { 60: 395, 75: 525, 90: 585 } },
+  { size: 750,  copper: { 60: 520, 75: 625, 90: 785 }, aluminum: { 60: 435, 75: 585, 90: 660 } },
+  { size: 1000, copper: { 60: 590, 75: 665, 90: 915 }, aluminum: { 60: 545, 75: 645, 90: 780 } }
 ];
 
 export interface InsulationTypeMap {
