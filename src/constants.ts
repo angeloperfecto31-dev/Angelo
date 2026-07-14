@@ -30,6 +30,7 @@ export const SYSTEM_VOLTAGES = {
   // Single-Phase Systems
   '120V, 1PH, 2W': 120,
   '120V/240V, 1PH, 3W': 240,
+  '120V/230V, 1PH, 3W': 230,
   '230V, 1PH, 2W': 230,
   '230V, 1PH, 3W': 230,
 
