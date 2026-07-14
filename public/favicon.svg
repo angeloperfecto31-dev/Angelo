@@ -1,8 +1,83 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!-- Rounded high-contrast yellow background matching bg-yellow-400 of ElectricalPH custom logo -->
-  <rect width="32" height="32" rx="8" fill="#FACC15"/>
-  <!-- Elegant, high-fidelity engineering lightning bolt styled cleanly with perfect centering -->
-  <g transform="translate(4, 4)">
-    <polygon points="13 2 3 14 12 14 11 30 21 16 12 16 13 2" fill="#713F12"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Definitions for gradients and shadows -->
+  <defs>
+    <!-- High-voltage gradient for Hexagon Shield Border -->
+    <linearGradient id="shieldBorderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6" /> <!-- Electric Blue -->
+      <stop offset="50%" stop-color="#60A5FA" /> <!-- Medium Blue -->
+      <stop offset="100%" stop-color="#FACC15" /> <!-- Vibrant Gold/Yellow -->
+    </linearGradient>
+    
+    <!-- Gradient for Lightning Bolt -->
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047" /> <!-- Neon Yellow -->
+      <stop offset="100%" stop-color="#EAB308" /> <!-- Deep Amber Gold -->
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow and Glow for the Shield -->
+    <filter id="premiumGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#3B82F6" flood-opacity="0.35" />
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background Hexagon Shield (Midnight Blue / Deep Slate) - optimized for light/dark tab contrast -->
+  <polygon 
+    points="256,24 464,144 464,368 256,488 48,368 48,144" 
+    fill="#0B0F19" 
+    stroke="url(#shieldBorderGrad)" 
+    stroke-width="16" 
+    stroke-linejoin="round"
+    filter="url(#premiumGlow)"
+  />
+
+  <!-- Subtle circuit paths (Single Line Diagram Concept) in background of shield -->
+  <g stroke="#1E293B" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.45">
+    <line x1="90" y1="200" x2="422" y2="200" />
+    <line x1="160" y1="200" x2="160" y2="100" />
+    <line x1="352" y1="200" x2="352" y2="100" />
+    <circle cx="160" cy="100" r="12" fill="#1E293B" />
+    <circle cx="352" cy="100" r="12" fill="#1E293B" />
+    <rect x="236" y="188" width="40" height="24" rx="4" fill="#1E293B" />
   </g>
+
+  <!-- Monogram Letter "E" (Electrical) on the left side in clean, bright white -->
+  <g stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+    <!-- E Vertical Stem -->
+    <line x1="155" y1="150" x2="155" y2="362" />
+    <!-- E Top Bar -->
+    <line x1="155" y1="150" x2="230" y2="150" />
+    <!-- E Middle Bar -->
+    <line x1="155" y1="256" x2="215" y2="256" />
+    <!-- E Bottom Bar -->
+    <line x1="155" y1="362" x2="230" y2="362" />
+  </g>
+
+  <!-- Monogram Letter "P" (PH / Power) on the right side in clean, bright white -->
+  <g stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+    <!-- P Vertical Stem -->
+    <line x1="335" y1="150" x2="335" y2="362" />
+    <!-- P Upper Loop (curves from 335,150 to 395,203 then back to 335,256) -->
+    <path d="M 335 150 L 375 150 A 53 53 0 0 1 375 256 L 335 256" fill="none" />
+  </g>
+
+  <!-- Terminal Contact / Busbar Nodes in vibrant yellow representing SLD terminals -->
+  <g fill="#FACC15">
+    <circle cx="230" cy="150" r="12" />
+    <circle cx="215" cy="256" r="12" />
+    <circle cx="230" cy="362" r="12" />
+  </g>
+
+  <!-- High-fidelity, dynamic golden-yellow lightning bolt running through center, symbolizing electric power and engineering -->
+  <polygon 
+    points="285,75 150,265 240,265 210,435 362,225 272,225" 
+    fill="url(#boltGrad)" 
+    stroke="#0B0F19"
+    stroke-width="10"
+    stroke-linejoin="round"
+  />
+
+  <!-- Small high-voltage glowing nodes on the lightning tips -->
+  <circle cx="285" cy="75" r="9" fill="#FFFFFF" stroke="#EAB308" stroke-width="3" />
+  <circle cx="210" cy="435" r="9" fill="#FFFFFF" stroke="#EAB308" stroke-width="3" />
 </svg>

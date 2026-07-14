@@ -1,0 +1,36 @@
+{
+  "name": "ElectricalPH - Advanced Electrical Engineering Platform",
+  "short_name": "ElectricalPH",
+  "description": "Professional electrical engineering design, calculation, and analysis suite including Single Line Diagrams, load schedules, and short circuit analysis.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B0F19",
+  "theme_color": "#2563EB",
+  "icons": [
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
