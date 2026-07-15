@@ -83,11 +83,29 @@
         }
       })();
     </script>
-    <!-- Favicon configuration for modern browsers, high-fidelity crisp vector SVG logo -->
+    <!-- Complete Favicon and PWA configuration for all browsers, operating systems, and devices -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+    
+    <!-- Apple iOS / Home Screen Icon Support -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ElectricalPH" />
+    
+    <!-- Safari Pinned Tab -->
     <link rel="mask-icon" href="/favicon.svg" color="#FACC15" />
+    
+    <!-- Progressive Web App (PWA) Manifest & Styling -->
+    <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#FACC15" />
+    
+    <!-- Windows Microsoft Tile Configuration -->
+    <meta name="msapplication-TileColor" content="#FACC15" />
+    <meta name="msapplication-TileImage" content="/mstile-150x150.png" />
   </head>
   <body>
     <div id="error-log" style="display: none; color: red; position: fixed; top: 0; left: 0; z-index: 9999; background: white; padding: 10px; border: 1px solid red; font-family: monospace;"></div>
