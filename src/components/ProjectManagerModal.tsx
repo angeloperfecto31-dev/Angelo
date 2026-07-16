@@ -5,6 +5,15 @@ import { SavedProject, ProjectData } from '../types/project';
 import { db, auth } from '../firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from "../utils/firestoreError";
+import {
+  compressData,
+  decompressData,
+  compressProject,
+  decompressProject,
+  decompressProjectList,
+  compressProjectList,
+  cleanFirestoreDataCycleSafe
+} from '../utils/projectCompression';
 import { getInstitutionsForType } from '../utils/institutionLibrary';
 import { SYSTEM_VOLTAGES } from '../constants';
 
@@ -97,39 +106,44 @@ export default function ProjectManagerModal({
 
     if (!user) {
       // Fallback to localStorage if no user is authenticated
-      const saved = localStorage.getItem(STORAGE_KEY);
-      let loadedProjects: SavedProject[] = [];
-      if (saved) {
-        try {
-          loadedProjects = JSON.parse(saved);
-          setProjects(loadedProjects);
-        } catch (e) {
-          console.error("Failed to parse saved projects", e);
+      const loadGuestProjects = async () => {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        let loadedProjects: SavedProject[] = [];
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            loadedProjects = await decompressProjectList(parsed);
+            setProjects(loadedProjects);
+          } catch (e) {
+            console.error("Failed to parse saved projects", e);
+          }
         }
-      }
 
-      if (currentProjectId) {
-        const current = loadedProjects.find(p => p.id === currentProjectId);
-        setSaveName(current ? current.name : (currentProjectData.panel.project || ''));
-      } else {
-        setSaveName(currentProjectData.panel.project || '');
-      }
+        if (currentProjectId) {
+          const current = loadedProjects.find(p => p.id === currentProjectId);
+          setSaveName(current ? current.name : (currentProjectData.panel.project || ''));
+        } else {
+          setSaveName(currentProjectData.panel.project || '');
+        }
+      };
+      loadGuestProjects();
       return;
     }
 
     // Sync with Firestore
     const projectsRef = collection(db, 'users', user.uid, 'projects');
-    const unsubscribe = onSnapshot(projectsRef, (snapshot) => {
-      const loadedProjects: SavedProject[] = [];
+    const unsubscribe = onSnapshot(projectsRef, async (snapshot) => {
+      const rawProjects: any[] = [];
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
-        loadedProjects.push({
+        rawProjects.push({
           id: docSnap.id,
           name: data.name,
           lastModified: data.lastModified,
           data: data.data,
         });
       });
+      const loadedProjects = await decompressProjectList(rawProjects);
       setProjects(loadedProjects);
 
       if (currentProjectId) {
@@ -146,21 +160,14 @@ export default function ProjectManagerModal({
   }, [isOpen, currentProjectId, currentProjectData.panel.project]);
 
   const cleanData = (obj: any): any => {
-    if (obj === null || typeof obj !== 'object') return obj;
-    if (Array.isArray(obj)) return obj.map(cleanData);
-    const result: any = {};
-    for (const key in obj) {
-      if (obj[key] !== undefined) {
-        result[key] = cleanData(obj[key]);
-      }
-    }
-    return result;
+    return cleanFirestoreDataCycleSafe(obj);
   };
 
   const saveToStorage = async (newProjects: SavedProject[], projectToUpdate?: SavedProject) => {
     // Always update local state and localStorage backup instantly to guarantee offline reliability
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
+      const compressedList = await compressProjectList(newProjects);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedList));
     } catch (e) {
       console.error("Failed to write projects to localStorage:", e);
     }
@@ -170,12 +177,14 @@ export default function ProjectManagerModal({
     if (user && projectToUpdate) {
       const docRef = doc(db, 'users', user.uid, 'projects', projectToUpdate.id);
       try {
-        await setDoc(docRef, cleanData({
+        const payload: any = {
           name: projectToUpdate.name,
           lastModified: projectToUpdate.lastModified,
           data: projectToUpdate.data,
           ownerId: user.uid
-        }));
+        };
+        const compressed = await compressProject(payload);
+        await setDoc(docRef, compressed);
       } catch (error) {
         console.error("Manual save to Firestore failed:", error);
         try {

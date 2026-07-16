@@ -91,6 +91,15 @@ import { exportToWord } from "./utils/exportWord";
 import { syncHierarchyData } from "./utils/hierarchyEngine";
 import { migrateProjectData } from "./utils/projectMigration";
 import {
+  compressData,
+  decompressData,
+  compressProject,
+  decompressProject,
+  decompressProjectList,
+  compressProjectList,
+  cleanFirestoreDataCycleSafe
+} from "./utils/projectCompression";
+import {
   computePanelScheduleValues,
   calculateCircuitValues,
   formatWireSizeLocal,
@@ -137,16 +146,7 @@ export const safeUUID = () => {
 };
 
 export const cleanFirestoreData = (obj: any): any => {
-  if (obj === null || typeof obj !== "object") return obj;
-  if (obj instanceof Date) return obj.toISOString();
-  if (Array.isArray(obj)) return obj.map(cleanFirestoreData);
-  const result: any = {};
-  for (const key in obj) {
-    if (obj[key] !== undefined) {
-      result[key] = cleanFirestoreData(obj[key]);
-    }
-  }
-  return result;
+  return cleanFirestoreDataCycleSafe(obj);
 };
 
 export const getFreshInitialCircuits = (): Circuit[] => {
@@ -424,7 +424,17 @@ export default function App() {
         for (const docSnap of snapshot.docs) {
           const projectDocData = docSnap.data();
           const projectId = docSnap.id;
-          const projectData = projectDocData.data;
+          let projectData = projectDocData.data;
+
+          if (typeof projectData === "string" && projectData.startsWith("compressed:gzip:")) {
+            try {
+              const decompressed = await decompressData(projectData);
+              projectData = JSON.parse(decompressed);
+            } catch (err) {
+              console.error(`[Auto-Migration] Failed to decompress project "${projectId}":`, err);
+              continue;
+            }
+          }
 
           if (projectData && projectData.schemaVersion !== 4) {
             console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) is outdated. Upgrading...`);
@@ -433,10 +443,11 @@ export default function App() {
             const docRef = doc(db, "users", user.uid, "projects", projectId);
             
             try {
+              const compressedData = await compressData(JSON.stringify(migratedData));
               await setDoc(
                 docRef,
                 cleanFirestoreData({
-                  data: migratedData,
+                  data: compressedData,
                   lastModified: Date.now(),
                 }),
                 { merge: true }
@@ -1534,40 +1545,40 @@ export default function App() {
     // Automatically and transparently save migrated & recalculated data back to persistence (Firestore or localStorage) ONLY if migration was actually necessary
     const needsMigrationSave = !rawData || rawData.schemaVersion !== 4;
     if (needsMigrationSave) {
-      try {
-        if (user) {
-          const docRef = doc(db, "users", user.uid, "projects", projectId);
-          setDoc(
-            docRef,
-            cleanFirestoreData({
+      const runTransparentSave = async () => {
+        try {
+          if (user) {
+            const docRef = doc(db, "users", user.uid, "projects", projectId);
+            const compressed = await compressProject({
               data: data,
               lastModified: Date.now(),
-            }),
-            { merge: true }
-          ).catch((err) => {
-            console.error("[Auto-Migration] Failed to save updated project data to Firestore:", err);
-          });
-        } else {
-          const STORAGE_KEY = "electricalph_projects";
-          const saved = localStorage.getItem(STORAGE_KEY);
-          if (saved) {
-            const projects = JSON.parse(saved);
-            const updated = projects.map((p: any) => {
-              if (p.id === projectId) {
-                return {
-                  ...p,
-                  lastModified: Date.now(),
-                  data,
-                };
-              }
-              return p;
             });
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+            await setDoc(docRef, compressed, { merge: true });
+          } else {
+            const STORAGE_KEY = "electricalph_projects";
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              const decompressed = await decompressProjectList(parsed);
+              const updated = decompressed.map((p: any) => {
+                if (p.id === projectId) {
+                  return {
+                    ...p,
+                    lastModified: Date.now(),
+                    data,
+                  };
+                }
+                return p;
+              });
+              const compressedList = await compressProjectList(updated);
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedList));
+            }
           }
+        } catch (err) {
+          console.error("[Auto-Migration] Error during background transparent persistence:", err);
         }
-      } catch (err) {
-        console.error("[Auto-Migration] Error during background transparent persistence:", err);
-      }
+      };
+      runTransparentSave();
     }
   };
 
@@ -1611,7 +1622,8 @@ export default function App() {
       let projects = [];
       if (saved) {
         try {
-          projects = JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          projects = await decompressProjectList(parsed);
         } catch (e) {
           console.error("Failed to parse projects from localStorage:", e);
         }
@@ -1642,7 +1654,8 @@ export default function App() {
           }
         ];
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      const compressedList = await compressProjectList(updated);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedList));
     } catch (e) {
       console.error("Failed to write local backup:", e);
     }
@@ -1660,16 +1673,13 @@ export default function App() {
       const docRef = doc(db, "users", user.uid, "projects", currentProjectId);
 
       try {
-        await setDoc(
-          docRef,
-          cleanFirestoreData({
-            name: finalName,
-            lastModified: Date.now(),
-            data: updatedData,
-            ownerId: user.uid,
-          }),
-          { merge: true }
-        );
+        const compressed = await compressProject({
+          name: finalName,
+          lastModified: Date.now(),
+          data: updatedData,
+          ownerId: user.uid,
+        });
+        await setDoc(docRef, compressed, { merge: true });
         setSaveStatus("saved");
         setSaveError(null);
       } catch (err: any) {
@@ -1778,35 +1788,43 @@ export default function App() {
 
     const finalName = finalOverrides?.project || "Untitled Project Station";
 
-    if (user) {
-      const docRef = doc(db, "users", user.uid, "projects", newId);
-      setDoc(docRef, cleanFirestoreData({
-        name: finalName,
-        lastModified: Date.now(),
-        data: freshData,
-        ownerId: user.uid
-      })).catch(err => {
-        console.error("Failed to save new project to Firestore:", err);
-      });
-    } else {
-      const STORAGE_KEY = "electricalph_projects";
-      const saved = localStorage.getItem(STORAGE_KEY);
-      let projects = [];
-      if (saved) {
+    const saveNewProject = async () => {
+      if (user) {
+        const docRef = doc(db, "users", user.uid, "projects", newId);
         try {
-          projects = JSON.parse(saved);
-        } catch (e) {
-          console.error(e);
+          const compressed = await compressProject({
+            name: finalName,
+            lastModified: Date.now(),
+            data: freshData,
+            ownerId: user.uid
+          });
+          await setDoc(docRef, compressed);
+        } catch (err) {
+          console.error("Failed to save new project to Firestore:", err);
         }
+      } else {
+        const STORAGE_KEY = "electricalph_projects";
+        const saved = localStorage.getItem(STORAGE_KEY);
+        let projects = [];
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            projects = await decompressProjectList(parsed);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        projects.push({
+          id: newId,
+          name: finalName,
+          lastModified: Date.now(),
+          data: freshData
+        });
+        const compressedList = await compressProjectList(projects);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedList));
       }
-      projects.push({
-        id: newId,
-        name: finalName,
-        lastModified: Date.now(),
-        data: freshData
-      });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-    }
+    };
+    saveNewProject();
   };
 
   // Load the initial/last active project on startup for both Guest and Authenticated users
@@ -1817,40 +1835,45 @@ export default function App() {
 
     if (!user) {
       // 1. Guest Users
-      const STORAGE_KEY = "electricalph_projects";
-      const saved = localStorage.getItem(STORAGE_KEY);
-      let localProjects: SavedProject[] = [];
-      if (saved) {
-        try {
-          localProjects = JSON.parse(saved);
-        } catch (e) {
-          console.error("Failed to parse guest projects on load", e);
+      const loadGuestProjectsOnStartup = async () => {
+        const STORAGE_KEY = "electricalph_projects";
+        const saved = localStorage.getItem(STORAGE_KEY);
+        let localProjects: SavedProject[] = [];
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            localProjects = await decompressProjectList(parsed);
+          } catch (e) {
+            console.error("Failed to parse guest projects on load", e);
+          }
         }
-      }
 
-      if (localProjects.length > 0) {
-        const activeProj = localProjects.find(p => p.id === lastActiveId);
-        if (activeProj) {
-          handleLoadProject(activeProj.id, activeProj.data);
+        if (localProjects.length > 0) {
+          const activeProj = localProjects.find(p => p.id === lastActiveId);
+          if (activeProj) {
+            handleLoadProject(activeProj.id, activeProj.data);
+          } else {
+            const sorted = [...localProjects].sort((a, b) => b.lastModified - a.lastModified);
+            handleLoadProject(sorted[0].id, sorted[0].data);
+          }
         } else {
-          const sorted = [...localProjects].sort((a, b) => b.lastModified - a.lastModified);
-          handleLoadProject(sorted[0].id, sorted[0].data);
+          const initialId = typeof crypto !== 'undefined' && crypto.randomUUID 
+            ? crypto.randomUUID() 
+            : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          
+          const initialProject: SavedProject = {
+            id: initialId,
+            name: "Untitled Project Station",
+            lastModified: Date.now(),
+            data: currentProjectData
+          };
+          const compressedList = await compressProjectList([initialProject]);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedList));
+          localStorage.setItem("electricalph_current_project_id", initialId);
+          handleLoadProject(initialId, currentProjectData);
         }
-      } else {
-        const initialId = typeof crypto !== 'undefined' && crypto.randomUUID 
-          ? crypto.randomUUID() 
-          : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        
-        const initialProject: SavedProject = {
-          id: initialId,
-          name: "Untitled Project Station",
-          lastModified: Date.now(),
-          data: currentProjectData
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify([initialProject]));
-        localStorage.setItem("electricalph_current_project_id", initialId);
-        handleLoadProject(initialId, currentProjectData);
-      }
+      };
+      loadGuestProjectsOnStartup();
     } else {
       // 2. Authenticated Users (Run as a one-time query to avoid infinite listen-write loops!)
       let isMounted = true;
@@ -1867,7 +1890,8 @@ export default function App() {
             let localProjects: SavedProject[] = [];
             if (saved) {
               try {
-                localProjects = JSON.parse(saved);
+                const parsed = JSON.parse(saved);
+                localProjects = await decompressProjectList(parsed);
               } catch (e) {
                 console.error("Failed to parse local projects for migration", e);
               }
@@ -1882,12 +1906,13 @@ export default function App() {
               for (const p of localProjects) {
                 const docRef = doc(db, "users", user.uid, "projects", p.id);
                 try {
-                  await setDoc(docRef, cleanFirestoreData({
+                  const compressed = await compressProject({
                     name: p.name,
                     lastModified: p.lastModified,
                     data: p.data,
                     ownerId: user.uid
-                  }));
+                  });
+                  await setDoc(docRef, compressed);
                 } catch (err) {
                   console.error("Failed to upload migrated project to Firestore:", err);
                 }
@@ -1908,12 +1933,13 @@ export default function App() {
               const docRef = doc(db, "users", user.uid, "projects", initialId);
               
               try {
-                await setDoc(docRef, cleanFirestoreData({
+                const compressed = await compressProject({
                   name: "Untitled Project Station",
                   lastModified: Date.now(),
                   data: currentProjectData,
                   ownerId: user.uid
-                }));
+                });
+                await setDoc(docRef, compressed);
                 setCurrentProjectId(initialId);
                 localStorage.setItem("electricalph_current_project_id", initialId);
                 handleLoadProject(initialId, currentProjectData);
@@ -1922,16 +1948,17 @@ export default function App() {
               }
             }
           } else {
-            const loadedProjects: SavedProject[] = [];
+            const rawProjects: any[] = [];
             snapshot.forEach((docSnap) => {
               const data = docSnap.data();
-              loadedProjects.push({
+              rawProjects.push({
                 id: docSnap.id,
                 name: data.name,
                 lastModified: data.lastModified,
                 data: data.data,
               });
             });
+            const loadedProjects = await decompressProjectList(rawProjects);
 
             // Avoid overwriting a project that has already loaded
             if (!currentProjectId) {
