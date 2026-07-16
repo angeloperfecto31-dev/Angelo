@@ -142,14 +142,16 @@ export default function ProjectManagerModal({
   };
 
   const saveToStorage = async (newProjects: SavedProject[], projectToUpdate?: SavedProject) => {
-    const user = auth.currentUser;
-    if (!user) {
+    // Always update local state and localStorage backup instantly to guarantee offline reliability
+    try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newProjects));
-      setProjects(newProjects);
-      return;
+    } catch (e) {
+      console.error("Failed to write projects to localStorage:", e);
     }
+    setProjects(newProjects);
 
-    if (projectToUpdate) {
+    const user = auth.currentUser;
+    if (user && projectToUpdate) {
       const docRef = doc(db, 'users', user.uid, 'projects', projectToUpdate.id);
       try {
         await setDoc(docRef, cleanData({
@@ -159,7 +161,12 @@ export default function ProjectManagerModal({
           ownerId: user.uid
         }));
       } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/projects/${projectToUpdate.id}`);
+        console.error("Manual save to Firestore failed:", error);
+        try {
+          handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/projects/${projectToUpdate.id}`);
+        } catch (e) {
+          // Prevent re-throwing
+        }
       }
     }
   };

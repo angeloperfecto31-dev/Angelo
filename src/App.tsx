@@ -84,7 +84,7 @@ import {
   INITIAL_ILLUMINATION_PARAMS,
   WIRE_IMPEDANCE_TABLE,
 } from "./constants";
-import { ProjectData, MainSourceConfig, MdpData } from "./types/project";
+import { ProjectData, MainSourceConfig, MdpData, SavedProject } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
 import { syncHierarchyData } from "./utils/hierarchyEngine";
@@ -126,6 +126,7 @@ import {
 import {
   collection,
   onSnapshot as onFirestoreSnapshot,
+  getDocs,
 } from "firebase/firestore";
 
 export const safeUUID = () => {
@@ -398,11 +399,14 @@ export default function App() {
     // 2. Authenticated users (Firestore projects)
     if (!user) return;
 
-    const projectsRef = collection(db, "users", user.uid, "projects");
-    const unsubscribe = onSnapshot(
-      projectsRef,
-      (snapshot) => {
-        snapshot.docs.forEach((docSnap) => {
+    let isMounted = true;
+    const runMigration = async () => {
+      try {
+        const projectsRef = collection(db, "users", user.uid, "projects");
+        const snapshot = await getDocs(projectsRef);
+        if (!isMounted) return;
+
+        for (const docSnap of snapshot.docs) {
           const projectDocData = docSnap.data();
           const projectId = docSnap.id;
           const projectData = projectDocData.data;
@@ -426,27 +430,30 @@ export default function App() {
             const migratedData = migrateProjectData(projectData);
             const docRef = doc(db, "users", user.uid, "projects", projectId);
             
-            setDoc(
-              docRef,
-              {
-                data: cleanObject(migratedData),
-                lastModified: Date.now(),
-              },
-              { merge: true }
-            ).then(() => {
+            try {
+              await setDoc(
+                docRef,
+                {
+                  data: cleanObject(migratedData),
+                  lastModified: Date.now(),
+                },
+                { merge: true }
+              );
               console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) successfully migrated and saved.`);
-            }).catch((err) => {
+            } catch (err) {
               console.error(`[Auto-Migration] Failed to save migrated project "${projectId}" to Firestore:`, err);
-            });
+            }
           }
-        });
-      },
-      (err) => {
-        console.error("[Auto-Migration] Error listening to user projects for migration:", err);
+        }
+      } catch (err) {
+        console.error("[Auto-Migration] Error fetching user projects for migration:", err);
       }
-    );
+    };
 
-    return () => unsubscribe();
+    runMigration();
+    return () => {
+      isMounted = false;
+    };
   }, [user, authLoading]);
 
   // Periodic expiration check
@@ -1415,7 +1422,9 @@ export default function App() {
   const [isProjectManagerOpen, setIsProjectManagerOpen] =
     useState<boolean>(false);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("saved");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "saved-local" | "failed" | "syncing">("saved");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
 
   const [panelToDuplicate, setPanelToDuplicate] = useState<{
     id: string;
@@ -1591,9 +1600,142 @@ export default function App() {
     bomSettings,
   };
 
+  const saveActiveProject = useCallback(async (forceCloudSync = false) => {
+    if (!currentProjectId) return;
+
+    const cleanData = (obj: any): any => {
+      if (obj === null || typeof obj !== "object") return obj;
+      if (Array.isArray(obj)) return obj.map(cleanData);
+      const result: any = {};
+      for (const key in obj) {
+        if (obj[key] !== undefined) {
+          result[key] = cleanData(obj[key]);
+        }
+      }
+      return result;
+    };
+
+    const finalName = panel.project?.trim() || "Untitled Project Station";
+    const updatedData = {
+      ...currentProjectData,
+      panel: {
+        ...currentProjectData.panel,
+        project: finalName,
+      },
+    };
+
+    // 1. Dual-Saving: Always save to local storage first as a zero-latency, unbreakable backup!
+    try {
+      const STORAGE_KEY = "electricalph_projects";
+      const saved = localStorage.getItem(STORAGE_KEY);
+      let projects = [];
+      if (saved) {
+        try {
+          projects = JSON.parse(saved);
+        } catch (e) {
+          console.error("Failed to parse projects from localStorage:", e);
+        }
+      }
+
+      const exists = projects.some((p: any) => p.id === currentProjectId);
+      let updated;
+      if (exists) {
+        updated = projects.map((p: any) => {
+          if (p.id === currentProjectId) {
+            return {
+              ...p,
+              name: finalName,
+              lastModified: Date.now(),
+              data: updatedData,
+            };
+          }
+          return p;
+        });
+      } else {
+        updated = [
+          ...projects,
+          {
+            id: currentProjectId,
+            name: finalName,
+            lastModified: Date.now(),
+            data: updatedData,
+          }
+        ];
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.error("Failed to write local backup:", e);
+    }
+
+    // 2. Cloud Synchronization
+    if (user) {
+      if (!isOnline && !forceCloudSync) {
+        // Authenticated but offline: stay in local saved mode
+        setSaveStatus("saved-local");
+        setSaveError(null);
+        return;
+      }
+
+      setSaveStatus(forceCloudSync ? "syncing" : "saving");
+      const docRef = doc(db, "users", user.uid, "projects", currentProjectId);
+
+      try {
+        await setDoc(
+          docRef,
+          cleanData({
+            name: finalName,
+            lastModified: Date.now(),
+            data: updatedData,
+            ownerId: user.uid,
+          }),
+          { merge: true }
+        );
+        setSaveStatus("saved");
+        setSaveError(null);
+      } catch (err: any) {
+        console.error("Firestore save failed:", err);
+        setSaveStatus("failed");
+        setSaveError(err instanceof Error ? err.message : String(err));
+        
+        try {
+          handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/projects/${currentProjectId}`);
+        } catch (e) {
+          // Ignore nested errors to prevent unhandled rejections
+        }
+      }
+    } else {
+      // Guest users
+      setSaveStatus("saved-local");
+      setSaveError(null);
+    }
+  }, [
+    currentProjectId,
+    panel,
+    circuits,
+    subPanels,
+    iscParams,
+    iscSource,
+    vdCalculations,
+    illumParams,
+    bomItems,
+    bomSettings,
+    transformerPrimaryVoltage,
+    transformerPowerFactor,
+    transformerDemandFactor,
+    transformerLoadingFactor,
+    mainSource,
+    user,
+    isOnline,
+  ]);
+
   const handleNewProject = (configOverrides?: Partial<PanelConfig>) => {
-    setCurrentProjectId(null);
-    setMainSource({
+    const newId = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    setCurrentProjectId(newId);
+    localStorage.setItem("electricalph_current_project_id", newId);
+
+    const freshMainSource = {
       systemVoltage: configOverrides?.voltage || 230,
       systemFrequency: configOverrides?.frequency || 60,
       phaseConfiguration: configOverrides?.system || "1-Phase, 2-Wire",
@@ -1601,13 +1743,16 @@ export default function App() {
       availableFaultCurrent: 10,
       sourceCapacity: 100,
       utilityProvider: configOverrides?.utilityProvider || "Utility",
-    });
-    setMdps([{
+    };
+    setMainSource(freshMainSource);
+
+    const freshMdps = [{
       id: "mdp-1",
       panel: { ...INITIAL_PANEL, ...configOverrides },
       circuits: getFreshInitialCircuits(),
       subPanels: []
-    }]);
+    }];
+    setMdps(freshMdps);
     setActiveMdpId("mdp-1");
     setIscParams(INITIAL_SHORT_CIRCUIT_PARAMS);
     setIscSource("auto");
@@ -1619,7 +1764,230 @@ export default function App() {
     setTransformerLoadingFactor(0.8);
     setBomItems([]);
     setBomSettings(null);
+
+    // Save this new project immediately so it's persisted in the background!
+    const freshData: ProjectData = {
+      mainSource: freshMainSource,
+      mdps: freshMdps,
+      panel: { ...INITIAL_PANEL, ...configOverrides },
+      circuits: getFreshInitialCircuits(),
+      subPanels: [],
+      iscParams: INITIAL_SHORT_CIRCUIT_PARAMS,
+      iscSource: "auto",
+      vdCalculations: INITIAL_VOLTAGE_DROP_CALCULATIONS,
+      illumParams: INITIAL_ILLUMINATION_PARAMS,
+      transformerConfig: {
+        primaryVoltage: 13800,
+        powerFactor: 0.85,
+        demandFactor: 0.8,
+        loadingFactor: 0.8,
+      },
+      bomItems: [],
+      bomSettings: null,
+    };
+
+    const finalName = configOverrides?.project || "Untitled Project Station";
+
+    if (user) {
+      const docRef = doc(db, "users", user.uid, "projects", newId);
+      setDoc(docRef, {
+        name: finalName,
+        lastModified: Date.now(),
+        data: freshData,
+        ownerId: user.uid
+      }).catch(err => {
+        console.error("Failed to save new project to Firestore:", err);
+      });
+    } else {
+      const STORAGE_KEY = "electricalph_projects";
+      const saved = localStorage.getItem(STORAGE_KEY);
+      let projects = [];
+      if (saved) {
+        try {
+          projects = JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      projects.push({
+        id: newId,
+        name: finalName,
+        lastModified: Date.now(),
+        data: freshData
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+    }
   };
+
+  // Load the initial/last active project on startup for both Guest and Authenticated users
+  useEffect(() => {
+    if (authLoading) return;
+
+    const lastActiveId = localStorage.getItem("electricalph_current_project_id");
+
+    if (!user) {
+      // 1. Guest Users
+      const STORAGE_KEY = "electricalph_projects";
+      const saved = localStorage.getItem(STORAGE_KEY);
+      let localProjects: SavedProject[] = [];
+      if (saved) {
+        try {
+          localProjects = JSON.parse(saved);
+        } catch (e) {
+          console.error("Failed to parse guest projects on load", e);
+        }
+      }
+
+      if (localProjects.length > 0) {
+        const activeProj = localProjects.find(p => p.id === lastActiveId);
+        if (activeProj) {
+          handleLoadProject(activeProj.id, activeProj.data);
+        } else {
+          const sorted = [...localProjects].sort((a, b) => b.lastModified - a.lastModified);
+          handleLoadProject(sorted[0].id, sorted[0].data);
+        }
+      } else {
+        const initialId = typeof crypto !== 'undefined' && crypto.randomUUID 
+          ? crypto.randomUUID() 
+          : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        const initialProject: SavedProject = {
+          id: initialId,
+          name: "Untitled Project Station",
+          lastModified: Date.now(),
+          data: currentProjectData
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([initialProject]));
+        localStorage.setItem("electricalph_current_project_id", initialId);
+        handleLoadProject(initialId, currentProjectData);
+      }
+    } else {
+      // 2. Authenticated Users
+      const projectsRef = collection(db, "users", user.uid, "projects");
+      const unsubscribe = onSnapshot(
+        projectsRef,
+        (snapshot) => {
+          if (snapshot.empty) {
+            // No projects exist on Firestore yet! Let's check if there are guest projects to migrate!
+            const STORAGE_KEY = "electricalph_projects";
+            const saved = localStorage.getItem(STORAGE_KEY);
+            let localProjects: SavedProject[] = [];
+            if (saved) {
+              try {
+                localProjects = JSON.parse(saved);
+              } catch (e) {
+                console.error("Failed to parse local projects for migration", e);
+              }
+            }
+
+            if (localProjects.length > 0) {
+              console.log("[Migration] Unauthenticated guest projects found. Migrating to Cloud...");
+              const cleanData = (obj: any): any => {
+                if (obj === null || typeof obj !== "object") return obj;
+                if (Array.isArray(obj)) return obj.map(cleanData);
+                const result: any = {};
+                for (const key in obj) {
+                  if (obj[key] !== undefined) {
+                    result[key] = cleanData(obj[key]);
+                  }
+                }
+                return result;
+              };
+
+              let activeProjId = lastActiveId || localProjects[0].id;
+              let activeProjData = localProjects[0].data;
+
+              localProjects.forEach((p) => {
+                const docRef = doc(db, "users", user.uid, "projects", p.id);
+                setDoc(docRef, cleanData({
+                  name: p.name,
+                  lastModified: p.lastModified,
+                  data: p.data,
+                  ownerId: user.uid
+                })).catch(err => {
+                  console.error("Failed to upload migrated project to Firestore:", err);
+                });
+                if (p.id === activeProjId) {
+                  activeProjData = p.data;
+                }
+              });
+
+              localStorage.removeItem(STORAGE_KEY);
+
+              setCurrentProjectId(activeProjId);
+              localStorage.setItem("electricalph_current_project_id", activeProjId);
+              handleLoadProject(activeProjId, activeProjData);
+            } else {
+              const initialId = typeof crypto !== 'undefined' && crypto.randomUUID 
+                ? crypto.randomUUID() 
+                : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              const docRef = doc(db, "users", user.uid, "projects", initialId);
+              
+              setDoc(docRef, {
+                name: "Untitled Project Station",
+                lastModified: Date.now(),
+                data: currentProjectData,
+                ownerId: user.uid
+              }).then(() => {
+                setCurrentProjectId(initialId);
+                localStorage.setItem("electricalph_current_project_id", initialId);
+                handleLoadProject(initialId, currentProjectData);
+              }).catch(err => {
+                console.error("Failed to create initial cloud project:", err);
+              });
+            }
+          } else {
+            const loadedProjects: SavedProject[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              loadedProjects.push({
+                id: docSnap.id,
+                name: data.name,
+                lastModified: data.lastModified,
+                data: data.data,
+              });
+            });
+
+            if (!currentProjectId) {
+              const activeProj = loadedProjects.find(p => p.id === lastActiveId);
+              if (activeProj) {
+                handleLoadProject(activeProj.id, activeProj.data);
+              } else {
+                const sorted = [...loadedProjects].sort((a, b) => b.lastModified - a.lastModified);
+                handleLoadProject(sorted[0].id, sorted[0].data);
+              }
+            }
+          }
+        },
+        (err) => {
+          console.error("Error listening to user projects:", err);
+        }
+      );
+      return () => unsubscribe();
+    }
+  }, [user, authLoading]);
+
+  // Track online/offline and sync when coming online
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (currentProjectId && user) {
+        setSaveStatus("syncing");
+        saveActiveProject(true);
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      setSaveStatus("saved-local");
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [currentProjectId, user, saveActiveProject]);
 
   // Trigger saving status instantly on data changes
   useEffect(() => {
@@ -1648,93 +2016,11 @@ export default function App() {
     if (!currentProjectId) return;
 
     const timer = setTimeout(() => {
-      const cleanData = (obj: any): any => {
-        if (obj === null || typeof obj !== "object") return obj;
-        if (Array.isArray(obj)) return obj.map(cleanData);
-        const result: any = {};
-        for (const key in obj) {
-          if (obj[key] !== undefined) {
-            result[key] = cleanData(obj[key]);
-          }
-        }
-        return result;
-      };
-
-      const finalName = panel.project?.trim() || "Untitled Project Station";
-      const updatedData = {
-        ...currentProjectData,
-        panel: {
-          ...currentProjectData.panel,
-          project: finalName,
-        },
-      };
-
-      if (user) {
-        const docRef = doc(db, "users", user.uid, "projects", currentProjectId);
-        setDoc(
-          docRef,
-          cleanData({
-            name: finalName,
-            lastModified: Date.now(),
-            data: updatedData,
-            ownerId: user.uid,
-          }),
-          { merge: true }
-        )
-          .then(() => {
-            setSaveStatus("saved");
-          })
-          .catch((err) => {
-            console.error("Auto-save to Firestore failed:", err);
-            setSaveStatus("saved"); // revert to avoid stuck state
-          });
-      } else {
-        const STORAGE_KEY = "electricalph_projects";
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          try {
-            const projects = JSON.parse(saved);
-            const updated = projects.map((p: any) => {
-              if (p.id === currentProjectId) {
-                return {
-                  ...p,
-                  name: finalName,
-                  lastModified: Date.now(),
-                  data: updatedData,
-                };
-              }
-              return p;
-            });
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-            setSaveStatus("saved");
-          } catch (e) {
-            console.error("Auto-save to localStorage failed", e);
-            setSaveStatus("saved");
-          }
-        } else {
-          setSaveStatus("saved");
-        }
-      }
+      saveActiveProject();
     }, 1500); // 1.5s debounce
 
     return () => clearTimeout(timer);
-  }, [
-    currentProjectId,
-    panel,
-    circuits,
-    subPanels,
-    iscParams,
-    iscSource,
-    vdCalculations,
-    illumParams,
-    bomItems,
-    bomSettings,
-    transformerPrimaryVoltage,
-    transformerPowerFactor,
-    transformerDemandFactor,
-    transformerLoadingFactor,
-    mainSource,
-  ]);
+  }, [currentProjectId, saveActiveProject]);
 
   // If redirecting back from PayMongo, don't show the login or app, let PaymentScreen handle it
   const isPostPaymentRedirect = window.location.search.includes("session_id=");
@@ -5756,6 +6042,12 @@ export default function App() {
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-300 ${
                               saveStatus === "saving" 
                                 ? "bg-amber-400/10 border border-amber-400/25 text-amber-300"
+                                : saveStatus === "failed"
+                                ? "bg-red-400/10 border border-red-400/25 text-red-400"
+                                : saveStatus === "syncing"
+                                ? "bg-cyan-400/10 border border-cyan-400/25 text-cyan-300"
+                                : saveStatus === "saved-local"
+                                ? "bg-blue-400/10 border border-blue-400/25 text-blue-300"
                                 : "bg-emerald-400/10 border border-emerald-400/25 text-emerald-300"
                             }`}>
                               {saveStatus === "saving" ? (
@@ -5763,10 +6055,35 @@ export default function App() {
                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                                   Saving...
                                 </>
+                              ) : saveStatus === "syncing" ? (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                                  Syncing...
+                                </>
+                              ) : saveStatus === "failed" ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+                                  <span>Save Failed</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      saveActiveProject(true);
+                                    }}
+                                    className="ml-1 px-1.5 py-0.5 rounded bg-red-600 hover:bg-red-700 text-white text-[9px] uppercase font-bold tracking-tight hover:opacity-95 transition-opacity"
+                                    title={saveError || "Click to retry saving"}
+                                  >
+                                    Retry
+                                  </button>
+                                </div>
+                              ) : saveStatus === "saved-local" ? (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                  Saved to Local {user ? "(Offline)" : ""}
+                                </>
                               ) : (
                                 <>
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                  Saved to {user ? "Cloud" : "Local"}
+                                  Saved to Cloud
                                 </>
                               )}
                             </span>
