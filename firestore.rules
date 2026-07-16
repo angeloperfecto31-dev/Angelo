@@ -249,10 +249,11 @@ service cloud.firestore {
         allow read: if isOwner(userId) || isAdmin();
         allow create: if isOwner(userId) && isValidId(projectId) && isValidProject(incoming());
         allow update: if isOwner(userId) && isValidId(projectId) &&
-          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'lastModified', 'data']) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'lastModified', 'data', 'ownerId']) &&
           incoming().name is string && incoming().name.size() <= 300 &&
           (incoming().lastModified is int || incoming().lastModified is float) &&
-          incoming().data is map;
+          incoming().data is map &&
+          (!('ownerId' in incoming()) || incoming().ownerId == userId);
         allow delete: if isOwner(userId) || isAdmin();
       }
 

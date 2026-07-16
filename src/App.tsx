@@ -224,9 +224,10 @@ export default function App() {
             // Check expiration for basic and premium plans
             let isExpired = false;
             const isPlanLifetime = data.is_lifetime || data.subscription_type === 'Lifetime';
+            const expiresVal = data.expiresAt || data.expires_at;
             if ((plan === "basic" || plan === "premium") && !isPlanLifetime) {
-              if (data.expiresAt) {
-                const expires = new Date(data.expiresAt);
+              if (expiresVal) {
+                const expires = new Date(expiresVal);
                 if (new Date() >= expires) {
                   isExpired = true;
                 }
@@ -242,8 +243,8 @@ export default function App() {
               setIsActive(false);
               isActiveRef.current = false;
               setUserPlan(plan);
-              setActivatedAt(data.activatedAt || null);
-              setExpiresAt(data.expiresAt || null);
+              setActivatedAt(data.activatedAt || data.activated_at || null);
+              setExpiresAt(expiresVal || null);
               setIsLifetime(isPlanLifetime);
               setShowRenew(true); // Redirect to Subscription/Upgrade Page
               setAuthLoading(false);
@@ -264,8 +265,8 @@ export default function App() {
             }
 
             setUserPlan(plan);
-            setActivatedAt(data.activatedAt || null);
-            setExpiresAt(data.expiresAt || null);
+            setActivatedAt(data.activatedAt || data.activated_at || null);
+            setExpiresAt(expiresVal || null);
             setIsLifetime(isPlanLifetime);
             setIsActive(userIsActive);
             isActiveRef.current = userIsActive;
