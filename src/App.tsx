@@ -1542,40 +1542,43 @@ export default function App() {
       return result;
     };
 
-    // Automatically and transparently save migrated & recalculated data back to persistence (Firestore or localStorage)
-    try {
-      if (user) {
-        const docRef = doc(db, "users", user.uid, "projects", projectId);
-        setDoc(
-          docRef,
-          {
-            data: cleanObject(data),
-            lastModified: Date.now(),
-          },
-          { merge: true }
-        ).catch((err) => {
-          console.error("[Auto-Migration] Failed to save updated project data to Firestore:", err);
-        });
-      } else {
-        const STORAGE_KEY = "electricalph_projects";
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const projects = JSON.parse(saved);
-          const updated = projects.map((p: any) => {
-            if (p.id === projectId) {
-              return {
-                ...p,
-                lastModified: Date.now(),
-                data,
-              };
-            }
-            return p;
+    // Automatically and transparently save migrated & recalculated data back to persistence (Firestore or localStorage) ONLY if migration was actually necessary
+    const needsMigrationSave = !rawData || rawData.schemaVersion !== 4;
+    if (needsMigrationSave) {
+      try {
+        if (user) {
+          const docRef = doc(db, "users", user.uid, "projects", projectId);
+          setDoc(
+            docRef,
+            {
+              data: cleanObject(data),
+              lastModified: Date.now(),
+            },
+            { merge: true }
+          ).catch((err) => {
+            console.error("[Auto-Migration] Failed to save updated project data to Firestore:", err);
           });
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        } else {
+          const STORAGE_KEY = "electricalph_projects";
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            const projects = JSON.parse(saved);
+            const updated = projects.map((p: any) => {
+              if (p.id === projectId) {
+                return {
+                  ...p,
+                  lastModified: Date.now(),
+                  data,
+                };
+              }
+              return p;
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+          }
         }
+      } catch (err) {
+        console.error("[Auto-Migration] Error during background transparent persistence:", err);
       }
-    } catch (err) {
-      console.error("[Auto-Migration] Error during background transparent persistence:", err);
     }
   };
 
@@ -1862,11 +1865,14 @@ export default function App() {
         handleLoadProject(initialId, currentProjectData);
       }
     } else {
-      // 2. Authenticated Users
-      const projectsRef = collection(db, "users", user.uid, "projects");
-      const unsubscribe = onSnapshot(
-        projectsRef,
-        (snapshot) => {
+      // 2. Authenticated Users (Run as a one-time query to avoid infinite listen-write loops!)
+      let isMounted = true;
+      const loadUserProjectsOnStartup = async () => {
+        try {
+          const projectsRef = collection(db, "users", user.uid, "projects");
+          const snapshot = await getDocs(projectsRef);
+          if (!isMounted) return;
+
           if (snapshot.empty) {
             // No projects exist on Firestore yet! Let's check if there are guest projects to migrate!
             const STORAGE_KEY = "electricalph_projects";
@@ -1897,20 +1903,22 @@ export default function App() {
               let activeProjId = lastActiveId || localProjects[0].id;
               let activeProjData = localProjects[0].data;
 
-              localProjects.forEach((p) => {
+              for (const p of localProjects) {
                 const docRef = doc(db, "users", user.uid, "projects", p.id);
-                setDoc(docRef, cleanData({
-                  name: p.name,
-                  lastModified: p.lastModified,
-                  data: p.data,
-                  ownerId: user.uid
-                })).catch(err => {
+                try {
+                  await setDoc(docRef, cleanData({
+                    name: p.name,
+                    lastModified: p.lastModified,
+                    data: p.data,
+                    ownerId: user.uid
+                  }));
+                } catch (err) {
                   console.error("Failed to upload migrated project to Firestore:", err);
-                });
+                }
                 if (p.id === activeProjId) {
                   activeProjData = p.data;
                 }
-              });
+              }
 
               localStorage.removeItem(STORAGE_KEY);
 
@@ -1923,18 +1931,19 @@ export default function App() {
                 : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               const docRef = doc(db, "users", user.uid, "projects", initialId);
               
-              setDoc(docRef, {
-                name: "Untitled Project Station",
-                lastModified: Date.now(),
-                data: currentProjectData,
-                ownerId: user.uid
-              }).then(() => {
+              try {
+                await setDoc(docRef, {
+                  name: "Untitled Project Station",
+                  lastModified: Date.now(),
+                  data: currentProjectData,
+                  ownerId: user.uid
+                });
                 setCurrentProjectId(initialId);
                 localStorage.setItem("electricalph_current_project_id", initialId);
                 handleLoadProject(initialId, currentProjectData);
-              }).catch(err => {
+              } catch (err) {
                 console.error("Failed to create initial cloud project:", err);
-              });
+              }
             }
           } else {
             const loadedProjects: SavedProject[] = [];
@@ -1948,6 +1957,7 @@ export default function App() {
               });
             });
 
+            // Avoid overwriting a project that has already loaded
             if (!currentProjectId) {
               const activeProj = loadedProjects.find(p => p.id === lastActiveId);
               if (activeProj) {
@@ -1958,12 +1968,15 @@ export default function App() {
               }
             }
           }
-        },
-        (err) => {
-          console.error("Error listening to user projects:", err);
+        } catch (err) {
+          console.error("Error loading user projects from Firestore:", err);
         }
-      );
-      return () => unsubscribe();
+      };
+
+      loadUserProjectsOnStartup();
+      return () => {
+        isMounted = false;
+      };
     }
   }, [user, authLoading]);
 
