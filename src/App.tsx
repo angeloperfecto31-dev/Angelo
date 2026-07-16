@@ -83,6 +83,7 @@ import {
   INITIAL_VOLTAGE_DROP_CALCULATIONS,
   INITIAL_ILLUMINATION_PARAMS,
   WIRE_IMPEDANCE_TABLE,
+  SYSTEM_VOLTAGES,
 } from "./constants";
 import { ProjectData, MainSourceConfig, MdpData, SavedProject } from "./types/project";
 import ProjectManagerModal from "./components/ProjectManagerModal";
@@ -1714,20 +1715,30 @@ export default function App() {
     setCurrentProjectId(newId);
     localStorage.setItem("electricalph_current_project_id", newId);
 
+    // Map voltageSystem to voltage and system if available
+    const finalOverrides = { ...configOverrides };
+    if (finalOverrides.voltageSystem) {
+      const vSys = finalOverrides.voltageSystem;
+      if (SYSTEM_VOLTAGES[vSys as keyof typeof SYSTEM_VOLTAGES] !== undefined) {
+        finalOverrides.voltage = SYSTEM_VOLTAGES[vSys as keyof typeof SYSTEM_VOLTAGES];
+      }
+      finalOverrides.system = vSys;
+    }
+
     const freshMainSource = {
-      systemVoltage: configOverrides?.voltage || 230,
-      systemFrequency: configOverrides?.frequency || 60,
-      phaseConfiguration: configOverrides?.system || "1-Phase, 2-Wire",
-      transformerConnection: configOverrides?.transformerConnection || "N/A",
+      systemVoltage: finalOverrides?.voltage || 230,
+      systemFrequency: finalOverrides?.frequency || 60,
+      phaseConfiguration: finalOverrides?.system || "1-Phase, 2-Wire",
+      transformerConnection: finalOverrides?.transformerConnection || "N/A",
       availableFaultCurrent: 10,
       sourceCapacity: 100,
-      utilityProvider: configOverrides?.utilityProvider || "Utility",
+      utilityProvider: finalOverrides?.utilityProvider || "Utility",
     };
     setMainSource(freshMainSource);
 
     const freshMdps = [{
       id: "mdp-1",
-      panel: { ...INITIAL_PANEL, ...configOverrides },
+      panel: { ...INITIAL_PANEL, ...finalOverrides },
       circuits: getFreshInitialCircuits(),
       subPanels: []
     }];
@@ -1748,7 +1759,7 @@ export default function App() {
     const freshData: ProjectData = {
       mainSource: freshMainSource,
       mdps: freshMdps,
-      panel: { ...INITIAL_PANEL, ...configOverrides },
+      panel: { ...INITIAL_PANEL, ...finalOverrides },
       circuits: getFreshInitialCircuits(),
       subPanels: [],
       iscParams: INITIAL_SHORT_CIRCUIT_PARAMS,
@@ -1765,7 +1776,7 @@ export default function App() {
       bomSettings: null,
     };
 
-    const finalName = configOverrides?.project || "Untitled Project Station";
+    const finalName = finalOverrides?.project || "Untitled Project Station";
 
     if (user) {
       const docRef = doc(db, "users", user.uid, "projects", newId);
