@@ -34,49 +34,24 @@ export const cleanFirestoreDataCycleSafe = (obj: any, seen = new WeakMap()): any
   return result;
 };
 
+import * as pako from 'pako';
+
 /**
  * Compresses a raw JSON string into a gzip-compressed Base64 string with a magic prefix.
  */
 export async function compressData(str: string): Promise<string> {
-  if (typeof window === "undefined" || !window.CompressionStream) {
-    console.warn("[Compression] CompressionStream is not supported in this environment. Storing uncompressed.");
-    return str;
-  }
-  
   try {
     const encoder = new TextEncoder();
     const bytes = encoder.encode(str);
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(bytes);
-        controller.close();
-      }
-    });
     
-    const compressedStream = stream.pipeThrough(new window.CompressionStream("gzip"));
-    const reader = compressedStream.getReader();
-    const chunks: Uint8Array[] = [];
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
-    }
-    
-    // Combine compressed chunks
-    const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.length;
-    }
+    // Compress robustly using pako
+    const compressed = pako.gzip(bytes);
     
     // Convert binary to Base64 safely (handles large files without stack overflow)
     let binary = "";
-    const len = combined.byteLength;
+    const len = compressed.byteLength;
     for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(combined[i]);
+      binary += String.fromCharCode(compressed[i]);
     }
     const base64 = btoa(binary);
     
@@ -95,11 +70,6 @@ export async function decompressData(compressedStr: string): Promise<string> {
     return compressedStr; // Return as-is if not compressed
   }
   
-  if (typeof window === "undefined" || !window.DecompressionStream) {
-    console.error("[Compression] DecompressionStream is not supported in this environment.");
-    throw new Error("DecompressionStream is not supported in this environment.");
-  }
-  
   try {
     const base64 = compressedStr.substring("compressed:gzip:".length);
     const binary = atob(base64);
@@ -109,33 +79,11 @@ export async function decompressData(compressedStr: string): Promise<string> {
       bytes[i] = binary.charCodeAt(i);
     }
     
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(bytes);
-        controller.close();
-      }
-    });
-    
-    const decompressedStream = stream.pipeThrough(new window.DecompressionStream("gzip"));
-    const reader = decompressedStream.getReader();
-    const chunks: Uint8Array[] = [];
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
-    }
-    
-    const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.length;
-    }
+    // Decompress robustly using pako
+    const decompressed = pako.ungzip(bytes);
     
     const decoder = new TextDecoder();
-    return decoder.decode(combined);
+    return decoder.decode(decompressed);
   } catch (err) {
     console.error("[Compression] Decompression failed:", err);
     throw err;
