@@ -94,7 +94,7 @@ service cloud.firestore {
         && data.keys().size() == 4
         && data.name is string && data.name.size() <= 300
         && (data.lastModified is int || data.lastModified is float)
-        && data.data is map
+        && (data.data is map || (data.data is string && data.data.size() <= 1048576))
         && data.ownerId is string && data.ownerId == request.auth.uid;
     }
 
@@ -250,9 +250,9 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidId(projectId) && isValidProject(incoming());
         allow update: if isOwner(userId) && isValidId(projectId) &&
           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'lastModified', 'data', 'ownerId']) &&
-          incoming().name is string && incoming().name.size() <= 300 &&
-          (incoming().lastModified is int || incoming().lastModified is float) &&
-          incoming().data is map &&
+          (!('name' in incoming()) || (incoming().name is string && incoming().name.size() <= 300)) &&
+          (!('lastModified' in incoming()) || (incoming().lastModified is int || incoming().lastModified is float)) &&
+          (!('data' in incoming()) || (incoming().data is map || (incoming().data is string && incoming().data.size() <= 1048576))) &&
           (!('ownerId' in incoming()) || incoming().ownerId == userId);
         allow delete: if isOwner(userId) || isAdmin();
       }
