@@ -135,6 +135,19 @@ export const safeUUID = () => {
     : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };
 
+export const cleanFirestoreData = (obj: any): any => {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (obj instanceof Date) return obj.toISOString();
+  if (Array.isArray(obj)) return obj.map(cleanFirestoreData);
+  const result: any = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      result[key] = cleanFirestoreData(obj[key]);
+    }
+  }
+  return result;
+};
+
 export const getFreshInitialCircuits = (): Circuit[] => {
   return INITIAL_CIRCUITS.map((c) => ({
     ...c,
@@ -414,29 +427,16 @@ export default function App() {
           if (projectData && projectData.schemaVersion !== 4) {
             console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) is outdated. Upgrading...`);
             
-            // Clean object helper
-            const cleanObject = (obj: any): any => {
-              if (obj === null || typeof obj !== "object") return obj;
-              if (Array.isArray(obj)) return obj.map(cleanObject);
-              const result: any = {};
-              for (const key in obj) {
-                if (obj[key] !== undefined) {
-                  result[key] = cleanObject(obj[key]);
-                }
-              }
-              return result;
-            };
-
             const migratedData = migrateProjectData(projectData);
             const docRef = doc(db, "users", user.uid, "projects", projectId);
             
             try {
               await setDoc(
                 docRef,
-                {
-                  data: cleanObject(migratedData),
+                cleanFirestoreData({
+                  data: migratedData,
                   lastModified: Date.now(),
-                },
+                }),
                 { merge: true }
               );
               console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) successfully migrated and saved.`);
@@ -1529,19 +1529,6 @@ export default function App() {
     setBomItems(data.bomItems || []);
     setBomSettings(data.bomSettings || null);
 
-    // Clean data of undefined fields before saving to avoid Firestore serialization errors
-    const cleanObject = (obj: any): any => {
-      if (obj === null || typeof obj !== "object") return obj;
-      if (Array.isArray(obj)) return obj.map(cleanObject);
-      const result: any = {};
-      for (const key in obj) {
-        if (obj[key] !== undefined) {
-          result[key] = cleanObject(obj[key]);
-        }
-      }
-      return result;
-    };
-
     // Automatically and transparently save migrated & recalculated data back to persistence (Firestore or localStorage) ONLY if migration was actually necessary
     const needsMigrationSave = !rawData || rawData.schemaVersion !== 4;
     if (needsMigrationSave) {
@@ -1550,10 +1537,10 @@ export default function App() {
           const docRef = doc(db, "users", user.uid, "projects", projectId);
           setDoc(
             docRef,
-            {
-              data: cleanObject(data),
+            cleanFirestoreData({
+              data: data,
               lastModified: Date.now(),
-            },
+            }),
             { merge: true }
           ).catch((err) => {
             console.error("[Auto-Migration] Failed to save updated project data to Firestore:", err);
@@ -1605,18 +1592,6 @@ export default function App() {
 
   const saveActiveProject = useCallback(async (forceCloudSync = false) => {
     if (!currentProjectId) return;
-
-    const cleanData = (obj: any): any => {
-      if (obj === null || typeof obj !== "object") return obj;
-      if (Array.isArray(obj)) return obj.map(cleanData);
-      const result: any = {};
-      for (const key in obj) {
-        if (obj[key] !== undefined) {
-          result[key] = cleanData(obj[key]);
-        }
-      }
-      return result;
-    };
 
     const finalName = panel.project?.trim() || "Untitled Project Station";
     const updatedData = {
@@ -1685,7 +1660,7 @@ export default function App() {
       try {
         await setDoc(
           docRef,
-          cleanData({
+          cleanFirestoreData({
             name: finalName,
             lastModified: Date.now(),
             data: updatedData,
@@ -1793,12 +1768,12 @@ export default function App() {
 
     if (user) {
       const docRef = doc(db, "users", user.uid, "projects", newId);
-      setDoc(docRef, {
+      setDoc(docRef, cleanFirestoreData({
         name: finalName,
         lastModified: Date.now(),
         data: freshData,
         ownerId: user.uid
-      }).catch(err => {
+      })).catch(err => {
         console.error("Failed to save new project to Firestore:", err);
       });
     } else {
@@ -1888,17 +1863,6 @@ export default function App() {
 
             if (localProjects.length > 0) {
               console.log("[Migration] Unauthenticated guest projects found. Migrating to Cloud...");
-              const cleanData = (obj: any): any => {
-                if (obj === null || typeof obj !== "object") return obj;
-                if (Array.isArray(obj)) return obj.map(cleanData);
-                const result: any = {};
-                for (const key in obj) {
-                  if (obj[key] !== undefined) {
-                    result[key] = cleanData(obj[key]);
-                  }
-                }
-                return result;
-              };
 
               let activeProjId = lastActiveId || localProjects[0].id;
               let activeProjData = localProjects[0].data;
@@ -1906,7 +1870,7 @@ export default function App() {
               for (const p of localProjects) {
                 const docRef = doc(db, "users", user.uid, "projects", p.id);
                 try {
-                  await setDoc(docRef, cleanData({
+                  await setDoc(docRef, cleanFirestoreData({
                     name: p.name,
                     lastModified: p.lastModified,
                     data: p.data,
@@ -1932,12 +1896,12 @@ export default function App() {
               const docRef = doc(db, "users", user.uid, "projects", initialId);
               
               try {
-                await setDoc(docRef, {
+                await setDoc(docRef, cleanFirestoreData({
                   name: "Untitled Project Station",
                   lastModified: Date.now(),
                   data: currentProjectData,
                   ownerId: user.uid
-                });
+                }));
                 setCurrentProjectId(initialId);
                 localStorage.setItem("electricalph_current_project_id", initialId);
                 handleLoadProject(initialId, currentProjectData);
