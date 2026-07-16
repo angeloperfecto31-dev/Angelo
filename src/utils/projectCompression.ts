@@ -171,12 +171,20 @@ export async function decompressProject(project: any): Promise<any> {
   if (!project) return project;
   
   let dataField = project.data;
-  if (typeof dataField === "string" && dataField.startsWith("compressed:gzip:")) {
-    try {
-      const decompressed = await decompressData(dataField);
-      dataField = JSON.parse(decompressed);
-    } catch (err) {
-      console.error("[Compression] Failed to decompress project data:", err);
+  if (typeof dataField === "string") {
+    if (dataField.startsWith("compressed:gzip:")) {
+      try {
+        const decompressed = await decompressData(dataField);
+        dataField = JSON.parse(decompressed);
+      } catch (err) {
+        console.error("[Compression] Failed to decompress project data:", err);
+      }
+    } else {
+      try {
+        dataField = JSON.parse(dataField);
+      } catch (err) {
+        console.error("[Compression] Failed to parse uncompressed project data JSON:", err);
+      }
     }
   }
   

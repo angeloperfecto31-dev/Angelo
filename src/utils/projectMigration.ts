@@ -10,6 +10,19 @@ const generateSafeId = () => {
     : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };
 
+function ensureArray(val: any): any[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+  return [];
+}
+
 export function migrateProjectData(data: any): ProjectData {
   if (!data) {
     return {
@@ -47,7 +60,7 @@ export function migrateProjectData(data: any): ProjectData {
     return merged;
   };
 
-  const rawVdCalculations = data.vdCalculations || [];
+  const rawVdCalculations = ensureArray(data.vdCalculations);
 
   // Helper to migrate circuits and run them through calculation engine
   const migrateCircuits = (
@@ -56,7 +69,7 @@ export function migrateProjectData(data: any): ProjectData {
     availableSubPanels: any[],
     vdCalculations: VoltageDropCalculation[]
   ): Circuit[] => {
-    return (circuits || []).map((c) => {
+    return ensureArray(circuits).map((c) => {
       let uniqueId = c.id;
       if (!uniqueId || seenCircuitIds.has(uniqueId)) {
         uniqueId = generateSafeId();
@@ -92,12 +105,12 @@ export function migrateProjectData(data: any): ProjectData {
   if (data.mdps && Array.isArray(data.mdps) && data.mdps.length > 0) {
     migratedMdps = data.mdps.map((mdp: any) => {
       const panel = migratePanel(mdp.panel);
-      const mergedSubPanels = [...(mdp.subPanels || []), ...(mdp.subSubPanels || [])];
+      const mergedSubPanels = [...ensureArray(mdp.subPanels), ...ensureArray(mdp.subSubPanels)];
 
       // Migrate sub-panels of the MDP first (since MDP circuits might refer to them)
       const migratedSubPanels = mergedSubPanels.map((sp: any) => {
         const spPanel = migratePanel(sp.panel);
-        const spCircuits = migrateCircuits(sp.circuits || [], spPanel, [], rawVdCalculations);
+        const spCircuits = migrateCircuits(ensureArray(sp.circuits), spPanel, [], rawVdCalculations);
 
         const { mainFeeder } = computePanelScheduleValues(spPanel, spCircuits, {
           vdCalculations: rawVdCalculations,
@@ -120,7 +133,7 @@ export function migrateProjectData(data: any): ProjectData {
       });
 
       // Migrate parent MDP circuits using the migrated sub-panels
-      const circuits = migrateCircuits(mdp.circuits || [], panel, migratedSubPanels, rawVdCalculations);
+      const circuits = migrateCircuits(ensureArray(mdp.circuits), panel, migratedSubPanels, rawVdCalculations);
 
       const { mainFeeder } = computePanelScheduleValues(panel, circuits, {
         vdCalculations: rawVdCalculations,
@@ -149,9 +162,9 @@ export function migrateProjectData(data: any): ProjectData {
   // 3. Fallback/Legacy Single-Panel Project Migration (when mdps list does not exist)
   const legacyPanel = migratePanel(data.panel);
 
-  const migratedSubSubPanels = (data.subSubPanels || []).map((sp: any) => {
+  const migratedSubSubPanels = ensureArray(data.subSubPanels).map((sp: any) => {
     const spPanel = migratePanel(sp.panel);
-    const spCircuits = migrateCircuits(sp.circuits || [], spPanel, [], rawVdCalculations);
+    const spCircuits = migrateCircuits(ensureArray(sp.circuits), spPanel, [], rawVdCalculations);
 
     const { mainFeeder } = computePanelScheduleValues(spPanel, spCircuits, {
       vdCalculations: rawVdCalculations,
@@ -173,9 +186,9 @@ export function migrateProjectData(data: any): ProjectData {
     };
   });
 
-  const migratedSubPanels = (data.subPanels || []).map((sp: any) => {
+  const migratedSubPanels = ensureArray(data.subPanels).map((sp: any) => {
     const spPanel = migratePanel(sp.panel);
-    const spCircuits = migrateCircuits(sp.circuits || [], spPanel, migratedSubSubPanels, rawVdCalculations);
+    const spCircuits = migrateCircuits(ensureArray(sp.circuits), spPanel, migratedSubSubPanels, rawVdCalculations);
 
     const { mainFeeder } = computePanelScheduleValues(spPanel, spCircuits, {
       vdCalculations: rawVdCalculations,
@@ -197,7 +210,7 @@ export function migrateProjectData(data: any): ProjectData {
     };
   });
 
-  const mainCircuits = migrateCircuits(data.circuits || [], legacyPanel, migratedSubPanels, rawVdCalculations);
+  const mainCircuits = migrateCircuits(ensureArray(data.circuits), legacyPanel, migratedSubPanels, rawVdCalculations);
 
   const { mainFeeder: mainFeederData } = computePanelScheduleValues(legacyPanel, mainCircuits, {
     vdCalculations: rawVdCalculations,

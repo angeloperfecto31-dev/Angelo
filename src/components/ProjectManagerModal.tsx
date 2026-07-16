@@ -21,7 +21,7 @@ interface ProjectManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentProjectData: ProjectData;
-  onLoadProject: (id: string, data: ProjectData) => void;
+  onLoadProject: (id: string, data: ProjectData, name?: string) => void;
   onNewProject: (configOverrides?: Partial<import("../types").PanelConfig>) => void;
   currentProjectId: string | null;
   setCurrentProjectId: (id: string | null) => void;
@@ -220,7 +220,7 @@ export default function ProjectManagerModal({
       );
       
       saveToStorage(updated, updatedProject);
-      onLoadProject(currentProjectId, updatedData);
+      onLoadProject(currentProjectId, updatedData, updatedProject.name);
       onClose();
     } else {
       handleSaveAs(finalName);
@@ -248,13 +248,13 @@ export default function ProjectManagerModal({
     
     saveToStorage([...projects, newProject], newProject);
     setCurrentProjectId(newId);
-    onLoadProject(newId, updatedData);
+    onLoadProject(newId, updatedData, finalName);
     setSaveName('');
     onClose();
   };
 
   const handleLoad = (p: SavedProject) => {
-    onLoadProject(p.id, p.data);
+    onLoadProject(p.id, p.data, p.name);
     onClose();
   };
 
@@ -317,7 +317,7 @@ export default function ProjectManagerModal({
   };
 
   // COMPRESS / BUNDLE PROJECT FOR BACKUP (.ephproj)
-  const compressProject = async (project: SavedProject): Promise<Blob> => {
+  const compressProjectForBackup = async (project: SavedProject): Promise<Blob> => {
     const exportPayload = {
       fileType: 'electricalph_project_backup',
       version: 1,
@@ -388,7 +388,7 @@ export default function ProjectManagerModal({
     try {
       // Simulate small packing latency to demonstrate the beautiful visual indicator
       await new Promise(resolve => setTimeout(resolve, 750));
-      const blob = await compressProject(p);
+      const blob = await compressProjectForBackup(p);
       const safeName = p.name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
       const fileName = `${safeName || 'project'}.ephproj`;
       saveAs(blob, fileName);

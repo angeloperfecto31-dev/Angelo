@@ -447,6 +447,8 @@ export default function App() {
               await setDoc(
                 docRef,
                 cleanFirestoreData({
+                  name: projectDocData.name || migratedData.panel?.project || "Untitled Project Station",
+                  ownerId: user.uid,
                   data: compressedData,
                   lastModified: Date.now(),
                 }),
@@ -1512,7 +1514,7 @@ export default function App() {
     setDuplicateName("");
   };
 
-  const handleLoadProject = (projectId: string, rawData: ProjectData) => {
+  const handleLoadProject = (projectId: string, rawData: ProjectData, projectName?: string) => {
     setCurrentProjectId(projectId);
     
     // Automatically apply all newly released features, enhancements, and calculations
@@ -1550,6 +1552,8 @@ export default function App() {
           if (user) {
             const docRef = doc(db, "users", user.uid, "projects", projectId);
             const compressed = await compressProject({
+              name: projectName || data.panel?.project || "Untitled Project Station",
+              ownerId: user.uid,
               data: data,
               lastModified: Date.now(),
             });
@@ -1851,10 +1855,10 @@ export default function App() {
         if (localProjects.length > 0) {
           const activeProj = localProjects.find(p => p.id === lastActiveId);
           if (activeProj) {
-            handleLoadProject(activeProj.id, activeProj.data);
+            handleLoadProject(activeProj.id, activeProj.data, activeProj.name);
           } else {
             const sorted = [...localProjects].sort((a, b) => b.lastModified - a.lastModified);
-            handleLoadProject(sorted[0].id, sorted[0].data);
+            handleLoadProject(sorted[0].id, sorted[0].data, sorted[0].name);
           }
         } else {
           const initialId = typeof crypto !== 'undefined' && crypto.randomUUID 
@@ -1870,7 +1874,7 @@ export default function App() {
           const compressedList = await compressProjectList([initialProject]);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedList));
           localStorage.setItem("electricalph_current_project_id", initialId);
-          handleLoadProject(initialId, currentProjectData);
+          handleLoadProject(initialId, currentProjectData, "Untitled Project Station");
         }
       };
       loadGuestProjectsOnStartup();
@@ -1918,14 +1922,13 @@ export default function App() {
                 }
                 if (p.id === activeProjId) {
                   activeProjData = p.data;
+                  setCurrentProjectId(activeProjId);
+                  localStorage.setItem("electricalph_current_project_id", activeProjId);
+                  handleLoadProject(activeProjId, activeProjData, p.name);
                 }
               }
 
               localStorage.removeItem(STORAGE_KEY);
-
-              setCurrentProjectId(activeProjId);
-              localStorage.setItem("electricalph_current_project_id", activeProjId);
-              handleLoadProject(activeProjId, activeProjData);
             } else {
               const initialId = typeof crypto !== 'undefined' && crypto.randomUUID 
                 ? crypto.randomUUID() 
@@ -1942,7 +1945,7 @@ export default function App() {
                 await setDoc(docRef, compressed);
                 setCurrentProjectId(initialId);
                 localStorage.setItem("electricalph_current_project_id", initialId);
-                handleLoadProject(initialId, currentProjectData);
+                handleLoadProject(initialId, currentProjectData, "Untitled Project Station");
               } catch (err) {
                 console.error("Failed to create initial cloud project:", err);
               }
@@ -1964,10 +1967,10 @@ export default function App() {
             if (!currentProjectId) {
               const activeProj = loadedProjects.find(p => p.id === lastActiveId);
               if (activeProj) {
-                handleLoadProject(activeProj.id, activeProj.data);
+                handleLoadProject(activeProj.id, activeProj.data, activeProj.name);
               } else {
                 const sorted = [...loadedProjects].sort((a, b) => b.lastModified - a.lastModified);
-                handleLoadProject(sorted[0].id, sorted[0].data);
+                handleLoadProject(sorted[0].id, sorted[0].data, sorted[0].name);
               }
             }
           }
