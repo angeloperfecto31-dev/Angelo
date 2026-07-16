@@ -5,6 +5,7 @@ import { db, auth } from '../firebase';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from "../utils/firestoreError";
 import { getInstitutionsForType } from '../utils/institutionLibrary';
+import { SYSTEM_VOLTAGES } from '../constants';
 
 interface ProjectManagerModalProps {
   isOpen: boolean;
@@ -592,12 +593,17 @@ export default function ProjectManagerModal({
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Voltage System</label>
-                    <input 
-                      type="text"
-                      value={newProjectForm.voltageSystem}
+                    <select 
+                      value={newProjectForm.voltageSystem || '230V, 1PH, 2W'}
                       onChange={e => setNewProjectForm({...newProjectForm, voltageSystem: e.target.value})}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm dark:text-white"
-                    />
+                    >
+                      {Object.keys(SYSTEM_VOLTAGES).map((system) => (
+                        <option key={system} value={system}>
+                          {system}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="space-y-1.5">
