@@ -2397,7 +2397,9 @@ export const exportToCAD = (
       currentCalcData.mainFeeder.groundSize,
       currentCalcData.mainFeeder.conduitSize,
       currentCalcData.mainFeeder.conduitType || "PVC",
-      currentPanel.system
+      currentPanel.system,
+      currentPanel.conduitArrangement,
+      currentPanel.customConduitArrangements
     );
     const summarySpecStr = `FEEDER: ${mainFeederCableStandard} | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
     

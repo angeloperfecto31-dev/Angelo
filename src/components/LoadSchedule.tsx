@@ -2579,6 +2579,111 @@ export default function LoadSchedule({
               <option value="RSC">RSC (Rigid Steel Conduit)</option>
             </select>
           </div>
+          
+          {(mainFeeder.wire.runs || 1) > 1 && (
+            <div className="space-y-1.5 md:col-span-1">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Parallel Feeder Conduit Arrangement
+              </label>
+              <select
+                value={panel.conduitArrangement || "single"}
+                onChange={(e) => {
+                  const val = e.target.value as 'single' | 'separate_per_set' | 'custom';
+                  const newPanel = { ...panel, conduitArrangement: val };
+                  if (val === 'custom' && (!panel.customConduitArrangements || panel.customConduitArrangements.length === 0)) {
+                    // Initialize with something sensible if empty
+                    newPanel.customConduitArrangements = [
+                      { id: '1', label: 'Conduit A', assignedSets: mainFeeder.wire.runs || 1 }
+                    ];
+                  }
+                  setPanel(newPanel);
+                }}
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+              >
+                <option value="single">Single Conduit (Default)</option>
+                <option value="separate_per_set">Separate Conduit per Parallel Set</option>
+                <option value="custom">Custom Arrangement</option>
+              </select>
+            </div>
+          )}
+
+          {panel.conduitArrangement === 'custom' && (mainFeeder.wire.runs || 1) > 1 && (
+            <div className="space-y-3 md:col-span-2 lg:col-span-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Custom Conduit Arrangement
+                </label>
+                <button
+                  onClick={() => {
+                    const arr = panel.customConduitArrangements || [];
+                    setPanel({
+                      ...panel,
+                      customConduitArrangements: [
+                        ...arr,
+                        { id: Date.now().toString(), label: `Conduit ${String.fromCharCode(65 + arr.length)}`, assignedSets: 1 }
+                      ]
+                    });
+                  }}
+                  className="px-2 py-1 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400 rounded hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors"
+                >
+                  + Add Conduit
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(panel.customConduitArrangements || []).map((arr, i) => (
+                  <div key={arr.id} className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col gap-2 relative">
+                    <button 
+                      onClick={() => {
+                        const newArr = (panel.customConduitArrangements || []).filter((_, idx) => idx !== i);
+                        setPanel({ ...panel, customConduitArrangements: newArr });
+                      }}
+                      className="absolute top-2 right-2 text-slate-400 hover:text-red-500"
+                    >
+                      <svg xmlns="http://www.w3.org/2050/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                    <div className="flex flex-col gap-1 pr-6">
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Label</label>
+                      <input 
+                        type="text" 
+                        value={arr.label}
+                        onChange={(e) => {
+                          const newArr = [...(panel.customConduitArrangements || [])];
+                          newArr[i].label = e.target.value;
+                          setPanel({ ...panel, customConduitArrangements: newArr });
+                        }}
+                        className="w-full text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Assigned Sets</label>
+                      <input 
+                        type="number" 
+                        min="1"
+                        max={mainFeeder.wire.runs || 1}
+                        value={arr.assignedSets}
+                        onChange={(e) => {
+                          const newArr = [...(panel.customConduitArrangements || [])];
+                          newArr[i].assignedSets = parseInt(e.target.value) || 1;
+                          setPanel({ ...panel, customConduitArrangements: newArr });
+                        }}
+                        className="w-full text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {(() => {
+                const totalSets = (panel.customConduitArrangements || []).reduce((acc, curr) => acc + curr.assignedSets, 0);
+                const isMatching = totalSets === (mainFeeder.wire.runs || 1);
+                return (
+                  <div className={`text-xs ${isMatching ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                    Total Sets Assigned: {totalSets} / {mainFeeder.wire.runs || 1} {isMatching ? '✓' : '(Must match total feeder sets)'}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Table Font Size ({tableFontSize}px)
@@ -3301,16 +3406,64 @@ export default function LoadSchedule({
             </div>
 
             {(() => {
-              const mainFill = getConduitFillDetails(
-                mainFeeder.wire.size,
-                mainFeeder.groundSize,
-                mainFeeder.poles,
-                panel.system,
-                mainFeeder.conduitType || "PVC",
-                mainFeeder.wire.runs || 1,
-                panel.insulationType || "THHN",
-                panel.mainOverrides?.conduitSize
-              );
+              const runs = mainFeeder.wire.runs || 1;
+              const arrangement = panel.conduitArrangement || 'single';
+              
+              let feederConduits: { id: string; label: string; assignedSets: number; fill: any }[] = [];
+              
+              if (runs === 1 || arrangement === 'single') {
+                feederConduits.push({
+                  id: 'main',
+                  label: 'Main Service Entrance / Feeder Conduit',
+                  assignedSets: runs,
+                  fill: getConduitFillDetails(
+                    mainFeeder.wire.size,
+                    mainFeeder.groundSize,
+                    mainFeeder.poles,
+                    panel.system,
+                    mainFeeder.conduitType || "PVC",
+                    runs,
+                    panel.insulationType || "THHN",
+                    panel.mainOverrides?.conduitSize
+                  )
+                });
+              } else if (arrangement === 'separate_per_set') {
+                for (let i = 0; i < runs; i++) {
+                  feederConduits.push({
+                    id: `set-${i+1}`,
+                    label: `Conduit ${i+1} (Set ${i+1})`,
+                    assignedSets: 1,
+                    fill: getConduitFillDetails(
+                      mainFeeder.wire.size,
+                      mainFeeder.groundSize,
+                      mainFeeder.poles,
+                      panel.system,
+                      mainFeeder.conduitType || "PVC",
+                      1,
+                      panel.insulationType || "THHN",
+                      panel.mainOverrides?.conduitSize // Should we apply override to each? Yes for simplicity.
+                    )
+                  });
+                }
+              } else if (arrangement === 'custom') {
+                (panel.customConduitArrangements || []).forEach((arr) => {
+                  feederConduits.push({
+                    id: arr.id,
+                    label: arr.label,
+                    assignedSets: arr.assignedSets,
+                    fill: getConduitFillDetails(
+                      mainFeeder.wire.size,
+                      mainFeeder.groundSize,
+                      mainFeeder.poles,
+                      panel.system,
+                      mainFeeder.conduitType || "PVC",
+                      arr.assignedSets,
+                      panel.insulationType || "THHN",
+                      arr.conduitSizeOverride || panel.mainOverrides?.conduitSize
+                    )
+                  });
+                });
+              }
 
               const branchFills = circuits
                 .filter((c) => !isIdleSpareOrSpace(c))
@@ -3340,109 +3493,120 @@ export default function LoadSchedule({
 
               return (
                 <div className="space-y-6">
-                  {/* Main Feeder Card */}
-                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
-                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
-                      <div>
-                        <span className="text-[10px] uppercase font-black tracking-widest text-indigo-600 dark:text-indigo-400">
-                          Primary Raceway
-                        </span>
-                        <h4 className="text-base font-bold text-slate-800 dark:text-slate-100">
-                          Main Service Entrance / Feeder Conduit
-                        </h4>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">Status:</span>
-                        {mainFill.isUndersized ? (
-                          <span className="px-2.5 py-1 rounded-full text-xs bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-900/50 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse"></span>
-                            Exceeds Allowable Fill
-                          </span>
-                        ) : mainFill.utilizationStatus === "Warning" ? (
-                          <span className="px-2.5 py-1 rounded-full text-xs bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-900/50 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            Warning (Near Limit)
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full text-xs bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 font-bold border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                            Safe Compliance
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {/* Gauge Visualizer */}
-                      <div className="flex flex-col justify-center items-center p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800/50">
-                        <div className="relative flex items-center justify-center w-24 h-24">
-                          {/* Radial Ring */}
-                          <svg className="w-full h-full transform -rotate-90">
-                            <circle
-                              cx="48"
-                              cy="48"
-                              r="40"
-                              stroke="currentColor"
-                              strokeWidth="8"
-                              fill="transparent"
-                              className="text-slate-200 dark:text-slate-800"
-                            />
-                            <circle
-                              cx="48"
-                              cy="48"
-                              r="40"
-                              stroke="currentColor"
-                              strokeWidth="8"
-                              fill="transparent"
-                              strokeDasharray={251.2}
-                              strokeDashoffset={251.2 - (251.2 * Math.min(100, mainFill.fillPercentage)) / 100}
-                              className={`transition-all duration-500 ${
-                                mainFill.isUndersized
-                                  ? "text-rose-500"
-                                  : mainFill.utilizationStatus === "Warning"
-                                  ? "text-amber-500"
-                                  : "text-indigo-500"
-                              }`}
-                            />
-                          </svg>
-                          <div className="absolute flex flex-col items-center">
-                            <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">
-                              {mainFill.fillPercentage}%
+                  {feederConduits.map((conduitItem) => {
+                    const mainFill = conduitItem.fill;
+                    return (
+                      <div key={conduitItem.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
+                        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+                          <div>
+                            <span className="text-[10px] uppercase font-black tracking-widest text-indigo-600 dark:text-indigo-400">
+                              Primary Raceway
                             </span>
-                            <span className="text-[9px] text-slate-400 font-bold uppercase">
-                              Fill Area
-                            </span>
+                            <h4 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                              {conduitItem.label}
+                              {conduitItem.assignedSets > 1 ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  {conduitItem.assignedSets} Sets
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  1 Set
+                                </span>
+                              )}
+                            </h4>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">Status:</span>
+                            {mainFill.isUndersized ? (
+                              <span className="px-2.5 py-1 rounded-full text-xs bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-900/50 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse"></span>
+                                Exceeds Allowable Fill
+                              </span>
+                            ) : mainFill.utilizationStatus === "Warning" ? (
+                              <span className="px-2.5 py-1 rounded-full text-xs bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 font-bold border border-amber-200 dark:border-amber-900/50 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                Warning (Near Limit)
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full text-xs bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 font-bold border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                Safe Compliance
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <div className="mt-3 text-center text-xxs text-slate-500">
-                          Allowable: <span className="font-bold text-slate-700 dark:text-slate-300">{mainFill.allowableFillPercentage}%</span> (PEC Table 1)
-                        </div>
-                      </div>
 
-                      {/* Sizing Details List */}
-                      <div className="space-y-3 col-span-1 md:col-span-1 lg:col-span-3">
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                          <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
-                            <span className="text-[10px] uppercase font-bold text-slate-400">Conduit Size Specs</span>
-                            <div className="mt-1 space-y-1">
-                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex justify-between gap-2">
-                                <span className="text-slate-400">Minimum:</span>
-                                <span>{mainFill.minimumSize}</span>
-                              </p>
-                              <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex justify-between gap-2">
-                                <span className="text-slate-400">Recommended:</span>
-                                <span>{mainFill.recommendedSize}</span>
-                              </p>
-                              <p className="text-xs font-black text-slate-800 dark:text-slate-100 border-t border-slate-100 dark:border-slate-800/80 pt-1 flex justify-between gap-2">
-                                <span className="text-slate-500">Active Selected:</span>
-                                <span className="flex items-center gap-1">
-                                  {mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}
-                                  {panel.mainOverrides?.conduitSize && (
-                                    <span className="text-[9px] bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 px-1 rounded uppercase font-bold">Manual</span>
-                                  )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          {/* Gauge Visualizer */}
+                          <div className="flex flex-col justify-center items-center p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800/50">
+                            <div className="relative flex items-center justify-center w-24 h-24">
+                              {/* Radial Ring */}
+                              <svg className="w-full h-full transform -rotate-90">
+                                <circle
+                                  cx="48"
+                                  cy="48"
+                                  r="40"
+                                  stroke="currentColor"
+                                  strokeWidth="8"
+                                  fill="transparent"
+                                  className="text-slate-200 dark:text-slate-800"
+                                />
+                                <circle
+                                  cx="48"
+                                  cy="48"
+                                  r="40"
+                                  stroke="currentColor"
+                                  strokeWidth="8"
+                                  fill="transparent"
+                                  strokeDasharray={251.2}
+                                  strokeDashoffset={251.2 - (251.2 * Math.min(100, mainFill.fillPercentage)) / 100}
+                                  className={`transition-all duration-500 ${
+                                    mainFill.isUndersized
+                                      ? "text-rose-500"
+                                      : mainFill.utilizationStatus === "Warning"
+                                      ? "text-amber-500"
+                                      : "text-indigo-500"
+                                  }`}
+                                />
+                              </svg>
+                              <div className="absolute flex flex-col items-center">
+                                <span className="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">
+                                  {mainFill.fillPercentage}%
                                 </span>
-                              </p>
+                                <span className="text-[9px] text-slate-400 font-bold uppercase">
+                                  Fill Area
+                                </span>
+                              </div>
                             </div>
+                            <div className="mt-3 text-center text-xxs text-slate-500">
+                              Allowable: <span className="font-bold text-slate-700 dark:text-slate-300">{mainFill.allowableFillPercentage}%</span> (PEC Table 1)
+                            </div>
+                          </div>
+
+                          {/* Sizing Details List */}
+                          <div className="space-y-3 col-span-1 md:col-span-1 lg:col-span-3">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                              <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
+                                <span className="text-[10px] uppercase font-bold text-slate-400">Conduit Size Specs</span>
+                                <div className="mt-1 space-y-1">
+                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex justify-between gap-2">
+                                    <span className="text-slate-400">Minimum:</span>
+                                    <span>{mainFill.minimumSize}</span>
+                                  </p>
+                                  <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex justify-between gap-2">
+                                    <span className="text-slate-400">Recommended:</span>
+                                    <span>{mainFill.recommendedSize}</span>
+                                  </p>
+                                  <p className="text-xs font-black text-slate-800 dark:text-slate-100 border-t border-slate-100 dark:border-slate-800/80 pt-1 flex justify-between gap-2">
+                                    <span className="text-slate-500">Active Selected:</span>
+                                    <span className="flex items-center gap-1">
+                                      {mainFill.conduitSize} {mainFeeder.conduitType || "PVC"}
+                                      {panel.mainOverrides?.conduitSize && (
+                                        <span className="text-[9px] bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-400 px-1 rounded uppercase font-bold">Manual</span>
+                                      )}
+                                    </span>
+                                  </p>
+                                </div>
                           </div>
                           <div className="p-3 bg-slate-50/50 dark:bg-slate-900/20 rounded-lg">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Total Conductors</span>
@@ -3487,8 +3651,10 @@ export default function LoadSchedule({
                       </div>
                     </div>
                   </div>
+                );
+              })}
 
-                  {/* Branch Circuits Alerts Panel */}
+              {/* Branch Circuits Alerts Panel */}
                   {warningBranches.length > 0 && (
                     <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-900/30 rounded-xl p-4">
                       <h4 className="text-xs font-bold text-amber-800 dark:text-amber-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -5394,7 +5560,7 @@ export default function LoadSchedule({
                     className="uppercase opacity-70 flex flex-col gap-1 items-end"
                     style={{ fontSize: tableFontSize - 2 }}
                   >
-                    <span>
+                    <span className="whitespace-pre-wrap text-right">
                       Main Feeder:{" "}
                       {formatStandardCableDescription(
                         mainFeeder.wire.runs || 1,
@@ -5403,7 +5569,9 @@ export default function LoadSchedule({
                         mainFeeder.groundSize,
                         mainFeeder.conduitSize,
                         mainFeeder.conduitType || "PVC",
-                        panel.system
+                        panel.system,
+                        panel.conduitArrangement,
+                        panel.customConduitArrangements
                       )}
                       {panel.mainOverrides?.isOverrideEnabled &&
                       panel.mainOverrides.wireSize
@@ -6052,7 +6220,7 @@ export default function LoadSchedule({
                 Design Current: {mainCurrent.designAmp.toFixed(2)} Amperes
               </span>
               <span>Selected Main Breaker: {mainFeeder.cb} AT</span>
-              <span>
+              <span className="whitespace-pre-wrap">
                 Selected Main Cable & Conduit:{" "}
                 {formatStandardCableDescription(
                   mainFeeder.wire.runs || 1,
@@ -6061,7 +6229,9 @@ export default function LoadSchedule({
                   mainFeeder.groundSize,
                   mainFeeder.conduitSize,
                   mainFeeder.conduitType || "PVC",
-                  panel.system
+                  panel.system,
+                  panel.conduitArrangement,
+                  panel.customConduitArrangements
                 )} (Ampacity: {mainFeeder.wire.ampacity} A)
               </span>
             </div>

@@ -180,7 +180,9 @@ export const formatStandardCableDescription = (
   groundSize: number | string,
   conduitSize: number | string,
   conduitType: string,
-  systemOrPoles?: string | number
+  systemOrPoles?: string | number,
+  conduitArrangement?: string,
+  customArrangements?: any[]
 ): string => {
   const sNum = parseInt(sets?.toString() || "1", 10) || 1;
 
@@ -222,11 +224,21 @@ export const formatStandardCableDescription = (
 
   const activeCount = getActiveWireCount(systemOrPoles);
 
+  const baseConductorText = `${activeCount} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted}`;
+
   if (sNum > 1) {
-    return `${sNum} Sets - ${activeCount} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
+    if (conduitArrangement === 'separate_per_set') {
+      return `${sNum} Sets - ${baseConductorText} in ${sNum} x ${cSizeStr} ${cType}`;
+    } else if (conduitArrangement === 'custom' && customArrangements && customArrangements.length > 0) {
+      const arrText = customArrangements.map(a => `${a.assignedSets} Set(s) in ${a.conduitSizeOverride ? a.conduitSizeOverride + ' mm' : cSizeStr} ${cType}`).join(", ");
+      return `${sNum} Sets - ${baseConductorText} in ${arrText}`;
+    } else {
+      // Default / Single Conduit
+      return `${sNum} Sets - ${baseConductorText} in ${cSizeStr} ${cType}`;
+    }
   }
 
-  return `${activeCount} x ${phaseConductorSizeFormatted} ${ins} + ${groundConductorSizeFormatted} in ${cSizeStr} ${cType}`;
+  return `${baseConductorText} in ${cSizeStr} ${cType}`;
 };
 
 export const getConductorLabel = (
@@ -1926,13 +1938,20 @@ export const computePanelScheduleValues = (
     cb,
     p.conductorMaterial || "Copper",
   );
+  let conduitRunsForCalc = wire.runs || 1;
+  if (p.conduitArrangement === 'separate_per_set') {
+    conduitRunsForCalc = 1;
+  } else if (p.conduitArrangement === 'custom' && p.customConduitArrangements && p.customConduitArrangements.length > 0) {
+    conduitRunsForCalc = Math.max(...p.customConduitArrangements.map(a => a.assignedSets || 1));
+  }
+
   const conduitSize = getConduitSizeForWiresLocal(
     baseWireSize,
     groundSize,
     poles,
     p.system,
     selectedMainConduitType,
-    wire.runs || 1,
+    conduitRunsForCalc,
     p.insulationType || "THHN",
   );
 
@@ -2008,6 +2027,13 @@ export const computePanelScheduleValues = (
     if (p.mainOverrides.conduitType)
       finalConduitType = p.mainOverrides.conduitType;
 
+    let finalConduitRunsForCalc = finalWireRuns;
+    if (p.conduitArrangement === 'separate_per_set') {
+      finalConduitRunsForCalc = 1;
+    } else if (p.conduitArrangement === 'custom' && p.customConduitArrangements && p.customConduitArrangements.length > 0) {
+      finalConduitRunsForCalc = Math.max(...p.customConduitArrangements.map(a => a.assignedSets || 1));
+    }
+
     // Retrieve full conduit details to get the minimum size for safe validation
     const mainConduitDetails = getConduitFillDetails(
       finalWireSize,
@@ -2015,7 +2041,7 @@ export const computePanelScheduleValues = (
       finalPoles,
       p.system,
       finalConduitType,
-      finalWireRuns,
+      finalConduitRunsForCalc,
       p.insulationType || "THHN",
       p.mainOverrides.conduitSize
     );
@@ -2036,7 +2062,7 @@ export const computePanelScheduleValues = (
       finalPoles,
       p.system,
       finalConduitType,
-      finalWireRuns,
+      finalConduitRunsForCalc,
       p.insulationType || "THHN",
       finalConduitSizeOverride
     );

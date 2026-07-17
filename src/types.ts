@@ -124,6 +124,13 @@ export interface PanelConfig {
   insulationType?: string;
   temperatureRating?: 60 | 75 | 90;
   mainConduitType?: string;
+  conduitArrangement?: 'single' | 'separate_per_set' | 'custom';
+  customConduitArrangements?: {
+    id: string;
+    label: string;
+    assignedSets: number;
+    conduitSizeOverride?: string;
+  }[];
   mainOverrides?: {
     isOverrideEnabled: boolean;
     wireSize?: number;

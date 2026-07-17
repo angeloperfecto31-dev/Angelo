@@ -168,7 +168,11 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
            )} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'}
          </tspan>
          <tspan x="410" dy="20">
-           IN {mainFeeder.conduitSize.toUpperCase()}Ø {(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT
+           {panel.conduitArrangement === 'separate_per_set' && (mainFeeder.wire.runs || 1) > 1 
+             ? `IN ${mainFeeder.wire.runs} SEPARATE ${mainFeeder.conduitSize.toUpperCase()}Ø ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUITS` 
+             : panel.conduitArrangement === 'custom' && panel.customConduitArrangements && panel.customConduitArrangements.length > 0
+             ? `IN ${panel.customConduitArrangements.length} CUSTOM ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUITS`
+             : `IN ${mainFeeder.conduitSize.toUpperCase()}Ø ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT`}
          </tspan>
       </text>
 

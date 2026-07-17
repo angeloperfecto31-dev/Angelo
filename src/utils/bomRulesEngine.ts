@@ -447,84 +447,109 @@ export const runBomQuantityTakeoff = (
   // Service entrance conduit
   const fConduitType = mdpFeeder.conduitType || "PVC";
   const fConduitSize = mdpFeeder.conduitSize || "50";
-  const fConduitMeters = fLength * wasteConduitsFactor;
-  const fConduitCost = getConduitPricePerMeter(fConduitSize, fConduitType);
-  addItem({
-    category: "Conduits",
-    name: `Feeder Raceway Conduit, ${fConduitType}, ${fConduitSize}mm Ø`,
-    description: "Heavy duty primary feeder conduit protection piping",
-    brand: settings.preferredBrandConduits,
-    specification: `${fConduitType} Conduit, standard thick-wall utility grade`,
-    quantity: Math.ceil(fConduitMeters),
-    unit: "meters",
-    unitCost: fConduitCost,
-    laborCostPerUnit: fConduitCost * 0.35,
-    remarks: `Service Feeder Raceway (${fLength}m)`,
-    source: `Panel [${mdpId}] Feeder`
-  });
+  const arrangement = panel.conduitArrangement || 'single';
 
-  // Feeder accessories
-  const totalFeederConductors = (fPhaseCount + 1) * fWireRuns + 1; // Phases + Neutral * runs + Ground
-  const fCouplingCount = Math.ceil(fLength / 3) * wasteAccessoriesFactor;
-  const fStrapsCount = Math.ceil(fLength / 1.5) * wasteAccessoriesFactor;
-  const fLugCount = totalFeederConductors * 2; // Lug on each end of conductor
+  let feederConduits: { label: string; size: string; type: string; qty: number }[] = [];
 
-  addItem({
-    category: "Accessories",
-    name: `Conduit Coupling, ${fConduitSize}mm Ø`,
-    description: `Raceway conduit pipe connection sleeve coupling matching ${fConduitSize}mm`,
-    brand: settings.preferredBrandAccessories,
-    specification: `Thick-wall standard coupling matching ${fConduitType} pipeline`,
-    quantity: Math.ceil(fCouplingCount),
-    unit: "pcs",
-    unitCost: fConduitType === "PVC" ? 35 : 120,
-    laborCostPerUnit: 15,
-    remarks: `Couplings for ${fConduitSize}mm feeder raceway (${fWireRuns} runs)`,
-    source: `Panel [${mdpId}] Feeder Accessories`
-  });
-
-  addItem({
-    category: "Accessories",
-    name: `Conduit Locknut with Adapter/Connector, ${fConduitSize}mm Ø`,
-    description: `Conduit fitting connectors with locking nuts for box termination knockout lock`,
-    brand: settings.preferredBrandAccessories,
-    specification: `Locknut, adapter, and protective throat collar connector assembly`,
-    quantity: 2 * fWireRuns,
-    unit: "sets",
-    unitCost: fConduitType === "PVC" ? 45 : 180,
-    laborCostPerUnit: 25,
-    remarks: `Box termination adapters for feeder conduit (${fWireRuns} runs)`,
-    source: `Panel [${mdpId}] Feeder Accessories`
-  });
-
-  if (fConduitType === "IMC" || fConduitType === "RSC") {
-    addItem({
-      category: "Accessories",
-      name: `Insulated Grounding Bushing, ${fConduitSize}mm Ø`,
-      description: `Threaded metallic grounding bushing for metal raceway termination wire shielding, compliant with PEC 3.0.1.4`,
-      brand: settings.preferredBrandAccessories,
-      specification: `Malleable iron housing, plastic insulated throat liner, grounded lug`,
-      quantity: 2,
-      unit: "pcs",
-      unitCost: 160,
-      laborCostPerUnit: 40,
-      remarks: "Feeder conduit metallic wire containment protection shield",
-      source: `Panel [${mdpId}] Feeder Accessories`
+  if (fWireRuns === 1 || arrangement === 'single') {
+    feederConduits.push({ label: 'Raceway', size: fConduitSize, type: fConduitType, qty: 1 });
+  } else if (arrangement === 'separate_per_set') {
+    for (let i = 0; i < fWireRuns; i++) {
+      feederConduits.push({ label: `Raceway (Set ${i+1})`, size: fConduitSize, type: fConduitType, qty: 1 });
+    }
+  } else if (arrangement === 'custom') {
+    (panel.customConduitArrangements || []).forEach(arr => {
+      feederConduits.push({ 
+        label: `Raceway (${arr.label})`, 
+        size: arr.conduitSizeOverride || fConduitSize, 
+        type: fConduitType,
+        qty: 1
+      });
     });
   }
 
-  addItem({
-    category: "Accessories",
-    name: `Conduit Support Strap, Heavy Duty, ${fConduitSize}mm Ø`,
-    description: `Heavy duty pipe support mounting clamps for securing feeder pipeline structure`,
-    brand: settings.preferredBrandAccessories,
-    specification: `Galvanized steel two-hole support strap, corrosion resistant`,
-    quantity: Math.ceil(fStrapsCount),
-    unit: "pcs",
-    unitCost: 28,
-    laborCostPerUnit: 15,
-    remarks: `Support brackets spaced 1.5m along feeder raceway`,
-    source: `Panel [${mdpId}] Feeder Accessories`
+  // Feeder accessories (Lugs calculation needs to be before or after, it doesn't matter, we'll keep it here)
+  const totalFeederConductors = (fPhaseCount + 1) * fWireRuns + 1; // Phases + Neutral * runs + Ground
+  const fLugCount = totalFeederConductors * 2; // Lug on each end of conductor
+
+  feederConduits.forEach(cItem => {
+    const fConduitMeters = fLength * wasteConduitsFactor;
+    const fConduitCost = getConduitPricePerMeter(cItem.size, cItem.type);
+    
+    addItem({
+      category: "Conduits",
+      name: `Feeder Raceway Conduit, ${cItem.type}, ${cItem.size}mm Ø`,
+      description: `Heavy duty primary feeder conduit protection piping - ${cItem.label}`,
+      brand: settings.preferredBrandConduits,
+      specification: `${cItem.type} Conduit, standard thick-wall utility grade`,
+      quantity: Math.ceil(fConduitMeters),
+      unit: "meters",
+      unitCost: fConduitCost,
+      laborCostPerUnit: fConduitCost * 0.35,
+      remarks: `Service Feeder ${cItem.label} (${fLength}m)`,
+      source: `Panel [${mdpId}] Feeder`
+    });
+
+    const cCouplingCount = Math.ceil(fLength / 3) * wasteAccessoriesFactor;
+    const cStrapsCount = Math.ceil(fLength / 1.5) * wasteAccessoriesFactor;
+    
+    addItem({
+      category: "Accessories",
+      name: `Conduit Coupling, ${cItem.size}mm Ø`,
+      description: `Raceway conduit pipe connection sleeve coupling matching ${cItem.size}mm`,
+      brand: settings.preferredBrandAccessories,
+      specification: `Thick-wall standard coupling matching ${cItem.type} pipeline`,
+      quantity: Math.ceil(cCouplingCount),
+      unit: "pcs",
+      unitCost: cItem.type === "PVC" ? 35 : 120,
+      laborCostPerUnit: 15,
+      remarks: `Couplings for Feeder ${cItem.label}`,
+      source: `Panel [${mdpId}] Feeder Accessories`
+    });
+
+    addItem({
+      category: "Accessories",
+      name: `Conduit Locknut with Adapter/Connector, ${cItem.size}mm Ø`,
+      description: `Conduit fitting connectors with locking nuts for box termination knockout lock`,
+      brand: settings.preferredBrandAccessories,
+      specification: `Locknut, adapter, and protective throat collar connector assembly`,
+      quantity: 2,
+      unit: "sets",
+      unitCost: cItem.type === "PVC" ? 45 : 180,
+      laborCostPerUnit: 25,
+      remarks: `Box termination adapters for Feeder ${cItem.label}`,
+      source: `Panel [${mdpId}] Feeder Accessories`
+    });
+
+    if (cItem.type === "IMC" || cItem.type === "RSC") {
+      addItem({
+        category: "Accessories",
+        name: `Insulated Grounding Bushing, ${cItem.size}mm Ø`,
+        description: `Threaded metallic grounding bushing for metal raceway termination wire shielding, compliant with PEC 3.0.1.4`,
+        brand: settings.preferredBrandAccessories,
+        specification: `Malleable iron housing, plastic insulated throat liner, grounded lug`,
+        quantity: 2,
+        unit: "pcs",
+        unitCost: 160,
+        laborCostPerUnit: 40,
+        remarks: `Feeder conduit metallic wire containment protection shield for ${cItem.label}`,
+        source: `Panel [${mdpId}] Feeder Accessories`
+      });
+    }
+
+    addItem({
+      category: "Accessories",
+      name: `Conduit Support Strap, Heavy Duty, ${cItem.size}mm Ø`,
+      description: `Heavy duty pipe support mounting clamps for securing feeder pipeline structure`,
+      brand: settings.preferredBrandAccessories,
+      specification: `Galvanized steel two-hole support strap, corrosion resistant`,
+      quantity: Math.ceil(cStrapsCount),
+      unit: "pcs",
+      unitCost: 28,
+      laborCostPerUnit: 15,
+      remarks: `Support brackets spaced 1.5m along Feeder ${cItem.label}`,
+      source: `Panel [${mdpId}] Feeder Accessories`
+    });
   });
 
   addItem({

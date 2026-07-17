@@ -2508,7 +2508,9 @@ export default function App() {
             groundSize,
             conduitSize,
             conduitType || "PVC",
-            p.system
+            p.system,
+            p.conduitArrangement,
+            p.customConduitArrangements
           ),
         ]);
         wsData.push([
