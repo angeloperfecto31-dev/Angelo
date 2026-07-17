@@ -173,7 +173,9 @@ export const getActiveWireCount = (systemOrPoles?: string | number): number => {
   return 2; // Fallback
 };
 
-export const getBreakerFrameSize = (at: number): number => {
+export const getBreakerFrameSize = (atRaw: number | string): number => {
+  const at = Number(atRaw);
+  if (isNaN(at)) return 50;
   if (at <= 50) return 50;
   if (at <= 100) return 100;
   if (at <= 225) return 225;
@@ -1149,10 +1151,7 @@ export const calculateCircuitValues = (
       ? c.mcbATOverride || c.mcbAT || 30
       : c.mcbATOverride || requiredMcbAT;
 
-  const mcbAF =
-    isSubPanelLink && c.mcbAF
-      ? c.mcbAF
-      : getBreakerFrameSize(mcbAT);
+  const mcbAF = getBreakerFrameSize(mcbAT);
 
   const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
   const panelKaic = panel.icRating ? parseFloat(panel.icRating) || 10 : 10;
@@ -2010,7 +2009,7 @@ export const computePanelScheduleValues = (
 
   if (p.mainOverrides?.isOverrideEnabled) {
     if (p.mainOverrides.breakerAT) finalCb = p.mainOverrides.breakerAT;
-    if (p.mainOverrides.breakerAF) finalAf = p.mainOverrides.breakerAF;
+    finalAf = getBreakerFrameSize(finalCb);
     if (p.mainOverrides.breakerType) finalType = p.mainOverrides.breakerType;
     if (p.mainOverrides.kaic) finalKaic = p.mainOverrides.kaic;
     if (p.mainOverrides.poles) finalPoles = p.mainOverrides.poles;

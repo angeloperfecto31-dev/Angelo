@@ -3,7 +3,7 @@ import { ShieldAlert, Activity, GitBranch, Circle, Calculator, Link, Download } 
 import { ShortCircuitParams, Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { exportToCAD } from '../utils/exportDxf';
-import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance } from '../utils/computeEngine';
+import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getBreakerFrameSize } from '../utils/computeEngine';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -1482,7 +1482,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                   {/* ROW 4: MAIN BREAKER */}
                   <rect x="171" y="360" width="18" height="26" rx="2" className="sld-line sld-symbol-bg" />
                   <line x1="171" y1="373" x2="189" y2="373" className="sld-line" strokeWidth="1.5" />
-                  <text x="200" y="377" className="sld-text-val">{panel ? `${panel.mainBreakerAT} AT / ${panel.mainBreakerAF} AF` : '100 AT / 100 AF'}</text>
+                  <text x="200" y="377" className="sld-text-val">{panel ? `${panel.mainBreakerAT} AT / ${getBreakerFrameSize(panel.mainBreakerAT || 100)} AF` : '100 AT / 100 AF'}</text>
 
                   <line x1="180" y1="386" x2="180" y2="420" className="sld-line" />
 

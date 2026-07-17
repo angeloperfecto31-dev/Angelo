@@ -7,7 +7,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription } from "./computeEngine";
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, getBreakerFrameSize } from "./computeEngine";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -535,7 +535,7 @@ const drawCadPanelSLD = (
     "center",
   );
   b.addText(
-    `BUS RATING: ${panel.mainBreakerAF || "225"}A | ${voltage}V | ${phaseText}`,
+    `BUS RATING: ${getBreakerFrameSize(panel.mainBreakerAT || 100)}A | ${voltage}V | ${phaseText}`,
     xBase,
     boxTop - 11.5,
     1.8,
@@ -3504,7 +3504,7 @@ export const exportToCAD = (
     b.addArc(xLeft, mbY, 3, 270, 90, "SLD_GEOMETRY");
     b.addCircle(xLeft, mbY - 3, 1.2, "SLD_GEOMETRY");
     b.addText(
-      `${panel.mainBreakerAT} AT / ${panel.mainBreakerAF} AF`,
+      `${panel.mainBreakerAT} AT / ${getBreakerFrameSize(panel.mainBreakerAT || 100)} AF`,
       xLeft + 10,
       mbY - 1.5,
       4.0,
@@ -3637,7 +3637,7 @@ export const exportToCAD = (
     b.addLine(xLeft, bbY - 4, xLeft, bbY + 4, "SLD_GEOMETRY");
     // Branch breaker rating
     b.addText(
-      "30 AT / 100 AF",
+      "30 AT / 50 AF",
       xLeft + 10,
       bbY - 1.5,
       4.0,
@@ -4417,8 +4417,8 @@ export const exportToCAD = (
       let conduitInfo = "";
       
       if (calc.source === "main") {
-        const cbAT = panel.mainOverrides?.breakerAT || calcData.mainFeeder.cb || 100;
-        const cbAF = panel.mainOverrides?.breakerAF || panel.mainBreakerAF || 225;
+        const cbAT = calcData.mainFeeder.cb;
+        const cbAF = calcData.mainFeeder.af;
         const cbP = panel.system.includes("3PH") ? "3P" : "2P";
         cbRating = `${cbAT}AT/${cbAF}AF, ${cbP}`;
         

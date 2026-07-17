@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles } from "./computeEngine";
+import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles, getBreakerFrameSize } from "./computeEngine";
 
 export interface BomItem {
   id: string;
@@ -357,7 +357,7 @@ export const runBomQuantityTakeoff = (
 
   addItem({
     category: "Breakers",
-    name: `Main Circuit Breaker MCCB, ${mBreakerAmp}AT/${panel.mainBreakerAF || 100}AF, ${mPoles}P`,
+    name: `Main Circuit Breaker MCCB, ${mBreakerAmp}AT/${getBreakerFrameSize(mBreakerAmp)}AF, ${mPoles}P`,
     description: `Main service protection circuit breaker with ${panel.icRating || "10"} kAIC interrupting rating`,
     brand: settings.preferredBrandBreakers,
     specification: `Molded Case Circuit Breaker (MCCB), compliant with PEC Article 2.40`,
@@ -933,7 +933,7 @@ export const runBomQuantityTakeoff = (
     // Subpanel Main Breaker
     addItem({
       category: "Breakers",
-      name: `Main Panelboard Breaker MCB, ${spMainAmp}AT/${sp.panel.mainBreakerAF || 50}AF, ${spPoles}P`,
+      name: `Main Panelboard Breaker MCB, ${spMainAmp}AT/${getBreakerFrameSize(spMainAmp)}AF, ${spPoles}P`,
       description: `Subpanel main protection miniature circuit breaker, ${sp.panel.icRating || "10"} kAIC`,
       brand: settings.preferredBrandBreakers,
       specification: `Miniature Circuit Breaker (MCB) assembly, compliant with PEC Sec 2.40`,
