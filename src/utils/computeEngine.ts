@@ -173,6 +173,26 @@ export const getActiveWireCount = (systemOrPoles?: string | number): number => {
   return 2; // Fallback
 };
 
+export const getBreakerFrameSize = (at: number): number => {
+  if (at <= 50) return 50;
+  if (at <= 100) return 100;
+  if (at <= 225) return 225;
+  if (at <= 250) return 250;
+  if (at <= 400) return 400;
+  if (at <= 600) return 600;
+  if (at <= 800) return 800;
+  if (at <= 1000) return 1000;
+  if (at <= 1200) return 1200;
+  if (at <= 1600) return 1600;
+  if (at <= 2000) return 2000;
+  if (at <= 2500) return 2500;
+  if (at <= 3200) return 3200;
+  if (at <= 4000) return 4000;
+  if (at <= 5000) return 5000;
+  if (at <= 6000) return 6000;
+  return at;
+};
+
 export const formatStandardCableDescription = (
   sets: number | string,
   wireSize: number | string,
@@ -1132,13 +1152,7 @@ export const calculateCircuitValues = (
   const mcbAF =
     isSubPanelLink && c.mcbAF
       ? c.mcbAF
-      : mcbAT <= 50
-        ? 50
-        : mcbAT <= 100
-          ? 100
-          : mcbAT <= 225
-            ? 225
-            : 400;
+      : getBreakerFrameSize(mcbAT);
 
   const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
   const panelKaic = panel.icRating ? parseFloat(panel.icRating) || 10 : 10;
@@ -1980,8 +1994,7 @@ export const computePanelScheduleValues = (
     const KAIC_RATINGS = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
     kaic = KAIC_RATINGS.find((k) => k >= faultKA) || 100;
   }
-  const cbAF =
-    cb <= 50 ? 50 : cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : 600;
+  const cbAF = getBreakerFrameSize(cb);
 
   let finalCb = cb;
   let finalAf = cbAF;
