@@ -19,7 +19,8 @@ import { Document, Packer, PageOrientation,
   MathSubScript,
   MathSuperScript,
   MathSubSuperScript,
-  MathRadical
+  MathRadical,
+  TableOfContents
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
@@ -369,6 +370,7 @@ export const exportToWord = async (
 
   const createHeader = (text: string, pageBreakBefore = false) => {
     return new Paragraph({
+      heading: HeadingLevel.HEADING_1,
       children: [new TextRun({ text: text.toUpperCase(), font: "Segoe UI", size: 28, color: "1B365D", bold: true })],
       spacing: { before: 500, after: 200 },
       pageBreakBefore,
@@ -380,6 +382,7 @@ export const exportToWord = async (
   
   const createSubHeader = (text: string) => {
     return new Paragraph({
+      heading: HeadingLevel.HEADING_2,
       children: [new TextRun({ text, font: "Segoe UI", size: 24, color: "1B365D", bold: true })],
       spacing: { before: 300, after: 120 },
     });
@@ -538,92 +541,211 @@ export const exportToWord = async (
     });
   };
 
-  const metadataTable = new Table({
+  // --- REDESIGNED PROFESSIONAL COVER PAGE ---
+  const coverPageElements: any[] = [];
+
+  // Top elegant spacing
+  coverPageElements.push(new Paragraph({ spacing: { before: 800 } }));
+
+  // Main Header Badge / Institution Category
+  coverPageElements.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "PHILIPPINE ELECTRICAL CODE (PEC) COMPLIANCE DOSSIER",
+          font: "Segoe UI",
+          size: 18,
+          color: "1B365D",
+          bold: true,
+          characterSpacing: 24, // wide tracking
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 }
+    })
+  );
+
+  // Main Title
+  coverPageElements.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "ELECTRICAL DESIGN, ANALYSIS & COMPLIANCE REPORT",
+          font: "Segoe UI",
+          size: 38, // 19pt
+          color: "1F2937", // Slate-900
+          bold: true
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 150 }
+    })
+  );
+
+  // Accent Line
+  coverPageElements.push(
+    new Table({
+      width: { size: 60, type: WidthType.PERCENTAGE },
+      alignment: AlignmentType.CENTER,
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [],
+              shading: { fill: "1B365D" },
+              borders: {
+                top: { style: BorderStyle.NONE },
+                bottom: { style: BorderStyle.NONE },
+                left: { style: BorderStyle.NONE },
+                right: { style: BorderStyle.NONE }
+              },
+              margins: { top: 20, bottom: 20 }
+            })
+          ]
+        })
+      ],
+      borders: {
+        top: { style: BorderStyle.NONE },
+        bottom: { style: BorderStyle.NONE },
+        left: { style: BorderStyle.NONE },
+        right: { style: BorderStyle.NONE }
+      }
+    })
+  );
+
+  coverPageElements.push(new Paragraph({ spacing: { before: 200 } }));
+
+  // Subtitle
+  coverPageElements.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: "A Comprehensive Sizing & Protection Coordination Audit for Industrial and Commercial Applications",
+          font: "Segoe UI",
+          size: 18, // 9pt
+          color: "4B5563", // Slate-600
+          italics: true
+        })
+      ],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 800 }
+    })
+  );
+
+  // Project Info Card / Panel
+  const createCoverInfoRow = (label: string, val: string, isEven: boolean) => {
+    const rowFill = isEven ? "F8FAFC" : "FFFFFF";
+    return new TableRow({
+      children: [
+        new TableCell({
+          width: { size: 35, type: WidthType.PERCENTAGE },
+          shading: { fill: rowFill },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 120, bottom: 120, left: 180, right: 100 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: label.toUpperCase(),
+                  font: "Segoe UI",
+                  size: 16, // 8pt
+                  color: "1B365D",
+                  bold: true
+                })
+              ]
+            })
+          ],
+          borders: {
+            top: { style: BorderStyle.NONE },
+            bottom: { style: BorderStyle.NONE },
+            left: { style: BorderStyle.NONE },
+            right: { style: BorderStyle.NONE }
+          }
+        }),
+        new TableCell({
+          width: { size: 65, type: WidthType.PERCENTAGE },
+          shading: { fill: rowFill },
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 120, bottom: 120, left: 180, right: 100 },
+          children: [
+            new Paragraph({
+              children: parseInlineMath(val, {
+                font: "Segoe UI",
+                size: 16,
+                color: "374151",
+                bold: true
+              })
+            })
+          ],
+          borders: {
+            top: { style: BorderStyle.NONE },
+            bottom: { style: BorderStyle.NONE },
+            left: { style: BorderStyle.NONE },
+            right: { style: BorderStyle.NONE }
+          }
+        })
+      ]
+    });
+  };
+
+  const coverInfoRows: TableRow[] = [];
+  coverInfoRows.push(createCoverInfoRow("Project Title", panel.project || "Industrial/Commercial Facility", false));
+  if (panel.projectType) {
+    coverInfoRows.push(createCoverInfoRow("Facility Classification", panel.projectType, true));
+  }
+  if (panel.institution) {
+    const instName = panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution;
+    coverInfoRows.push(createCoverInfoRow("Specific Institution", instName, false));
+  }
+  if (panel.owner) {
+    coverInfoRows.push(createCoverInfoRow("Project Owner", panel.owner, true));
+  }
+  coverInfoRows.push(createCoverInfoRow("Sizing Compliance Standard", "Philippine Electrical Code (PEC) 2017", false));
+  coverInfoRows.push(createCoverInfoRow("Document Version", "v1.0.0 (Official Calculation Release)", true));
+  coverInfoRows.push(createCoverInfoRow("Generated Date", new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), false));
+  coverInfoRows.push(createCoverInfoRow("Prepared By", "AI Studio Sizer & Compliance Engine", true));
+
+  const coverInfoTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: {
       top: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
       bottom: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
       left: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
       right: { color: "1B365D", space: 1, style: BorderStyle.SINGLE, size: 12 },
-      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 4 },
-      insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 4 }
+      insideHorizontal: { color: "E5E7EB", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      insideVertical: { style: BorderStyle.NONE }
     },
-    rows: [
-      new TableRow({
-        children: [
-          createMetadataCell("DOCUMENT TYPE", "Engineering Standards & Calculation Protocol", "F8FAFC"),
-          createMetadataCell("SUBJECT", "Main OCPD & Service Conductor Sizing", "F8FAFC")
-        ]
-      }),
-      new TableRow({
-        children: [
-          createMetadataCell("REFERENCE CODE", "PEC-2017-CH2", "FFFFFF"),
-          createMetadataCell("COMPLIANCE SIZING ANALYSIS", "Standardized Calculations", "FFFFFF")
-        ]
-      }),
-      new TableRow({
-        children: [
-          createMetadataCell("SYSTEM PHASE", "Single-Phase ($1\\phi$) & Three-Phase ($3\\phi$)", "F8FAFC"),
-          createMetadataCell("REPORT DATE", new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), "F8FAFC")
-        ]
-      })
-    ]
+    rows: coverInfoRows
   });
 
-  // TITLE PAGE
-  docChildren.push(
-    metadataTable,
-    new Paragraph({ spacing: { before: 400, after: 400 } }),
-    new Paragraph({
-      children: [new TextRun({ text: "COMPREHENSIVE ELECTRICAL DESIGN & ANALYSIS REPORT", font: "Segoe UI", size: 40, color: "333333", bold: true })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 300 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: "Engineering Reports: Load Schedule, Short Circuit, Voltage Drop & Illumination", font: "Segoe UI", size: 20, color: "475569", italics: true })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 800 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: "Project Designation: " + (panel.project || "Industrial/Commercial Facility"), font: "Segoe UI", size: 24, color: "334155", bold: true })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-    }),
-    ...(panel.projectType ? [
-      new Paragraph({
-        children: [new TextRun({ text: "Facility Classification: " + panel.projectType.toUpperCase(), font: "Segoe UI", size: 20, color: "334155", bold: true })],
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 200 },
-      })
-    ] : []),
-    ...(panel.institution ? [
-      new Paragraph({
-        children: [new TextRun({ text: "Specific Institution: " + (panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution).toUpperCase(), font: "Segoe UI", size: 20, color: "334155", bold: true })],
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 200 },
-      })
-    ] : []),
-    ...(panel.owner ? [
-      new Paragraph({
-        children: [new TextRun({ text: "Project Owner: " + panel.owner, font: "Segoe UI", size: 20, color: "334155", bold: true })],
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 200 },
-      })
-    ] : []),
-    new Paragraph({
-      children: [new TextRun({ text: "Compliance Standard: Philippine Electrical Code (PEC) 2017 & ASHRAE 90.1", font: "Segoe UI", size: 18, color: "475569", bold: true })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 1200 },
-    }),
+  coverPageElements.push(coverInfoTable);
+  coverPageElements.push(new Paragraph({ spacing: { before: 400 } }));
+
+  // Professional Safety Disclaimer
+  coverPageElements.push(
     createCallout("🛡 PROFESSIONAL SAFETY DISCLAIMER", [
       "This document compiles certified high-fidelity architectural electrical engineering reports. All calculations have been mathematically verified in strict accordance with the standard guidelines of the Philippine Electrical Code (PEC 2017).",
       "Before execution, all layouts, conduit routes, and feeder ratings must be physically double-checked, approved, signed, and stamped by a licensed Professional Electrical Engineer (PEE) in complete compliance with RA 7920 (Electrical Engineering Law)."
     ])
   );
 
+  // Push section break after cover page
+  coverPageElements.push({ isSectionBreak: true, orientation: PageOrientation.PORTRAIT } as any);
+
+  docChildren.push(...coverPageElements);
+
   // --- TABLE OF CONTENTS (Page 2) ---
   docChildren.push(
-    createHeader("Table of Contents", true)
+    createHeader("Table of Contents", true),
+    new TableOfContents("Table of Contents", {
+      hyperlink: true,
+      headingStyleRange: "1-3",
+    }),
+    new Paragraph({ spacing: { before: 200, after: 200 } }),
+    new Paragraph({
+      children: [new TextRun({ text: "SUMMARY LIST OF SECTIONS", bold: true, font: "Segoe UI", size: 18, color: "1B365D" })],
+      spacing: { after: 150 }
+    })
   );
 
   const tocRows: TableRow[] = [];
@@ -2174,6 +2296,66 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
     ]
   });
 
+  const headerTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      bottom: { color: "64748B", space: 1, style: BorderStyle.SINGLE, size: 4 }, // Thin horizontal rule at bottom of header
+      top: { style: BorderStyle.NONE },
+      left: { style: BorderStyle.NONE },
+      right: { style: BorderStyle.NONE },
+      insideHorizontal: { style: BorderStyle.NONE },
+      insideVertical: { style: BorderStyle.NONE }
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 60, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }
+            },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `PROJECT: ${(panel.project || "Industrial/Commercial Facility").toUpperCase()}`,
+                    font: "Segoe UI",
+                    size: 15, // 7.5pt
+                    color: "64748B",
+                    bold: true
+                  })
+                ],
+                alignment: AlignmentType.LEFT,
+                spacing: { after: 100 }
+              })
+            ]
+          }),
+          new TableCell({
+            width: { size: 40, type: WidthType.PERCENTAGE },
+            borders: {
+              top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE }
+            },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: "ELECTRICAL DESIGN ANALYSIS REPORT",
+                    font: "Segoe UI",
+                    size: 15,
+                    color: "64748B",
+                    bold: true
+                  })
+                ],
+                alignment: AlignmentType.RIGHT,
+                spacing: { after: 100 }
+              })
+            ]
+          })
+        ]
+      })
+    ]
+  });
+
   const processedSections = [];
   let currentChildren = [];
   let currentOrientation = PageOrientation.PORTRAIT;
@@ -2189,14 +2371,20 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
 
     if (isBreak) {
         if (currentChildren.length > 0) {
+            const isFirst = processedSections.length === 0;
             processedSections.push({
                 properties: {
                   page: {
-                    margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 }, // 20mm
+                    margin: isFirst 
+                      ? { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+                      : { top: 1134, right: 1134, bottom: 1134, left: 1134 },
                     size: { orientation: currentOrientation },
                   },
                 },
-                footers: {
+                headers: isFirst ? undefined : {
+                  default: new Header({ children: [headerTable] })
+                },
+                footers: isFirst ? undefined : {
                   default: new Footer({ children: [footerTable] })
                 },
                 children: currentChildren,
@@ -2211,14 +2399,20 @@ Using PEC rules with a system-wide 1.25 safety factor, the Maximum Demand Curren
   }
 
   if (currentChildren.length > 0) {
+      const isFirst = processedSections.length === 0;
       processedSections.push({
           properties: {
             page: {
-              margin: { top: 1134, right: 1134, bottom: 1134, left: 1134 }, // 20mm
+              margin: isFirst 
+                ? { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+                : { top: 1134, right: 1134, bottom: 1134, left: 1134 },
               size: { orientation: currentOrientation },
             },
           },
-          footers: {
+          headers: isFirst ? undefined : {
+            default: new Header({ children: [headerTable] })
+          },
+          footers: isFirst ? undefined : {
             default: new Footer({ children: [footerTable] })
           },
           children: currentChildren,
