@@ -2580,34 +2580,32 @@ export default function LoadSchedule({
             </select>
           </div>
           
-          {(mainFeeder.wire.runs || 1) > 1 && (
-            <div className="space-y-1.5 md:col-span-1">
-              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Parallel Feeder Conduit Arrangement
-              </label>
-              <select
-                value={panel.conduitArrangement || "single"}
-                onChange={(e) => {
-                  const val = e.target.value as 'single' | 'separate_per_set' | 'custom';
-                  const newPanel = { ...panel, conduitArrangement: val };
-                  if (val === 'custom' && (!panel.customConduitArrangements || panel.customConduitArrangements.length === 0)) {
-                    // Initialize with something sensible if empty
-                    newPanel.customConduitArrangements = [
-                      { id: '1', label: 'Conduit A', assignedSets: mainFeeder.wire.runs || 1 }
-                    ];
-                  }
-                  setPanel(newPanel);
-                }}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-              >
-                <option value="single">Single Conduit (Default)</option>
-                <option value="separate_per_set">Separate Conduit per Parallel Set</option>
-                <option value="custom">Custom Arrangement</option>
-              </select>
-            </div>
-          )}
+          <div className="space-y-1.5 md:col-span-1">
+            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Parallel Feeder Conduit Arrangement
+            </label>
+            <select
+              value={panel.conduitArrangement || "single"}
+              onChange={(e) => {
+                const val = e.target.value as 'single' | 'separate_per_set' | 'custom';
+                const newPanel = { ...panel, conduitArrangement: val };
+                if (val === 'custom' && (!panel.customConduitArrangements || panel.customConduitArrangements.length === 0)) {
+                  // Initialize with something sensible if empty
+                  newPanel.customConduitArrangements = [
+                    { id: '1', label: 'Conduit A', assignedSets: mainFeeder.wire.runs || 1 }
+                  ];
+                }
+                setPanel(newPanel);
+              }}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 transition-colors focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <option value="single">Single Conduit (Default)</option>
+              <option value="separate_per_set">Separate Conduit per Parallel Set</option>
+              <option value="custom">Custom Arrangement</option>
+            </select>
+          </div>
 
-          {panel.conduitArrangement === 'custom' && (mainFeeder.wire.runs || 1) > 1 && (
+          {panel.conduitArrangement === 'custom' && (
             <div className="space-y-3 md:col-span-2 lg:col-span-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
