@@ -921,18 +921,16 @@ export const calculateCircuitValues = (
         c.loadVA = subTotalVA;
         // Mirror the exact calculated Highest Phase Current (I_line) from the Sub-Panel
         c.loadA = Number((subMaxDemandDetails?.totalAmpere || 0).toFixed(2));
+        c.wattage = subTotalWattage;
       } else {
         c.reflectedPhaseLoads = undefined;
         c.reflectedPhaseAmps = undefined;
-        // Calculate the demand-based VA for the subpanel reference row in parent
-        const demandVA = is3PhaseLoadFinal
-          ? Math.round(computedDemandAmp * subVoltage * 1.732)
-          : Math.round(computedDemandAmp * subVoltage);
-        c.loadVA = demandVA;
+        // Mirror the exact calculated VA and wattage from the Sub-Panel
+        c.loadVA = subTotalVA;
         c.loadA = Number(computedDemandAmp.toFixed(2));
+        c.wattage = subTotalWattage;
       }
 
-      c.wattage = subTotalWattage;
       c.quantity = 1;
 
       const connValidation = validateSubPanelConnection(
