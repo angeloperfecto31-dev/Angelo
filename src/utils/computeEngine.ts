@@ -902,7 +902,7 @@ export const calculateCircuitValues = (
       is3PhaseLoadFinal = is3PhaseSP;
 
       const subVoltage = sp.panel.voltage || 230;
-      const computedDemandAmp = subMainCurrent.baseAmp || 0;
+      const computedDemandAmp = subMainCurrent.designAmp || 0;
 
       if (c.subPanelReflectionMode === "phase_loads") {
         c.reflectedPhaseLoads = {
