@@ -1958,7 +1958,7 @@ export const computePanelScheduleValues = (
 
   const conduitSize = getConduitSizeForWiresLocal(
     baseWireSize,
-    groundSize,
+    (p.conduitArrangement === 'separate_per_set' || p.conduitArrangement === 'custom') ? "" : groundSize,
     poles,
     p.system,
     selectedMainConduitType,
@@ -2047,7 +2047,7 @@ export const computePanelScheduleValues = (
     // Retrieve full conduit details to get the minimum size for safe validation
     const mainConduitDetails = getConduitFillDetails(
       finalWireSize,
-      finalGroundSize,
+      (p.conduitArrangement === 'separate_per_set' || p.conduitArrangement === 'custom') ? "" : finalGroundSize,
       finalPoles,
       p.system,
       finalConduitType,
@@ -2068,7 +2068,7 @@ export const computePanelScheduleValues = (
     // Recompute final conduit size with sanitized override
     const finalConduitDetails = getConduitFillDetails(
       finalWireSize,
-      finalGroundSize,
+      (p.conduitArrangement === 'separate_per_set' || p.conduitArrangement === 'custom') ? "" : finalGroundSize,
       finalPoles,
       p.system,
       finalConduitType,

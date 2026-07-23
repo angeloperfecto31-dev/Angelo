@@ -3433,7 +3433,7 @@ export default function LoadSchedule({
                     assignedSets: 1,
                     fill: getConduitFillDetails(
                       mainFeeder.wire.size,
-                      mainFeeder.groundSize,
+                      "",
                       mainFeeder.poles,
                       panel.system,
                       mainFeeder.conduitType || "PVC",
@@ -3451,7 +3451,7 @@ export default function LoadSchedule({
                     assignedSets: arr.assignedSets,
                     fill: getConduitFillDetails(
                       mainFeeder.wire.size,
-                      mainFeeder.groundSize,
+                      "",
                       mainFeeder.poles,
                       panel.system,
                       mainFeeder.conduitType || "PVC",
