@@ -15,6 +15,7 @@ import {
   cleanFirestoreDataCycleSafe
 } from '../utils/projectCompression';
 import { getInstitutionsForType } from '../utils/institutionLibrary';
+import { migrateProjectData } from '../utils/projectMigration';
 import { SYSTEM_VOLTAGES } from '../constants';
 
 interface ProjectManagerModalProps {
@@ -415,9 +416,45 @@ export default function ProjectManagerModal({
         return;
       }
 
-      const parsed = await decompressProjectFile(file);
+      let parsed = await decompressProjectFile(file);
       setUploadProgress(70);
       await new Promise(resolve => setTimeout(resolve, 200));
+
+      // 1. Support raw SavedProject imports directly (without the backup file wrapper)
+      if (parsed && typeof parsed === 'object' && !parsed.fileType && parsed.id && parsed.data) {
+        parsed = {
+          fileType: 'electricalph_project_backup',
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          project: parsed
+        };
+      }
+
+      // 2. Support raw ProjectData imports directly (without any wrapper)
+      if (parsed && typeof parsed === 'object' && !parsed.fileType && !parsed.id && parsed.panel && parsed.circuits) {
+        parsed = {
+          fileType: 'electricalph_project_backup',
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          project: {
+            id: `project-${Date.now()}`,
+            name: file.name.replace(/\.[^/.]+$/, ""),
+            lastModified: Date.now(),
+            data: parsed
+          }
+        };
+      }
+
+      // 3. Decompress and migrate the project inside the backup wrapper
+      if (parsed && parsed.project) {
+        parsed.project = await decompressProject(parsed.project);
+        if (!parsed.project.id) parsed.project.id = `project-${Date.now()}`;
+        if (!parsed.project.name) parsed.project.name = file.name.replace(/\.[^/.]+$/, "");
+        if (typeof parsed.project.lastModified !== 'number') parsed.project.lastModified = Date.now();
+        if (parsed.project.data) {
+          parsed.project.data = migrateProjectData(parsed.project.data);
+        }
+      }
 
       if (!validateImportedProject(parsed)) {
         alert("The project file is corrupted, incomplete, or invalid.");
