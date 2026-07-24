@@ -300,8 +300,8 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     const motorContribution = motorLoadVA > 0 ? (motorLoadVA / (factor * (params.transformerVoltage || 230))) * 4 : 0;
     const multiplier = 1 / totalZpu;
 
-    // Fault 1 (HV side or Primary Service Entrance)
-    const fault1Isc = ((params.utilityShortCircuitMVA || 500) * 1000000) / (factor * (params.primaryVoltage || 34500));
+    // Fault 1 (HV side or Primary Service Entrance) - Always uses 1.732 since the HV utility primary grid is 3-phase
+    const fault1Isc = ((params.utilityShortCircuitMVA || 500) * 1000000) / (1.732 * (params.primaryVoltage || 34500));
 
     // Validations & Safety Warnings
     const warnings: string[] = [];
@@ -1613,7 +1613,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                   {/* STANDARD FOOTER DETAILS in Philippine practices */}
                   <rect x="40" y="740" width="770" height="110" fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="2 2" rx="5" />
                   <text x="60" y="762" className="sld-text-title" style={{ fill: '#0f172a', fontSize: '12px' }}>PHILIPPINE ELECTRICAL CODE (PEC) DESIGN COMPLIANCE BLOCK</text>
-                  <text x="60" y="780" className="sld-text-lbl text-[9px]">Utility Strength: {params.utilityShortCircuitMVA} MVA s.c. | Secondary Voltage: 3-Phase {params.transformerVoltage} V, 60 Hz</text>
+                  <text x="60" y="780" className="sld-text-lbl text-[9px]">Utility Strength: {params.utilityShortCircuitMVA} MVA s.c. | Secondary Voltage: {selectedPhaseType === '3PH' ? '3-Phase' : 'Single-Phase'} {params.transformerVoltage} V, 60 Hz</text>
                   <text x="60" y="795" className="sld-text-lbl text-[9px]">Fault 1 (HV Utility Bus): {calculation.iscFault1} Amps | Symmetrical Primary protection evaluated</text>
                   <text x="60" y="810" className="sld-text-lbl text-[9px]">Fault 2 (LV Secondary Bus): {calculation.iscFault2} Amps | Air / Molded Case Circuit Breaker layout</text>
                   <text x="60" y="825" className="sld-text-lbl text-[9px]">Fault 3 (Remote Board Bus): {calculation.iscFault3} Amps (incl. {calculation.motorContribution}A motor feedback) | PEC 1.10.1.24 Compliant</text>
@@ -1905,9 +1905,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
         <div className="space-y-6 text-sm text-slate-700">
           <div>
             <h3 className="font-bold text-slate-900 mb-2">1. Base Current (FLA) Calculation</h3>
-            <p className="mb-2">The Full Load Ampere (FLA) is calculated based on the transformer rating (kVA). Assuming 3-Phase system parameters in accordance with PEC.</p>
+            <p className="mb-2">The Full Load Ampere (FLA) is calculated based on the transformer rating (kVA). Assuming {selectedPhaseType === '3PH' ? '3-Phase' : 'Single-Phase'} system parameters in accordance with PEC.</p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200">
-              FLA = (kVA × 1000) / (Voltage × √3)
+              {selectedPhaseType === '3PH' 
+                ? "FLA = (kVA × 1000) / (Voltage × √3)" 
+                : "FLA = (kVA × 1000) / (Voltage × 2)"}
             </div>
             <p className="mt-2 text-red-600 font-bold">Calculated FLA: {calculation.fla} Amperes</p>
           </div>
