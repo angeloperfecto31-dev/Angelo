@@ -938,14 +938,14 @@ export const calculateCircuitValues = (
         sp.panel.system,
         sp.panel.voltage || 230,
       );
-      let calculatedPoles: string | number = subMainFeeder.poles || "1P";
+      let calculatedPoles: string | number = subMainFeeder.poles || "2P";
       if (connValidation.isValid && connValidation.connectionType) {
         if (connValidation.connectionType === "Three-Phase") {
           calculatedPoles = panel.system.includes("3PH") ? "3P" : "2P";
         } else if (connValidation.connectionType === "Line-to-Line") {
           calculatedPoles = "2P";
         } else if (connValidation.connectionType === "Line-to-Neutral") {
-          calculatedPoles = "1P";
+          calculatedPoles = "2P";
         }
       }
       c.mcbP = calculatedPoles;
@@ -1909,7 +1909,7 @@ export const computePanelScheduleValues = (
 
   let poles: string | number = p.system.includes("3PH") ? "3P" : "2P";
   if (!p.system.includes("3PH") && p.connectionType === "Line-to-Neutral") {
-    poles = "1P";
+    poles = "2P";
   }
   const wire = getWireForBreakerLocal(
     cb,

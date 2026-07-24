@@ -35,10 +35,23 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
     if (!isSub) return "";
     
     let phaseText = "1-Φ L-N";
+    const parsedParent = parseSystemVoltage(panel.system);
     if (getActivePoles(c.mcbP) === 3) {
       phaseText = "3-Φ";
-    } else if (getActivePoles(c.mcbP) === 2) {
-      phaseText = "1-Φ L-L";
+    } else {
+      if (parsedParent.is3Phase) {
+        if (parsedParent.vln !== null && c.voltage === parsedParent.vln) {
+          phaseText = "1-Φ L-N";
+        } else {
+          phaseText = "1-Φ L-L";
+        }
+      } else {
+        if (panel.connectionType === "Line-to-Neutral") {
+          phaseText = "1-Φ L-N";
+        } else {
+          phaseText = "1-Φ L-L";
+        }
+      }
     }
 
     const pText = typeof c.mcbP === "string" && c.mcbP.endsWith("P") ? c.mcbP : typeof c.mcbP === "string" && c.mcbP.includes("+N") ? c.mcbP : `${c.mcbP}P`;
