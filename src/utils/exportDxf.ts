@@ -496,7 +496,7 @@ const drawCadPanelSLD = (
     "left",
   );
   b.addText(
-    `${mainFeeder.poles || "3"}P, ${voltage}V, 60Hz`,
+    `${String(mainFeeder.poles || "3").toLowerCase().includes("p") ? mainFeeder.poles : `${mainFeeder.poles || "3"}P`}, ${voltage}V, 60Hz`,
     xBase + 10,
     yBase - 47,
     1.5,
@@ -2401,7 +2401,7 @@ export const exportToCAD = (
       currentPanel.conduitArrangement,
       currentPanel.customConduitArrangements
     );
-    const summarySpecStr = `FEEDER: ${mainFeederCableStandard} | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
+    const summarySpecStr = `FEEDER: ${mainFeederCableStandard} | MAIN CB: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${String(currentCalcData.mainFeeder.poles).toLowerCase().includes("p") ? currentCalcData.mainFeeder.poles : `${currentCalcData.mainFeeder.poles}P`}${isPanel3Phase ? ` | IMBALANCE: ${currentCalcData.phaseImbalance.toFixed(1)}%` : ""}`;
     
     const ySumTextSpec = ty - sumRowH / 2 - metrics.splitHeaderFontSize / 2;
 
@@ -2431,7 +2431,7 @@ export const exportToCAD = (
       (tableRight - (xOffset + 23)) - 140
     );
     b.addText(
-      `MAIN RATED OVERCURRENT BREAKER: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${currentCalcData.mainFeeder.poles}P, ${currentCalcData.mainFeeder.kaic} kAIC, ${currentCalcData.mainFeeder.type}.`,
+      `MAIN RATED OVERCURRENT BREAKER: ${currentCalcData.mainFeeder.cb} AT / ${currentCalcData.mainFeeder.af} AF, ${String(currentCalcData.mainFeeder.poles).toLowerCase().includes("p") ? currentCalcData.mainFeeder.poles : `${currentCalcData.mainFeeder.poles}P`}, ${currentCalcData.mainFeeder.kaic} kAIC, ${currentCalcData.mainFeeder.type}.`,
       xOffset + 23,
       ty - metrics.mainFeederBoxH / 2 - 1.5,
       metrics.mainFeederFontSize,

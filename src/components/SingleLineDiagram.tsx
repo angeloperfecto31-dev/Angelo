@@ -220,7 +220,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
       {/* Main Breaker Text */}
       <text x="420" y="202" className="sld-text">
          <tspan x="420" dy="0">{mainFeeder.cb} AT / {mainFeeder.af} AF</tspan>
-         <tspan x="420" dy="16">{mainFeeder.poles}P, {voltage}V, 60HZ</tspan>
+         <tspan x="420" dy="16">{String(mainFeeder.poles).toLowerCase().includes("p") ? mainFeeder.poles : `${mainFeeder.poles}P`}, {voltage}V, 60HZ</tspan>
       </text>
 
       {/* Panel Box */}

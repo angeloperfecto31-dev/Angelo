@@ -5579,7 +5579,7 @@ export default function LoadSchedule({
                     <span className="flex items-center gap-1 flex-wrap justify-end">
                       <span>
                         Main Breaker: {mainFeeder.cb} AT / {mainFeeder.af} AF,{" "}
-                        {mainFeeder.poles}P,{" "}
+                        {String(mainFeeder.poles).toLowerCase().includes("p") ? mainFeeder.poles : `${mainFeeder.poles}P`},{" "}
                       </span>
                       <span className="inline-flex items-center gap-0.5">
                         <select

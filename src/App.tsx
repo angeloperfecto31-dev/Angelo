@@ -2515,7 +2515,7 @@ export default function App() {
         ]);
         wsData.push([
           "Main Breaker:",
-          `${cb} AT / ${af} AF, ${poles}P, ${kaic} kAIC, ${type}`,
+          `${cb} AT / ${af} AF, ${String(poles).toLowerCase().includes("p") ? poles : `${poles}P`}, ${kaic} kAIC, ${type}`,
         ]);
         
         if (p.transferSwitchType && p.transferSwitchType !== "None") {
