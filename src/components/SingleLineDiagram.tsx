@@ -147,13 +147,13 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
             <text x="355" y="164" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">G</text>
             
             {/* ATS/MTS Label */}
-            <text x="340" y="155" className="sld-text" style={{fontSize: '10px'}} textAnchor="end">
+            <text x="425" y="158" className="sld-text" style={{fontSize: '10px'}} textAnchor="start">
               {panel.transferSwitchRating || (() => {
                  const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
                  return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
               })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
             </text>
-            <text x="340" y="167" className="sld-text" style={{fontSize: '9px'}} textAnchor="end">
+            <text x="425" y="169" className="sld-text" style={{fontSize: '9px'}} textAnchor="start">
               {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
             </text>
           </g>
@@ -207,13 +207,13 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                <text x="355" y="166" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">G</text>
                
                {/* ATS/MTS Label */}
-               <text x="340" y="157" className="sld-text" style={{fontSize: '9px'}} textAnchor="end">
+               <text x="425" y="161" className="sld-text" style={{fontSize: '9px'}} textAnchor="start">
                  {panel.transferSwitchRating || (() => {
                     const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
                     return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
                  })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
                </text>
-               <text x="340" y="167" className="sld-text" style={{fontSize: '8px'}} textAnchor="end">
+               <text x="425" y="171" className="sld-text" style={{fontSize: '8px'}} textAnchor="start">
                  {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
                </text>
              </g>
