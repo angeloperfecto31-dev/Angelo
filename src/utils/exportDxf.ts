@@ -1204,6 +1204,8 @@ export const exportToCAD = (
     feederRuns: getRunsBySystemLocal(panel.system),
     conductorType: "Copper",
     connectionType: "Series",
+    phaseTypeOverrideEnabled: false,
+    phaseTypeOverride: "3PH" as const,
     parallelTransformersCount: 1,
     parallelTransformersZMatch: true,
     parallelTransformerskVAMatch: true,
@@ -1229,6 +1231,8 @@ export const exportToCAD = (
     feederRuns: iscParams?.feederRuns ?? defaultScParams.feederRuns,
     conductorType: iscParams?.conductorType ?? defaultScParams.conductorType,
     connectionType: iscParams?.connectionType ?? defaultScParams.connectionType,
+    phaseTypeOverrideEnabled: iscParams?.phaseTypeOverrideEnabled ?? defaultScParams.phaseTypeOverrideEnabled,
+    phaseTypeOverride: iscParams?.phaseTypeOverride ?? defaultScParams.phaseTypeOverride,
     parallelTransformersCount: iscParams?.parallelTransformersCount ?? defaultScParams.parallelTransformersCount,
     parallelTransformersZMatch: iscParams?.parallelTransformersZMatch ?? defaultScParams.parallelTransformersZMatch,
     parallelTransformerskVAMatch: iscParams?.parallelTransformerskVAMatch ?? defaultScParams.parallelTransformerskVAMatch,
@@ -1241,6 +1245,12 @@ export const exportToCAD = (
     parallelFeedersCustomLengths: iscParams?.parallelFeedersCustomLengths ?? defaultScParams.parallelFeedersCustomLengths,
     parallelFeedersCustomMaterials: iscParams?.parallelFeedersCustomMaterials ?? defaultScParams.parallelFeedersCustomMaterials,
   };
+
+  const selectedPhaseType: "1PH" | "3PH" = scParams.phaseTypeOverrideEnabled
+    ? (scParams.phaseTypeOverride || "3PH")
+    : (panel?.system ? (panel.system.toLowerCase().includes("3ph") || panel.system.toLowerCase().includes("3ø") || panel.system.toLowerCase().includes("three-phase") || panel.system.toLowerCase().includes("three phase") ? "3PH" : "1PH") : "1PH");
+  const isSC3Phase = selectedPhaseType === "3PH";
+  const scFactor = isSC3Phase ? 1.732 : 2.0;
 
   let connectionMultiplier = 1.0;
   let groundFaultFactor = 1.0;
@@ -1309,8 +1319,8 @@ export const exportToCAD = (
   const zFeederpu = (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
 
   const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = totalTransformerKVA / (1.732 * baseKV);
-  const iFullLoadBase = baseKVA / (1.732 * baseKV);
+  const iFullLoad = totalTransformerKVA / (scFactor * baseKV);
+  const iFullLoadBase = baseKVA / (scFactor * baseKV);
 
   const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
   const iscFaultPoint = iFullLoadBase / totalZpu;
@@ -1322,7 +1332,7 @@ export const exportToCAD = (
     .reduce((sum, c) => sum + c.loadVA, 0);
   const motorContribution =
     motorLoadVA > 0
-      ? (motorLoadVA / (1.732 * scParams.transformerVoltage)) * 4
+      ? (motorLoadVA / (scFactor * scParams.transformerVoltage)) * 4
       : 0;
 
   const fault1Isc =
@@ -2879,9 +2889,11 @@ export const exportToCAD = (
       writeEqSC([
         "\\textbf{1. Base System Parameters Definition}",
         `S_{base} = \\text{Transformer Capacity} = ${baseKVA} \\text{ kVA}`,
-        `V_{base, HV} = ${scParams.primaryVoltage} \\text{ V}_{L-L}`,
-        `V_{base, LV} = ${scParams.transformerVoltage} \\text{ V}_{L-L}`,
-        `I_{FLA} = \\frac{S_{base} \\times 1000}{\\sqrt{3} \\times V_{base, LV}} = ${iFullLoad.toFixed(2)} \\text{ A}`,
+        `V_{base, HV} = ${scParams.primaryVoltage} \\text{ V}_{3\\phi}`,
+        `V_{base, LV} = ${scParams.transformerVoltage} \\text{ V (}${selectedPhaseType}\\text{)}`,
+        isSC3Phase 
+          ? `I_{FLA} = \\frac{S_{base} \\times 1000}{\\sqrt{3} \\times V_{base, LV}} = ${iFullLoad.toFixed(2)} \\text{ A}`
+          : `I_{FLA} = \\frac{S_{base} \\times 1000}{2 \\times V_{base, LV}} = ${iFullLoad.toFixed(2)} \\text{ A}`,
       ]);
 
       writeEqSC([
@@ -4690,8 +4702,8 @@ export const exportToCAD = (
     const excelZFeederpu = (excelFeederZ * (excelBaseKVA / 1000)) / (excelBaseKV * excelBaseKV);
 
     const excelTotalZpu = excelZUtilitypu + excelZTranspu + excelZFeederpu;
-    const excelIFullLoad = excelTotalTransformerKVA / (1.732 * excelBaseKV);
-    const excelIFullLoadBase = excelBaseKVA / (1.732 * excelBaseKV);
+    const excelIFullLoad = excelTotalTransformerKVA / (scFactor * excelBaseKV);
+    const excelIFullLoadBase = excelBaseKVA / (scFactor * excelBaseKV);
 
     const excelIscMainBreaker = excelIFullLoadBase / (excelZUtilitypu + excelZTranspu);
     const excelIscFaultPoint = excelIFullLoadBase / excelTotalZpu;
@@ -4703,7 +4715,7 @@ export const exportToCAD = (
       .reduce((sum, c) => sum + c.loadVA, 0);
     const excelMotorContribution =
       excelMotorLoadVA > 0
-        ? (excelMotorLoadVA / (1.732 * (scParams.transformerVoltage || 230))) * 4
+        ? (excelMotorLoadVA / (scFactor * (scParams.transformerVoltage || 230))) * 4
         : 0;
 
     const excelCombinedSymmetricalCurrent = excelIscFaultPoint + excelMotorContribution;
