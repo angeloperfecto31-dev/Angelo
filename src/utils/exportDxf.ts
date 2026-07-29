@@ -468,12 +468,12 @@ const drawCadPanelSLD = (
 
     b.addText(
       `${tsRating}A, ${tsPoles}P ${panel.transferSwitchType === "ATS" ? "AUTO" : "MANUAL"} TS`,
-      xBase - 18,
-      yBase - 31,
-      1.2,
+      xBase + 10,
+      yBase - 33,
+      1.6,
       0,
       "TEXT_DATA",
-      "right"
+      "left"
     );
   } else {
     b.addLine(xBase, feedLineStartY, xBase, yBase - 38, "SLD_GEOMETRY");
