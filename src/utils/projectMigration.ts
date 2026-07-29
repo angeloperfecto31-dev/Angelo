@@ -1,5 +1,5 @@
 import { ProjectData, MdpData, MainSourceConfig } from "../types/project";
-import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, IlluminationParams } from "../types";
+import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, IlluminationParams, Phase } from "../types";
 import { INITIAL_PANEL } from "../components/LoadSchedule";
 import { INITIAL_SHORT_CIRCUIT_PARAMS, INITIAL_ILLUMINATION_PARAMS } from "../constants";
 import { calculateCircuitValues, computePanelScheduleValues } from "./computeEngine";
@@ -82,7 +82,24 @@ export function migrateProjectData(data: any): ProjectData {
         quantity: c.quantity ?? 1,
         wattage: c.wattage ?? 0,
         voltage: c.voltage ?? panel.voltage ?? 230,
-        phases: c.phases || (panel.system.includes("3PH") ? ["R", "Y", "B"] : ["R"]),
+        phases: (() => {
+          let p = c.phases;
+          if (typeof p === "string") {
+            if (p.startsWith("[")) {
+              try {
+                p = JSON.parse(p);
+              } catch {
+                p = [p as any];
+              }
+            } else {
+              p = p.split(",").map((s: string) => s.trim()).filter((s: string) => ["R", "Y", "B"].includes(s));
+            }
+          }
+          if (!Array.isArray(p) || p.length === 0) {
+            p = panel.system.includes("3PH") ? ["R", "Y", "B"] : ["R"];
+          }
+          return p as Phase[];
+        })(),
       };
 
       // Apply the latest calculation improvements and PEC-compliant logic dynamically

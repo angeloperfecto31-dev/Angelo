@@ -540,7 +540,7 @@ function SortableCircuitItem({
 export default function LoadSchedule({
   panel,
   setPanel,
-  circuits,
+  circuits: rawCircuits,
   setCircuits,
   isSubPanel = false,
   isSubSubPanel = false,
@@ -559,6 +559,30 @@ export default function LoadSchedule({
   transformerPrimaryVoltage,
   setTransformerPrimaryVoltage,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
+  const circuits = useMemo(() => {
+    return (rawCircuits || []).map((c) => {
+      let p: any = c.phases;
+      if (typeof p === "string") {
+        if (p.startsWith("[")) {
+          try {
+            p = JSON.parse(p);
+          } catch {
+            p = [p as any];
+          }
+        } else {
+          p = p.split(",").map((s: string) => s.trim()).filter((s: string) => ["R", "Y", "B"].includes(s));
+        }
+      }
+      if (!Array.isArray(p) || p.length === 0) {
+        p = panel.system.includes("3PH") ? ["R", "Y", "B"] : ["R"];
+      }
+      return {
+        ...c,
+        phases: p as Phase[],
+      };
+    });
+  }, [rawCircuits, panel.system]);
+
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [isInstDropdownOpen, setIsInstDropdownOpen] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
