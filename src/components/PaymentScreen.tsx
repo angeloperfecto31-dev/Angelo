@@ -134,6 +134,7 @@ export default function PaymentScreen({
   const [showSaveConfirmModal, setShowSaveConfirmModal] = useState<boolean>(false);
   const [pricingHistory, setPricingHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+  const [isAuditTrailHidden, setIsAuditTrailHidden] = useState<boolean>(false);
 
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
@@ -3989,75 +3990,99 @@ export default function PaymentScreen({
 
           {/* Pricing Audit Logs Table */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md mb-8">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4 select-none">
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                <SlidersHorizontal className="w-5 h-5" />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 select-none">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                    System Pricing Change Audit Trail
+                  </h2>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                    Persistent database ledger tracking all authorized modifications to subscription rates and promo campaigns
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">
-                  System Pricing Change Audit Trail
-                </h2>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                  Persistent database ledger tracking all authorized modifications to subscription rates and promo campaigns
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuditTrailHidden(!isAuditTrailHidden)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-800 rounded-xl border border-slate-200 text-[10px] font-black uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm select-none"
+                title={isAuditTrailHidden ? "Show Audit Trail" : "Hide Audit Trail"}
+              >
+                {isAuditTrailHidden ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Show</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span>Hide</span>
+                  </>
+                )}
+              </button>
             </div>
 
-            {loadingHistory ? (
-              <div className="flex flex-col items-center justify-center py-10">
-                <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-                <span className="text-xxs font-bold uppercase tracking-wider text-slate-400 mt-2">Loading History Logs...</span>
-              </div>
-            ) : pricingHistory.length === 0 ? (
-              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                <SlidersHorizontal className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">No Modifications Logged</p>
-                <p className="text-[10px] text-slate-400 font-medium mt-1">Changes made to rates or promos will appear here as permanent records.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 select-none">
-                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
-                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Authorized Admin</th>
-                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Modified Setting</th>
-                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Previous Value</th>
-                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">New Value</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-sans text-xs">
-                    {pricingHistory.slice(0, 10).map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="py-3 px-4 font-bold text-slate-500 whitespace-nowrap">
-                          {new Date(log.timestamp).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
-                        </td>
-                        <td className="py-3 px-4 font-extrabold text-slate-800 select-all">
-                          {log.adminEmail}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-black rounded-lg text-[9px] uppercase tracking-wider">
-                            {log.changedField}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-400 font-bold text-right whitespace-nowrap select-all">
-                          {log.previousValue}
-                        </td>
-                        <td className="py-3 px-4 text-indigo-600 font-extrabold text-right whitespace-nowrap select-all">
-                          {log.newValue}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            {!isAuditTrailHidden && (
+              <>
+                {loadingHistory ? (
+                  <div className="flex flex-col items-center justify-center py-10">
+                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                    <span className="text-xxs font-bold uppercase tracking-wider text-slate-400 mt-2">Loading History Logs...</span>
+                  </div>
+                ) : pricingHistory.length === 0 ? (
+                  <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <SlidersHorizontal className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">No Modifications Logged</p>
+                    <p className="text-[10px] text-slate-400 font-medium mt-1">Changes made to rates or promos will appear here as permanent records.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 select-none">
+                          <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
+                          <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Authorized Admin</th>
+                          <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Modified Setting</th>
+                          <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Previous Value</th>
+                          <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">New Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-sans text-xs">
+                        {pricingHistory.slice(0, 10).map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4 font-bold text-slate-500 whitespace-nowrap">
+                              {new Date(log.timestamp).toLocaleString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </td>
+                            <td className="py-3 px-4 font-extrabold text-slate-800 select-all">
+                              {log.adminEmail}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-black rounded-lg text-[9px] uppercase tracking-wider">
+                                {log.changedField}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 font-bold text-right whitespace-nowrap select-all">
+                              {log.previousValue}
+                            </td>
+                            <td className="py-3 px-4 text-indigo-600 font-extrabold text-right whitespace-nowrap select-all">
+                              {log.newValue}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
