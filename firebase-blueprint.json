@@ -135,6 +135,38 @@
         "ownerId"
       ]
     },
+    "PricingChangeHistory": {
+      "title": "PricingChangeHistory",
+      "description": "Audit trail for pricing and promotion modifications",
+      "type": "object",
+      "properties": {
+        "adminEmail": {
+          "type": "string",
+          "description": "Email address of the admin who made the changes"
+        },
+        "changedField": {
+          "type": "string",
+          "description": "The specific field key that was changed"
+        },
+        "previousValue": {
+          "type": "string",
+          "description": "The value of the field before modification"
+        },
+        "newValue": {
+          "type": "string",
+          "description": "The value of the field after modification"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp indicating when the modification occurred"
+        }
+      },
+      "required": [
+        "adminEmail",
+        "changedField",
+        "timestamp"
+      ]
+    },
     "Fixture": {
       "title": "Fixture",
       "description": "Custom imported lighting fixture details",
@@ -436,6 +468,10 @@
     "invoices/{invoiceId}": {
       "schema": "Invoice",
       "description": "System-wide invoices for trackable sales and active financial flows"
+    },
+    "pricing_change_history/{historyId}": {
+      "schema": "PricingChangeHistory",
+      "description": "Audit logs for pricing adjustments"
     }
   }
 }

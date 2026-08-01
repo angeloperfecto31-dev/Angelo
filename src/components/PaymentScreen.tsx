@@ -130,6 +130,11 @@ export default function PaymentScreen({
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
   const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions">("verifications");
 
+  // Admin Pricing Control Center enhancements
+  const [showSaveConfirmModal, setShowSaveConfirmModal] = useState<boolean>(false);
+  const [pricingHistory, setPricingHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
+
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
   const DEFAULT_PREMIUM_FEATURES = "Everything in Basic Plan\nFull Word File Report Generation\nAutoCAD File Export feature\nPremium Support Access\nONE MONTH SUBSCRIPTION";
@@ -626,6 +631,31 @@ export default function PaymentScreen({
     };
   }, []);
 
+  useEffect(() => {
+    if (!isAdminUser) return;
+    
+    setLoadingHistory(true);
+    const unsubscribeHistory = onSnapshot(
+      collection(db, "pricing_change_history"),
+      (snapshot) => {
+        const list = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        // Sort by timestamp descending
+        list.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setPricingHistory(list);
+        setLoadingHistory(false);
+      },
+      (error) => {
+        console.error("pricing_change_history onSnapshot error:", error);
+        setLoadingHistory(false);
+      }
+    );
+
+    return () => unsubscribeHistory();
+  }, [isAdminUser]);
+
   const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -791,22 +821,46 @@ export default function PaymentScreen({
     setSavingPricing(true);
     setAdminStatusMsg("");
     
-    const basicVal = parseFloat(adminBasicPrice || "0");
-    const premiumVal = parseFloat(adminPremiumPrice || "0");
-    const enterpriseVal = parseFloat(adminEnterprisePrice || "0");
-    const upgradeVal = parseFloat(adminUpgradePrice || "0");
+    const basicVal = parseFloat(adminBasicPrice || "");
+    const premiumVal = parseFloat(adminPremiumPrice || "");
+    const enterpriseVal = parseFloat(adminEnterprisePrice || "");
+    const upgradeVal = parseFloat(adminUpgradePrice || "");
     const promoBasicVal = parseFloat(adminPromoDiscountBasic || "0");
     const promoPremiumVal = parseFloat(adminPromoDiscountPremium || "0");
     const promoEnterpriseVal = parseFloat(adminPromoDiscountEnterprise || "0");
 
-    if (isNaN(basicVal) || basicVal < 0 ||
-        isNaN(premiumVal) || premiumVal < 0 ||
-        isNaN(enterpriseVal) || enterpriseVal < 0 ||
-        isNaN(upgradeVal) || upgradeVal < 0 ||
-        isNaN(promoBasicVal) || promoBasicVal < 0 ||
-        isNaN(promoPremiumVal) || promoPremiumVal < 0 ||
-        isNaN(promoEnterpriseVal) || promoEnterpriseVal < 0) {
-      setAdminStatusMsg("Error: All price and discount values must be non-negative numbers.");
+    if (!adminBasicPrice || isNaN(basicVal) || basicVal <= 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Basic price must be a valid number greater than 0)");
+      setSavingPricing(false);
+      return;
+    }
+    if (!adminPremiumPrice || isNaN(premiumVal) || premiumVal <= 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Premium price must be a valid number greater than 0)");
+      setSavingPricing(false);
+      return;
+    }
+    if (!adminEnterprisePrice || isNaN(enterpriseVal) || enterpriseVal <= 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Enterprise price must be a valid number greater than 0)");
+      setSavingPricing(false);
+      return;
+    }
+    if (!adminUpgradePrice || isNaN(upgradeVal) || upgradeVal <= 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Upgrade price must be a valid number greater than 0)");
+      setSavingPricing(false);
+      return;
+    }
+    if (isNaN(promoBasicVal) || promoBasicVal < 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Basic promo discount cannot be negative)");
+      setSavingPricing(false);
+      return;
+    }
+    if (isNaN(promoPremiumVal) || promoPremiumVal < 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Premium promo discount cannot be negative)");
+      setSavingPricing(false);
+      return;
+    }
+    if (isNaN(promoEnterpriseVal) || promoEnterpriseVal < 0) {
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: Enterprise promo discount cannot be negative)");
       setSavingPricing(false);
       return;
     }
@@ -814,17 +868,35 @@ export default function PaymentScreen({
     if (adminOfferExpiry) {
       const expDate = new Date(adminOfferExpiry);
       if (isNaN(expDate.getTime())) {
-        setAdminStatusMsg("Error: Invalid promo offer expiration date.");
+        setAdminStatusMsg("Failed to save changes. Please try again. (Error: Invalid promo offer expiration date.)");
         setSavingPricing(false);
         return;
       }
     }
 
     if (!adminEnableMaribank && !adminEnableGCash && !adminEnablePayMongo && !adminEnableMaya) {
-      setAdminStatusMsg("Error: At least one payment method must remain active to prevent checkout issues.");
+      setAdminStatusMsg("Failed to save changes. Please try again. (Error: At least one payment method must remain active to prevent checkout issues.)");
       setSavingPricing(false);
       return;
     }
+
+    // All validation passed, trigger confirmation modal instead of immediate save
+    setSavingPricing(false);
+    setShowSaveConfirmModal(true);
+  };
+
+  const executeSavePricing = async () => {
+    setShowSaveConfirmModal(false);
+    setSavingPricing(true);
+    setAdminStatusMsg("");
+
+    const basicVal = parseFloat(adminBasicPrice);
+    const premiumVal = parseFloat(adminPremiumPrice);
+    const enterpriseVal = parseFloat(adminEnterprisePrice);
+    const upgradeVal = parseFloat(adminUpgradePrice);
+    const promoBasicVal = parseFloat(adminPromoDiscountBasic || "0");
+    const promoPremiumVal = parseFloat(adminPromoDiscountPremium || "0");
+    const promoEnterpriseVal = parseFloat(adminPromoDiscountEnterprise || "0");
 
     try {
       await setDoc(
@@ -853,6 +925,74 @@ export default function PaymentScreen({
         { merge: true }
       );
 
+      // Construct and write change history logs
+      const changedFields: { field: string; prev: string; next: string }[] = [];
+      if (pricingSettings.basicPrice !== basicVal) {
+        changedFields.push({ field: "Basic Plan Price", prev: `₱${pricingSettings.basicPrice.toFixed(2)}`, next: `₱${basicVal.toFixed(2)}` });
+      }
+      if (pricingSettings.premiumPrice !== premiumVal) {
+        changedFields.push({ field: "Premium Plan Price", prev: `₱${pricingSettings.premiumPrice.toFixed(2)}`, next: `₱${premiumVal.toFixed(2)}` });
+      }
+      if (pricingSettings.enterprisePrice !== enterpriseVal) {
+        changedFields.push({ field: "Enterprise Plan Price", prev: `₱${pricingSettings.enterprisePrice.toFixed(2)}`, next: `₱${enterpriseVal.toFixed(2)}` });
+      }
+      if (pricingSettings.upgradePrice !== upgradeVal) {
+        changedFields.push({ field: "Plan Upgrade Price", prev: `₱${pricingSettings.upgradePrice.toFixed(2)}`, next: `₱${upgradeVal.toFixed(2)}` });
+      }
+      if (pricingSettings.promoDiscountBasic !== promoBasicVal) {
+        changedFields.push({ field: "Basic Plan Promo Price", prev: `₱${pricingSettings.promoDiscountBasic.toFixed(2)}`, next: `₱${promoBasicVal.toFixed(2)}` });
+      }
+      if (pricingSettings.promoDiscountPremium !== promoPremiumVal) {
+        changedFields.push({ field: "Premium Plan Promo Price", prev: `₱${pricingSettings.promoDiscountPremium.toFixed(2)}`, next: `₱${promoPremiumVal.toFixed(2)}` });
+      }
+      if (pricingSettings.promoDiscountEnterprise !== promoEnterpriseVal) {
+        changedFields.push({ field: "Enterprise Plan Promo Price", prev: `₱${pricingSettings.promoDiscountEnterprise.toFixed(2)}`, next: `₱${promoEnterpriseVal.toFixed(2)}` });
+      }
+      if (pricingSettings.offerTitle !== adminOfferTitle.trim()) {
+        changedFields.push({ field: "Promo Offer Title", prev: pricingSettings.offerTitle || "(None)", next: adminOfferTitle.trim() || "(None)" });
+      }
+      if (pricingSettings.offerExpiry !== adminOfferExpiry) {
+        changedFields.push({ field: "Promo Expiry Date", prev: pricingSettings.offerExpiry || "(None)", next: adminOfferExpiry || "(None)" });
+      }
+      if (pricingSettings.basicFeatures !== adminBasicFeatures) {
+        changedFields.push({ field: "Basic Features List", prev: "Updated", next: "Updated" });
+      }
+      if (pricingSettings.premiumFeatures !== adminPremiumFeatures) {
+        changedFields.push({ field: "Premium Features List", prev: "Updated", next: "Updated" });
+      }
+      if (pricingSettings.enterpriseFeatures !== adminEnterpriseFeatures) {
+        changedFields.push({ field: "Enterprise Features List", prev: "Updated", next: "Updated" });
+      }
+      if (pricingSettings.upgradeFeatures !== adminUpgradeFeatures) {
+        changedFields.push({ field: "Upgrade Features List", prev: "Updated", next: "Updated" });
+      }
+      if (pricingSettings.enableMaribank !== adminEnableMaribank) {
+        changedFields.push({ field: "MariBank QR Status", prev: pricingSettings.enableMaribank ? "Enabled" : "Disabled", next: adminEnableMaribank ? "Enabled" : "Disabled" });
+      }
+      if (pricingSettings.enableGCash !== adminEnableGCash) {
+        changedFields.push({ field: "GCash QR Status", prev: pricingSettings.enableGCash ? "Enabled" : "Disabled", next: adminEnableGCash ? "Enabled" : "Disabled" });
+      }
+      if (pricingSettings.enablePayMongo !== adminEnablePayMongo) {
+        changedFields.push({ field: "PayMongo Status", prev: pricingSettings.enablePayMongo ? "Enabled" : "Disabled", next: adminEnablePayMongo ? "Enabled" : "Disabled" });
+      }
+      if (pricingSettings.enableMaya !== adminEnableMaya) {
+        changedFields.push({ field: "Maya QR Status", prev: pricingSettings.enableMaya ? "Enabled" : "Disabled", next: adminEnableMaya ? "Enabled" : "Disabled" });
+      }
+
+      try {
+        for (const change of changedFields) {
+          await addDoc(collection(db, "pricing_change_history"), {
+            adminEmail: user.email || "Unknown Admin",
+            changedField: change.field,
+            previousValue: change.prev,
+            newValue: change.next,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (logErr) {
+        console.warn("Failed to write to pricing change history:", logErr);
+      }
+
       // Log the change in Admin Activity Log
       try {
         await addDoc(collection(db, "admin_activity_logs"), {
@@ -870,15 +1010,15 @@ export default function PaymentScreen({
         console.warn("Failed to write to admin activity log:", logErr);
       }
 
-      setAdminStatusMsg("Pricing configurations updated successfully throughout the system!");
+      setAdminStatusMsg("Changes saved successfully.");
       hasLoadedPricingInputs.current = false;
 
-      // Automatically return to the customer view to instantly discover the updated prices and custom promo offers
+      // Automatically return to the customer view
       setTimeout(() => {
         setIsAdminMode(false);
-      }, 1200);
+      }, 1500);
     } catch (err: any) {
-      setAdminStatusMsg("Failed to update pricing settings: " + err.message);
+      setAdminStatusMsg("Failed to save changes. Please try again.");
       try {
         handleFirestoreError(err, OperationType.WRITE, "settings/pricing");
       } catch (e) {}
@@ -3767,18 +3907,9 @@ export default function PaymentScreen({
                     setAdminPromoDiscountEnterprise("0");
 
                     try {
-                      const basicVal = parseFloat(adminBasicPrice || "999");
-                      const premiumVal = parseFloat(adminPremiumPrice || "1499");
-                      const enterpriseVal = parseFloat(adminEnterprisePrice || "2999");
-                      const upgradeVal = parseFloat(adminUpgradePrice || "500");
-
                       await setDoc(
                         doc(db, "settings", "pricing"),
                         {
-                          basicPrice: basicVal,
-                          premiumPrice: premiumVal,
-                          enterprisePrice: enterpriseVal,
-                          upgradePrice: upgradeVal,
                           promoDiscountBasic: 0,
                           promoDiscountPremium: 0,
                           promoDiscountEnterprise: 0,
@@ -3789,6 +3920,29 @@ export default function PaymentScreen({
                         },
                         { merge: true }
                       );
+
+                      // Log the clear promo changes in history
+                      try {
+                        const clearedFields = [
+                          { field: "Basic Plan Promo Price", prev: `₱${pricingSettings.promoDiscountBasic.toFixed(2)}`, next: "₱0.00" },
+                          { field: "Premium Plan Promo Price", prev: `₱${pricingSettings.promoDiscountPremium.toFixed(2)}`, next: "₱0.00" },
+                          { field: "Enterprise Plan Promo Price", prev: `₱${pricingSettings.promoDiscountEnterprise.toFixed(2)}`, next: "₱0.00" },
+                          { field: "Promo Offer Title", prev: pricingSettings.offerTitle || "(None)", next: "(None)" },
+                          { field: "Promo Expiry Date", prev: pricingSettings.offerExpiry || "(None)", next: "(None)" }
+                        ];
+                        for (const change of clearedFields) {
+                          await addDoc(collection(db, "pricing_change_history"), {
+                            adminEmail: user.email || "Unknown Admin",
+                            changedField: change.field,
+                            previousValue: change.prev,
+                            newValue: change.next,
+                            timestamp: new Date().toISOString()
+                          });
+                        }
+                      } catch (logErr) {
+                        console.warn("Failed to write to pricing change history on promo clear:", logErr);
+                      }
+
                       setAdminStatusMsg("Active promotion cleared and changes have been published system-wide successfully!");
                       hasLoadedPricingInputs.current = false;
 
@@ -3831,6 +3985,80 @@ export default function PaymentScreen({
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Pricing Audit Logs Table */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md mb-8">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-4 select-none">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                <SlidersHorizontal className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                  System Pricing Change Audit Trail
+                </h2>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  Persistent database ledger tracking all authorized modifications to subscription rates and promo campaigns
+                </p>
+              </div>
+            </div>
+
+            {loadingHistory ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                <span className="text-xxs font-bold uppercase tracking-wider text-slate-400 mt-2">Loading History Logs...</span>
+              </div>
+            ) : pricingHistory.length === 0 ? (
+              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <SlidersHorizontal className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">No Modifications Logged</p>
+                <p className="text-[10px] text-slate-400 font-medium mt-1">Changes made to rates or promos will appear here as permanent records.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 select-none">
+                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
+                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Authorized Admin</th>
+                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Modified Setting</th>
+                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">Previous Value</th>
+                      <th className="py-2.5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-wider text-right">New Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-sans text-xs">
+                    {pricingHistory.slice(0, 10).map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-500 whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </td>
+                        <td className="py-3 px-4 font-extrabold text-slate-800 select-all">
+                          {log.adminEmail}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-black rounded-lg text-[9px] uppercase tracking-wider">
+                            {log.changedField}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-400 font-bold text-right whitespace-nowrap select-all">
+                          {log.previousValue}
+                        </td>
+                        <td className="py-3 px-4 text-indigo-600 font-extrabold text-right whitespace-nowrap select-all">
+                          {log.newValue}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Quick Stats Grid */}
@@ -5035,6 +5263,58 @@ export default function PaymentScreen({
                     className="px-5 py-2 bg-red-600 hover:bg-red-550 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/10 cursor-pointer"
                   >
                     Confirm Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Pricing Save Changes Confirmation Modal Overlay */}
+          {showSaveConfirmModal && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 no-print animate-fade-in">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-lg w-full p-6 animate-scale-up">
+                <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm text-amber-600">
+                  <Settings className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight mb-2">
+                  Confirm System-wide Pricing Update?
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-semibold mb-4">
+                  You are about to publish new pricing rates and promotional settings system-wide. This will instantly affect all customer checkout sessions, renewal processes, and invoice generation engines.
+                </p>
+
+                {/* Live Diff Preview of main rates */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-150 mb-6 space-y-2">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-1">Proposed Rates Summary</span>
+                  <div className="grid grid-cols-2 gap-3 text-xxs font-bold text-slate-600">
+                    <div>Basic Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminBasicPrice || "0").toFixed(2)}</span></div>
+                    <div>Premium Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminPremiumPrice || "0").toFixed(2)}</span></div>
+                    <div>Enterprise Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminEnterprisePrice || "0").toFixed(2)}</span></div>
+                    <div>Upgrade Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminUpgradePrice || "0").toFixed(2)}</span></div>
+                    {parseFloat(adminPromoDiscountBasic || "0") > 0 && (
+                      <div className="col-span-2 text-rose-600 font-extrabold">Basic Promo: -₱{parseFloat(adminPromoDiscountBasic).toFixed(2)}</div>
+                    )}
+                    {parseFloat(adminPromoDiscountPremium || "0") > 0 && (
+                      <div className="col-span-2 text-rose-600 font-extrabold">Premium Promo: -₱{parseFloat(adminPromoDiscountPremium).toFixed(2)}</div>
+                    )}
+                    {parseFloat(adminPromoDiscountEnterprise || "0") > 0 && (
+                      <div className="col-span-2 text-rose-600 font-extrabold">Enterprise Promo: -₱{parseFloat(adminPromoDiscountEnterprise).toFixed(2)}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowSaveConfirmModal(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-650 hover:text-slate-800 text-xxs font-black uppercase tracking-wider rounded-xl transition-all hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel & Review
+                  </button>
+                  <button
+                    onClick={executeSavePricing}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-650/10 cursor-pointer"
+                  >
+                    Confirm & Publish Rates
                   </button>
                 </div>
               </div>

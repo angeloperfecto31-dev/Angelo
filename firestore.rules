@@ -194,6 +194,15 @@ service cloud.firestore {
         && data.read is bool;
     }
 
+    function isValidPricingChangeHistory(data) {
+      return data.keys().hasAll(["adminEmail", "changedField", "previousValue", "newValue", "timestamp"])
+        && data.adminEmail is string
+        && data.changedField is string
+        && data.previousValue is string
+        && data.newValue is string
+        && data.timestamp is string;
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -343,6 +352,13 @@ service cloud.firestore {
         isAdmin() ||
         (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['viewsCount']) && incoming().viewsCount == existing().viewsCount + 1)
       );
+    }
+
+    // 11. Pricing Change History (Append-only logs)
+    match /pricing_change_history/{historyId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidPricingChangeHistory(incoming());
+      allow update, delete: if false;
     }
   }
 }
