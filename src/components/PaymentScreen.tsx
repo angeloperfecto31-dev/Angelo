@@ -136,6 +136,14 @@ export default function PaymentScreen({
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
   const [isAuditTrailHidden, setIsAuditTrailHidden] = useState<boolean>(false);
 
+  // Bulk Selection, Bulk Deletion, and Pagination States
+  const [selectedUserUids, setSelectedUserUids] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState<boolean>(false);
+  const [showBulkDeleteConfirmModal, setShowBulkDeleteConfirmModal] = useState<boolean>(false);
+  const [bulkDeleteConfirmationText, setBulkDeleteConfirmationText] = useState<string>("");
+  const [userPage, setUserPage] = useState<number>(1);
+  const USERS_PER_PAGE = 10;
+
   // Feature List Defaults
   const DEFAULT_BASIC_FEATURES = "Access to all design tools\nExport load schedules to Excel\nONE MONTH SUBSCRIPTION\n-Word File Export feature\n-AutoCAD File Export feature";
   const DEFAULT_PREMIUM_FEATURES = "Everything in Basic Plan\nFull Word File Report Generation\nAutoCAD File Export feature\nPremium Support Access\nONE MONTH SUBSCRIPTION";
@@ -316,6 +324,7 @@ export default function PaymentScreen({
 
   useEffect(() => {
     setIsFiltering(true);
+    setUserPage(1);
     const timer = setTimeout(() => {
       setIsFiltering(false);
     }, 200);
@@ -1647,6 +1656,77 @@ export default function PaymentScreen({
     }
   };
 
+  const handleAdminBulkDelete = async (selectedUids: string[]) => {
+    if (!isAdminUser) {
+      setAdminStatusMsg("Error: Unauthorized. Only administrators can perform bulk deletion.");
+      return;
+    }
+    setAdminStatusMsg("");
+    setIsBulkDeleting(true);
+    let successCount = 0;
+    let failCount = 0;
+    const deletedEmails: string[] = [];
+    const failedUids: string[] = [];
+
+    // Filter to find user details first from allUsers
+    const targets = allUsers.filter(u => selectedUids.includes(u.uid));
+
+    await Promise.all(
+      targets.map(async (u) => {
+        try {
+          await deleteDoc(doc(db, "users", u.uid));
+          
+          if (u.email) {
+            try {
+              await setDoc(doc(db, "blacklisted_emails", u.email.toLowerCase()), {
+                email: u.email.toLowerCase(),
+                blacklistedAt: new Date().toISOString(),
+                reason: "Deleted by Administrator (Bulk Action)"
+              });
+            } catch (blErr) {
+              console.warn("Failed to write to blacklisted_emails for bulk delete:", blErr);
+            }
+          }
+          deletedEmails.push(u.email || u.uid);
+          successCount++;
+        } catch (err) {
+          console.error(`Error deleting uid ${u.uid}:`, err);
+          failedUids.push(u.uid);
+          failCount++;
+        }
+      })
+    );
+
+    // Log bulk user profile deletion to admin activity logs
+    if (successCount > 0) {
+      try {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          action: "bulk_delete_users",
+          adminEmail: user.email || "Unknown Admin",
+          timestamp: new Date().toISOString(),
+          details: {
+            notes: "Permanently deleted multiple user accounts via bulk administrator action.",
+            deletedCount: successCount,
+            deletedUserEmails: deletedEmails,
+            failedCount: failCount,
+            failedUserUids: failedUids
+          }
+        });
+      } catch (logErr) {
+        console.warn("Failed to write to admin activity log for bulk action:", logErr);
+      }
+    }
+
+    setIsBulkDeleting(false);
+    setSelectedUserUids([]); // Clear selections
+    
+    if (failCount === 0) {
+      setAdminStatusMsg(`${successCount} account${successCount > 1 ? "s were" : " was"} successfully deleted.`);
+    } else {
+      setAdminStatusMsg(`${successCount} account${successCount !== 1 ? "s" : ""} deleted successfully. ${failCount} account${failCount !== 1 ? "s" : ""} failed to delete.`);
+    }
+  };
+
   const handleManageSubscriptionSave = async () => {
     if (!manageSubAction) return;
     setAdminStatusMsg("");
@@ -1764,6 +1844,27 @@ export default function PaymentScreen({
     const dateB = getSubscriptionDate(b).getTime();
     return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
   });
+
+  // Paginate sorted users
+  const totalUserPages = Math.ceil(sortedUsers.length / USERS_PER_PAGE);
+  const paginatedUsers = sortedUsers.slice((userPage - 1) * USERS_PER_PAGE, userPage * USERS_PER_PAGE);
+
+  // Helper for multi-selection logic
+  const isPageAllSelected = paginatedUsers.length > 0 && paginatedUsers.every(u => selectedUserUids.includes(u.uid));
+
+  const handleToggleSelectAll = () => {
+    if (isPageAllSelected) {
+      // Deselect only the currently displayed page's users
+      setSelectedUserUids(prev => prev.filter(uid => !paginatedUsers.some(u => u.uid === uid)));
+    } else {
+      // Select all currently displayed page's users
+      const pageUids = paginatedUsers.map(u => u.uid);
+      setSelectedUserUids(prev => {
+        const union = new Set([...prev, ...pageUids]);
+        return Array.from(union);
+      });
+    }
+  };
 
   // Unified helper for currency formatting
   const fPHP = (val: number) => "₱" + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -4541,12 +4642,78 @@ export default function PaymentScreen({
               </div>
             ) : (
               <>
+                {/* Bulk Action / Selection Toolbar */}
+                {selectedUserUids.length > 0 && (
+                  <div className="bg-indigo-50/95 dark:bg-indigo-950/40 border-b border-slate-200/60 px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none no-print">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-black">
+                        {selectedUserUids.length}
+                      </span>
+                      <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide">
+                        account{selectedUserUids.length > 1 ? "s" : ""} selected
+                      </span>
+                      
+                      <span className="text-indigo-200 dark:text-indigo-800 hidden sm:inline">•</span>
+                      
+                      {/* Quick Actions */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allFilteredUids = sortedUsers.map(u => u.uid);
+                          setSelectedUserUids(allFilteredUids);
+                        }}
+                        className="text-[10px] font-black uppercase text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                      >
+                        Select All {sortedUsers.length} Filtered
+                      </button>
+                      <span className="text-indigo-200 dark:text-indigo-800">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserUids([])}
+                        className="text-[10px] font-black uppercase text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
+                      >
+                        Deselect All
+                      </button>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUserUids([])}
+                        className="px-3 py-1.5 border border-slate-250 hover:border-slate-350 text-slate-700 dark:text-slate-300 rounded-lg text-xxs font-black uppercase tracking-wider bg-white dark:bg-slate-900 cursor-pointer shadow-sm active:scale-95 transition-all"
+                      >
+                        Clear Selection
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkDeleteConfirmationText("");
+                          setShowBulkDeleteConfirmModal(true);
+                        }}
+                        className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xxs font-black uppercase tracking-wider cursor-pointer shadow-md shadow-red-600/10 active:scale-95 transition-all flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Selected ({selectedUserUids.length})</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Desktop and Tablet Responsive Table */}
                 <div className="hidden lg:block lg:overflow-visible overflow-x-auto scrollbar-thin">
                   <table className="w-full text-left border-collapse min-w-[950px]">
                     <thead>
                       <tr className="bg-slate-50/85 border-b border-slate-200/60 select-none">
-                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider first:rounded-tl-2xl">
+                        <th className="px-5 py-3 w-[45px] text-center first:rounded-tl-2xl">
+                          <input
+                            type="checkbox"
+                            checked={isPageAllSelected}
+                            onChange={handleToggleSelectAll}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                            title={isPageAllSelected ? "Deselect All on Page" : "Select All on Page"}
+                          />
+                        </th>
+                        <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
                           Subscriber
                         </th>
                         <th className="px-5 py-3 text-[10px] font-black uppercase text-slate-450 tracking-wider">
@@ -4564,7 +4731,7 @@ export default function PaymentScreen({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {sortedUsers.map((u, idx) => {
+                      {paginatedUsers.map((u, idx) => {
                         const isPending = u.paymentStatus === "pending_verification";
                         const isUserActive = u.isActive === true;
                         const finance = getUserFinanceDetails(u);
@@ -4585,6 +4752,21 @@ export default function PaymentScreen({
                              key={u.uid} 
                             className={`hover:bg-slate-50/50 transition-colors duration-150 ${isPending ? "bg-amber-50/10" : ""} ${activeDropdownUid === u.uid ? "relative z-50 pointer-events-auto" : ""}`}
                           >
+                            {/* MULTI-SELECT CHECKBOX */}
+                            <td className="px-5 py-3 w-[45px] text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedUserUids.includes(u.uid)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedUserUids(prev => [...prev, u.uid]);
+                                  } else {
+                                    setSelectedUserUids(prev => prev.filter(uid => uid !== u.uid));
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                              />
+                            </td>
                             {/* USER COLUMN */}
                             <td className="px-5 py-3 max-w-sm">
                               <div className="flex items-center gap-3">
@@ -4897,20 +5079,38 @@ export default function PaymentScreen({
 
                 {/* Mobile View: High density visual cards layout */}
                 <div className="block lg:hidden divide-y divide-slate-100">
-                  {sortedUsers.map((u) => {
+                  {paginatedUsers.map((u) => {
                     const isPending = u.paymentStatus === "pending_verification";
                     const isUserActive = u.isActive === true;
                     const finance = getUserFinanceDetails(u);
 
                     return (
-                      <div key={u.uid} className="p-4 bg-white hover:bg-slate-50 transition-all">
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="min-w-0 flex-1">
-                            {/* Profile head */}
-                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                              <span className="font-extrabold text-slate-900 text-sm truncate">
-                                {getUserName(u)}
-                              </span>
+                      <div key={u.uid} className="p-4 bg-white hover:bg-slate-50 transition-all flex gap-3">
+                        {/* Mobile Checkbox Column */}
+                        <div className="pt-1.5 select-none shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserUids.includes(u.uid)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedUserUids(prev => [...prev, u.uid]);
+                              } else {
+                                setSelectedUserUids(prev => prev.filter(uid => uid !== u.uid));
+                              }
+                            }}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4.5 h-4.5 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Mobile Card Content wrapper */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0 flex-1">
+                              {/* Profile head */}
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="font-extrabold text-slate-900 text-sm truncate">
+                                  {getUserName(u)}
+                                </span>
                               
                               {/* Tier Badge */}
                               {!isUserActive && u.paymentStatus === "unpaid" ? (
@@ -5102,10 +5302,52 @@ export default function PaymentScreen({
                             </>
                           )}
                         </div>
+                        </div> {/* Mobile Card Content wrapper closing */}
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Pagination Controls */}
+                {totalUserPages > 1 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-4 border-t border-slate-150/60 select-none no-print">
+                    <div className="text-xxs text-slate-400 font-bold uppercase tracking-wider">
+                      Page {userPage} of {totalUserPages} ({sortedUsers.length} total users)
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setUserPage(p => Math.max(1, p - 1))}
+                        disabled={userPage === 1}
+                        className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-slate-50 text-slate-600 rounded-lg text-xxs font-black uppercase tracking-wider border border-slate-200 cursor-pointer disabled:cursor-not-allowed transition-all"
+                      >
+                        Prev
+                      </button>
+                      {Array.from({ length: totalUserPages }).map((_, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setUserPage(i + 1)}
+                          className={`px-3 py-1.5 rounded-lg text-xxs font-black transition-all cursor-pointer ${
+                            userPage === i + 1
+                              ? "bg-indigo-600 text-white border border-indigo-600"
+                              : "bg-white hover:bg-slate-50 text-slate-600 border border-slate-200"
+                          }`}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
+                        disabled={userPage === totalUserPages}
+                        className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-slate-50 text-slate-600 rounded-lg text-xxs font-black uppercase tracking-wider border border-slate-200 cursor-pointer disabled:cursor-not-allowed transition-all"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -5288,6 +5530,59 @@ export default function PaymentScreen({
                     className="px-5 py-2 bg-red-600 hover:bg-red-550 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/10 cursor-pointer"
                   >
                     Confirm Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Delete Account Dedicated Confirming Modal Overlay */}
+          {showBulkDeleteConfirmModal && (
+            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 no-print animate-fade-in">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-md w-full p-6 animate-scale-up">
+                <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 mb-4 shadow-sm">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 uppercase tracking-tight mb-2">
+                  Confirm Bulk Deletion
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-semibold mb-4">
+                  Are you sure you want to permanently delete the selected <span className="text-red-600 font-extrabold">{selectedUserUids.length} account(s)</span>? This action cannot be undone. All saved calculations, compliance reports, and invoices for these users will be permanently erased.
+                </p>
+                
+                <div className="mb-6 bg-slate-50 border border-slate-100 rounded-xl p-3.5">
+                  <label className="block text-[10px] font-black uppercase text-slate-500 mb-1.5 tracking-wider">
+                    Type <span className="text-red-600 font-extrabold">DELETE</span> to confirm bulk action
+                  </label>
+                  <input
+                    type="text"
+                    value={bulkDeleteConfirmationText}
+                    onChange={(e) => setBulkDeleteConfirmationText(e.target.value)}
+                    placeholder="Type DELETE here"
+                    className="w-full px-3 py-2 bg-white border border-slate-250 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setShowBulkDeleteConfirmModal(false);
+                      setBulkDeleteConfirmationText("");
+                    }}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 hover:text-slate-800 text-xxs font-black uppercase tracking-wider rounded-xl transition-all hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={bulkDeleteConfirmationText !== "DELETE" || isBulkDeleting}
+                    onClick={async () => {
+                      setShowBulkDeleteConfirmModal(false);
+                      setBulkDeleteConfirmationText("");
+                      await handleAdminBulkDelete(selectedUserUids);
+                    }}
+                    className="px-5 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-45 disabled:hover:bg-red-600 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/10 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {isBulkDeleting ? "Deleting..." : "Delete Permanently"}
                   </button>
                 </div>
               </div>
