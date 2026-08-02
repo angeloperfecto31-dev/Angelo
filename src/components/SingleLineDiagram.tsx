@@ -143,8 +143,18 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
             
             {/* Gen input */}
             <line x1="365" y1="160" x2="385" y2="160" className="sld-line" />
-            <circle cx="355" cy="160" r="10" className="sld-line" fill="none" />
-            <text x="355" y="164" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">G</text>
+            
+            {/* Generator Stator Frame (Outer Circle) */}
+            <circle cx="355" cy="160" r="11" className="sld-line" fill="none" />
+            
+            {/* Bold stylized "G" letter aligned perfectly in the center */}
+            <text x="355" y="164" className="sld-text" style={{ fontSize: '12px', fontWeight: 900, fontFamily: '"Arial Black", Arial, sans-serif' }} textAnchor="middle">G</text>
+            
+            {/* Stand/Legs Support matching the provided image */}
+            <line x1="348" y1="168.5" x2="341" y2="177" className="sld-line" />
+            <line x1="362" y1="168.5" x2="369" y2="177" className="sld-line" />
+            <line x1="355" y1="171" x2="355" y2="177" className="sld-line" />
+            <rect x="341" y="177" width="28" height="4.5" className="sld-line" fill="none" />
             
             {/* ATS/MTS Label */}
             <text x="425" y="158" className="sld-text" style={{fontSize: '10px'}} textAnchor="start">
@@ -203,8 +213,17 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                
                {/* Gen input */}
                <line x1="365" y1="162" x2="385" y2="162" className="sld-line" />
-               <circle cx="355" cy="162" r="10" className="sld-line" fill="none" />
-               <text x="355" y="166" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">G</text>
+               {/* Generator Stator Frame (Outer Circle) */}
+               <circle cx="355" cy="162" r="11" className="sld-line" fill="none" />
+               
+               {/* Bold stylized "G" letter aligned perfectly in the center */}
+               <text x="355" y="166" className="sld-text" style={{ fontSize: '12px', fontWeight: 900, fontFamily: '"Arial Black", Arial, sans-serif' }} textAnchor="middle">G</text>
+               
+               {/* Stand/Legs Support matching the provided image */}
+               <line x1="348" y1="170.5" x2="341" y2="179" className="sld-line" />
+               <line x1="362" y1="170.5" x2="369" y2="179" className="sld-line" />
+               <line x1="355" y1="173" x2="355" y2="179" className="sld-line" />
+               <rect x="341" y="179" width="28" height="4.5" className="sld-line" fill="none" />
                
                {/* ATS/MTS Label */}
                <text x="425" y="161" className="sld-text" style={{fontSize: '9px'}} textAnchor="start">
