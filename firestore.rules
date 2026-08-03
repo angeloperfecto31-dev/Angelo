@@ -203,6 +203,27 @@ service cloud.firestore {
         && data.timestamp is string;
     }
 
+    function isValidAdminBackup(data) {
+      return data.keys().hasAll(["fileName", "createdAt", "userCount", "fileSize", "backupType", "payload", "createdBy"])
+        && data.keys().size() == 7
+        && data.fileName is string && data.fileName.size() <= 256
+        && data.createdAt is string
+        && data.userCount is int
+        && data.fileSize is string && data.fileSize.size() <= 64
+        && data.backupType in ["Manual", "Automatic"]
+        && data.payload is string
+        && data.createdBy is string && data.createdBy.size() <= 128;
+    }
+
+    function isValidAdminBackupSettings(data) {
+      return data.keys().hasAll(["autoBackupEnabled", "frequency", "lastAutoBackupAt"])
+        && data.autoBackupEnabled is bool
+        && data.frequency in ["Daily", "Weekly", "Monthly"]
+        && data.lastAutoBackupAt is string
+        && (!("updatedBy" in data) || data.updatedBy == null || (data.updatedBy is string && data.updatedBy.size() <= 128))
+        && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -359,6 +380,19 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if isAdmin() && isValidPricingChangeHistory(incoming());
       allow update, delete: if false;
+    }
+
+    // 12. Backup History Console & Scheduler Settings
+    match /admin_backups/{backupId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && isValidId(backupId) && isValidAdminBackup(incoming());
+      allow delete: if isAdmin() && isValidId(backupId);
+    }
+
+    match /admin_backup_settings/{settingsId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && isValidId(settingsId) && isValidAdminBackupSettings(incoming());
+      allow delete: if isAdmin() && isValidId(settingsId);
     }
   }
 }

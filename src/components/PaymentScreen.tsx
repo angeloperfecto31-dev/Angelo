@@ -128,7 +128,32 @@ export default function PaymentScreen({
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions">("verifications");
+  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions" | "backup_restore">("verifications");
+
+  // Admin Backup & Restore System States
+  const [backupHistory, setBackupHistory] = useState<any[]>([]);
+  const [loadingBackupHistory, setLoadingBackupHistory] = useState<boolean>(false);
+  const [backupSettings, setBackupSettings] = useState({
+    autoBackupEnabled: false,
+    frequency: "Weekly" as "Daily" | "Weekly" | "Monthly",
+    lastAutoBackupAt: "",
+  });
+  const [savingBackupSettings, setSavingBackupSettings] = useState<boolean>(false);
+  
+  // Import preview states
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importUsersPreview, setImportUsersPreview] = useState<any[]>([]);
+  const [importErrorLog, setImportErrorLog] = useState<string[]>([]);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const [importOption, setImportOption] = useState<"skip" | "update" | "replace">("skip");
+  const [showImportPreviewModal, setShowImportPreviewModal] = useState<boolean>(false);
+  const [importConfirmText, setImportConfirmText] = useState<string>("");
+  const [importResultsSummary, setImportResultsSummary] = useState<{
+    success: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  } | null> (null);
 
   // Admin Pricing Control Center enhancements
   const [showSaveConfirmModal, setShowSaveConfirmModal] = useState<boolean>(false);
@@ -1149,9 +1174,44 @@ export default function PaymentScreen({
       },
     );
 
+    const unsubscribeBackups = onSnapshot(
+      collection(db, "admin_backups"),
+      (snapshot) => {
+        const backups: any[] = [];
+        snapshot.forEach((snapDoc) => {
+          backups.push({ id: snapDoc.id, ...snapDoc.data() });
+        });
+        // Sort by newest
+        backups.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setBackupHistory(backups);
+      },
+      (error) => {
+        console.error("admin_backups collection onSnapshot error:", error);
+      }
+    );
+
+    const unsubscribeBackupSettings = onSnapshot(
+      collection(db, "admin_backup_settings"),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const docData = snapshot.docs[0].data();
+          setBackupSettings({
+            autoBackupEnabled: docData.autoBackupEnabled ?? false,
+            frequency: docData.frequency ?? "Weekly",
+            lastAutoBackupAt: docData.lastAutoBackupAt ?? "",
+          });
+        }
+      },
+      (error) => {
+        console.error("admin_backup_settings collection onSnapshot error:", error);
+      }
+    );
+
     return () => {
       unsubscribeUsers();
       unsubscribeDiscrepancies();
+      unsubscribeBackups();
+      unsubscribeBackupSettings();
     };
   }, [isAdminUser, user]);
 
@@ -1192,6 +1252,473 @@ export default function PaymentScreen({
       setVerifying(false);
     }
   };
+
+  // --- Admin Backup & Restore System Helper Functions ---
+
+  const parseCSV = (text: string) => {
+    const lines = text.split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const results: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const row: string[] = [];
+      let insideQuote = false;
+      let entry = "";
+      for (let j = 0; j < lines[i].length; j++) {
+        const char = lines[i][j];
+        if (char === '"') {
+          insideQuote = !insideQuote;
+        } else if (char === ',' && !insideQuote) {
+          row.push(entry.trim());
+          entry = "";
+        } else {
+          entry += char;
+        }
+      }
+      row.push(entry.trim());
+      
+      const obj: any = {};
+      headers.forEach((h, index) => {
+        let val: any = row[index];
+        if (val !== undefined) {
+          val = val.replace(/^"|"$/g, '');
+          if (val.toLowerCase() === "true") val = true;
+          else if (val.toLowerCase() === "false") val = false;
+          else if (val !== "" && !isNaN(Number(val))) val = Number(val);
+        } else {
+          val = null;
+        }
+        obj[h] = val;
+      });
+      results.push(obj);
+    }
+    return results;
+  };
+
+  const handleTriggerBackup = async (type: "Manual" | "Automatic", downloadFormat?: "json" | "xlsx" | "csv") => {
+    try {
+      const backupData = allUsers.map(u => ({
+        uid: u.uid || "",
+        email: u.email || "",
+        name: getUserName(u) || "",
+        role: u.role || "user",
+        isActive: u.isActive === true,
+        paymentStatus: u.paymentStatus || "unpaid",
+        plan: u.plan || "basic",
+        plan_name: u.plan_name || u.plan || "basic",
+        expiresAt: u.expiresAt || u.expires_at || null,
+        activatedAt: u.activatedAt || null,
+        amount: u.amount || null,
+        paymentSource: u.paymentSource || null,
+        paymentReference: u.paymentReference || null,
+        senderName: u.senderName || null,
+        isUpgrade: u.isUpgrade === true,
+        is_lifetime: u.is_lifetime === true,
+        subscription_type: u.subscription_type || (u.plan === "enterprise" ? "Lifetime" : "Standard"),
+        createdAt: u.createdAt || null,
+        lastLogin: u.lastLogin || u.lastLoginAt || null,
+        status: u.status || (u.isActive === true ? "Active" : "Inactive"),
+      }));
+
+      const jsonString = JSON.stringify(backupData, null, 2);
+      const byteLength = new TextEncoder().encode(jsonString).length;
+      const formattedSize = (byteLength / 1024).toFixed(1) + " KB";
+
+      const timestamp = new Date().toISOString();
+      const fileName = `user_backup_${new Date().toISOString().replace(/[:.]/g, "-")}.${downloadFormat || "json"}`;
+
+      if (type === "Manual") {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          adminEmail: user.email,
+          action: "Admin created user backup",
+          details: `Manual backup generated with ${allUsers.length} users. Size: ${formattedSize}`,
+          timestamp: timestamp,
+        });
+      } else {
+        await addDoc(collection(db, "admin_activity_logs"), {
+          adminEmail: "System Scheduler",
+          action: "System created automatic user backup",
+          details: `Automatic backup generated with ${allUsers.length} users. Size: ${formattedSize}`,
+          timestamp: timestamp,
+        });
+      }
+
+      if (downloadFormat) {
+        if (downloadFormat === "json") {
+          const blob = new Blob([jsonString], { type: "application/json" });
+          saveAs(blob, `user_backup_${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+        } else if (downloadFormat === "csv") {
+          const headers = [
+            "uid", "email", "name", "role", "isActive", "paymentStatus", 
+            "plan", "plan_name", "expiresAt", "activatedAt", "amount", 
+            "paymentSource", "paymentReference", "senderName", "isUpgrade", 
+            "is_lifetime", "subscription_type", "createdAt", "lastLogin", "status"
+          ];
+          const csvLines = [headers.join(",")];
+          backupData.forEach(row => {
+            const lineValues = headers.map(header => {
+              const val = (row as any)[header];
+              if (val === null || val === undefined) return '""';
+              if (typeof val === "string") return `"${val.replace(/"/g, '""')}"`;
+              return `"${val}"`;
+            });
+            csvLines.push(lineValues.join(","));
+          });
+          const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+          saveAs(blob, `user_backup_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`);
+        } else if (downloadFormat === "xlsx") {
+          const worksheet = XLSX.utils.json_to_sheet(backupData);
+          const workbook = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+          
+          const wopts: any = { bookType: "xlsx", bookSST: false, type: "binary" };
+          const wbout = XLSX.write(workbook, wopts);
+          
+          const s2ab = (s: string) => {
+            const buf = new ArrayBuffer(s.length);
+            const view = new Uint8Array(buf);
+            for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
+            return buf;
+          };
+          
+          const blob = new Blob([s2ab(wbout)], { type: "application/octet-stream" });
+          saveAs(blob, `user_backup_${new Date().toISOString().replace(/[:.]/g, "-")}.xlsx`);
+        }
+      }
+
+      const backupId = `backup_${Date.now()}`;
+      await setDoc(doc(db, "admin_backups", backupId), {
+        fileName: fileName.replace(/\.[a-z]+$/, ".json"), 
+        createdAt: timestamp,
+        userCount: allUsers.length,
+        fileSize: formattedSize,
+        backupType: type,
+        payload: jsonString,
+        createdBy: user.email || "System",
+      });
+
+      if (type === "Automatic") {
+        const settingsRef = doc(db, "admin_backup_settings", "global_config");
+        await setDoc(settingsRef, {
+          lastAutoBackupAt: timestamp
+        }, { merge: true });
+      }
+
+    } catch (err: any) {
+      console.error("Error creating backup:", err);
+      alert("Failed to generate backup: " + err.message);
+    }
+  };
+
+  const handleSaveBackupSettings = async (enabled: boolean, freq: "Daily" | "Weekly" | "Monthly") => {
+    setSavingBackupSettings(true);
+    try {
+      const settingsRef = doc(db, "admin_backup_settings", "global_config");
+      await setDoc(settingsRef, {
+        autoBackupEnabled: enabled,
+        frequency: freq,
+        lastAutoBackupAt: backupSettings.lastAutoBackupAt || "",
+        updatedBy: user.email,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      
+      await addDoc(collection(db, "admin_activity_logs"), {
+        adminEmail: user.email,
+        action: "Admin configured backup scheduler",
+        details: `Auto backups ${enabled ? "enabled" : "disabled"} with frequency ${freq}`,
+        timestamp: new Date().toISOString(),
+      });
+      
+      alert("Auto backup configuration saved successfully!");
+    } catch (err: any) {
+      console.error("Error saving backup settings:", err);
+      alert("Failed to save settings: " + err.message);
+    } finally {
+      setSavingBackupSettings(false);
+    }
+  };
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFile(file);
+    setImportErrorLog([]);
+    setImportUsersPreview([]);
+    setImportResultsSummary(null);
+
+    const fileName = file.name.toLowerCase();
+    const reader = new FileReader();
+
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result;
+        let parsedData: any[] = [];
+        const errors: string[] = [];
+
+        if (fileName.endsWith(".json")) {
+          try {
+            parsedData = JSON.parse(text as string);
+            if (!Array.isArray(parsedData)) {
+              errors.push("Invalid JSON format: JSON file must contain an array of user objects.");
+            }
+          } catch (jsonErr: any) {
+            errors.push("Failed to parse JSON: " + jsonErr.message);
+          }
+        } else if (fileName.endsWith(".csv")) {
+          try {
+            parsedData = parseCSV(text as string);
+          } catch (csvErr: any) {
+            errors.push("Failed to parse CSV: " + csvErr.message);
+          }
+        } else if (fileName.endsWith(".xlsx")) {
+          try {
+            const dataBytes = new Uint8Array(text as ArrayBuffer);
+            const workbook = XLSX.read(dataBytes, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            parsedData = XLSX.utils.sheet_to_json(worksheet);
+          } catch (xlsxErr: any) {
+            errors.push("Failed to parse Excel sheet: " + xlsxErr.message);
+          }
+        } else {
+          errors.push("Unsupported file format. Please upload .json, .xlsx, or .csv.");
+        }
+
+        if (errors.length > 0) {
+          setImportErrorLog(errors);
+          return;
+        }
+
+        const previewList: any[] = [];
+        parsedData.forEach((row: any, idx) => {
+          const rowNum = idx + 2; 
+          const rowErrors: string[] = [];
+
+          const email = (row.email || "").trim();
+          const uid = (row.uid || row.id || "").trim();
+          const name = (row.name || row.displayName || "").trim();
+          const plan = (row.plan || row.plan_name || "basic").trim().toLowerCase();
+          const paymentStatus = (row.paymentStatus || "unpaid").trim().toLowerCase();
+          const role = (row.role || "user").trim();
+          const isActive = row.isActive === true || String(row.isActive).toLowerCase() === "true" || row.status?.toLowerCase() === "active";
+
+          if (!email) {
+            rowErrors.push(`Row ${rowNum}: Email address is required.`);
+          } else {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+              rowErrors.push(`Row ${rowNum}: Invalid email format "${email}".`);
+            }
+          }
+
+          if (!uid) {
+            rowErrors.push(`Row ${rowNum}: User ID (uid) is required.`);
+          }
+
+          if (rowErrors.length > 0) {
+            errors.push(...rowErrors);
+            previewList.push({ ...row, email, uid, name, plan, paymentStatus, isActive, role, isValid: false, errors: rowErrors });
+          } else {
+            const isDuplicate = allUsers.some(existingU => existingU.email?.trim().toLowerCase() === email.toLowerCase());
+            previewList.push({
+              ...row,
+              email,
+              uid,
+              name,
+              plan,
+              paymentStatus,
+              isActive,
+              role,
+              isValid: true,
+              isDuplicate,
+              errors: []
+            });
+          }
+        });
+
+        setImportUsersPreview(previewList);
+        setImportErrorLog(errors);
+        setShowImportPreviewModal(true);
+
+      } catch (err: any) {
+        setImportErrorLog([ "System error parsing import file: " + err.message ]);
+      }
+    };
+
+    if (fileName.endsWith(".xlsx")) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
+  };
+
+  const handleImportExecute = async () => {
+    setIsImporting(true);
+    let successCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    try {
+      if (importOption === "replace") {
+        for (const existingU of allUsers) {
+          try {
+            await deleteDoc(doc(db, "users", existingU.uid));
+          } catch (delErr) {
+            console.error("Failed to delete user during replace:", existingU.uid, delErr);
+          }
+        }
+      }
+
+      for (const item of importUsersPreview) {
+        if (!item.isValid) {
+          failedCount++;
+          continue;
+        }
+
+        const existsInDb = allUsers.some(existingU => existingU.uid === item.uid || existingU.email?.trim().toLowerCase() === item.email.toLowerCase());
+
+        if (existsInDb && importOption === "skip") {
+          skippedCount++;
+          continue;
+        }
+
+        try {
+          const userDoc = {
+            email: item.email,
+            name: item.name || "",
+            role: item.role || "user",
+            isActive: item.isActive === true,
+            paymentStatus: item.paymentStatus || "unpaid",
+            plan: item.plan || "basic",
+            plan_name: item.plan || "basic",
+            expiresAt: item.expiresAt || item.expires_at || null,
+            expires_at: item.expiresAt || item.expires_at || null,
+            activatedAt: item.activatedAt || null,
+            amount: item.amount !== undefined ? item.amount : null,
+            paymentSource: item.paymentSource || null,
+            paymentReference: item.paymentReference || null,
+            senderName: item.senderName || null,
+            isUpgrade: item.isUpgrade === true,
+            is_lifetime: item.is_lifetime === true || item.plan === "enterprise",
+            subscription_type: item.subscription_type || (item.plan === "enterprise" ? "Lifetime" : "Standard"),
+            status: item.status || (item.isActive === true ? "Active" : "Inactive"),
+            createdAt: item.createdAt || new Date().toISOString(),
+            lastLogin: item.lastLogin || null,
+          };
+
+          await setDoc(doc(db, "users", item.uid), userDoc, { merge: true });
+
+          if (existsInDb && importOption === "update") {
+            updatedCount++;
+          } else {
+            successCount++;
+          }
+        } catch (dbErr: any) {
+          console.error(`Failed to import user ${item.email}:`, dbErr);
+          failedCount++;
+        }
+      }
+
+      const auditDetails = `Success: ${successCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}, Failed: ${failedCount}. File: ${importFile?.name}`;
+      await addDoc(collection(db, "admin_activity_logs"), {
+        adminEmail: user.email,
+        action: `Admin restored users from backup`,
+        details: auditDetails,
+        timestamp: new Date().toISOString(),
+      });
+
+      setImportResultsSummary({
+        success: successCount,
+        updated: updatedCount,
+        skipped: skippedCount,
+        failed: failedCount,
+      });
+
+    } catch (err: any) {
+      console.error("Error executing import:", err);
+      alert("Restore failed: " + err.message);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleRestoreFromHistory = async (backupRecord: any) => {
+    try {
+      const parsedData = JSON.parse(backupRecord.payload);
+      setImportFile({ name: backupRecord.fileName } as any);
+      setImportErrorLog([]);
+      setImportResultsSummary(null);
+
+      const previewList = parsedData.map((row: any) => {
+        const isDuplicate = allUsers.some(existingU => existingU.email?.trim().toLowerCase() === row.email?.trim().toLowerCase());
+        return {
+          ...row,
+          isValid: true,
+          isDuplicate,
+          errors: []
+        };
+      });
+
+      setImportUsersPreview(previewList);
+      setImportOption("update"); 
+      setShowImportPreviewModal(true);
+
+    } catch (err: any) {
+      alert("Failed to restore from history: " + err.message);
+    }
+  };
+
+  const handleDeleteBackupRecord = async (backupId: string, fileName: string) => {
+    if (!confirm(`Are you absolutely sure you want to delete backup file: ${fileName}?`)) return;
+    try {
+      await deleteDoc(doc(db, "admin_backups", backupId));
+      
+      await addDoc(collection(db, "admin_activity_logs"), {
+        adminEmail: user.email,
+        action: "Admin deleted backup file",
+        details: `Deleted backup file ${fileName}`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      alert("Failed to delete backup record: " + err.message);
+    }
+  };
+
+  // Automated Scheduler Hook checking frequency intervals on load
+  useEffect(() => {
+    if (!isAdminUser || allUsers.length === 0 || !backupSettings.autoBackupEnabled) return;
+    
+    const checkAutoBackup = async () => {
+      const now = new Date();
+      let shouldBackup = false;
+      const lastBackupStr = backupSettings.lastAutoBackupAt;
+      
+      if (!lastBackupStr) {
+        shouldBackup = true;
+      } else {
+        const lastBackupDate = new Date(lastBackupStr);
+        const diffMs = now.getTime() - lastBackupDate.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        
+        if (backupSettings.frequency === "Daily" && diffDays >= 1) {
+          shouldBackup = true;
+        } else if (backupSettings.frequency === "Weekly" && diffDays >= 7) {
+          shouldBackup = true;
+        } else if (backupSettings.frequency === "Monthly" && diffDays >= 30) {
+          shouldBackup = true;
+        }
+      }
+      
+      if (shouldBackup) {
+        console.log(`[Auto Backup Scheduler] Triggering automatic ${backupSettings.frequency} backup...`);
+        await handleTriggerBackup("Automatic");
+      }
+    };
+    
+    checkAutoBackup();
+  }, [isAdminUser, allUsers.length, backupSettings.autoBackupEnabled, backupSettings.frequency, backupSettings.lastAutoBackupAt]);
 
   const handlePay = async () => {
     setLoading(true);
@@ -3179,6 +3706,16 @@ export default function PaymentScreen({
               <Users className="w-4 h-4" />
               Subscriptions
             </button>
+            <button
+              onClick={() => setAdminSubTab("backup_restore")}
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+                adminSubTab === "backup_restore"
+                  ? "border-indigo-600 text-indigo-600 font-extrabold"
+                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
+              }`}
+            >
+              📥 Backup & Restore
+            </button>
           </div>
 
           {adminStatusMsg && (
@@ -3193,6 +3730,217 @@ export default function PaymentScreen({
             <InvoiceManager user={user} isAdminPanel={true} />
           ) : adminSubTab === "subscriptions" ? (
             <SubscriptionManager />
+          ) : adminSubTab === "backup_restore" ? (
+            <div className="space-y-8 animate-fade-in">
+              {/* Core Controls Header Card */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-6 border-b border-slate-100">
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1 flex items-center gap-2">
+                      📥 System Backup & Disaster Recovery Console
+                    </h2>
+                    <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                      Securely checkpoint and restore user account databases. Protect billing histories, subscription levels, and roles.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => handleTriggerBackup("Manual", "json")}
+                      className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      Backup to JSON
+                    </button>
+                    <button
+                      onClick={() => handleTriggerBackup("Manual", "xlsx")}
+                      className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      Backup to Excel
+                    </button>
+                    <button
+                      onClick={() => handleTriggerBackup("Manual", "csv")}
+                      className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-white bg-slate-700 hover:bg-slate-800 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      Backup to CSV
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub-panels Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Manual Restore / File Upload */}
+                  <div className="p-5 rounded-2xl bg-indigo-50/40 border border-indigo-100">
+                    <h3 className="text-xs font-black text-indigo-900 uppercase tracking-tight mb-2">
+                      Restore / Import User Accounts
+                    </h3>
+                    <p className="text-[11px] text-indigo-700 mb-4 leading-relaxed font-semibold">
+                      Upload a previously exported JSON, CSV, or Excel user list to restore accounts. Duplicates will be validated prior to execution.
+                    </p>
+                    <div className="relative border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-white rounded-xl p-4 transition-all text-center cursor-pointer">
+                      <input
+                        type="file"
+                        accept=".json,.csv,.xlsx"
+                        onChange={handleImportFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        <span className="text-xs font-black text-indigo-600 uppercase tracking-wider">Select Backup File</span>
+                        <span className="text-[10px] text-slate-400 font-bold">supports .json, .csv, and .xlsx</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Backup Scheduler */}
+                  <div className="p-5 rounded-2xl bg-amber-50/40 border border-amber-100">
+                    <h3 className="text-xs font-black text-amber-900 uppercase tracking-tight mb-2">
+                      Automated Backup Scheduler
+                    </h3>
+                    <p className="text-[11px] text-amber-700 mb-4 leading-relaxed font-semibold">
+                      Enable system background checkpoints. Backups are saved directly to the database and displayed in the history log.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-black text-amber-900 uppercase tracking-tight">
+                          Enable Scheduler
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setBackupSettings(prev => ({ ...prev, autoBackupEnabled: !prev.autoBackupEnabled }))}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            backupSettings.autoBackupEnabled ? "bg-amber-500" : "bg-slate-200"
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              backupSettings.autoBackupEnabled ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4">
+                        <label className="text-[11px] font-black text-amber-900 uppercase tracking-tight">
+                          Frequency Interval
+                        </label>
+                        <select
+                          value={backupSettings.frequency}
+                          onChange={(e) => setBackupSettings(prev => ({ ...prev, frequency: e.target.value as any }))}
+                          disabled={!backupSettings.autoBackupEnabled}
+                          className="px-2.5 py-1.5 text-xs rounded-xl border border-amber-250 bg-white text-slate-800 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
+                        >
+                          <option value="Daily">Every 24 Hours (Daily)</option>
+                          <option value="Weekly">Every 7 Days (Weekly)</option>
+                          <option value="Monthly">Every 30 Days (Monthly)</option>
+                        </select>
+                      </div>
+
+                      <div className="pt-2 flex justify-between items-center border-t border-amber-150/60">
+                        <div className="text-[10px] text-amber-600 font-bold">
+                          {backupSettings.lastAutoBackupAt ? (
+                            <span>Last run: {new Date(backupSettings.lastAutoBackupAt).toLocaleString()}</span>
+                          ) : (
+                            <span>No automatic backups executed yet.</span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleSaveBackupSettings(backupSettings.autoBackupEnabled, backupSettings.frequency)}
+                          disabled={savingBackupSettings}
+                          className="px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                        >
+                          {savingBackupSettings ? "Saving..." : "Save Config"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* History Records Table Card */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-md">
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1 flex items-center gap-2">
+                  Checkpoint Vault & Logs ({backupHistory.length})
+                </h2>
+                <p className="text-xs text-slate-500 leading-relaxed font-semibold mb-6">
+                  Complete historic record of all manual and automatic backups stored securely inside your Firestore database.
+                </p>
+
+                {backupHistory.length === 0 ? (
+                  <div className="py-12 text-center rounded-2xl border-2 border-dashed border-slate-150">
+                    <span className="text-2xl mb-2 block">📂</span>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-wider">Vault is Empty</p>
+                    <p className="text-[11px] text-slate-400 font-bold mt-1">Generate a manual backup above to create your first checkpoint record.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-150 rounded-2xl">
+                    <table className="w-full text-left border-collapse min-w-[700px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-150">
+                          <th className="px-4 py-3 text-[9px] font-black uppercase tracking-wider text-slate-500">File Checked Name</th>
+                          <th className="px-4 py-3 text-[9px] font-black uppercase tracking-wider text-slate-500">Checkpoint Date</th>
+                          <th className="px-4 py-3 text-[9px] font-black uppercase tracking-wider text-slate-500">Capacity</th>
+                          <th className="px-4 py-3 text-[9px] font-black uppercase tracking-wider text-slate-500">File Size</th>
+                          <th className="px-4 py-3 text-[9px] font-black uppercase tracking-wider text-slate-500">Origin Type</th>
+                          <th className="px-4 py-3 text-[9px] font-black uppercase tracking-wider text-slate-500 text-right">Emergency Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {backupHistory.map((rec) => (
+                          <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3 text-xs font-extrabold text-slate-800">
+                              {rec.fileName}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500 font-semibold">
+                              {new Date(rec.createdAt).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-xs font-black text-slate-700">
+                              {rec.userCount} users
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-500 font-semibold">
+                              {rec.fileSize || "N/A"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full ${
+                                rec.backupType === "Automatic" 
+                                  ? "bg-amber-100 text-amber-700 animate-pulse" 
+                                  : "bg-indigo-100 text-indigo-700"
+                              }`}>
+                                {rec.backupType}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex justify-end gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    const blob = new Blob([rec.payload], { type: "application/json" });
+                                    saveAs(blob, rec.fileName);
+                                  }}
+                                  className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  Download
+                                </button>
+                                <button
+                                  onClick={() => handleRestoreFromHistory(rec)}
+                                  className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  Restore
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteBackupRecord(rec.id, rec.fileName)}
+                                  className="p-1 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
+                                  title="Delete Permanent record"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             <>
               {/* Flagged Payment Gateway Discrepancies & Audit Panel */}
@@ -5637,6 +6385,266 @@ export default function PaymentScreen({
                     Confirm & Publish Rates
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Database Restore & Import Preview Overlay */}
+          {showImportPreviewModal && (
+            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 no-print animate-fade-in">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-4xl w-full p-6 animate-scale-up flex flex-col max-h-[90vh]">
+                
+                {/* Header */}
+                <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4">
+                  <div>
+                    <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700 rounded-full mb-1 inline-block">
+                      Restore Preview Console
+                    </span>
+                    <h3 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                      Restore checkpoint: {importFile?.name}
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowImportPreviewModal(false);
+                      setImportFile(null);
+                      setImportUsersPreview([]);
+                      setImportConfirmText("");
+                      setImportResultsSummary(null);
+                    }}
+                    className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Import success results state */}
+                {importResultsSummary ? (
+                  <div className="flex-1 overflow-y-auto space-y-6 py-4">
+                    <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-100 flex flex-col items-center text-center">
+                      <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 mb-4">
+                        <Check className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-sm font-black text-emerald-900 uppercase tracking-tight mb-2">Restoration Completed Successfully</h4>
+                      <p className="text-xs text-emerald-700 leading-relaxed max-w-md font-semibold mb-6">
+                        The user account database has been safely restored. All specified plan states, active expirations, and user profiles are now updated and synchronized.
+                      </p>
+
+                      <div className="grid grid-cols-4 gap-4 w-full max-w-lg">
+                        <div className="bg-white p-3.5 rounded-xl border border-emerald-100 text-center">
+                          <span className="text-xs font-black text-slate-500 block uppercase tracking-wide">Pristine</span>
+                          <span className="text-lg font-black text-slate-800">{importResultsSummary.success}</span>
+                        </div>
+                        <div className="bg-white p-3.5 rounded-xl border border-emerald-100 text-center">
+                          <span className="text-xs font-black text-slate-500 block uppercase tracking-wide">Updated</span>
+                          <span className="text-lg font-black text-amber-600">{importResultsSummary.updated}</span>
+                        </div>
+                        <div className="bg-white p-3.5 rounded-xl border border-emerald-100 text-center">
+                          <span className="text-xs font-black text-slate-500 block uppercase tracking-wide">Skipped</span>
+                          <span className="text-lg font-black text-slate-400">{importResultsSummary.skipped}</span>
+                        </div>
+                        <div className="bg-white p-3.5 rounded-xl border border-emerald-100 text-center">
+                          <span className="text-xs font-black text-slate-500 block uppercase tracking-wide">Failed</span>
+                          <span className="text-lg font-black text-red-600">{importResultsSummary.failed}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-6 py-2 pr-1">
+                    {/* Error Log Panel */}
+                    {importErrorLog.length > 0 && (
+                      <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4">
+                        <span className="text-[10px] font-black uppercase text-rose-700 tracking-wider block mb-2">Validation Warnings ({importErrorLog.length})</span>
+                        <div className="max-h-24 overflow-y-auto space-y-1 font-mono text-[10px] text-rose-600">
+                          {importErrorLog.map((err, idx) => (
+                            <div key={idx} className="flex gap-2">
+                              <span>•</span>
+                              <span>{err}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stats Summary Panel */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl">
+                        <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">Total Users Found</span>
+                        <span className="text-lg font-black text-slate-800 mt-0.5 block">{importUsersPreview.length} records</span>
+                      </div>
+                      <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-xl">
+                        <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider block">Valid to Restore</span>
+                        <span className="text-lg font-black text-slate-800 mt-0.5 block">{importUsersPreview.filter(u => u.isValid).length} records</span>
+                      </div>
+                      <div className="bg-amber-50/50 border border-amber-100 p-3 rounded-xl">
+                        <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider block">Duplicates Detected</span>
+                        <span className="text-lg font-black text-slate-800 mt-0.5 block">{importUsersPreview.filter(u => u.isValid && u.isDuplicate).length} records</span>
+                      </div>
+                    </div>
+
+                    {/* Restore Strategy Selection */}
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Conflict Resolution Strategy</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setImportOption("skip")}
+                          className={`p-3 rounded-xl text-left border-2 transition-all cursor-pointer ${
+                            importOption === "skip" 
+                              ? "bg-indigo-50/50 border-indigo-500" 
+                              : "bg-white border-slate-200 hover:border-slate-350"
+                          }`}
+                        >
+                          <span className="text-xs font-black text-slate-800 block uppercase tracking-tight mb-1">Skip Duplicates</span>
+                          <span className="text-[10px] text-slate-500 font-bold block leading-relaxed">Only import pristine accounts. Leave existing users unchanged.</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setImportOption("update")}
+                          className={`p-3 rounded-xl text-left border-2 transition-all cursor-pointer ${
+                            importOption === "update" 
+                              ? "bg-amber-50/50 border-amber-500" 
+                              : "bg-white border-slate-200 hover:border-slate-350"
+                          }`}
+                        >
+                          <span className="text-xs font-black text-slate-800 block uppercase tracking-tight mb-1">Overwrite / Update</span>
+                          <span className="text-[10px] text-slate-500 font-bold block leading-relaxed">Update existing user account values with imported levels.</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setImportOption("replace")}
+                          className={`p-3 rounded-xl text-left border-2 transition-all cursor-pointer ${
+                            importOption === "replace" 
+                              ? "bg-rose-50/50 border-rose-500" 
+                              : "bg-white border-slate-200 hover:border-slate-350"
+                          }`}
+                        >
+                          <span className="text-xs font-black text-rose-800 block uppercase tracking-tight mb-1">Replace Database</span>
+                          <span className="text-[10px] text-slate-500 font-bold block leading-relaxed">Deletes ALL active users first, replacing with this backup file.</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* User Rows High Density Table Preview */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Checkpoint Content Preview</label>
+                      <div className="border border-slate-150 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+                        <table className="w-full text-left border-collapse min-w-[650px]">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-150 sticky top-0 z-10">
+                              <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400">User Email</th>
+                              <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400">User ID (UID)</th>
+                              <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400">Full Name</th>
+                              <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400">Plan</th>
+                              <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400">Expiration</th>
+                              <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400 text-right">Conflict Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {importUsersPreview.map((item, idx) => (
+                              <tr key={idx} className={`text-xxs font-semibold ${
+                                !item.isValid 
+                                  ? "bg-rose-50/50 text-rose-900" 
+                                  : item.isDuplicate 
+                                    ? "bg-amber-50/20 text-slate-800" 
+                                    : "bg-emerald-50/10 text-slate-800"
+                              }`}>
+                                <td className="px-3 py-2 font-bold">{item.email}</td>
+                                <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{item.uid}</td>
+                                <td className="px-3 py-2 font-bold">{item.name || "N/A"}</td>
+                                <td className="px-3 py-2 uppercase font-black tracking-wider text-[10px]">{item.plan}</td>
+                                <td className="px-3 py-2">{item.expiresAt || item.expires_at ? new Date(item.expiresAt || item.expires_at).toLocaleDateString() : "Lifetime"}</td>
+                                <td className="px-3 py-2 text-right">
+                                  {!item.isValid ? (
+                                    <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[9px] font-black uppercase tracking-wider rounded">Invalid</span>
+                                  ) : item.isDuplicate ? (
+                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[9px] font-black uppercase tracking-wider rounded">Duplicate</span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-wider rounded">Pristine</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Safeguard Check field */}
+                    <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 space-y-3">
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-tight text-slate-800 mb-1 flex items-center gap-1">
+                          ⚠️ Security Checkpoint Requirements
+                        </h4>
+                        <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
+                          {importOption === "replace" ? (
+                            <span>REPLACE option is destructive. You must type <span className="text-red-600 font-extrabold">RESTORE</span> below to proceed.</span>
+                          ) : (
+                            <span>Type <span className="text-indigo-600 font-extrabold">CONFIRM</span> below to verify you wish to execute database synchronization.</span>
+                          )}
+                        </p>
+                      </div>
+                      <input
+                        type="text"
+                        value={importConfirmText}
+                        onChange={(e) => setImportConfirmText(e.target.value)}
+                        placeholder={importOption === "replace" ? "Type RESTORE" : "Type CONFIRM"}
+                        className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Footer Actions */}
+                <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-4">
+                  {importResultsSummary ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowImportPreviewModal(false);
+                        setImportFile(null);
+                        setImportUsersPreview([]);
+                        setImportConfirmText("");
+                        setImportResultsSummary(null);
+                      }}
+                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                    >
+                      Close Console
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowImportPreviewModal(false);
+                          setImportFile(null);
+                          setImportUsersPreview([]);
+                          setImportConfirmText("");
+                          setImportResultsSummary(null);
+                        }}
+                        className="px-4 py-2 border border-slate-200 text-slate-650 hover:text-slate-800 text-xxs font-black uppercase tracking-wider rounded-xl transition-all hover:bg-slate-50 cursor-pointer"
+                      >
+                        Abort Operation
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          (importOption === "replace" ? importConfirmText !== "RESTORE" : importConfirmText !== "CONFIRM") || 
+                          isImporting || 
+                          importUsersPreview.filter(u => u.isValid).length === 0
+                        }
+                        onClick={handleImportExecute}
+                        className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white text-xxs font-black uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                      >
+                        {isImporting ? "Restoring Checks..." : "Execute Database Restoration"}
+                      </button>
+                    </>
+                  )}
+                </div>
+
               </div>
             </div>
           )}

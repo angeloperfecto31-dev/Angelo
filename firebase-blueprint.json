@@ -422,6 +422,34 @@
         "readAt": { "type": "string" }
       },
       "required": ["updateId", "read"]
+    },
+    "AdminBackup": {
+      "title": "AdminBackup",
+      "description": "Stored system backup archive for user accounts",
+      "type": "object",
+      "properties": {
+        "fileName": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "userCount": { "type": "number" },
+        "fileSize": { "type": "string" },
+        "backupType": { "type": "string" },
+        "payload": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["fileName", "createdAt", "userCount", "fileSize", "backupType", "payload", "createdBy"]
+    },
+    "AdminBackupSettings": {
+      "title": "AdminBackupSettings",
+      "description": "Automated system backup configuration",
+      "type": "object",
+      "properties": {
+        "autoBackupEnabled": { "type": "boolean" },
+        "frequency": { "type": "string" },
+        "lastAutoBackupAt": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["autoBackupEnabled", "frequency", "lastAutoBackupAt"]
     }
   },
   "firestore": {
@@ -472,6 +500,14 @@
     "pricing_change_history/{historyId}": {
       "schema": "PricingChangeHistory",
       "description": "Audit logs for pricing adjustments"
+    },
+    "admin_backups/{backupId}": {
+      "schema": "AdminBackup",
+      "description": "Archive logs of manual and automatic system backups"
+    },
+    "admin_backup_settings/{settingsId}": {
+      "schema": "AdminBackupSettings",
+      "description": "Dynamic settings for background automatic backup scheduler"
     }
   }
 }
