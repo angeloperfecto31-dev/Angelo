@@ -1862,6 +1862,10 @@ export default function PaymentScreen({
           isUpgrade: isUpgrade, // Keep a record if this was an upgrade explicitly
           isRenewal: isRenewal, // Notify admin that this is a renewal
         },
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectedMethod: null,
+        rejectedReferenceNo: null,
       };
 
       if (!isUpgrade && !isRenewal) {
@@ -1895,6 +1899,10 @@ export default function PaymentScreen({
         {
           paymentStatus: "unpaid",
           pendingVerification: null,
+          rejectedAt: null,
+          rejectedBy: null,
+          rejectedMethod: null,
+          rejectedReferenceNo: null,
         },
         { merge: true },
       );
@@ -2087,6 +2095,8 @@ export default function PaymentScreen({
     try {
       const userToReject = allUsers.find(u => u.uid === targetUid);
       const isAlreadyActive = userToReject?.isActive === true;
+      const rejectedMethod = userToReject?.pendingVerification?.method || "MariBank";
+      const rejectedRef = userToReject?.pendingVerification?.referenceNo || "";
       
       await setDoc(
         doc(db, "users", targetUid),
@@ -2095,6 +2105,8 @@ export default function PaymentScreen({
           pendingVerification: null,
           rejectedBy: user.email,
           rejectedAt: new Date().toISOString(),
+          rejectedMethod: rejectedMethod,
+          rejectedReferenceNo: rejectedRef,
         },
         { merge: true },
       );
@@ -7274,6 +7286,20 @@ export default function PaymentScreen({
               <p className="text-xs text-emerald-700 font-bold leading-relaxed">
                 {manualMessage}
               </p>
+            </div>
+          )}
+
+          {userProfile?.rejectedAt && !manualMessage && (
+            <div className="mb-6 bg-red-50 dark:bg-red-950/20 border-l-4 border-red-500 p-4 rounded-md flex items-start gap-3 animate-fade-in">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs text-red-700 dark:text-red-400 font-bold leading-relaxed">
+                  Your previous {userProfile.rejectedMethod || "MariBank"} Payment details have been rejected by the administrator.
+                </p>
+                <p className="text-[10px] text-red-650 dark:text-red-400 font-bold mt-1">
+                  Please check your transaction reference details and try submitting them again.
+                </p>
+              </div>
             </div>
           )}
 
