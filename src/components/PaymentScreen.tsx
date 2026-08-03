@@ -6975,13 +6975,13 @@ export default function PaymentScreen({
       const isDisabled = line.trim().startsWith('-');
       const text = isDisabled ? line.substring(1).trim() : line.trim();
       return (
-        <li key={idx} className={`flex items-start gap-1.5 ${isDisabled ? 'opacity-40' : ''}`}>
+        <li key={idx} className={`flex items-start gap-2 ${isDisabled ? 'opacity-35' : ''}`}>
           {isDisabled ? (
-            <X className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+            <X className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
           ) : (
-            <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+            <Check className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
           )}
-          <span className={`text-[10px] font-bold leading-tight ${isDisabled ? 'text-slate-500 line-through' : activeTextClass}`}>
+          <span className={`text-xs md:text-[13px] font-bold leading-normal ${isDisabled ? 'text-slate-450 line-through' : activeTextClass}`}>
             {text}
           </span>
         </li>
@@ -7074,128 +7074,126 @@ export default function PaymentScreen({
                 )}
               </div>
               {isUpgrade ? (
-               <button
-               className={`w-full text-left p-4 rounded-2xl border-2 transition-all relative border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10 cursor-default`}
-             >
-               <div className="absolute top-3 right-3 text-indigo-600">
-                 <CheckCircle2 className="w-5 h-5" />
-               </div>
-               <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Upgrade to Premium Plan</span>
-               <div className="mt-1 flex items-end gap-1">
-                 <span className="text-2xl font-black tracking-tight text-indigo-700">₱{upgradeFinalPrice.toLocaleString()}</span>
-                 {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
-                   null
-                 )}
-               </div>
-               <ul className="mt-3 space-y-1.5">
-                 {renderFeatures(pricingSettings.upgradeFeatures, "text-slate-900")}
-               </ul>
-             </button>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <button
-                  onClick={() => {
-                    setSelectedPlan('basic');
-                    handleClearPromoCode();
-                  }}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[160px] ${
-                    selectedPlan === 'basic' 
-                    ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 scale-[1.01] shadow-md z-10' 
-                    : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
-                  }`}
+                  className="w-full text-left p-6 md:p-8 rounded-2xl border-2 transition-all relative border-indigo-600 bg-indigo-50/30 dark:bg-indigo-950/20 scale-[1.01] shadow-md z-10 cursor-default"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Basic</span>
-                      {selectedPlan === 'basic' && (
-                        <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                      )}
-                    </div>
-                    <div className="flex items-baseline gap-1 flex-wrap">
-                      <span className={`text-xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700' : 'text-slate-900'}`}>
-                        ₱{basicFinalPrice.toLocaleString()}
-                      </span>
-                      {isOfferActive && pricingSettings.promoDiscountBasic > 0 && (
-                        <span className="text-[10px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
-                      )}
-                    </div>
+                  <div className="absolute top-4 right-4 text-indigo-600">
+                    <CheckCircle2 className="w-6 h-6" />
                   </div>
-                  <ul className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-zinc-800 pt-3">
-                    {renderFeatures(pricingSettings.basicFeatures, "text-slate-600 dark:text-zinc-300")}
+                  <span className="text-xs md:text-sm font-black uppercase text-slate-500 tracking-widest block mb-1">Upgrade to Premium Plan</span>
+                  <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+                    <span className="text-3xl md:text-4xl font-black tracking-tight text-indigo-700 dark:text-indigo-400">₱{upgradeFinalPrice.toLocaleString()}</span>
+                  </div>
+                  <ul className="mt-4 space-y-2 border-t border-slate-100 dark:border-zinc-800 pt-4">
+                    {renderFeatures(pricingSettings.upgradeFeatures, "text-slate-900")}
                   </ul>
                 </button>
-                
-                <button
-                  onClick={() => {
-                    setSelectedPlan('premium');
-                    handleClearPromoCode();
-                  }}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[160px] ${
-                    selectedPlan === 'premium' 
-                    ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 scale-[1.01] shadow-md z-10' 
-                    : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
-                    Recommended
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Premium</span>
-                      {selectedPlan === 'premium' && (
-                        <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                      )}
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <button
+                    onClick={() => {
+                      setSelectedPlan('basic');
+                      handleClearPromoCode();
+                    }}
+                    className={`text-left p-6 md:p-8 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[220px] ${
+                      selectedPlan === 'basic' 
+                      ? 'border-indigo-600 bg-indigo-50/25 dark:bg-indigo-950/20 scale-[1.01] shadow-md z-10' 
+                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 shadow-sm'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs md:text-sm font-black uppercase text-slate-500 tracking-widest">Basic</span>
+                        {selectedPlan === 'basic' && (
+                          <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-1.5 flex-wrap">
+                        <span className={`text-2xl md:text-3xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-900 dark:text-white'}`}>
+                          ₱{basicFinalPrice.toLocaleString()}
+                        </span>
+                        {isOfferActive && pricingSettings.promoDiscountBasic > 0 && (
+                          <span className="text-xs md:text-sm text-red-500 font-bold line-through ml-2 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-baseline gap-1 flex-wrap">
-                      <span className={`text-xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700' : 'text-slate-900'}`}>
-                        ₱{premiumFinalPrice.toLocaleString()}
-                      </span>
-                      {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
-                        <span className="text-[10px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
-                      )}
+                    <ul className="mt-4 space-y-2 border-t border-slate-150 dark:border-zinc-800 pt-4 w-full">
+                      {renderFeatures(pricingSettings.basicFeatures, "text-slate-600 dark:text-zinc-300")}
+                    </ul>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setSelectedPlan('premium');
+                      handleClearPromoCode();
+                    }}
+                    className={`text-left p-6 md:p-8 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[220px] ${
+                      selectedPlan === 'premium' 
+                      ? 'border-indigo-600 bg-indigo-50/25 dark:bg-indigo-950/20 scale-[1.01] shadow-md z-10' 
+                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 shadow-sm'
+                    }`}
+                  >
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[10px] md:text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-md whitespace-nowrap z-10">
+                      Recommended
                     </div>
-                  </div>
-                  <ul className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-zinc-800 pt-3">
-                    {renderFeatures(pricingSettings.premiumFeatures, "text-slate-900 dark:text-zinc-100")}
-                  </ul>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setSelectedPlan('enterprise');
-                    handleClearPromoCode();
-                  }}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[160px] ${
-                    selectedPlan === 'enterprise' 
-                    ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 scale-[1.01] shadow-md z-10' 
-                    : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
-                  }`}
-                >
-                  <div className="absolute -top-2.5 right-4 bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
-                    Business
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Enterprise</span>
-                      {selectedPlan === 'enterprise' && (
-                        <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                      )}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs md:text-sm font-black uppercase text-slate-500 tracking-widest">Premium</span>
+                        {selectedPlan === 'premium' && (
+                          <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-1.5 flex-wrap">
+                        <span className={`text-2xl md:text-3xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-900 dark:text-white'}`}>
+                          ₱{premiumFinalPrice.toLocaleString()}
+                        </span>
+                        {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
+                          <span className="text-xs md:text-sm text-red-500 font-bold line-through ml-2 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-baseline gap-1 flex-wrap">
-                      <span className={`text-xl font-black tracking-tight ${selectedPlan === 'enterprise' ? 'text-indigo-700' : 'text-slate-900'}`}>
-                        ₱{enterpriseFinalPrice.toLocaleString()}
-                      </span>
-                      {isOfferActive && pricingSettings.promoDiscountEnterprise > 0 && (
-                        <span className="text-[10px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.enterprisePrice.toLocaleString()}</span>
-                      )}
+                    <ul className="mt-4 space-y-2 border-t border-slate-150 dark:border-zinc-800 pt-4 w-full">
+                      {renderFeatures(pricingSettings.premiumFeatures, "text-slate-900 dark:text-zinc-100")}
+                    </ul>
+                  </button>
+  
+                  <button
+                    onClick={() => {
+                      setSelectedPlan('enterprise');
+                      handleClearPromoCode();
+                    }}
+                    className={`text-left p-6 md:p-8 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[220px] ${
+                      selectedPlan === 'enterprise' 
+                      ? 'border-indigo-600 bg-indigo-50/25 dark:bg-indigo-950/20 scale-[1.01] shadow-md z-10' 
+                      : 'border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 shadow-sm'
+                    }`}
+                  >
+                    <div className="absolute -top-3.5 right-4 bg-slate-800 text-white text-[10px] md:text-xs font-black uppercase tracking-widest px-3 py-1 rounded-full shadow-md z-10">
+                      Business
                     </div>
-                  </div>
-                  <ul className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-zinc-800 pt-3">
-                    {renderFeatures(pricingSettings.enterpriseFeatures, "text-slate-900 dark:text-zinc-100")}
-                  </ul>
-                </button>
-              </div>
-            )}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs md:text-sm font-black uppercase text-slate-500 tracking-widest">Enterprise</span>
+                        {selectedPlan === 'enterprise' && (
+                          <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-1.5 flex-wrap">
+                        <span className={`text-2xl md:text-3xl font-black tracking-tight ${selectedPlan === 'enterprise' ? 'text-indigo-700' : 'text-slate-900'}`}>
+                          ₱{enterpriseFinalPrice.toLocaleString()}
+                        </span>
+                        {isOfferActive && pricingSettings.promoDiscountEnterprise > 0 && (
+                          <span className="text-xs md:text-sm text-red-500 font-bold line-through ml-2 align-middle">₱{pricingSettings.enterprisePrice.toLocaleString()}</span>
+                        )}
+                      </div>
+                    </div>
+                    <ul className="mt-4 space-y-2 border-t border-slate-150 dark:border-zinc-800 pt-4 w-full">
+                      {renderFeatures(pricingSettings.enterpriseFeatures, "text-slate-900 dark:text-zinc-100")}
+                    </ul>
+                  </button>
+                </div>
+              )
+}
             </section>
           </div>
 
