@@ -52,6 +52,10 @@ import {
   Eye,
   EyeOff,
   SlidersHorizontal,
+  Download,
+  Tag,
+  Lock,
+  Wallet,
 } from "lucide-react";
 import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
@@ -101,6 +105,56 @@ export default function PaymentScreen({
   const [paymentMethod, setPaymentMethod] = useState<"maribank" | "manual" | "paymongo" | "maya">(
     "maribank"
   );
+
+  // Redesigned payment flow states
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedPromoCode, setAppliedPromoCode] = useState("");
+  const [promoCodeError, setPromoCodeError] = useState("");
+  const [promoCodeSuccess, setPromoCodeSuccess] = useState("");
+  const [extraPromoDiscountPct, setExtraPromoDiscountPct] = useState(0); // 0.1 for 10%, etc.
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+
+  const AVAILABLE_COUPONS: Record<string, { pct: number; label: string }> = {
+    "ELECTRICALPH": { pct: 0.20, label: "20% ELECTRICALPH Special discount" },
+    "PROMO50": { pct: 0.50, label: "50% Flash Sale discount" },
+    "WELCOME": { pct: 0.10, label: "10% Welcome gift discount" },
+    "SPECIAL": { pct: 0.15, label: "15% Special promo discount" }
+  };
+
+  const handleApplyPromoCode = () => {
+    setPromoCodeError("");
+    setPromoCodeSuccess("");
+    const code = promoCodeInput.trim().toUpperCase();
+    if (!code) {
+      setPromoCodeError("Please enter a promo code.");
+      return;
+    }
+    if (AVAILABLE_COUPONS[code]) {
+      const coupon = AVAILABLE_COUPONS[code];
+      setAppliedPromoCode(code);
+      setExtraPromoDiscountPct(coupon.pct);
+      setPromoCodeSuccess(`Promo applied! Saved ${coupon.pct * 100}% extra!`);
+    } else {
+      setPromoCodeError("Invalid promo code. Please check and try again.");
+    }
+  };
+
+  const handleClearPromoCode = () => {
+    setAppliedPromoCode("");
+    setExtraPromoDiscountPct(0);
+    setPromoCodeSuccess("");
+    setPromoCodeInput("");
+  };
+
+  const handleDownloadQr = (qrUrl: string, name: string) => {
+    if (!qrUrl) return;
+    const link = document.createElement("a");
+    link.href = qrUrl;
+    link.download = `${name}_QR_Code.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Manual payment inputs
   const [manualName, setManualName] = useState("");
@@ -239,6 +293,18 @@ export default function PaymentScreen({
   
   // Calculate upgrade price safely - upgrade section should not apply any promo/discount campaign rates
   const upgradeFinalPrice = pricingSettings.upgradePrice;
+
+  // Real-time calculation of totals with client-side interactive promo codes
+  const getPlanBasePrice = () => {
+    if (isUpgrade) return upgradeFinalPrice;
+    if (selectedPlan === 'basic') return basicFinalPrice;
+    if (selectedPlan === 'enterprise') return enterpriseFinalPrice;
+    return premiumFinalPrice;
+  };
+
+  const basePlanPrice = getPlanBasePrice();
+  const extraDiscountAmount = basePlanPrice * extraPromoDiscountPct;
+  const finalGrandTotal = Math.max(0, basePlanPrice - extraDiscountAmount);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText("09939170684");
@@ -1725,7 +1791,7 @@ export default function PaymentScreen({
     setError("");
     try {
       const origin = window.location.origin;
-      const amount = isUpgrade ? upgradeFinalPrice : (selectedPlan === "enterprise" ? enterpriseFinalPrice : selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice);
+      const amount = Math.round(finalGrandTotal);
       const response = await axios.post("/api/create-checkout", {
         userId: user.uid,
         email: user.email,
@@ -1790,7 +1856,7 @@ export default function PaymentScreen({
           method: paymentMethod === "maribank" ? "MariBank" : paymentMethod === "maya" ? "Maya" : "GCash",
           senderName: manualName.trim(),
           referenceNo: cleanedRef,
-          amount: isUpgrade ? upgradeFinalPrice : (selectedPlan === "enterprise" ? enterpriseFinalPrice : selectedPlan === "premium" ? premiumFinalPrice : basicFinalPrice),
+          amount: Math.round(finalGrandTotal),
           plan: isUpgrade ? "premium" : selectedPlan,
           submittedAt: new Date().toISOString(),
           isUpgrade: isUpgrade, // Keep a record if this was an upgrade explicitly
@@ -6717,143 +6783,174 @@ export default function PaymentScreen({
   // Active Pending Review State Screen for regular user
   if (userProfile?.paymentStatus === "pending_verification" && !success) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+      <div className="min-h-screen bg-slate-50/50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 flex flex-col font-sans relative pb-12">
         {isAdminUser && (
-          <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 mb-4">
+          <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 mt-4">
             <button
               onClick={() => setIsAdminMode(true)}
-              className="w-full py-2 px-4 flex items-center justify-center gap-2 text-xs font-bold text-white bg-indigo-600 hover:bg-[#0057E7] border border-transparent rounded-xl shadow-lg transition-all transform hover:scale-[1.01]"
+              className="w-full py-2.5 px-4 flex items-center justify-center gap-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 border border-transparent rounded-2xl shadow-lg transition-all"
             >
-              <ShieldCheck className="w-4 h-4 animate-bounce" />
-              🔧 Open Transactions Monitor Panel
+              <ShieldCheck className="w-4 h-4" />
+              🔧 OPEN TRANSACTIONS MONITOR PANEL
             </button>
           </div>
         )}
-        <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center mb-6 relative">
-          {onClose && (
-            <button onClick={onClose} className="absolute -top-4 right-0 p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full">
-              <X className="w-5 h-5" />
-            </button>
-          )}
-          <div className="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg relative animate-pulse">
-            <ShieldCheck className="w-8 h-8 text-white" />
-          </div>
-          <h2 className="mt-4 text-center text-2xl font-black text-slate-900 uppercase tracking-tight">
-            Verification Pending
-          </h2>
-          <p className="mt-2 text-center text-sm text-slate-500 font-medium max-w-sm">
-            We are reviewing your {isUpgrade ? "upgrade" : "payment"} verification details.
-          </p>
-        </div>
 
-        <div className="sm:mx-auto sm:w-full sm:max-w-md">
-          <div className="bg-white py-8 px-6 shadow-xl sm:rounded-2xl border border-slate-100">
-            <div className="flex items-center gap-3 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-lg mb-6 leading-relaxed">
-              <Loader2 className="w-6 h-6 text-amber-600 shrink-0 animate-spin" />
-              <div className="text-xs text-amber-800 font-bold uppercase tracking-wider space-y-0.5">
-                <span className="block">Review process initiated</span>
-                <span className="font-normal text-slate-600 tracking-normal normal-case block">
-                  Checking reference ledger block against developer (Angelo
-                  P.)'s e-wallet account balance.
-                </span>
-              </div>
+        {/* Compact Header */}
+        <header className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-2 flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shadow-md shadow-amber-500/10">
+              <ShieldCheck className="w-6 h-6 text-white" />
             </div>
-
-            {userProfile.pendingVerification && (
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2 mb-6">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">
-                    Account ID
-                  </span>
-                  <span className="text-slate-700 font-bold font-mono text-[11px] select-all">
-                    {user.uid}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">
-                    Payment Method
-                  </span>
-                  <span className="text-slate-800 font-black uppercase text-[11px]">
-                    {userProfile.pendingVerification.method || "GCash"}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">
-                    Sender Account Name
-                  </span>
-                  <span className="text-slate-800 font-black uppercase text-[11px]">
-                    {userProfile.pendingVerification.senderName}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">
-                    Reference Code
-                  </span>
-                  <span className="text-[#0157E4] font-black font-mono tracking-wider text-[11px]">
-                    {userProfile.pendingVerification.referenceNo}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs pt-1 border-t border-slate-200/50">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">
-                    Amount Paid
-                  </span>
-                  <span className="text-slate-900 font-black text-xs font-mono">
-                    ₱{userProfile.pendingVerification.amount?.toLocaleString() || "1,000"}.00
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-400 font-bold uppercase tracking-wider">
-                    Submitted On
-                  </span>
-                  <span className="text-slate-500 font-medium">
-                    {new Date(
-                      userProfile.pendingVerification.submittedAt,
-                    ).toLocaleTimeString()}{" "}
-                    {new Date(
-                      userProfile.pendingVerification.submittedAt,
-                    ).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
+            <div>
+              <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white uppercase leading-none">
+                ElectricalPH
+              </h1>
+              <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-extrabold uppercase mt-1 tracking-wider">
+                Verification Pending
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
             )}
+          </div>
+        </header>
 
-            <p className="text-xs text-slate-400 text-center mb-6 leading-relaxed">
-              Verification is usually process-verified in{" "}
-              <strong>5 to 10 minutes</strong>. Once the admin (Angelo P.)
-              confirms the transfer on their e-wallet logs, your PRO features
-              will automatically unlock instantly. You may leave this page or
-              close the tab safely.
-            </p>
+        <main className="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full">
+            {/* Left Column: Transaction details card */}
+            <div className="lg:col-span-6 space-y-6">
+              <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800 shadow-xl space-y-4">
+                <h3 className="text-xs font-black uppercase text-slate-400 dark:text-zinc-500 tracking-wider">
+                  Submitted Details
+                </h3>
 
-            <div className="space-y-3">
-              <button
-                onClick={() => {
-                  if (!confirmCancelReview) {
-                    setConfirmCancelReview(true);
-                    setTimeout(() => setConfirmCancelReview(false), 5000);
-                  } else {
-                    handleCancelManualReview();
-                    setConfirmCancelReview(false);
-                  }
-                }}
-                className={`w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold transition-colors border rounded-xl bg-slate-50 ${
-                  confirmCancelReview
-                    ? "bg-red-600 text-white hover:bg-red-700 border-transparent animate-pulse"
-                    : "text-red-500 hover:text-red-700 hover:bg-red-50 border-transparent hover:border-red-100"
-                }`}
-              >
-                {confirmCancelReview ? "⚠️ Click again to confirm cancel" : "Cancel and edit reference details"}
-              </button>
-              <button
-                onClick={handleLogout}
-                className="w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors bg-slate-50 rounded-xl"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign out
-              </button>
+                {userProfile.pendingVerification && (
+                  <div className="space-y-3.5 pt-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Account ID</span>
+                      <span className="text-slate-700 dark:text-zinc-300 font-bold font-mono text-[10px] select-all">{user.uid}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Payment Method</span>
+                      <span className="text-slate-800 dark:text-white font-black uppercase text-[11px]">
+                        {userProfile.pendingVerification.method || "GCash"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Sender Name</span>
+                      <span className="text-slate-800 dark:text-white font-black uppercase text-[11px]">
+                        {userProfile.pendingVerification.senderName}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Reference Code</span>
+                      <span className="text-[#0157E4] dark:text-blue-400 font-black font-mono tracking-wider text-xs select-all">
+                        {userProfile.pendingVerification.referenceNo}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs pt-3 border-t border-slate-100 dark:border-zinc-800/80">
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Amount Paid</span>
+                      <span className="text-slate-900 dark:text-white font-black text-sm font-mono">
+                        ₱{userProfile.pendingVerification.amount?.toLocaleString() || "1,000"}.00
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Submitted On</span>
+                      <span className="text-slate-500 dark:text-zinc-400 font-bold uppercase text-[10px]">
+                        {new Date(userProfile.pendingVerification.submittedAt).toLocaleTimeString()} {new Date(userProfile.pendingVerification.submittedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Review timeline status card */}
+            <div className="lg:col-span-6 bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800 shadow-xl space-y-6">
+              <div className="flex items-start gap-4 p-4 bg-amber-500/5 border border-amber-500/10 rounded-2xl">
+                <Loader2 className="w-5 h-5 text-amber-500 shrink-0 animate-spin mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wide">Ledger Verification in Progress</h4>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400 mt-1 leading-relaxed">
+                    We are verifying your transfer reference code against the ledger balances of e-wallet accounts.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-xs font-black uppercase text-slate-400 dark:text-zinc-500 tracking-wider">
+                  Timeline
+                </h3>
+                
+                <div className="relative border-l-2 border-slate-100 dark:border-zinc-800 pl-4 ml-2 space-y-6">
+                  {/* Step 1 */}
+                  <div className="relative">
+                    <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
+                    <span className="text-[10px] text-emerald-500 font-black uppercase tracking-wider block">Completed</span>
+                    <span className="text-xs font-extrabold text-slate-800 dark:text-white mt-0.5 block">Transfer Details Submitted</span>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="relative animate-pulse">
+                    <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-4 ring-amber-500/20" />
+                    <span className="text-[10px] text-amber-500 font-black uppercase tracking-wider block">In Progress</span>
+                    <span className="text-xs font-extrabold text-slate-800 dark:text-white mt-0.5 block">Reconciliation Verification</span>
+                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-0.5 font-medium leading-relaxed">
+                      Reconciling your reference code. Usually completes within 5 to 10 minutes.
+                    </p>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="relative opacity-40">
+                    <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-zinc-700" />
+                    <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-black uppercase tracking-wider block">Pending</span>
+                    <span className="text-xs font-extrabold text-slate-800 dark:text-white mt-0.5 block">Premium Suite Activated</span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-400 dark:text-zinc-500 leading-relaxed uppercase font-bold text-center">
+                Once reconciled, features unlock automatically. You can safely close this page.
+              </p>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-zinc-800/80 space-y-2.5">
+                <button
+                  onClick={() => {
+                    if (!confirmCancelReview) {
+                      setConfirmCancelReview(true);
+                      setTimeout(() => setConfirmCancelReview(false), 5000);
+                    } else {
+                      handleCancelManualReview();
+                      setConfirmCancelReview(false);
+                    }
+                  }}
+                  className={`w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold transition-colors border rounded-xl bg-slate-50 dark:bg-zinc-900/50 ${
+                    confirmCancelReview
+                      ? "bg-red-600 text-white hover:bg-red-700 border-transparent animate-pulse font-extrabold"
+                      : "text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 border-transparent hover:border-red-100"
+                  }`}
+                >
+                  {confirmCancelReview ? "⚠️ Click again to confirm cancel" : "Cancel and edit details"}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="w-full py-3 px-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors bg-slate-50 dark:bg-zinc-900/50 rounded-xl"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Sign out
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -6882,64 +6979,89 @@ export default function PaymentScreen({
 
   // General Customer View Screen
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+    <div className="min-h-screen bg-slate-50/50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 flex flex-col font-sans relative pb-24 lg:pb-12">
       {/* If current user is Admin, provide direct bypass switch */}
       {isAdminUser && (
-        <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 mb-4">
+        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 mt-4">
           <button
             onClick={() => setIsAdminMode(true)}
-            className="w-full py-2 px-4 flex items-center justify-center gap-2 text-xs font-bold text-white bg-indigo-600 hover:bg-[#0057E7] border border-transparent rounded-xl shadow-lg transition-all transform hover:scale-[1.01]"
+            className="w-full py-2.5 px-4 flex items-center justify-center gap-2 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 border border-transparent rounded-2xl shadow-lg transition-all transform hover:scale-[1.005]"
           >
             <ShieldCheck className="w-4 h-4 animate-bounce" />
-            🔧 Open Transactions Monitor Panel
+            🔧 OPEN TRANSACTIONS MONITOR PANEL
           </button>
         </div>
       )}
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-md flex flex-col items-center mb-8 px-4">
-        <div className="w-14 h-14 bg-[#0157E4] rounded-2xl flex items-center justify-center shadow-lg mb-6 relative">
-          <ShieldCheck className="w-8 h-8 text-white" />
-          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-slate-900 rounded-full flex items-center justify-center border-2 border-slate-50">
-            <span className="text-white text-[10px] font-bold">PRO</span>
+      {/* Modern Compact Header */}
+      <header className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-2 flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-600/10">
+            <ShieldCheck className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white uppercase leading-none">
+              ElectricalPH
+            </h1>
+            <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-extrabold uppercase mt-1 tracking-wider">
+              Premium Suite Checkout
+            </p>
           </div>
         </div>
-        <h2 className="text-center text-3xl font-black tracking-tight text-slate-900 uppercase">
-          Unlock Features
-        </h2>
-        <p className="mt-2 text-center text-xs text-slate-500 font-bold max-w-sm uppercase tracking-wider">
-          ElectricalPH Premium Suite
-        </p>
-      </div>
-
-      <div className="sm:mx-auto sm:w-full sm:max-w-lg px-4 relative">
-        {onClose && (
-          <button onClick={onClose} className="absolute -top-12 right-4 p-2 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full shadow-sm">
-            <X className="w-5 h-5" />
-          </button>
-        )}
-        <div className="bg-white py-8 px-4 shadow-xl sm:rounded-3xl border border-slate-100 sm:px-10">
-          {/* Real-time Promo Offer Banner */}
-          {isOfferActive && !isUpgrade && (
-            <div className="mb-6 bg-gradient-to-r from-pink-500 via-indigo-600 to-indigo-700 text-white p-4 rounded-2xl shadow-md border border-indigo-500/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 select-none">
-              <div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-rose-100 text-rose-700 animate-pulse">
-                    PROMO ACTIVE
-                  </span>
-                  <span className="text-xs font-black uppercase tracking-wide">{pricingSettings.offerTitle || "SPECIAL DISCOUNT"}</span>
-                </div>
-                <p className="text-[10px] text-white/80 mt-1 leading-snug">Premium promo rates have been applied dynamically below.</p>
-              </div>
-              {pricingSettings.offerExpiry && (
-                <div className="text-[9px] font-black tracking-wider uppercase font-mono bg-white/10 px-2.5 py-1 rounded-lg self-stretch sm:self-auto flex items-center justify-center">
-                  Expiry: {new Date(pricingSettings.offerExpiry).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </div>
-              )}
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex flex-col items-end">
+            <span className="text-[10px] text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Logged In As</span>
+            <span className="text-xs font-black text-slate-800 dark:text-zinc-200">{user?.email}</span>
+          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200 dark:hover:bg-zinc-800 rounded-full transition-all shadow-sm"
+              title="Close and return"
+            >
+              <X className="w-5 h-5" />
+            </button>
           )}
-          <div className="mb-6 border-b border-slate-100 pb-6">
-            <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">1. Select Your Subscription Plan</h3>
-            {isUpgrade ? (
+        </div>
+      </header>
+
+      <main className="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Real-time Promo Offer Banner */}
+        {isOfferActive && !isUpgrade && (
+          <div className="mb-6 bg-gradient-to-r from-pink-500 via-indigo-600 to-indigo-700 text-white p-4 rounded-2xl shadow-md border border-indigo-500/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 select-none">
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase bg-rose-100 text-rose-700 animate-pulse">
+                  PROMO ACTIVE
+                </span>
+                <span className="text-xs font-black uppercase tracking-wide">{pricingSettings.offerTitle || "SPECIAL DISCOUNT"}</span>
+              </div>
+              <p className="text-[10px] text-white/80 mt-1 leading-snug">Premium promo rates have been applied dynamically below.</p>
+            </div>
+            {pricingSettings.offerExpiry && (
+              <div className="text-[9px] font-black tracking-wider uppercase font-mono bg-white/10 px-2.5 py-1 rounded-lg self-stretch sm:self-auto flex items-center justify-center">
+                Expiry: {new Date(pricingSettings.offerExpiry).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full">
+          {/* Left Panel: Plan, Promo, Summary */}
+          <div className="lg:col-span-6 space-y-6">
+            {/* STEP 1: Plan Selection */}
+            <section className="bg-white dark:bg-zinc-900/40 p-5 rounded-3xl border border-slate-100 dark:border-zinc-800/80 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-black uppercase text-slate-400 dark:text-zinc-500 tracking-wider">
+                  Step 1: Select Your Plan
+                </h3>
+                {isUpgrade && (
+                  <span className="text-[9px] font-black tracking-wider uppercase bg-indigo-100 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400 px-2 py-0.5 rounded-full">
+                    Upgrade Mode
+                  </span>
+                )}
+              </div>
+              {isUpgrade ? (
                <button
                className={`w-full text-left p-4 rounded-2xl border-2 transition-all relative border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10 cursor-default`}
              >
@@ -6958,92 +7080,115 @@ export default function PaymentScreen({
                </ul>
              </button>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <button
-                  onClick={() => setSelectedPlan('basic')}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
+                  onClick={() => {
+                    setSelectedPlan('basic');
+                    handleClearPromoCode();
+                  }}
+                  className={`text-left p-4 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[160px] ${
                     selectedPlan === 'basic' 
-                    ? 'border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10' 
-                    : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
+                    ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 scale-[1.01] shadow-md z-10' 
+                    : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
                   }`}
                 >
-                  {selectedPlan === 'basic' && (
-                    <div className="absolute top-3 right-3 text-indigo-600">
-                      <CheckCircle2 className="w-5 h-5" />
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Basic</span>
+                      {selectedPlan === 'basic' && (
+                        <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      )}
                     </div>
-                  )}
-                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Basic Plan</span>
-                  <div className="mt-1 flex items-end gap-1 flex-wrap">
-                    <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{basicFinalPrice.toLocaleString()}</span>
-                    {isOfferActive && pricingSettings.promoDiscountBasic > 0 && (
-                      <span className="text-[11px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
-                    )}
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className={`text-xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700' : 'text-slate-900'}`}>
+                        ₱{basicFinalPrice.toLocaleString()}
+                      </span>
+                      {isOfferActive && pricingSettings.promoDiscountBasic > 0 && (
+                        <span className="text-[10px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
+                      )}
+                    </div>
                   </div>
-                  <ul className="mt-3 space-y-1.5 min-h-[60px]">
-                    {renderFeatures(pricingSettings.basicFeatures, "text-slate-600")}
+                  <ul className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-zinc-800 pt-3">
+                    {renderFeatures(pricingSettings.basicFeatures, "text-slate-600 dark:text-zinc-300")}
                   </ul>
                 </button>
                 
                 <button
-                  onClick={() => setSelectedPlan('premium')}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
+                  onClick={() => {
+                    setSelectedPlan('premium');
+                    handleClearPromoCode();
+                  }}
+                  className={`text-left p-4 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[160px] ${
                     selectedPlan === 'premium' 
-                    ? 'border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10' 
-                    : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
+                    ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 scale-[1.01] shadow-md z-10' 
+                    : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
                   }`}
                 >
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
+                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap">
                     Recommended
                   </div>
-                  {selectedPlan === 'premium' && (
-                    <div className="absolute top-3 right-3 text-indigo-600">
-                      <CheckCircle2 className="w-5 h-5" />
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Premium</span>
+                      {selectedPlan === 'premium' && (
+                        <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      )}
                     </div>
-                  )}
-                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Premium Plan</span>
-                  <div className="mt-1 flex items-end gap-1 flex-wrap">
-                    <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{premiumFinalPrice.toLocaleString()}</span>
-                    {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
-                      <span className="text-[11px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
-                    )}
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className={`text-xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700' : 'text-slate-900'}`}>
+                        ₱{premiumFinalPrice.toLocaleString()}
+                      </span>
+                      {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
+                        <span className="text-[10px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
+                      )}
+                    </div>
                   </div>
-                  <ul className="mt-3 space-y-1.5 min-h-[60px]">
-                    {renderFeatures(pricingSettings.premiumFeatures, "text-slate-900")}
+                  <ul className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-zinc-800 pt-3">
+                    {renderFeatures(pricingSettings.premiumFeatures, "text-slate-900 dark:text-zinc-100")}
                   </ul>
                 </button>
 
                 <button
-                  onClick={() => setSelectedPlan('enterprise')}
-                  className={`text-left p-4 rounded-2xl border-2 transition-all relative ${
+                  onClick={() => {
+                    setSelectedPlan('enterprise');
+                    handleClearPromoCode();
+                  }}
+                  className={`text-left p-4 rounded-2xl border-2 transition-all relative flex flex-col justify-between h-full min-h-[160px] ${
                     selectedPlan === 'enterprise' 
-                    ? 'border-indigo-600 bg-indigo-50/50 scale-[1.02] shadow-md z-10' 
-                    : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
+                    ? 'border-indigo-600 bg-indigo-50/20 dark:bg-indigo-950/10 scale-[1.01] shadow-md z-10' 
+                    : 'border-slate-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-200 dark:hover:border-zinc-700'
                   }`}
                 >
                   <div className="absolute -top-2.5 right-4 bg-slate-800 text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-sm">
                     Business
                   </div>
-                  {selectedPlan === 'enterprise' && (
-                    <div className="absolute top-3 right-3 text-indigo-600">
-                      <CheckCircle2 className="w-5 h-5" />
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Enterprise</span>
+                      {selectedPlan === 'enterprise' && (
+                        <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      )}
                     </div>
-                  )}
-                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Enterprise Plan</span>
-                  <div className="mt-1 flex items-end gap-1 flex-wrap">
-                    <span className={`text-2xl font-black tracking-tight ${selectedPlan === 'enterprise' ? 'text-indigo-700' : 'text-slate-900'}`}>₱{enterpriseFinalPrice.toLocaleString()}</span>
-                    {isOfferActive && pricingSettings.promoDiscountEnterprise > 0 && (
-                      <span className="text-[11px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.enterprisePrice.toLocaleString()}</span>
-                    )}
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className={`text-xl font-black tracking-tight ${selectedPlan === 'enterprise' ? 'text-indigo-700' : 'text-slate-900'}`}>
+                        ₱{enterpriseFinalPrice.toLocaleString()}
+                      </span>
+                      {isOfferActive && pricingSettings.promoDiscountEnterprise > 0 && (
+                        <span className="text-[10px] text-red-500 font-bold line-through ml-1.5 align-middle">₱{pricingSettings.enterprisePrice.toLocaleString()}</span>
+                      )}
+                    </div>
                   </div>
-                  <ul className="mt-3 space-y-1.5 min-h-[60px]">
-                    {renderFeatures(pricingSettings.enterpriseFeatures, "text-slate-900")}
+                  <ul className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-zinc-800 pt-3">
+                    {renderFeatures(pricingSettings.enterpriseFeatures, "text-slate-900 dark:text-zinc-100")}
                   </ul>
                 </button>
               </div>
             )}
+            </section>
           </div>
 
-          <div className="mb-6">
+          <div className="lg:col-span-6 bg-white dark:bg-zinc-900/40 p-6 rounded-3xl border border-slate-100 dark:border-zinc-800/80 shadow-sm space-y-6">
+            <div className="mb-6">
             <h3 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3 block">2. Select Payment Method</h3>
             {/* Selector Tabs */}
             <div className={`grid gap-2 bg-slate-100 p-1.5 rounded-2xl mb-6 ${
@@ -7566,6 +7711,7 @@ export default function PaymentScreen({
           </div>
         </div>
       </div>
+      </main>
     </div>
   );
 }
