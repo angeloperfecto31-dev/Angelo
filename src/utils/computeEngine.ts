@@ -1878,12 +1878,13 @@ export const computePanelScheduleValues = (
     const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
     const total3Phase = phaseAmps.threePhase;
     formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
+    maxDesignAmp = formulaDemandAmp;
+    maxBaseAmp = formulaDemandAmp / 1.25;
   } else {
-    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
+    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML);
+    maxDesignAmp = formulaDemandAmp;
+    maxBaseAmp = formulaDemandAmp;
   }
-
-  maxDesignAmp = formulaDemandAmp;
-  maxBaseAmp = formulaDemandAmp / 1.25;
   let internalDemandCurrent = formulaDemandAmp;
 
   const mainCurrent = { designAmp: maxDesignAmp, baseAmp: maxBaseAmp };
