@@ -139,6 +139,44 @@ export const runBomQuantityTakeoff = (
   const wasteConduitsFactor = 1 + (settings.wasteConduits || 8) / 100;
   const wasteAccessoriesFactor = 1 + (settings.wasteAccessories || 5) / 100;
 
+  // Reachability analysis to filter out orphaned/unlinked panels, and also deduplicate them
+  const reachablePanelIds = new Set<string>();
+  const queue: string[] = [];
+
+  // Find subpanels linked from MDP circuits
+  circuits.forEach(c => {
+    if ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) && c.linkedSubPanelId) {
+      reachablePanelIds.add(c.linkedSubPanelId);
+      queue.push(c.linkedSubPanelId);
+    }
+  });
+
+  // Breadth-First Search to find transitively reachable subpanels
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    const currentSp = subPanels.find(sp => sp?.id === currentId);
+    if (currentSp && currentSp.circuits) {
+      currentSp.circuits.forEach(c => {
+        if ((c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL) && c.linkedSubPanelId) {
+          if (!reachablePanelIds.has(c.linkedSubPanelId)) {
+            reachablePanelIds.add(c.linkedSubPanelId);
+            queue.push(c.linkedSubPanelId);
+          }
+        }
+      });
+    }
+  }
+
+  // Filter subpanels to only include those that are reachable and unique by id
+  const uniqueConnectedSubPanels: typeof subPanels = [];
+  const seenSpIds = new Set<string>();
+  subPanels.forEach(sp => {
+    if (sp && sp.id && reachablePanelIds.has(sp.id) && !seenSpIds.has(sp.id)) {
+      seenSpIds.add(sp.id);
+      uniqueConnectedSubPanels.push(sp);
+    }
+  });
+
   const formatInsulationLabel = (ins: string) => {
     if (!ins || ins.toUpperCase() === "THHN") return "THHN/THWN-2";
     return ins;
@@ -186,7 +224,7 @@ export const runBomQuantityTakeoff = (
   let totalConnectedLoadVA = totalMdpConnectedVA;
   let totalDemandVA = mdpValues.mainCurrent.baseAmp * panel.voltage * (is3Phase ? Math.sqrt(3) : 1);
 
-  subPanels.forEach(sp => {
+  uniqueConnectedSubPanels.forEach(sp => {
     const spValues = computePanelScheduleValues(sp.panel, sp.circuits);
     totalConnectedLoadVA += spValues.totalVA;
     const spIs3Ph = sp.panel.system.includes("3PH");
@@ -276,7 +314,7 @@ export const runBomQuantityTakeoff = (
     };
 
     circuits.forEach(checkMotor);
-    subPanels.forEach(sp => sp.circuits.forEach(checkMotor));
+    uniqueConnectedSubPanels.forEach(sp => sp.circuits.forEach(checkMotor));
 
     const reqGenKVA = (totalDemandKVA + (motorStartingSurgeVA / 1000)) * 1.20;
     const reqGenKW = reqGenKVA * 0.8; // 0.8 Power Factor
@@ -397,17 +435,24 @@ export const runBomQuantityTakeoff = (
     source: `Panel [${mdpId}] Main`
   });
 
+  // Service entrance wires
+  const fLength = getFeederLength(mdpId);
+  const fPhaseSize = mdpFeeder.wire.size.toString() || "30";
+  const fPhaseCount = is3Phase ? 3 : 2;
+  const fWireRuns = mdpFeeder.wire.runs || 1;
+
   // Panel enclosure
   const standardBusRatings = [100, 225, 400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000];
   const busbarRating = standardBusRatings.find(r => r >= mBreakerAmp) || mBreakerAmp;
   const mdpCabinetCost = (busbarRating * 15) + (circuits.length * 300) + 4000;
+  const mdpDemandVA = computedMDP.mainCurrent.baseAmp * panel.voltage * (is3Phase ? 1.732 : 1);
 
   addItem({
     category: "Distribution Equipment",
-    name: `Main Panelboard Cabinet & Busbar Assembly, ${busbarRating}A Bus, ${circuits.length}-Branch Slots`,
-    description: `${panel.enclosure || "NEMA 1"} ${panel.mounting || "Surface"} mounted steel panelboard cabinet enclosure with ${busbarRating}A silver-plated copper busbars, including neutral and ground bus links.`,
+    name: `Main Panelboard / ${panel.type || "MDP"} Cabinet & Busbar Assembly (${mdpId})`,
+    description: `${panel.enclosure || "NEMA 1"} ${panel.mounting || "Surface"} mounted steel panelboard cabinet. Sized for ${busbarRating}A silver-plated copper busbar rating with neutral and ground links. Serving ${circuits.length} branch slots. Connected Load: ${(computedMDP.totalVA / 1000).toFixed(2)} kVA, Demand Load: ${(mdpDemandVA / 1000).toFixed(2)} kVA.`,
     brand: settings.preferredBrandBreakers,
-    specification: `Surface or flush mounted steel enclosure, powder coated, rated for system voltage, compliant with PEC Sec 2.40 & 3.84`,
+    specification: `Voltage: ${panel.voltage}V, System: ${panel.system}, Main Overcurrent: ${mBreakerAmp}AT/${mBreakerAF}AF ${mPolesStr} ${mBreakerKAIC} kAIC. Feeder: ${fWireRuns} runs of ${fPhaseSize} mm² copper conductors in ${mdpFeeder.conduitSize || "50"}mm Ø ${mdpFeeder.conduitType || "PVC"} conduit. Compliant with PEC Article 2.40 & 3.84.`,
     quantity: 1,
     unit: "pcs",
     unitCost: mdpCabinetCost,
@@ -416,11 +461,6 @@ export const runBomQuantityTakeoff = (
     source: `Panel [${mdpId}] Main`
   });
 
-  // Service entrance wires
-  const fLength = getFeederLength(mdpId);
-  const fPhaseSize = mdpFeeder.wire.size.toString() || "30";
-  const fPhaseCount = is3Phase ? 3 : 2;
-  const fWireRuns = mdpFeeder.wire.runs || 1;
   const fPhaseMeters = fLength * fPhaseCount * fWireRuns * wasteConductorsFactor;
   const fPhaseCost = getWirePricePerMeter(fPhaseSize);
 
@@ -947,6 +987,22 @@ export const runBomQuantityTakeoff = (
           remarks: `Utility box wall backing for receptacle ${c.circuitNo}`,
           source: `Panel [${panelId}] Circuit ${c.circuitNo}`
         });
+      } else if (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) {
+        const dsRating = (c.mcbAT && c.mcbAT > 30) ? (c.mcbAT > 60 ? 100 : 60) : 30;
+        const polesStr = typeof c.mcbP === "string" ? c.mcbP : (c.mcbP || 2) + "P";
+        addItem({
+          category: "Switches",
+          name: `Enclosed Safety Disconnect Switch, ${dsRating}A, ${polesStr}`,
+          description: `Enclosed safety switch for motor/air-conditioning equipment isolation (located near the equipment).`,
+          brand: settings.preferredBrandBreakers,
+          specification: `NEMA 3R rainproof steel enclosure with external lockable handle, compliant with PEC Sec 4.30.9 & 4.40.2`,
+          quantity: 1,
+          unit: "pcs",
+          unitCost: dsRating === 30 ? 1850 : (dsRating === 60 ? 3200 : 5800),
+          laborCostPerUnit: dsRating === 30 ? 400 : (dsRating === 60 ? 600 : 1000),
+          remarks: `Equipment safety disconnect switch for ${c.circuitNo} (${c.description || "Motor/AC"})`,
+          source: `Panel [${panelId}] Circuit ${c.circuitNo}`
+        });
       }
     });
   };
@@ -955,7 +1011,7 @@ export const runBomQuantityTakeoff = (
   processPanelCircuits(panel, circuits, mdpId);
 
   // Process Subpanels
-  subPanels.forEach(sp => {
+  uniqueConnectedSubPanels.forEach(sp => {
     const spId = sp.panel.designation || `Sub-Panel ${sp.id}`;
     const computedSP = computePanelScheduleValues(sp.panel, sp.circuits);
     const spFeeder = computedSP.mainFeeder;
@@ -966,11 +1022,29 @@ export const runBomQuantityTakeoff = (
     const spBreakerCost = spMainAmp > 100 ? 5800 : 1250;
     const spBreakerKAIC = spFeeder.kaic || sp.panel.icRating || "10";
 
+    // Determine parent panel and dynamic type (SP/SSP/DP)
+    let spParentId = "Main Distribution Panel";
+    const parentSp = uniqueConnectedSubPanels.find(otherSp =>
+      otherSp.circuits.some(c => c.linkedSubPanelId === sp.id)
+    );
+    if (parentSp) {
+      spParentId = parentSp.panel.designation || `Sub-Panel ${parentSp.id}`;
+    }
+    const spType = sp.panel.type || (parentSp ? "SSP" : "SP");
+
+    const spIs3Phase = sp.panel.system.includes("3PH");
+    const spDemandVA = computedSP.mainCurrent.baseAmp * sp.panel.voltage * (spIs3Phase ? 1.732 : 1);
+
+    const sfConduitType = spFeeder.conduitType || "PVC";
+    const sfConduitSize = spFeeder.conduitSize || "32";
+    const sfWireRuns = spFeeder.wire.runs || 1;
+    const sfPhaseSize = spFeeder.wire.size.toString() || "8.0";
+
     // Subpanel Main Breaker
     addItem({
       category: "Breakers",
       name: `Main Panelboard Breaker MCB, ${spMainAmp}AT/${spMainAF}AF, ${spPolesStr}`,
-      description: `Subpanel main protection miniature circuit breaker, ${spBreakerKAIC} kAIC`,
+      description: `Subpanel main protection miniature circuit breaker, ${spBreakerKAIC} kAIC interrupting rating`,
       brand: settings.preferredBrandBreakers,
       specification: `Miniature Circuit Breaker (MCB) assembly, compliant with PEC Sec 2.40`,
       quantity: 1,
@@ -987,10 +1061,10 @@ export const runBomQuantityTakeoff = (
 
     addItem({
       category: "Distribution Equipment",
-      name: `Subpanel Cabinet & Busbar Assembly, ${spBusbarRating}A Bus, ${sp.circuits.length}-Branch Slots`,
-      description: `${sp.panel.enclosure || "NEMA 1"} ${sp.panel.mounting || "Surface"} mounted steel subpanelboard cabinet enclosure with ${spBusbarRating}A copper busbars, including neutral and ground bus links.`,
+      name: `Distribution Board / ${spType} Cabinet & Busbar Assembly (${spId})`,
+      description: `${sp.panel.enclosure || "NEMA 1"} ${sp.panel.mounting || "Surface"} mounted steel panelboard cabinet. Sized for ${spBusbarRating}A copper busbars with neutral and ground links. Serving ${sp.circuits.length} branch slots. Connected Load: ${(computedSP.totalVA / 1000).toFixed(2)} kVA, Demand Load: ${(spDemandVA / 1000).toFixed(2)} kVA.`,
       brand: settings.preferredBrandBreakers,
-      specification: `Powder coated wall cabinet, rated for system voltage, compliant with PEC Sec 2.40 & 3.84`,
+      specification: `Voltage: ${sp.panel.voltage}V, System: ${sp.panel.system}, Main Overcurrent: ${spMainAmp}AT/${spMainAF}AF ${spPolesStr} ${spBreakerKAIC} kAIC. Feeder: ${sfWireRuns} runs of ${sfPhaseSize} mm² copper conductors in ${sfConduitSize}mm Ø ${sfConduitType} conduit. Connected downstream of ${spParentId}. Compliant with PEC Article 2.40 & 3.84.`,
       quantity: 1,
       unit: "pcs",
       unitCost: spCabinetCost,
@@ -999,12 +1073,25 @@ export const runBomQuantityTakeoff = (
       source: `Panel [${spId}] Main`
     });
 
+    // Enclosed Safety Disconnect Switch for the subpanel (feeder isolation)
+    addItem({
+      category: "Switches",
+      name: `Enclosed Safety Disconnect Switch (Feeder Isolator), ${spMainAmp}A, ${spPolesStr}`,
+      description: `Molded safety disconnect switch in NEMA 1/3R enclosure, acting as local isolating switch for Panel ${spId}.`,
+      brand: settings.preferredBrandBreakers,
+      specification: `Heavy-duty quick-make quick-break mechanism, visible blade design, rated for ${sp.panel.voltage}V, compliant with PEC Article 4.30 & Sec 5.0.1.`,
+      quantity: 1,
+      unit: "pcs",
+      unitCost: spMainAmp * 35 + 2500,
+      laborCostPerUnit: (spMainAmp * 35 + 2500) * 0.15,
+      remarks: `Feeder Isolation Disconnect Switch for ${spId}`,
+      source: `Panel [${spId}] Main`
+    });
+
     // Subpanel Feeder conductors
     const spInsulationLabel = formatInsulationLabel(sp.panel.insulationType || "THHN");
     const sfLength = getFeederLength(sp.id);
-    const sfPhaseSize = spFeeder.wire.size.toString() || "8.0";
     const sfPhaseCount = sp.panel.system.includes("3PH") ? 3 : 2;
-    const sfWireRuns = spFeeder.wire.runs || 1;
     const sfPhaseMeters = sfLength * sfPhaseCount * sfWireRuns * wasteConductorsFactor;
     const sfPhaseCost = getWirePricePerMeter(sfPhaseSize);
 
@@ -1062,8 +1149,6 @@ export const runBomQuantityTakeoff = (
     });
 
     // Subpanel feeder conduit
-    const sfConduitType = spFeeder.conduitType || "PVC";
-    const sfConduitSize = spFeeder.conduitSize || "32";
     const sfConduitMeters = sfLength * wasteConduitsFactor;
     const sfConduitCost = getConduitPricePerMeter(sfConduitSize, sfConduitType);
     addItem({

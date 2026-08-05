@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Upload, X, Map } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Upload, X, Map, ZoomIn, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FloorPlanImage } from '../types';
 
@@ -10,6 +10,7 @@ interface FloorPlanUploaderProps {
 
 export default function FloorPlanUploader({ images, setImages }: FloorPlanUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeLightboxImg, setActiveLightboxImg] = useState<string | null>(null);
 
   const processFiles = (files: FileList | null | undefined) => {
     if (!files || files.length === 0) return;
@@ -61,14 +62,14 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
   };
 
   return (
-    <div className="w-full max-w-4xl bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 shadow-slate-100 dark:shadow-none animate-fade-in">
+    <div className="w-full max-w-5xl bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 shadow-slate-100 dark:shadow-none animate-fade-in">
       <div className="flex items-center gap-4 mb-8">
         <div className="p-3 bg-emerald-100 dark:bg-emerald-950/30 rounded-xl animate-pulse-slow">
           <Map className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
         </div>
         <div>
           <h2 className="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight font-sans">Floor Plans</h2>
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">Upload and label the electrical floor plans for inclusion in the report</p>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">Upload, label, and inspect the electrical floor plans for inclusion in the report</p>
         </div>
       </div>
 
@@ -93,7 +94,7 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
       </motion.div>
 
       {images.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <AnimatePresence>
             {images.map((image, index) => (
               <motion.div 
@@ -102,18 +103,31 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
                 animate={{ opacity: 1, scale: 1, y: 0 }} 
                 exit={{ opacity: 0, scale: 0.95, y: -10 }}
                 transition={{ duration: 0.2 }}
-                className="relative flex flex-col bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-4 overflow-hidden border border-slate-200/80 dark:border-slate-700/80 shadow-md hover:shadow-lg transition-all"
+                className="relative flex flex-col bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl p-5 overflow-hidden border border-slate-200/80 dark:border-slate-700/80 shadow-md hover:shadow-lg transition-all"
               >
-                {/* Image Container with solid background and centering */}
-                <div className="relative w-full h-52 bg-slate-200/40 dark:bg-slate-900/60 rounded-xl flex items-center justify-center overflow-hidden p-3 border border-slate-200/40 dark:border-slate-700/40">
+                {/* Enhanced Image Container with click to zoom */}
+                <div 
+                  onClick={() => setActiveLightboxImg(image.data)}
+                  className="group relative w-full h-[340px] bg-slate-200/40 dark:bg-slate-900/60 rounded-xl flex items-center justify-center overflow-hidden p-3 border border-slate-200/40 dark:border-slate-700/40 cursor-zoom-in"
+                  title="Click to view full screen"
+                >
                   <img 
                     src={image.data} 
                     alt={image.name || `Floor Plan ${index + 1}`} 
-                    className="max-w-full max-h-full object-contain rounded shadow-sm hover:scale-105 transition-transform duration-300 pointer-events-none" 
+                    className="max-w-full max-h-full object-contain rounded shadow-sm group-hover:scale-[1.03] transition-transform duration-300" 
                   />
+                  
+                  {/* Hover Overlay with instruction */}
+                  <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px]">
+                    <div className="flex items-center gap-2 bg-slate-900/80 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-transform">
+                      <ZoomIn className="w-4 h-4 text-emerald-400" />
+                      <span>Click to Zoom</span>
+                    </div>
+                  </div>
+
                   <button 
                     onClick={(e) => { e.stopPropagation(); removeImage(index); }}
-                    className="absolute top-2 right-2 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm text-slate-800 dark:text-slate-200 rounded-full shadow-md hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 dark:hover:text-white transition-colors"
+                    className="absolute top-3 right-3 p-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm text-slate-800 dark:text-slate-200 rounded-full shadow-md hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 dark:hover:text-white transition-colors cursor-pointer z-10"
                     title="Remove image"
                   >
                     <X className="w-4 h-4" />
@@ -138,6 +152,46 @@ export default function FloorPlanUploader({ images, setImages }: FloorPlanUpload
           </AnimatePresence>
         </div>
       )}
+
+      {/* Fullscreen Immersive Lightbox Modal */}
+      <AnimatePresence>
+        {activeLightboxImg && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setActiveLightboxImg(null)}
+            className="fixed inset-0 z-[99999] bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-4 md:p-8 cursor-zoom-out"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="relative max-w-7xl max-h-[85vh] flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img 
+                src={activeLightboxImg} 
+                alt="Enlarged floor plan view" 
+                className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
+              />
+              
+              <button 
+                onClick={() => setActiveLightboxImg(null)}
+                className="absolute -top-12 right-0 md:-top-4 md:-right-12 p-2 bg-slate-800/80 hover:bg-rose-500 text-white rounded-full shadow-lg transition-colors cursor-pointer"
+                title="Close Fullscreen Preview"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </motion.div>
+            
+            <p className="mt-4 text-slate-400 text-xs font-semibold tracking-wider uppercase select-none">
+              Click anywhere outside or press button to close preview
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

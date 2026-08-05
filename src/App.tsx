@@ -30,6 +30,7 @@ import {
   Lock,
   LogOut,
   Info,
+  TrendingUp,
 } from "lucide-react";
 import {
   Zap,
@@ -63,6 +64,7 @@ import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
 import FloorPlanUploader from "./components/FloorPlanUploader";
 import InvoiceManager from "./components/InvoiceManager";
+import ProfitDashboard from "./components/ProfitDashboard";
 import { NotificationBell } from "./components/NotificationBell";
 import { ReleaseNotes } from "./components/ReleaseNotes";
 import { UpdateManagement } from "./components/UpdateManagement";
@@ -570,6 +572,7 @@ export default function App() {
     | "bom"
     | "power-suite"
     | "billing"
+    | "profit-dashboard"
     | "module-management"
     | "whats-new"
     | "update-management"
@@ -2205,6 +2208,13 @@ export default function App() {
             icon: ShieldCheck,
             color: "text-amber-600",
             bg: "bg-amber-50",
+          },
+          {
+            id: "profit-dashboard",
+            label: "Profit Analytics",
+            icon: TrendingUp,
+            color: "text-emerald-600",
+            bg: "bg-emerald-50",
           },
           {
             id: "module-management",
@@ -4450,6 +4460,13 @@ export default function App() {
                       badge: "1",
                     },
                     {
+                      id: "profit-dashboard",
+                      label: "Profit Analytics",
+                      icon: TrendingUp,
+                      restricted: !isAdmin,
+                      badge: null,
+                    },
+                    {
                       id: "module-management",
                       label: "Module Visibility",
                       icon: Settings,
@@ -5294,6 +5311,7 @@ export default function App() {
                         { id: "billing", label: "My Billing", icon: Receipt, restricted: !isAdmin, badge: null },
                         { id: "verify", label: "Verify Users", icon: Users, restricted: !isAdmin, badge: "3" },
                         { id: "verify-registrations", label: "Verify Registrations", icon: ShieldCheck, restricted: !isAdmin, badge: "1" },
+                        { id: "profit-dashboard", label: "Profit Analytics", icon: TrendingUp, restricted: !isAdmin, badge: null },
                         { id: "module-management", label: "Module Visibility", icon: Settings, restricted: !isAdmin, badge: null },
                       ].map((item) => {
                         const isActive = activeTab === item.id;
@@ -7758,6 +7776,28 @@ export default function App() {
                         </p>
                       </div>
                       <InvoiceManager user={user} isAdminPanel={false} />
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Profit & Financial Analytics Tab */}
+              <div
+                className={
+                  activeTab === "profit-dashboard" && isAdmin ? "w-full" : "hidden"
+                }
+              >
+                {isAdmin && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={
+                      activeTab === "profit-dashboard" ? { opacity: 1, y: 0 } : {}
+                    }
+                    transition={{ duration: 0.2 }}
+                    className="w-full flex justify-center font-sans"
+                  >
+                    <div className="w-full max-w-5xl">
+                      <ProfitDashboard user={user} isAdmin={isAdmin} />
                     </div>
                   </motion.div>
                 )}
