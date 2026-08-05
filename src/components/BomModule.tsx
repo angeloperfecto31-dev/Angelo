@@ -282,7 +282,7 @@ export default function BomModule({
     }
   };
 
-  // Load saved BOM items when a different project is loaded
+  // Load saved BOM items and update settings states when a different project is loaded
   useEffect(() => {
     setLastProjectId(projectId);
     if (savedBomItems && savedBomItems.length > 0) {
@@ -292,7 +292,36 @@ export default function BomModule({
     }
   }, [projectId]);
 
-  // Re-run auto-synchronization when panel/circuits/etc change within the same project
+  // Synchronize local settings with saved project settings when project changes
+  useEffect(() => {
+    if (savedBomSettings) {
+      setWasteConductors(savedBomSettings.wasteConductors ?? 10);
+      setWasteConduits(savedBomSettings.wasteConduits ?? 5);
+      setWasteAccessories(savedBomSettings.wasteAccessories ?? 5);
+      setLaborRatePercent(savedBomSettings.laborRatePercent ?? 35);
+      setTaxRatePercent(savedBomSettings.taxRatePercent ?? 12);
+      setProfitMarginPercent(savedBomSettings.profitMarginPercent ?? 15);
+      setContingencyPercent(savedBomSettings.contingencyPercent ?? 5);
+      setPreferredBrandConductors(savedBomSettings.preferredBrandConductors ?? "Phelps Dodge");
+      setPreferredBrandConduits(savedBomSettings.preferredBrandConduits ?? "Neltex");
+      setPreferredBrandBreakers(savedBomSettings.preferredBrandBreakers ?? "Schneider");
+      setPreferredBrandAccessories(savedBomSettings.preferredBrandAccessories ?? "Neltex");
+    } else {
+      setWasteConductors(10);
+      setWasteConduits(5);
+      setWasteAccessories(5);
+      setLaborRatePercent(35);
+      setTaxRatePercent(12);
+      setProfitMarginPercent(15);
+      setContingencyPercent(5);
+      setPreferredBrandConductors("Phelps Dodge");
+      setPreferredBrandConduits("Neltex");
+      setPreferredBrandBreakers("Schneider");
+      setPreferredBrandAccessories("Neltex");
+    }
+  }, [projectId, savedBomSettings]);
+
+  // Re-run auto-synchronization when panel/circuits/etc or any layout settings change within the same project
   useEffect(() => {
     // Avoid running on the very first mount before lastProjectId is initialized
     if (lastProjectId === undefined) return;
@@ -301,7 +330,22 @@ export default function BomModule({
 
     // Auto-update the BOM in real-time when inputs change
     synchronizeBOM();
-  }, [panel, circuits, subPanels, iscParams, vdCalculations]);
+  }, [
+    panel, 
+    circuits, 
+    subPanels, 
+    iscParams, 
+    vdCalculations, 
+    wasteConductors, 
+    wasteConduits, 
+    wasteAccessories,
+    preferredBrandConductors,
+    preferredBrandConduits,
+    preferredBrandBreakers,
+    preferredBrandAccessories,
+    illumParams,
+    mainSource
+  ]);
 
   // Handle saving when manual inputs are changed
   const handleItemUpdate = (updatedItem: BomItem) => {

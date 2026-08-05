@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles, getBreakerFrameSize } from "./computeEngine";
+import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles, getBreakerFrameSize, getActiveWireCount } from "./computeEngine";
 
 export interface BomItem {
   id: string;
@@ -196,10 +196,12 @@ export const runBomQuantityTakeoff = (
   const totalDemandKVA = totalDemandVA / 1000;
 
   // 1. DYNAMIC MAIN STEP-DOWN TRANSFORMER SIZING ENGINE (PEC Article 4.50)
-  // Transformer sized at a minimum of 125% of the continuous demand load.
+  // Transformer sized at a minimum of 125% of the continuous demand load, or matching user's custom capacity.
   const reqTransformerKVA = totalDemandKVA * 1.25;
   const standardTransformerSizes = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
-  const transformerSizeKVA = standardTransformerSizes.find(size => size >= reqTransformerKVA) || 15;
+  const transformerSizeKVA = (iscParams && iscParams.transformerKVA > 0)
+    ? iscParams.transformerKVA
+    : (standardTransformerSizes.find(size => size >= reqTransformerKVA) || 15);
 
   const isTransformerNeeded = panel.projectType === "Commercial" ||
                              panel.projectType === "Industrial" ||
@@ -351,14 +353,19 @@ export const runBomQuantityTakeoff = (
 
   // 3. MAIN SERVICE ENTRANCE & PANELBOARD TAKEOFF (PEC Article 2.30)
   const mdpId = panel.designation || "Main Distribution Panel";
-  const mBreakerAmp = panel.mainBreakerAT || 100;
-  const mPoles = is3Phase ? 3 : 2;
+  const computedMDP = computePanelScheduleValues(panel, circuits);
+  const mdpFeeder = computedMDP.mainFeeder;
+
+  const mBreakerAmp = mdpFeeder.cb || 100;
+  const mBreakerAF = mdpFeeder.af || getBreakerFrameSize(mBreakerAmp);
+  const mPolesStr = mdpFeeder.poles?.toString() || (is3Phase ? "3P" : "2P");
   const mBreakerCost = mBreakerAmp > 100 ? 5800 : 18500;
+  const mBreakerKAIC = mdpFeeder.kaic || panel.icRating || "10";
 
   addItem({
     category: "Breakers",
-    name: `Main Circuit Breaker MCCB, ${mBreakerAmp}AT/${getBreakerFrameSize(mBreakerAmp)}AF, ${mPoles}P`,
-    description: `Main service protection circuit breaker with ${panel.icRating || "10"} kAIC interrupting rating`,
+    name: `Main Circuit Breaker MCCB, ${mBreakerAmp}AT/${mBreakerAF}AF, ${mPolesStr}`,
+    description: `Main service protection circuit breaker with ${mBreakerKAIC} kAIC interrupting rating`,
     brand: settings.preferredBrandBreakers,
     specification: `Molded Case Circuit Breaker (MCCB), compliant with PEC Article 2.40`,
     quantity: 1,
@@ -385,8 +392,6 @@ export const runBomQuantityTakeoff = (
   });
 
   // Service entrance wires
-  const computedMDP = computePanelScheduleValues(panel, circuits);
-  const mdpFeeder = computedMDP.mainFeeder;
   const fLength = getFeederLength(mdpId);
   const fPhaseSize = mdpFeeder.wire.size.toString() || "30";
   const fPhaseCount = is3Phase ? 3 : 2;
@@ -408,23 +413,26 @@ export const runBomQuantityTakeoff = (
     source: `Panel [${mdpId}] Feeder`
   });
 
-  // Neutral wire
-  const fNeutralSize = fPhaseSize;
-  const fNeutralMeters = fLength * 1 * fWireRuns * wasteConductorsFactor;
-  const fNeutralCost = getWirePricePerMeter(fNeutralSize);
-  addItem({
-    category: "Conductors",
-    name: `Neutral Conductor, Copper ${mdpInsulationLabel}, ${fNeutralSize} mm²`,
-    description: "Service entrance feeder system neutral conductor wire",
-    brand: settings.preferredBrandConductors,
-    specification: "Lead-free PVC/Nylon jacket white insulation, 90°C thermal rated",
-    quantity: Math.ceil(fNeutralMeters),
-    unit: "meters",
-    unitCost: fNeutralCost,
-    laborCostPerUnit: fNeutralCost * 0.25,
-    remarks: `Service Feeder Neutral (1 x ${fLength}m x ${fWireRuns} runs)`,
-    source: `Panel [${mdpId}] Feeder`
-  });
+  // Neutral wire - conditionally sizing and adding only if neutral is present in the system connection
+  const fNeutralCount = (panel.system.includes("4W") || panel.system.includes("5W") || panel.system.includes("3W") || panel.connectionType === "Line-to-Neutral") ? 1 : 0;
+  if (fNeutralCount > 0) {
+    const fNeutralSize = fPhaseSize;
+    const fNeutralMeters = fLength * fNeutralCount * fWireRuns * wasteConductorsFactor;
+    const fNeutralCost = getWirePricePerMeter(fNeutralSize);
+    addItem({
+      category: "Conductors",
+      name: `Neutral Conductor, Copper ${mdpInsulationLabel}, ${fNeutralSize} mm²`,
+      description: "Service entrance feeder system neutral conductor wire",
+      brand: settings.preferredBrandConductors,
+      specification: "Lead-free PVC/Nylon jacket white insulation, 90°C thermal rated",
+      quantity: Math.ceil(fNeutralMeters),
+      unit: "meters",
+      unitCost: fNeutralCost,
+      laborCostPerUnit: fNeutralCost * 0.25,
+      remarks: `Service Feeder Neutral (${fNeutralCount} x ${fLength}m x ${fWireRuns} runs)`,
+      source: `Panel [${mdpId}] Feeder`
+    });
+  }
 
   // Service grounding wire (Grounding Electrode Conductor - GEC, PEC Table 2.50.3.17)
   const fGecSize = mdpFeeder.groundSize || "8.0";
@@ -469,7 +477,7 @@ export const runBomQuantityTakeoff = (
   }
 
   // Feeder accessories (Lugs calculation needs to be before or after, it doesn't matter, we'll keep it here)
-  const totalFeederConductors = (fPhaseCount + 1) * fWireRuns + 1; // Phases + Neutral * runs + Ground
+  const totalFeederConductors = (fPhaseCount + fNeutralCount) * fWireRuns + 1; // Phases + Neutral * runs + Ground
   const fLugCount = totalFeederConductors * 2; // Lug on each end of conductor
 
   feederConduits.forEach(cItem => {
@@ -675,9 +683,7 @@ export const runBomQuantityTakeoff = (
       const bWireSets = c.wireSets || c.calculatedWireSets || 1;
       const bLength = getCircuitLength(c.id);
       const bPhaseSize = c.wireSizeOverride || c.calculatedWireSize || c.wireSize || "2.0";
-      const numPhases = getActivePoles(c.mcbP);
-      const numNeutrals = getNeutralPoles(c.mcbP);
-      const bPoles = (numPhases + numNeutrals) * bWireSets;
+      const bPoles = getActiveWireCount(c.mcbP) * bWireSets;
       const bPhaseMeters = bLength * bPoles * wasteConductorsFactor;
       const bPhaseCost = getWirePricePerMeter(bPhaseSize);
 
@@ -695,8 +701,8 @@ export const runBomQuantityTakeoff = (
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
 
-      // Grounding conductor (EGC) - sized according to PEC Table 2.50.6.13
-      const bEgcSize = getEgcSizeStr(c.mcbAT || 20);
+      // Grounding conductor (EGC) - sized according to PEC Table 2.50.6.13 and aligned with Load/Panel Schedule
+      const bEgcSize = c.groundSize || getEgcSizeStr(c.mcbAT || 20);
       const bEgcMeters = bLength * bWireSets * wasteConductorsFactor;
       const bEgcCost = getWirePricePerMeter(bEgcSize);
 
@@ -926,15 +932,20 @@ export const runBomQuantityTakeoff = (
   // Process Subpanels
   subPanels.forEach(sp => {
     const spId = sp.panel.designation || `Sub-Panel ${sp.id}`;
-    const spMainAmp = sp.panel.mainBreakerAT || 60;
-    const spPoles = sp.panel.system.includes("3PH") ? 3 : 2;
+    const computedSP = computePanelScheduleValues(sp.panel, sp.circuits);
+    const spFeeder = computedSP.mainFeeder;
+
+    const spMainAmp = spFeeder.cb || sp.panel.mainBreakerAT || 60;
+    const spMainAF = spFeeder.af || getBreakerFrameSize(spMainAmp);
+    const spPolesStr = spFeeder.poles?.toString() || (sp.panel.system.includes("3PH") ? "3P" : "2P");
     const spBreakerCost = spMainAmp > 100 ? 5800 : 1250;
+    const spBreakerKAIC = spFeeder.kaic || sp.panel.icRating || "10";
 
     // Subpanel Main Breaker
     addItem({
       category: "Breakers",
-      name: `Main Panelboard Breaker MCB, ${spMainAmp}AT/${getBreakerFrameSize(spMainAmp)}AF, ${spPoles}P`,
-      description: `Subpanel main protection miniature circuit breaker, ${sp.panel.icRating || "10"} kAIC`,
+      name: `Main Panelboard Breaker MCB, ${spMainAmp}AT/${spMainAF}AF, ${spPolesStr}`,
+      description: `Subpanel main protection miniature circuit breaker, ${spBreakerKAIC} kAIC`,
       brand: settings.preferredBrandBreakers,
       specification: `Miniature Circuit Breaker (MCB) assembly, compliant with PEC Sec 2.40`,
       quantity: 1,
@@ -962,8 +973,6 @@ export const runBomQuantityTakeoff = (
 
     // Subpanel Feeder conductors
     const spInsulationLabel = formatInsulationLabel(sp.panel.insulationType || "THHN");
-    const computedSP = computePanelScheduleValues(sp.panel, sp.circuits);
-    const spFeeder = computedSP.mainFeeder;
     const sfLength = getFeederLength(sp.id);
     const sfPhaseSize = spFeeder.wire.size.toString() || "8.0";
     const sfPhaseCount = sp.panel.system.includes("3PH") ? 3 : 2;
@@ -985,23 +994,26 @@ export const runBomQuantityTakeoff = (
       source: `Panel [${spId}] Feeder`
     });
 
-    // Neutral wire
-    const sfNeutralSize = sfPhaseSize;
-    const sfNeutralMeters = sfLength * 1 * sfWireRuns * wasteConductorsFactor;
-    const sfNeutralCost = getWirePricePerMeter(sfNeutralSize);
-    addItem({
-      category: "Conductors",
-      name: `Subpanel Neutral Conductor, Copper ${spInsulationLabel}, ${sfNeutralSize} mm²`,
-      description: "Distribution subpanel neutral wire cable",
-      brand: settings.preferredBrandConductors,
-      specification: "annealed copperstranded wire, lead-free white jacket, 90°C rated",
-      quantity: Math.ceil(sfNeutralMeters),
-      unit: "meters",
-      unitCost: sfNeutralCost,
-      laborCostPerUnit: sfNeutralCost * 0.25,
-      remarks: `Subpanel Feeder Neutral (1 x ${sfLength}m x ${sfWireRuns} runs)`,
-      source: `Panel [${spId}] Feeder`
-    });
+    // Neutral wire - conditionally sizing and adding only if neutral is present in the subpanel system connection
+    const sfNeutralCount = (sp.panel.system.includes("4W") || sp.panel.system.includes("5W") || sp.panel.system.includes("3W") || sp.panel.connectionType === "Line-to-Neutral") ? 1 : 0;
+    if (sfNeutralCount > 0) {
+      const sfNeutralSize = sfPhaseSize;
+      const sfNeutralMeters = sfLength * sfNeutralCount * sfWireRuns * wasteConductorsFactor;
+      const sfNeutralCost = getWirePricePerMeter(sfNeutralSize);
+      addItem({
+        category: "Conductors",
+        name: `Subpanel Neutral Conductor, Copper ${spInsulationLabel}, ${sfNeutralSize} mm²`,
+        description: "Distribution subpanel neutral wire cable",
+        brand: settings.preferredBrandConductors,
+        specification: "annealed copperstranded wire, lead-free white jacket, 90°C rated",
+        quantity: Math.ceil(sfNeutralMeters),
+        unit: "meters",
+        unitCost: sfNeutralCost,
+        laborCostPerUnit: sfNeutralCost * 0.25,
+        remarks: `Subpanel Feeder Neutral (${sfNeutralCount} x ${sfLength}m x ${sfWireRuns} runs)`,
+        source: `Panel [${spId}] Feeder`
+      });
+    }
 
     // Equipment Grounding conductor (EGC) for subpanel
     const sfEgcSize = spFeeder.groundSize || "5.5";
@@ -1043,7 +1055,7 @@ export const runBomQuantityTakeoff = (
     // Feeder conduit accessories
     const sfCouplingCount = Math.ceil(sfLength / 3) * wasteAccessoriesFactor;
     const sfStrapsCount = Math.ceil(sfLength / 1.5) * wasteAccessoriesFactor;
-    const totalSfConductors = (sfPhaseCount + 1) * sfWireRuns + 1; // Phases + Neutral * runs + Ground
+    const totalSfConductors = (sfPhaseCount + sfNeutralCount) * sfWireRuns + 1; // Phases + Neutral * runs + Ground
     const sfLugCount = totalSfConductors * 2;
 
     addItem({
