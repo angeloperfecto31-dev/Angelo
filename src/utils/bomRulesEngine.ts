@@ -218,8 +218,10 @@ export const runBomQuantityTakeoff = (
 
     addItem({
       category: "Distribution Equipment",
-      name: `Three-Phase Step-Down Distribution Transformer, ${transformerSizeKVA} kVA`,
-      description: `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V, ${panel.transformerConnection || "Dyn11"} connection, Dry-Type self-cooled`,
+      name: `${is3Phase ? "Three-Phase" : "Single-Phase"} Step-Down Distribution Transformer, ${transformerSizeKVA} kVA`,
+      description: is3Phase 
+        ? `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V, ${panel.transformerConnection || "Dyn11"} connection, Dry-Type self-cooled`
+        : `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V, Dry-Type self-cooled`,
       brand: "ABB",
       specification: `Impedance %Z: ${iscParams?.transformerZ || 4.5}%, Copper winding, compliant with PEC Article 4.50`,
       quantity: 1,
@@ -335,18 +337,37 @@ export const runBomQuantityTakeoff = (
     });
 
     // Transfer switch sizing (ATS / MTS)
-    const atsAmp = Math.ceil(mdpValues.mainCurrent.baseAmp * 1.25);
+    const standardTSRatings = [30, 60, 100, 150, 200, 225, 400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000];
+    const calculatedAtsAmp = Math.ceil(mdpValues.mainCurrent.baseAmp * 1.25);
+    const standardAtsAmp = standardTSRatings.find(r => r >= calculatedAtsAmp) || calculatedAtsAmp;
+    
+    const atsAmp = (panel.transferSwitchRating && panel.transferSwitchRating > 0)
+      ? panel.transferSwitchRating
+      : standardAtsAmp;
+    
+    const atsPolesStr = panel.transferSwitchPoles
+      ? `${panel.transferSwitchPoles}P`
+      : (is3Phase ? "3P" : "2P");
+
+    const atsBrand = panel.transferSwitchManufacturer || settings.preferredBrandBreakers;
+    const atsModelStr = panel.transferSwitchModel ? `, Model: ${panel.transferSwitchModel}` : "";
+    const atsSccrStr = panel.transferSwitchSCCR ? `, SCCR: ${panel.transferSwitchSCCR} kA` : "";
+
+    const tsBaseCost = panel.transferSwitchType === "ATS" 
+      ? (atsAmp * 120 + 20000) 
+      : (atsAmp * 50 + 5000);
+
     addItem({
       category: "Distribution Equipment",
-      name: `${panel.transferSwitchType} Panel, ${atsAmp}A, ${is3Phase ? "3P" : "2P"}`,
-      description: `${panel.transferSwitchType === "ATS" ? "Automatic" : "Manual"} transfer switch panel for emergency power source switching`,
-      brand: settings.preferredBrandBreakers,
+      name: `${panel.transferSwitchType} Panel, ${atsAmp}A, ${atsPolesStr}`,
+      description: `${panel.transferSwitchType === "ATS" ? "Automatic" : "Manual"} transfer switch panel for emergency power source switching${atsModelStr}${atsSccrStr}`,
+      brand: atsBrand,
       specification: `Sized for ${atsAmp}A continuous current rating, mechanical & electrical interlocks, compliant with PEC Article 7.01`,
       quantity: 1,
       unit: "pcs",
-      unitCost: panel.transferSwitchType === "ATS" ? 45000 : 15000,
-      laborCostPerUnit: panel.transferSwitchType === "ATS" ? 8500 : 3500,
-      remarks: `${panel.transferSwitchType} emergency power transfer switch panel`,
+      unitCost: tsBaseCost,
+      laborCostPerUnit: tsBaseCost * 0.15,
+      remarks: `${panel.transferSwitchType} emergency power transfer switch panel${panel.transferSwitchRemarks ? ' - ' + panel.transferSwitchRemarks : ''}`,
       source: "Service Entrance"
     });
   }
@@ -377,17 +398,21 @@ export const runBomQuantityTakeoff = (
   });
 
   // Panel enclosure
+  const standardBusRatings = [100, 225, 400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000];
+  const busbarRating = standardBusRatings.find(r => r >= mBreakerAmp) || mBreakerAmp;
+  const mdpCabinetCost = (busbarRating * 15) + (circuits.length * 300) + 4000;
+
   addItem({
     category: "Distribution Equipment",
-    name: `Main Panelboard Cabinet Enclosure, ${circuits.length}-Branches`,
-    description: `NEMA 1 panelboard box with locking door and color-coded interior busbars`,
+    name: `Main Panelboard Cabinet & Busbar Assembly, ${busbarRating}A Bus, ${circuits.length}-Branch Slots`,
+    description: `${panel.enclosure || "NEMA 1"} ${panel.mounting || "Surface"} mounted steel panelboard cabinet enclosure with ${busbarRating}A silver-plated copper busbars, including neutral and ground bus links.`,
     brand: settings.preferredBrandBreakers,
-    specification: `Surface or flush mounted steel enclosure, powder coated, rated for system voltage`,
+    specification: `Surface or flush mounted steel enclosure, powder coated, rated for system voltage, compliant with PEC Sec 2.40 & 3.84`,
     quantity: 1,
     unit: "pcs",
-    unitCost: 12000,
-    laborCostPerUnit: 2500,
-    remarks: "MDP main panel enclosure box",
+    unitCost: mdpCabinetCost,
+    laborCostPerUnit: mdpCabinetCost * 0.15,
+    remarks: `MDP main panel enclosure box (Enclosure: ${panel.enclosure || "NEMA 1"}, Mounting: ${panel.mounting || "Surface"})`,
     source: `Panel [${mdpId}] Main`
   });
 
@@ -957,17 +982,20 @@ export const runBomQuantityTakeoff = (
     });
 
     // Subpanel Enclosure Box Cabinet
+    const spBusbarRating = standardBusRatings.find(r => r >= spMainAmp) || spMainAmp;
+    const spCabinetCost = (spBusbarRating * 12) + (sp.circuits.length * 250) + 3000;
+
     addItem({
       category: "Distribution Equipment",
-      name: `Subpanel Cabinet Enclosure, ${sp.circuits.length}-Branches`,
-      description: "Sub-distribution panelboard metal cabinet with locking door cover",
+      name: `Subpanel Cabinet & Busbar Assembly, ${spBusbarRating}A Bus, ${sp.circuits.length}-Branch Slots`,
+      description: `${sp.panel.enclosure || "NEMA 1"} ${sp.panel.mounting || "Surface"} mounted steel subpanelboard cabinet enclosure with ${spBusbarRating}A copper busbars, including neutral and ground bus links.`,
       brand: settings.preferredBrandBreakers,
-      specification: "Powder coated NEMA 1 surface or flush wall cabinet",
+      specification: `Powder coated wall cabinet, rated for system voltage, compliant with PEC Sec 2.40 & 3.84`,
       quantity: 1,
       unit: "pcs",
-      unitCost: 7500,
-      laborCostPerUnit: 1800,
-      remarks: "Subpanel cabinet housing",
+      unitCost: spCabinetCost,
+      laborCostPerUnit: spCabinetCost * 0.15,
+      remarks: `Subpanel cabinet housing (Enclosure: ${sp.panel.enclosure || "NEMA 1"}, Mounting: ${sp.panel.mounting || "Surface"})`,
       source: `Panel [${spId}] Main`
     });
 
