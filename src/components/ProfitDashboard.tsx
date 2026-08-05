@@ -126,6 +126,7 @@ const PRESET_RANGES = [
 export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [users, setUsers] = useState<any[]>([]); // Added for transaction audit rules
   const [loading, setLoading] = useState(true);
   const [submittingExpense, setSubmittingExpense] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'expenses' | 'transactions'>('overview');
@@ -158,6 +159,16 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
     if (!isAdmin) return;
     setLoading(true);
 
+    let invoicesLoaded = false;
+    let expensesLoaded = false;
+    let usersLoaded = false;
+
+    const checkLoadingFinished = () => {
+      if (invoicesLoaded && expensesLoaded && usersLoaded) {
+        setLoading(false);
+      }
+    };
+
     // Stream Invoices
     const invoicesQuery = query(collection(db, "invoices"), orderBy("transactionDate", "desc"));
     const unsubInvoices = onSnapshot(invoicesQuery, (shot) => {
@@ -166,8 +177,12 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
         docs.push({ id: docSnap.id, ...docSnap.data() } as Invoice);
       });
       setInvoices(docs);
+      invoicesLoaded = true;
+      checkLoadingFinished();
     }, (error) => {
       console.error("Error fetching invoices for analytics:", error);
+      invoicesLoaded = true;
+      checkLoadingFinished();
     });
 
     // Stream Expenses
@@ -178,15 +193,33 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
         docs.push({ id: docSnap.id, ...docSnap.data() } as Expense);
       });
       setExpenses(docs);
-      setLoading(false);
+      expensesLoaded = true;
+      checkLoadingFinished();
     }, (error) => {
       console.error("Error fetching expenses:", error);
-      setLoading(false);
+      expensesLoaded = true;
+      checkLoadingFinished();
+    });
+
+    // Stream Users for registration audit filters
+    const unsubUsers = onSnapshot(collection(db, "users"), (shot) => {
+      const docs: any[] = [];
+      shot.forEach((docSnap) => {
+        docs.push({ uid: docSnap.id, ...docSnap.data() });
+      });
+      setUsers(docs);
+      usersLoaded = true;
+      checkLoadingFinished();
+    }, (error) => {
+      console.error("Error fetching users for analytics:", error);
+      usersLoaded = true;
+      checkLoadingFinished();
     });
 
     return () => {
       unsubInvoices();
       unsubExpenses();
+      unsubUsers();
     };
   }, [isAdmin]);
 
@@ -278,10 +311,117 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
     }
   };
 
+  // Strict multi-criteria ledger auditing logic to align with PEC & platform requirements:
+  // ONLY count completed registrations & paid invoices.
+  // EXCLUDE free trial, unpaid, pending, cancelled, expired-unpaid, test/demo, or refunded records.
+  const verifiedInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      // A. Fundamental Invoice Checks
+      if (!inv.amountPaid || inv.amountPaid <= 0) return false;
+      if (!inv.totalAmount || inv.totalAmount <= 0) return false;
+
+      // Status check on Invoice (Must be strictly Paid / Completed)
+      const invStatus = (inv.paymentStatus || "").trim().toLowerCase();
+      if (invStatus !== "paid" && invStatus !== "completed") {
+        return false;
+      }
+
+      // Check if invoice itself represents a refund
+      if (inv.id?.toLowerCase().includes("refund") || 
+          inv.invoiceNo?.toLowerCase().includes("refund") ||
+          (inv as any).isRefunded === true ||
+          (inv as any).refunded === true
+      ) {
+        return false;
+      }
+
+      // B. Filter out Test, Sandbox, or Demo Accounts
+      const email = (inv.userEmail || "").trim().toLowerCase();
+      const name = (inv.userName || "").trim().toLowerCase();
+      const plan = (inv.plan || "").trim().toLowerCase();
+      const ref = (inv.paymentReference || "").trim().toLowerCase();
+
+      const isTestOrDemo = 
+        email.includes("test") || 
+        email.includes("demo") || 
+        email.includes("sandbox") || 
+        email.includes("example.com") || 
+        email.includes("trial") ||
+        name.includes("test") || 
+        name.includes("demo") || 
+        name.includes("sandbox") ||
+        name.includes("trial") ||
+        ref.includes("test") || 
+        ref.includes("demo") || 
+        ref.includes("sandbox") ||
+        ref.includes("manual-act-test");
+
+      if (isTestOrDemo) return false;
+
+      // C. Filter out Free or Trial Tiers
+      const isFreeOrTrialPlan = 
+        plan.includes("free") || 
+        plan.includes("trial") || 
+        plan.includes("sandbox") ||
+        plan.includes("promo");
+
+      if (isFreeOrTrialPlan) return false;
+
+      // D. Verify existence and registration status of the corresponding user
+      const userObj = users.find(u => u.uid === inv.userId || u.email?.toLowerCase() === email);
+      if (!userObj) {
+        // Exclude cancelled/deleted subscriptions where user record no longer exists
+        return false;
+      }
+
+      const uEmail = (userObj.email || "").trim().toLowerCase();
+      const uName = (userObj.name || "").trim().toLowerCase();
+      const uPlan = (userObj.plan || userObj.plan_name || "").trim().toLowerCase();
+      const uStatus = (userObj.status || "").trim().toLowerCase();
+      const uPayStatus = (userObj.paymentStatus || "").trim().toLowerCase();
+
+      // Ensure user record is not marked as test/demo/sandbox
+      if (userObj.isTest === true || 
+          userObj.isDemo === true || 
+          userObj.is_trial === true || 
+          userObj.isTrial === true ||
+          uEmail.includes("test") || 
+          uEmail.includes("demo") || 
+          uEmail.includes("sandbox") ||
+          uEmail.includes("example.com") ||
+          uName.includes("test") || 
+          uName.includes("demo") || 
+          uName.includes("sandbox")
+      ) {
+        return false;
+      }
+
+      // Exclude free/trial accounts from user object
+      if (uPlan.includes("free") || uPlan.includes("trial") || uPlan.includes("sandbox") || userObj.subscription_type === "Free") {
+        return false;
+      }
+
+      // Exclude unpaid, pending, cancelled, or expired_unpaid
+      if (uPayStatus === "unpaid" || 
+          uPayStatus === "pending_verification" || 
+          uPayStatus === "flagged_discrepancy" ||
+          uStatus === "cancelled" ||
+          uStatus === "expired_unpaid"
+      ) {
+        // Enforce exclusion of explicitly cancelled subscriptions and unpaid renewals
+        if (uStatus === "cancelled" || (uPayStatus === "unpaid" && userObj.isActive !== true)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [invoices, users]);
+
   // Filtered lists
   const filteredInvoices = useMemo(() => {
-    return invoices.filter(inv => filterByDateRange(inv.transactionDate));
-  }, [invoices, dateFilter, customStartDate, customEndDate]);
+    return verifiedInvoices.filter(inv => filterByDateRange(inv.transactionDate));
+  }, [verifiedInvoices, dateFilter, customStartDate, customEndDate]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => filterByDateRange(exp.date));
@@ -289,7 +429,7 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
 
   // Overall calculations (Unconditional of dateFilter for lifetime summary cards)
   const statsOverview = useMemo(() => {
-    const totalRev = invoices.reduce((sum, item) => sum + (item.amountPaid || 0), 0);
+    const totalRev = verifiedInvoices.reduce((sum, item) => sum + (item.amountPaid || 0), 0);
     const totalExp = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
     const netProf = totalRev - totalExp;
     const grossProf = totalRev;
@@ -309,10 +449,10 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
     const startOfYear = new Date(now.getFullYear(), 0, 1);
 
     // Revenues
-    const revToday = invoices.filter(inv => inv.transactionDate.startsWith(todayStr)).reduce((s, i) => s + i.amountPaid, 0);
-    const revWeek = invoices.filter(inv => new Date(inv.transactionDate) >= startOfWeek).reduce((s, i) => s + i.amountPaid, 0);
-    const revMonth = invoices.filter(inv => new Date(inv.transactionDate) >= startOfMonth).reduce((s, i) => s + i.amountPaid, 0);
-    const revYear = invoices.filter(inv => new Date(inv.transactionDate) >= startOfYear).reduce((s, i) => s + i.amountPaid, 0);
+    const revToday = verifiedInvoices.filter(inv => inv.transactionDate.startsWith(todayStr)).reduce((s, i) => s + i.amountPaid, 0);
+    const revWeek = verifiedInvoices.filter(inv => new Date(inv.transactionDate) >= startOfWeek).reduce((s, i) => s + i.amountPaid, 0);
+    const revMonth = verifiedInvoices.filter(inv => new Date(inv.transactionDate) >= startOfMonth).reduce((s, i) => s + i.amountPaid, 0);
+    const revYear = verifiedInvoices.filter(inv => new Date(inv.transactionDate) >= startOfYear).reduce((s, i) => s + i.amountPaid, 0);
 
     // Expenses
     const expToday = expenses.filter(exp => exp.date === todayStr).reduce((s, i) => s + i.amount, 0);
@@ -331,7 +471,7 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
       profitMonth: revMonth - expMonth,
       profitYear: revYear - expYear,
     };
-  }, [invoices, expenses]);
+  }, [verifiedInvoices, expenses]);
 
   // Current active range calculations
   const activeRangeStats = useMemo(() => {
@@ -355,7 +495,7 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
     
     return months.map((monthName, idx) => {
       // Invoices in this month of current year
-      const monthRev = invoices
+      const monthRev = verifiedInvoices
         .filter(inv => {
           const d = new Date(inv.transactionDate);
           return d.getFullYear() === currentYear && d.getMonth() === idx;
@@ -377,7 +517,7 @@ export default function ProfitDashboard({ user, isAdmin }: ProfitDashboardProps)
         Profit: Math.round(monthRev - monthExp)
       };
     });
-  }, [invoices, expenses]);
+  }, [verifiedInvoices, expenses]);
 
   // Expense Category breakdown for charts
   const categoryBreakdownData = useMemo(() => {
