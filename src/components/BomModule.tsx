@@ -81,9 +81,9 @@ const DEFAULT_LIBRARY_ITEMS: LibraryItem[] = [
   { id: "lib-cond-11", category: "Conductors", name: "THHN Copper Wire, 100.0 mm²", brand: "Phelps Dodge", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 680, rating: "100.0 mm²" },
   { id: "lib-cond-12", category: "Conductors", name: "THHN Copper Wire, 125.0 mm²", brand: "Phelps Dodge", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 850, rating: "125.0 mm²" },
   { id: "lib-cond-13", category: "Conductors", name: "THHN Copper Wire, 150.0 mm²", brand: "Phelps Dodge", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 1020, rating: "150.0 mm²" },
-  { id: "lib-cond-14", category: "THHN Aluminum Wire, 14.0 mm²", name: "THHN Aluminum Wire, 14.0 mm²", brand: "Philflex", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 45, rating: "14.0 mm²" },
-  { id: "lib-cond-15", category: "THHN Aluminum Wire, 22.0 mm²", name: "THHN Aluminum Wire, 22.0 mm²", brand: "Philflex", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 70, rating: "22.0 mm²" },
-  { id: "lib-cond-16", category: "THHN Aluminum Wire, 38.0 mm²", name: "THHN Aluminum Wire, 38.0 mm²", brand: "Philflex", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 120, rating: "38.0 mm²" },
+  { id: "lib-cond-14", category: "Conductors", name: "THHN Aluminum Wire, 14.0 mm²", brand: "Philflex", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 45, rating: "14.0 mm²" },
+  { id: "lib-cond-15", category: "Conductors", name: "THHN Aluminum Wire, 22.0 mm²", brand: "Philflex", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 70, rating: "22.0 mm²" },
+  { id: "lib-cond-16", category: "Conductors", name: "THHN Aluminum Wire, 38.0 mm²", brand: "Philflex", specification: "600V, 90°C dry/75°C wet, PVC insulation", unit: "meters", unitCost: 120, rating: "38.0 mm²" },
   // Conduits
   { id: "lib-conduit-1", category: "Conduits", name: "PVC Conduit, 20mm Ø", brand: "Neltex", specification: "Heavy duty thick wall, unplasticized PVC", unit: "meters", unitCost: 22, rating: "20mm" },
   { id: "lib-conduit-2", category: "Conduits", name: "PVC Conduit, 25mm Ø", brand: "Neltex", specification: "Heavy duty thick wall, unplasticized PVC", unit: "meters", unitCost: 30, rating: "25mm" },
@@ -992,7 +992,7 @@ export default function BomModule({
           {/* Quick Filters */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 no-print">
             <div className="flex flex-wrap gap-1.5">
-              {["All", "Conductors", "Conduits", "Breakers", "Boxes", "Grounding", "Accessories"].map((cat) => (
+              {["All", "Conductors", "Conduits", "Breakers", "Boxes", "Grounding", "Switches", "Devices", "Lighting", "Distribution Equipment", "Protection", "Equipment", "Accessories"].map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
@@ -1848,7 +1848,7 @@ export default function BomModule({
                   onChange={(e) => setNewLibItem({ ...newLibItem, category: e.target.value })}
                   className="w-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-800 dark:text-slate-100"
                 >
-                  {["Conductors", "Conduits", "Breakers", "Boxes", "Grounding", "Accessories"].map(cat => (
+                  {["Conductors", "Conduits", "Breakers", "Boxes", "Grounding", "Switches", "Devices", "Lighting", "Distribution Equipment", "Protection", "Equipment", "Accessories"].map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
