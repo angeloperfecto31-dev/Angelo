@@ -5761,7 +5761,7 @@ export default function LoadSchedule({
                     Mathematical Formula (LaTeX)
                   </h4>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left( \frac{\text{Total Connected VA}}{V_{sys}} \times 0.80 \right) + (0.25 \times HML)" />
+                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left[ \left( \frac{\text{Total Connected VA}}{V_{sys}} \times 0.80 \right) + (0.25 \times HML) \right] \times 1.25" />
                   </div>
                 </div>
 
@@ -5808,9 +5808,9 @@ export default function LoadSchedule({
                     <div className="mx-auto">
                       <LatexRenderer
                         tex={`\\begin{aligned}
-  I_{\\text{demand}} &= \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) \\\\
-  &= \\left( ${((maxDemandDetails.internalConnectedVA || 0) / sysV).toFixed(3)} \\times 0.80 \\right) + \\left( ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right) \\\\
-  &= ${(((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(2)} \\\\
+  I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) \\right] \\times 1.25 \\\\
+  &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / sysV).toFixed(3)} \\times 0.80 \\right) + \\left( ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right) \\right] \\times 1.25 \\\\
+  &= ${(((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(2)} \\times 1.25 \\\\
   &= \\mathbf{${mainCurrent.designAmp.toFixed(2)}\\text{ A}}
   \\end{aligned}`}
                       />
@@ -5823,7 +5823,7 @@ export default function LoadSchedule({
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) = ${mainCurrent.designAmp.toFixed(2)}\\text{ A}`;
+                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) \\right] \\times 1.25 = ${mainCurrent.designAmp.toFixed(2)}\\text{ A}`;
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"

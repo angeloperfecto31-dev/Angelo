@@ -1881,9 +1881,9 @@ export const computePanelScheduleValues = (
     maxDesignAmp = formulaDemandAmp;
     maxBaseAmp = formulaDemandAmp / 1.25;
   } else {
-    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML);
+    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
     maxDesignAmp = formulaDemandAmp;
-    maxBaseAmp = formulaDemandAmp;
+    maxBaseAmp = formulaDemandAmp / 1.25;
   }
   let internalDemandCurrent = formulaDemandAmp;
 
