@@ -952,7 +952,7 @@ Using Philippine Electrical Code (PEC) demand rules with a system-wide 1.25 safe
 Using PEC rules, the Maximum Demand Current is calculated as:`;
 
       const sysVWord = p.voltage || 230;
-      formulaText = `I_{\\text{demand}} = \\left[ \\left( \\frac{\\text{Total Connected VA}}{V_{\\text{sys}}} \\right) \\times 0.80 + 0.25 \\times \\text{HML} \\right] = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysVWord}} \\right) \\times 0.80 + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] = ${(((maxDemandDetails.internalConnectedVA || 0) / sysVWord) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(2)}\\text{ A}`;
+      formulaText = `I_{\\text{demand}} = \\left( \\frac{\\text{Total Connected VA}}{V_{sys}} \\times 0.80 \\right) + \\left( 0.25 \\times \\text{HML} \\right) = \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysVWord}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) = ${(((maxDemandDetails.internalConnectedVA || 0) / sysVWord) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(2)}\\text{ A}`;
     }
 
     const tfPrimaryV = transformerConfig?.primaryVoltage || 34500;
