@@ -126,6 +126,23 @@ const DEFAULT_LIBRARY_ITEMS: LibraryItem[] = [
   { id: "lib-acc-6", category: "Accessories", name: "Conduit Strap/Clamp with Bolt, 20mm", brand: "Neltex", specification: "Heavy duty zinc plated pipe clamp", unit: "pcs", unitCost: 10 },
   { id: "lib-acc-7", category: "Accessories", name: "Solderless Copper Cable Lug, 38 mm²", brand: "Calterm", specification: "One-hole heavy duty barrel", unit: "pcs", unitCost: 95 },
   { id: "lib-acc-8", category: "Accessories", name: "Solderless Copper Cable Lug, 8.0 mm²", brand: "Calterm", specification: "One-hole medium duty barrel", unit: "pcs", unitCost: 35 },
+  // Switches
+  { id: "lib-sw-1", category: "Switches", name: "Wall Switch, 1-Gang, 15A 250V", brand: "Panasonic", specification: "Wide series flush type", unit: "pcs", unitCost: 120 },
+  { id: "lib-sw-2", category: "Switches", name: "Wall Switch, 2-Gang, 15A 250V", brand: "Panasonic", specification: "Wide series flush type", unit: "pcs", unitCost: 185 },
+  { id: "lib-sw-3", category: "Switches", name: "Wall Switch, 3-Gang, 15A 250V", brand: "Panasonic", specification: "Wide series flush type", unit: "pcs", unitCost: 250 },
+  // Devices
+  { id: "lib-dev-1", category: "Devices", name: "Convenience Duplex Outlet, 15A Grounding", brand: "Panasonic", specification: "Wide series duplex grounding, 250V", unit: "pcs", unitCost: 165 },
+  { id: "lib-dev-2", category: "Devices", name: "GFCI Duplex Convenience Outlet, 20A 250V", brand: "Panasonic", specification: "Ground fault circuit interrupter protection", unit: "pcs", unitCost: 1150 },
+  // Lighting
+  { id: "lib-lit-1", category: "Lighting", name: "LED Ceiling Pinlight, 12W Warm White/Daylight", brand: "Philips", specification: "Recessed downlight gimbal type", unit: "pcs", unitCost: 350 },
+  { id: "lib-lit-2", category: "Lighting", name: "LED T8 Tube Light with Fixture, 18W", brand: "Philips", specification: "Linear tube fixture, G13 base", unit: "pcs", unitCost: 450 },
+  // Distribution Equipment
+  { id: "lib-dist-1", category: "Distribution Equipment", name: "Main Panelboard enclosure / interior", brand: "Schneider", specification: "Main Lug or Main Breaker panel, Bolt-on type", unit: "pcs", unitCost: 4500 },
+  { id: "lib-dist-2", category: "Distribution Equipment", name: "Sub-Panelboard enclosure / interior, 8-Branches", brand: "Schneider", specification: "Standard subpanel interior, Bolt-on", unit: "pcs", unitCost: 2500 },
+  // Protection
+  { id: "lib-prot-1", category: "Protection", name: "Surge Protective Device (SPD) 20kA 2-Pole", brand: "Schneider", specification: "Din-rail type class II surge protection", unit: "pcs", unitCost: 3500 },
+  // Equipment
+  { id: "lib-eq-1", category: "Equipment", name: "Power Connection Disconnect Switch, 30A NEMA 3R", brand: "Schneider", specification: "Enclosed outdoor safety disconnect switch", unit: "pcs", unitCost: 1850 },
 ];
 
 // Default standard Supplier database
@@ -248,8 +265,100 @@ export default function BomModule({
       mainSource
     );
 
+    // Map generated items to base library pricing to synchronize edited values in real-time
+    const matchedGeneratedItems = generatedItems.map(item => {
+      let foundLibItem = null;
+      if (item.category === "Conductors") {
+        const isAluminum = item.name.toLowerCase().includes("aluminum");
+        const ratingMatch = item.name.match(/\d+(\.\d+)?\s*mm²/);
+        if (ratingMatch) {
+          const ratingStr = ratingMatch[0];
+          foundLibItem = library.find(lib => 
+            lib.category === "Conductors" && 
+            lib.rating === ratingStr && 
+            lib.name.toLowerCase().includes("aluminum") === isAluminum
+          );
+        }
+      } else if (item.category === "Conduits") {
+        const ratingMatch = item.name.match(/\d+mm/);
+        const isIMC = item.name.toUpperCase().includes("IMC");
+        const isSteel = item.name.toLowerCase().includes("steel");
+        if (ratingMatch) {
+          const ratingStr = ratingMatch[0];
+          foundLibItem = library.find(lib => 
+            lib.category === "Conduits" && 
+            lib.rating?.replace(/\s+/g, "") === ratingStr &&
+            (isIMC || isSteel ? (lib.name.toUpperCase().includes("IMC") || lib.name.toLowerCase().includes("steel")) : (!lib.name.toUpperCase().includes("IMC") && !lib.name.toLowerCase().includes("steel")))
+          );
+        }
+      } else if (item.category === "Breakers") {
+        const ampMatch = item.name.match(/\d+A/);
+        const poleMatch = item.name.match(/\d+-Pole|\d+P/);
+        if (ampMatch && poleMatch) {
+          const ampStr = ampMatch[0];
+          const poleStr = poleMatch[0].replace("-Pole", "P");
+          foundLibItem = library.find(lib => 
+            lib.category === "Breakers" && 
+            lib.rating?.includes(ampStr) && 
+            lib.rating?.includes(poleStr)
+          );
+        }
+      } else if (item.category === "Boxes") {
+        if (item.name.toLowerCase().includes("utility")) {
+          foundLibItem = library.find(lib => lib.category === "Boxes" && lib.name.toLowerCase().includes("utility"));
+        } else if (item.name.toLowerCase().includes("junction")) {
+          foundLibItem = library.find(lib => lib.category === "Boxes" && lib.name.toLowerCase().includes("junction"));
+        } else if (item.name.toLowerCase().includes("pull box")) {
+          if (item.name.toLowerCase().includes("nema 3r")) {
+            foundLibItem = library.find(lib => lib.category === "Boxes" && lib.name.toLowerCase().includes("pull box") && lib.name.toLowerCase().includes("nema 3r"));
+          } else {
+            foundLibItem = library.find(lib => lib.category === "Boxes" && lib.name.toLowerCase().includes("pull box") && !lib.name.toLowerCase().includes("nema 3r"));
+          }
+        }
+      } else if (item.category === "Grounding") {
+        if (item.name.toLowerCase().includes("rod")) {
+          foundLibItem = library.find(lib => lib.category === "Grounding" && lib.name.toLowerCase().includes("rod"));
+        } else if (item.name.toLowerCase().includes("clamp")) {
+          foundLibItem = library.find(lib => lib.category === "Grounding" && lib.name.toLowerCase().includes("clamp"));
+        } else if (item.name.toLowerCase().includes("welding") || item.name.toLowerCase().includes("exothermic")) {
+          foundLibItem = library.find(lib => lib.category === "Grounding" && (lib.name.toLowerCase().includes("welding") || lib.name.toLowerCase().includes("exothermic")));
+        }
+      } else if (item.category === "Accessories") {
+        const keywords = ["coupling", "connector", "lug", "unistrut", "strap", "clamp"];
+        const matchedKw = keywords.find(kw => item.name.toLowerCase().includes(kw));
+        if (matchedKw) {
+          if (matchedKw === "connector" || matchedKw === "coupling" || matchedKw === "lug") {
+            const sizeMatch = item.name.match(/\d+\s*(mm²|mm)/);
+            if (sizeMatch) {
+              const sizeStr = sizeMatch[0].replace(/\s+/g, "");
+              foundLibItem = library.find(lib => 
+                lib.category === "Accessories" && 
+                lib.name.toLowerCase().includes(matchedKw) &&
+                lib.name.replace(/\s+/g, "").toLowerCase().includes(sizeStr)
+              );
+            }
+          }
+          if (!foundLibItem) {
+            foundLibItem = library.find(lib => lib.category === "Accessories" && lib.name.toLowerCase().includes(matchedKw));
+          }
+        }
+      } else {
+        foundLibItem = library.find(lib => lib.category === item.category && (lib.name.toLowerCase() === item.name.toLowerCase() || item.name.toLowerCase().includes(lib.name.toLowerCase())));
+      }
+
+      if (foundLibItem) {
+        return {
+          ...item,
+          unitCost: foundLibItem.unitCost,
+          brand: item.brand || foundLibItem.brand,
+          laborCostPerUnit: foundLibItem.unitCost * (laborRatePercent / 100)
+        };
+      }
+      return item;
+    });
+
     // Filter out generated items that conflict with locked items (matching name and source)
-    const filteredGenerated = generatedItems.filter(item => {
+    const filteredGenerated = matchedGeneratedItems.filter(item => {
       return !lockedItems.some(
         li => li.name === item.name && li.source === item.source
       );
@@ -344,7 +453,8 @@ export default function BomModule({
     preferredBrandBreakers,
     preferredBrandAccessories,
     illumParams,
-    mainSource
+    mainSource,
+    library
   ]);
 
   // Handle saving when manual inputs are changed
@@ -388,6 +498,21 @@ export default function BomModule({
       return item;
     });
     setBomItems(updated);
+    if (onSaveBom) {
+      onSaveBom(updated, {
+        wasteConductors,
+        wasteConduits,
+        wasteAccessories,
+        laborRatePercent,
+        taxRatePercent,
+        profitMarginPercent,
+        contingencyPercent,
+        preferredBrandConductors,
+        preferredBrandConduits,
+        preferredBrandBreakers,
+        preferredBrandAccessories
+      });
+    }
   };
 
   // Delete a BOM item
@@ -399,6 +524,21 @@ export default function BomModule({
       `[${new Date().toLocaleTimeString()}] Deleted material line: "${target?.name || id}"`,
       ...prev
     ]);
+    if (onSaveBom) {
+      onSaveBom(updated, {
+        wasteConductors,
+        wasteConduits,
+        wasteAccessories,
+        laborRatePercent,
+        taxRatePercent,
+        profitMarginPercent,
+        contingencyPercent,
+        preferredBrandConductors,
+        preferredBrandConduits,
+        preferredBrandBreakers,
+        preferredBrandAccessories
+      });
+    }
   };
 
   // Add custom manual item to BOM
@@ -512,7 +652,7 @@ export default function BomModule({
 
     bomItems.forEach((item) => {
       materialsSum += item.quantity * item.unitCost;
-      laborSum += item.quantity * (item.laborCostPerUnit || (item.unitCost * (laborRatePercent / 100)));
+      laborSum += item.quantity * (typeof item.laborCostPerUnit === 'number' ? item.laborCostPerUnit : (item.unitCost * (laborRatePercent / 100)));
     });
 
     const subtotal = materialsSum + laborSum;
