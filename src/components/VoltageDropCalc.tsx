@@ -34,7 +34,13 @@ import {
   STANDARD_CB_RATINGS,
 } from "../constants";
 import { exportToCAD } from "../utils/exportDxf";
-import { computePanelScheduleValues } from "../utils/computeEngine";
+import {
+  computePanelScheduleValues,
+  calculateUnifiedVD,
+  getConductorMaterialForCalculation,
+  getInsulationTypeForCalculation,
+  getConduitTypeForCalculation,
+} from "../utils/computeEngine";
 
 export interface VoltageDropCalcProps {
   panel?: PanelConfig;
@@ -106,23 +112,19 @@ export default function VoltageDropCalc({
     };
 
     const getWireSize = (sourceId: string, defaultSize: string) => {
-      const existing = calculations.find(c => c.source === sourceId);
-      return existing && existing.wireSize ? existing.wireSize : defaultSize;
+      return defaultSize;
     };
 
     const getWireSets = (sourceId: string, defaultSets: number) => {
-      const existing = calculations.find(c => c.source === sourceId);
-      return existing && existing.wireSets !== undefined ? existing.wireSets : defaultSets;
+      return defaultSets;
     };
 
     const getVoltage = (sourceId: string, defaultVolt: number) => {
-      const existing = calculations.find(c => c.source === sourceId);
-      return existing && existing.voltage !== undefined ? existing.voltage : defaultVolt;
+      return defaultVolt;
     };
 
     const getSystemType = (sourceId: string, defaultSys: "1PH" | "3PH") => {
-      const existing = calculations.find(c => c.source === sourceId);
-      return existing && existing.systemType ? existing.systemType : defaultSys;
+      return defaultSys;
     };
 
     if (panel && circuits) {
@@ -132,7 +134,7 @@ export default function VoltageDropCalc({
         id: calculations.find(c => c.source === "main")?.id || crypto.randomUUID(),
         source: "main",
         name: "Main Feeder",
-        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+        loadA: Number(mainCurrent.designAmp.toFixed(2)),
         length: getLength("main"),
         wireSize: getWireSize("main", mainFeeder.wire.size.toString()),
         wireSets: getWireSets("main", mainFeeder.wire.runs),
@@ -163,7 +165,7 @@ export default function VoltageDropCalc({
         id: calculations.find(c => c.source === sp.id)?.id || crypto.randomUUID(),
         source: sp.id,
         name: `${sp.panel.designation || "Sub-Panel"} Feeder`,
-        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+        loadA: Number(mainCurrent.designAmp.toFixed(2)),
         length: getLength(sp.id),
         wireSize: getWireSize(sp.id, mainFeeder.wire.size.toString()),
         wireSets: getWireSets(sp.id, mainFeeder.wire.runs),
@@ -211,71 +213,14 @@ export default function VoltageDropCalc({
     }
   }, [panel, circuits, allSubPanels, transformerPrimaryVoltage]);
 
-  const getConductorMaterialForCalculation = (calc: VoltageDropCalculation) => {
-    if (calc.source === "main") {
-      return panel?.conductorMaterial || "Copper";
-    }
-    const subPanel = allSubPanels.find(sp => sp.id === calc.source);
-    if (subPanel) {
-      return subPanel.panel?.conductorMaterial || "Copper";
-    }
-    if (circuits?.some(c => c.id === calc.source)) {
-      return panel?.conductorMaterial || "Copper";
-    }
-    const spWithCircuit = allSubPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
-    if (spWithCircuit) {
-      return spWithCircuit.panel?.conductorMaterial || "Copper";
-    }
-    return "Copper";
-  };
-
-  const getInsulationTypeForCalculation = (calc: VoltageDropCalculation) => {
-    if (calc.source === "main") {
-      return panel?.insulationType || "THHN";
-    }
-    const subPanel = allSubPanels.find(sp => sp.id === calc.source);
-    if (subPanel) {
-      return subPanel.panel?.insulationType || "THHN";
-    }
-    if (circuits?.some(c => c.id === calc.source)) {
-      return panel?.insulationType || "THHN";
-    }
-    const spWithCircuit = allSubPanels.find(sp => sp.circuits.some(c => c.id === calc.source));
-    if (spWithCircuit) {
-      return spWithCircuit.panel?.insulationType || "THHN";
-    }
-    return "THHN";
-  };
-
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
-    const data =
-      WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-    let R = data ? data.r : 5.76;
-    
-    // Apply Aluminum 1.64 resistivity factor in accordance with PEC/NEC
-    const material = getConductorMaterialForCalculation(calc);
-    if (material === "Aluminum") {
-      R = R * 1.64;
-    }
-
-    const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
-    R = R / sets;
-
-    const factor = calc.systemType === "3PH" ? 1.732 : 2;
-    const vd = (factor * calc.length * calc.loadA * R) / 1000;
-    const vdPercentage = (vd / calc.voltage) * 100;
-
-    const isMainFeeder = calc.source === "main";
-    const isSubPanelFeeder = allSubPanels.some(sp => sp.id === calc.source);
-    const isFeeder = isMainFeeder || isSubPanelFeeder || calc.name.toLowerCase().includes("feeder");
-    const limit = isFeeder ? 5.0 : 3.0;
-
+    const res = calculateUnifiedVD(calc, panel, allSubPanels, circuits || []);
     return {
-      vd: vd.toFixed(2),
-      vdPercentage: vdPercentage.toFixed(2),
-      isCompliant: vdPercentage <= limit,
-      isWarning: vdPercentage > limit * 0.9 && vdPercentage <= limit,
-      limit: limit,
+      vd: res.vd.toFixed(2),
+      vdPercentage: res.vdPercentage.toFixed(2),
+      isCompliant: res.isCompliant,
+      isWarning: res.isWarning,
+      limit: res.limit,
     };
   };
 
@@ -320,7 +265,7 @@ export default function VoltageDropCalc({
         type: panel.type || "MDP",
         feederCalc: mainFeederCalc,
         circuitCalcs: mainCircuits,
-        totalLoadA: mainCurrent.baseAmp,
+        totalLoadA: mainCurrent.designAmp,
         totalLoadKVA: totalVA / 1000,
       });
     }
@@ -351,7 +296,7 @@ export default function VoltageDropCalc({
         type: sp.panel.type || "DP",
         feederCalc,
         circuitCalcs,
-        totalLoadA: mainCurrent.baseAmp,
+        totalLoadA: mainCurrent.designAmp,
         totalLoadKVA: totalVA / 1000,
       });
     });
@@ -1121,24 +1066,27 @@ export default function VoltageDropCalc({
         <span className={isFeeder ? "font-bold text-indigo-900 dark:text-indigo-200" : ""}>{c.name}</span>
       </td>
       <td className="p-3 border-r border-slate-50 dark:border-slate-800">
-        <input
-          type="number"
-          value={c.length}
-          onChange={(e) => handleUpdateCalculation(c.id, { length: parseFloat(e.target.value) || 0 })}
-          className="w-full bg-transparent outline-none font-bold text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-950 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded focus:border-indigo-500"
-        />
+        <div className="flex items-center gap-1.5 w-24">
+          <input
+            type="number"
+            value={c.length}
+            onChange={(e) => handleUpdateCalculation(c.id, { length: parseFloat(e.target.value) || 0 })}
+            className="w-full bg-transparent outline-none font-bold text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-950 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded focus:border-indigo-500"
+          />
+          <span className="text-slate-400 text-xs font-bold font-mono">m</span>
+        </div>
       </td>
       <td className="p-3 text-slate-700 dark:text-slate-300">
-        {c.loadA}
+        {c.loadA} A
       </td>
       <td className="p-3 text-slate-700 dark:text-slate-300">
-        {c.wireSets && c.wireSets > 1 ? `${c.wireSets}x ` : ""}{c.wireSize} mm² {getConductorMaterialForCalculation(c) === "Copper" ? "CU" : "AL"} {getInsulationTypeForCalculation(c)}
+        {c.wireSets && c.wireSets > 1 ? `${c.wireSets}x ` : ""}{c.wireSize} mm² {getConductorMaterialForCalculation(c, panel, allSubPanels, circuits || []) === "Copper" ? "CU" : "AL"} {getInsulationTypeForCalculation(c, panel, allSubPanels, circuits || [])}
       </td>
       <td className="p-3 text-slate-700 dark:text-slate-300">
-        {c.systemType}
+        {c.systemType === "3PH" ? "3Ø" : "1Ø"}
       </td>
       <td className="p-3 text-slate-600 dark:text-slate-400">
-        {c.result.vd}V
+        {c.result.vd} V
       </td>
       <td
         className={`p-3 font-bold ${!c.result.isCompliant ? "text-red-600 dark:text-red-400" : (c.result.isWarning ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400")}`}
@@ -2601,16 +2549,16 @@ export default function VoltageDropCalc({
                     {/* 2. Conductor Size (mm²) */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
-                        Wire Size (mm²)
+                        Wire Size (mm²) - Synced
                       </label>
                       <select
+                        disabled
                         value={segment.calc.wireSize}
-                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { wireSize: e.target.value })}
-                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        className="w-full bg-slate-100 dark:bg-slate-800 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-400 dark:text-slate-500 cursor-not-allowed"
                       >
                         {Object.keys(WIRE_IMPEDANCE_TABLE).map((size) => (
                           <option key={size} value={size}>
-                            {size} mm² ({getInsulationTypeForCalculation(segment.calc)})
+                            {size} mm² ({getInsulationTypeForCalculation(segment.calc, panel, allSubPanels, circuits || [])})
                           </option>
                         ))}
                       </select>
@@ -2619,12 +2567,12 @@ export default function VoltageDropCalc({
                     {/* 3. Number of sets/runs */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
-                        Conductor Sets (Runs)
+                        Conductor Sets (Runs) - Synced
                       </label>
                       <select
+                        disabled
                         value={segment.calc.wireSets || 1}
-                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { wireSets: Number(e.target.value) })}
-                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-sans font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        className="w-full bg-slate-100 dark:bg-slate-800 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-sans font-bold text-sm text-slate-400 dark:text-slate-500 cursor-not-allowed"
                       >
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                           <option key={n} value={n} className="dark:bg-slate-900 dark:text-slate-100">
@@ -2637,12 +2585,12 @@ export default function VoltageDropCalc({
                     {/* 4. Voltage (V) */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
-                        Operating Voltage (Volts)
+                        Operating Voltage - Synced
                       </label>
                       <select
+                        disabled
                         value={segment.calc.voltage}
-                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { voltage: parseInt(e.target.value) || 230 })}
-                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        className="w-full bg-slate-100 dark:bg-slate-800 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-400 dark:text-slate-500 cursor-not-allowed"
                       >
                         <option value="115">115 V</option>
                         <option value="230">230 V</option>
@@ -2656,12 +2604,12 @@ export default function VoltageDropCalc({
                     {/* 5. Phase System */}
                     <div className="space-y-1.5">
                       <label className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-wide">
-                        System Phase
+                        System Phase - Synced
                       </label>
                       <select
+                        disabled
                         value={segment.calc.systemType}
-                        onChange={(e) => handleUpdateCalculation(segment.calc.id, { systemType: e.target.value as "1PH" | "3PH" })}
-                        className="w-full bg-white dark:bg-slate-950 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        className="w-full bg-slate-100 dark:bg-slate-800 px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg font-mono font-bold text-sm text-slate-400 dark:text-slate-500 cursor-not-allowed"
                       >
                         <option value="1PH">Single-Phase (1Ø)</option>
                         <option value="3PH">Three-Phase (3Ø)</option>

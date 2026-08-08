@@ -264,7 +264,7 @@ export function migrateProjectData(data: any): ProjectData {
       const { mainCurrent, mainFeeder } = computePanelScheduleValues(activePanel, activeCircuits);
       return {
         ...vd,
-        loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+        loadA: Number(mainCurrent.designAmp.toFixed(2)),
         wireSize: mainFeeder.wire.size.toString(),
         wireSets: mainFeeder.wire.runs || 1,
         voltage: activePanel.voltage,
@@ -276,7 +276,7 @@ export function migrateProjectData(data: any): ProjectData {
         const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
         return {
           ...vd,
-          loadA: Number(mainCurrent.baseAmp.toFixed(2)),
+          loadA: Number(mainCurrent.designAmp.toFixed(2)),
           wireSize: mainFeeder.wire.size.toString(),
           wireSets: mainFeeder.wire.runs || 1,
           voltage: sp.panel.voltage,

@@ -810,7 +810,7 @@ export default function App() {
         circuits,
       );
 
-      const mainLoadA = Number(mainCurrent.baseAmp.toFixed(2));
+      const mainLoadA = Number(mainCurrent.designAmp.toFixed(2));
       const mainWireSize = mainFeeder.wire.size.toString();
       const mainWireSets = mainFeeder.wire.runs || 1;
       const mainVoltage = panel.voltage;
@@ -929,7 +929,7 @@ export default function App() {
           const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } =
             computePanelScheduleValues(sp.panel, sp.circuits);
 
-          const spLoadA = Number(spMainCurrent.baseAmp.toFixed(2));
+          const spLoadA = Number(spMainCurrent.designAmp.toFixed(2));
           const spWireSize = spMainFeeder.wire.size.toString();
           const spWireSets = spMainFeeder.wire.runs || 1;
           const spVoltage = sp.panel.voltage;

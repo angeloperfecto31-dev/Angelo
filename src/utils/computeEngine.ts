@@ -300,6 +300,161 @@ export const getConductorLabel = (
   return label;
 };
 
+export const getConductorMaterialForCalculation = (
+  calc: any,
+  panel?: PanelConfig,
+  allSubPanels: any[] = [],
+  circuits: Circuit[] = []
+): string => {
+  if (calc.source === "main") {
+    return panel?.conductorMaterial || "Copper";
+  }
+  const subPanel = allSubPanels.find(sp => sp.id === calc.source);
+  if (subPanel) {
+    return subPanel.panel?.conductorMaterial || "Copper";
+  }
+  if (circuits.some(c => c.id === calc.source)) {
+    return panel?.conductorMaterial || "Copper";
+  }
+  const spWithCircuit = allSubPanels.find(sp => sp.circuits && sp.circuits.some((c: any) => c.id === calc.source));
+  if (spWithCircuit) {
+    return spWithCircuit.panel?.conductorMaterial || "Copper";
+  }
+  return "Copper";
+};
+
+export const getInsulationTypeForCalculation = (
+  calc: any,
+  panel?: PanelConfig,
+  allSubPanels: any[] = [],
+  circuits: Circuit[] = []
+): string => {
+  if (calc.source === "main") {
+    return panel?.insulationType || "THHN";
+  }
+  const subPanel = allSubPanels.find(sp => sp.id === calc.source);
+  if (subPanel) {
+    return subPanel.panel?.insulationType || "THHN";
+  }
+  if (circuits.some(c => c.id === calc.source)) {
+    return panel?.insulationType || "THHN";
+  }
+  const spWithCircuit = allSubPanels.find(sp => sp.circuits && sp.circuits.some((c: any) => c.id === calc.source));
+  if (spWithCircuit) {
+    return spWithCircuit.panel?.insulationType || "THHN";
+  }
+  return "THHN";
+};
+
+export const getConduitTypeForCalculation = (
+  calc: any,
+  panel?: PanelConfig,
+  allSubPanels: any[] = [],
+  circuits: Circuit[] = []
+): string => {
+  if (calc.source === "main") {
+    return panel?.mainConduitType || "PVC";
+  }
+  const subPanel = allSubPanels.find(sp => sp.id === calc.source);
+  if (subPanel) {
+    return subPanel.panel?.mainConduitType || "PVC";
+  }
+  const matchingCircuit = circuits.find(c => c.id === calc.source);
+  if (matchingCircuit) {
+    return matchingCircuit.conduitType || "PVC";
+  }
+  const spWithCircuit = allSubPanels.find(sp => sp.circuits && sp.circuits.some((c: any) => c.id === calc.source));
+  if (spWithCircuit) {
+    const c = spWithCircuit.circuits.find((c: any) => c.id === calc.source);
+    return c?.conduitType || "PVC";
+  }
+  return "PVC";
+};
+
+export const getTemperatureRatingFromInsulation = (insulation: string): number => {
+  const upper = (insulation || "").toUpperCase();
+  if (upper.includes("THHN") || upper.includes("XHHW-2") || upper.includes("XLPE") || upper.includes("90")) {
+    return 90;
+  }
+  if (upper.includes("THWN") || upper.includes("XHHW") || upper.includes("75")) {
+    return 75;
+  }
+  if (upper.includes("TW") || upper.includes("60")) {
+    return 60;
+  }
+  return 75; // default PEC table 9 baseline is 75C
+};
+
+export const getTemperatureCorrectedResistance = (
+  baseR: number,
+  material: string,
+  insulation: string
+): number => {
+  const T = getTemperatureRatingFromInsulation(insulation);
+  if (T === 75) return baseR; // baseline resistance is at 75C in PEC Table 9
+  
+  if (material === "Aluminum") {
+    return baseR * (228 + T) / (228 + 75);
+  } else {
+    return baseR * (234.5 + T) / (234.5 + 75);
+  }
+};
+
+export const calculateUnifiedVD = (
+  calc: any,
+  panel?: PanelConfig,
+  allSubPanels: any[] = [],
+  circuits: Circuit[] = []
+) => {
+  const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || { r: 5.76, x: 0.157 };
+  let R = data.r;
+  
+  // 1. Material Factor (1.64 multiplier for Aluminum if PEC Table 9 base is Copper-oriented, or retrieve directly)
+  const material = getConductorMaterialForCalculation(calc, panel, allSubPanels, circuits);
+  if (material === "Aluminum") {
+    R = R * 1.64;
+  }
+  
+  // 2. Parallel sets
+  const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
+  R = R / sets;
+  
+  // 3. Temperature Correction based on insulation type
+  const insulation = getInsulationTypeForCalculation(calc, panel, allSubPanels, circuits);
+  R = getTemperatureCorrectedResistance(R, material, insulation);
+  
+  // 4. Conduit Type Correction (symmetrical magnetic conduit increases resistance by 2%)
+  const conduitType = getConduitTypeForCalculation(calc, panel, allSubPanels, circuits);
+  if (
+    conduitType === "RSC" ||
+    conduitType === "IMC" ||
+    conduitType === "EMT"
+  ) {
+    R = R * 1.02;
+  }
+  
+  // 5. System Type factor: √3 for 3PH, 2 for 1PH
+  const factor = calc.systemType === "3PH" ? Math.sqrt(3) : 2;
+  
+  // 6. Formulas: VD = (factor * L * I * R) / 1000
+  const vd = (factor * (calc.length || 0) * (calc.loadA || 0) * R) / 1000;
+  const vdPercentage = (vd / (calc.voltage || 230)) * 100;
+  
+  const isMainFeeder = calc.source === "main";
+  const isSubPanelFeeder = allSubPanels.some(sp => sp.id === calc.source);
+  const isFeeder = isMainFeeder || isSubPanelFeeder || (calc.name && calc.name.toLowerCase().includes("feeder"));
+  const limit = isFeeder ? 5.0 : 3.0;
+  
+  return {
+    vd: Number(vd.toFixed(2)),
+    vdPercentage: Number(vdPercentage.toFixed(2)),
+    isCompliant: vdPercentage <= limit,
+    isWarning: vdPercentage > limit * 0.9 && vdPercentage <= limit,
+    limit: limit,
+    R_corrected: Number(R.toFixed(5))
+  };
+};
+
 export const getAdjustedWireForVoltageDrop = (
   baseSize: number,
   loadA: number,

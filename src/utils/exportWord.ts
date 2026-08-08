@@ -24,7 +24,7 @@ import { Document, Packer, PageOrientation,
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription } from './computeEngine';
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, calculateUnifiedVD } from './computeEngine';
 
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
 function getMathSymbol(macro: string): string {
@@ -1591,25 +1591,17 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
            });
         };
 
-        const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE['3.5'] || { r: 5.4 };
-        let R = data.r;
-        const material = getConductorMaterialForCalculation(calc);
-        if (material === "Aluminum") {
-          R = R * 1.64;
-        }
-        const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
-        R = R / sets;
-        const factor = calc.systemType === '3PH' ? 1.732 : 2;
+        const res = calculateUnifiedVD(calc, panel, subPanels, circuits);
+        const vd = res.vd;
+        const vdPercentage = res.vdPercentage;
+        const R = res.R_corrected;
+        const isCompliant = res.isCompliant;
+        const limitPct = res.limit;
+        const isFeederLine = calc.source === "main" || subPanels.some(sp => sp.id === calc.source);
         const cLength = calc.length || 0;
         const cLoad = calc.loadA || 0;
         const cVoltage = calc.voltage || 230;
-        const vd = (factor * cLength * cLoad * R) / 1000;
-        const vdPercentage = (vd / cVoltage) * 100;
         
-        const isFeederLine = calc.source === "main" || subPanels.some(sp => sp.id === calc.source);
-        const limitPct = isFeederLine ? 5.0 : 3.0;
-        const isCompliant = vdPercentage <= limitPct;
-
         if (isCompliant) complianceCount++;
         if (vdPercentage > maxVDPercentage) {
           maxVDPercentage = vdPercentage;

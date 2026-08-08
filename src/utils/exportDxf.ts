@@ -7,7 +7,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
-import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, getBreakerFrameSize } from "./computeEngine";
+import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, getBreakerFrameSize, calculateUnifiedVD } from "./computeEngine";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -3064,26 +3064,18 @@ export const exportToCAD = (
         pageCalcs.forEach((calc) => {
           const globalIdx = vdCalculations.indexOf(calc);
           const is3Phase = calc.systemType === "3PH";
-          const factorRaw = is3Phase ? 1.732 : 2.0;
           const factorMath = is3Phase ? "\\sqrt{3}" : "2";
 
-          const data =
-            WIRE_IMPEDANCE_TABLE[calc.wireSize] || WIRE_IMPEDANCE_TABLE["3.5"];
-          let R = data.r;
+          const res = calculateUnifiedVD(calc, panel, allSubPanels, circuits || []);
+          const R = res.R_corrected;
+          const vd = res.vd;
+          const vdPerc = res.vdPercentage;
+          const limit = res.limit;
           const material = getConductorMaterialForCalculation(calc);
-          if (material === "Aluminum") {
-            R = R * 1.64;
-          }
           const sets = calc.wireSets && calc.wireSets > 1 ? calc.wireSets : 1;
-          R = R / sets;
-          const vd = (factorRaw * calc.length * calc.loadA * R) / 1000;
-          const vdPerc = (vd / calc.voltage) * 100;
-
-          const isFeeder = calc.source === "main" || allSubPanels.some(sp => sp.id === calc.source) || calc.name.toLowerCase().includes("feeder");
-          const limit = isFeeder ? 5.0 : 3.0;
 
           writeEqVD([
-            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2 ${material === "Copper" ? "CU" : "AL"} ${getInsulationTypeForCalculation(calc)}\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
+            `\\textbf{Computation \\#${globalIdx + 1}: ${calc.name} } \\text{(} ${calc.systemType === "3PH" ? "3PH" : "1PH"}\\text{, } ${sets > 1 ? `${sets} Sets of ` : ''}${calc.wireSize}\\text{ mm}^2 ${material === "Copper" ? "CU" : "AL"} ${getInsulationTypeForCalculation(calc)}\\text{, L = } ${calc.length}\\text{m, I = } ${calc.loadA.toFixed(2)}\\text{A, V = } ${calc.voltage} \\text{V)}`,
             `R_{ohms} = ${R.toFixed(4)} \\ \\Omega\\text{/km}`,
             `VD = \\frac{${factorMath} \\times ${R.toFixed(4)} \\times ${calc.length} \\times ${calc.loadA.toFixed(2)}}{1000} = ${vd.toFixed(2)} \\text{ V}`,
             `VD_{\\%} = \\left(\\frac{${vd.toFixed(2)}}{${calc.voltage}}\\right) \\times 100\\% = ${vdPerc.toFixed(2)} \\%`,
