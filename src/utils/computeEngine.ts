@@ -2324,3 +2324,52 @@ export const computePanelScheduleValues = (
     },
   };
 };
+
+export const findCompanionSource = (
+  source: string,
+  panel: any,
+  circuits: any[] | undefined,
+  allSubPanels: any[]
+): string | null => {
+  if (!source || source === "main") return null;
+
+  // 1. Is source a subpanel ID?
+  const isSubPanel = allSubPanels.some(sp => sp && sp.id === source);
+  if (isSubPanel) {
+    // Find the circuit that links to this subpanel
+    // Search in main circuits
+    if (circuits) {
+      const parentCircuit = circuits.find(c => c && c.linkedSubPanelId === source);
+      if (parentCircuit) return parentCircuit.id;
+    }
+    // Search in all other subpanels' circuits
+    for (const otherSp of allSubPanels) {
+      if (otherSp && otherSp.circuits) {
+        const parentCircuit = otherSp.circuits.find((c: any) => c && c.linkedSubPanelId === source);
+        if (parentCircuit) return parentCircuit.id;
+      }
+    }
+    return null;
+  }
+
+  // 2. Is source a circuit ID?
+  // Search in main circuits
+  if (circuits) {
+    const circuit = circuits.find(c => c && c.id === source);
+    if (circuit && circuit.linkedSubPanelId) {
+      return circuit.linkedSubPanelId;
+    }
+  }
+  // Search in subpanel circuits
+  for (const sp of allSubPanels) {
+    if (sp && sp.circuits) {
+      const circuit = sp.circuits.find((c: any) => c && c.id === source);
+      if (circuit && circuit.linkedSubPanelId) {
+        return circuit.linkedSubPanelId;
+      }
+    }
+  }
+
+  return null;
+};
+

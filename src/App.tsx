@@ -110,6 +110,7 @@ import {
   calculateEquivalentFeederImpedance,
   getConductorLabel,
   formatStandardCableDescription,
+  findCompanionSource,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
 import {
@@ -1051,6 +1052,28 @@ export default function App() {
       prevMap.forEach((calc) => {
         if (calc.source === "custom") {
           updatedCalcs.push(calc);
+        }
+      });
+
+      // Enforce companion length synchronization in the full list in real time
+      const cleanSubPanels = [...subPanels].filter((sp, index, self) => 
+        sp && sp.id && self.findIndex(s => s && s.id === sp.id) === index
+      );
+
+      updatedCalcs.forEach((calc) => {
+        const companionSource = findCompanionSource(calc.source, panel, circuits, cleanSubPanels);
+        if (companionSource) {
+          const companionCalc = updatedCalcs.find(uc => uc.source === companionSource);
+          if (companionCalc && companionCalc.length !== calc.length) {
+            if (calc.length !== 30 && companionCalc.length === 30) {
+              companionCalc.length = calc.length;
+            } else if (calc.length === 30 && companionCalc.length !== 30) {
+              calc.length = companionCalc.length;
+            } else {
+              // Standardize to the calc's length (which corresponds to whatever was updated latest)
+              companionCalc.length = calc.length;
+            }
+          }
         }
       });
 

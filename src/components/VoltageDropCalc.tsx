@@ -40,6 +40,7 @@ import {
   getConductorMaterialForCalculation,
   getInsulationTypeForCalculation,
   getConduitTypeForCalculation,
+  findCompanionSource,
 } from "../utils/computeEngine";
 
 export interface VoltageDropCalcProps {
@@ -108,7 +109,15 @@ export default function VoltageDropCalc({
     
     const getLength = (sourceId: string) => {
       const existing = calculations.find(c => c.source === sourceId);
-      return existing ? existing.length : 30; // default 30m
+      if (existing) return existing.length;
+
+      const companionSource = findCompanionSource(sourceId, panel, circuits, allSubPanels);
+      if (companionSource) {
+        const companionExisting = calculations.find(c => c.source === companionSource);
+        if (companionExisting) return companionExisting.length;
+      }
+
+      return 30; // default 30m
     };
 
     const getWireSize = (sourceId: string, defaultSize: string) => {
@@ -235,8 +244,21 @@ export default function VoltageDropCalc({
     id: string,
     updates: Partial<VoltageDropCalculation>,
   ) => {
+    const targetCalc = calculations.find((c) => c.id === id);
+    if (!targetCalc) return;
+
+    const companionSource = findCompanionSource(targetCalc.source, panel, circuits, allSubPanels);
+
     setCalculations(
-      calculations.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+      calculations.map((c) => {
+        if (c.id === id) {
+          return { ...c, ...updates };
+        }
+        if (companionSource && c.source === companionSource) {
+          return { ...c, ...updates };
+        }
+        return c;
+      }),
     );
   };
 
