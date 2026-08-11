@@ -128,7 +128,7 @@ export default function VoltageDropCalc({
     };
 
     if (panel && circuits) {
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits, { availableSubPanels: allSubPanels });
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits, { availableSubPanels: allSubPanels, vdCalculations: calculations });
       const is3PH = panel.system.includes("3PH");
       newCalcs.push({
         id: calculations.find(c => c.source === "main")?.id || crypto.randomUUID(),
@@ -159,7 +159,7 @@ export default function VoltageDropCalc({
     }
 
     allSubPanels.forEach(sp => {
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: allSubPanels });
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: allSubPanels, vdCalculations: calculations });
       const is3PH = sp.panel.system.includes("3PH");
       newCalcs.push({
         id: calculations.find(c => c.source === sp.id)?.id || crypto.randomUUID(),
@@ -2190,7 +2190,7 @@ export default function VoltageDropCalc({
                     : "text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-900/50"
                 }`}>
                   {isPathCompliant ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-red-500" />}
-                  {isPathCompliant ? "✓ PEC Compliant" : "⚠ Exceeds Limit"}
+                  {isPathCompliant ? "PEC Compliant" : "Exceeds Limit"}
                 </span>
               </div>
             </div>

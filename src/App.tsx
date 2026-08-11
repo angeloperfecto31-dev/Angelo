@@ -808,6 +808,10 @@ export default function App() {
       const { mainCurrent, mainFeeder } = computePanelScheduleValues(
         panel,
         circuits,
+        {
+          vdCalculations: prev || [],
+          panelId: "main",
+        }
       );
 
       const mainLoadA = Number(mainCurrent.designAmp.toFixed(2));
@@ -927,7 +931,10 @@ export default function App() {
         uniqueAllSubPanels.forEach((sp) => {
           const spIs3PH = sp.panel.system.includes("3PH");
           const { mainCurrent: spMainCurrent, mainFeeder: spMainFeeder } =
-            computePanelScheduleValues(sp.panel, sp.circuits);
+            computePanelScheduleValues(sp.panel, sp.circuits, {
+              vdCalculations: prev || [],
+              panelId: sp.id,
+            });
 
           const spLoadA = Number(spMainCurrent.designAmp.toFixed(2));
           const spWireSize = spMainFeeder.wire.size.toString();
