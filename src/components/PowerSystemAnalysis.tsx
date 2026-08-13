@@ -294,9 +294,10 @@ export default function PowerSystemAnalysis({
       const phaseC_A = current * (1.0 - 0.01 * Math.sin(node.connectedVA));
 
       let status: "normal" | "warning" | "overloaded" = "normal";
-      if (loadingPct > 100 || regulation > 5.0 || breakerUtilization > 100) {
+      const limit = node.id === "mdp" ? 3.0 : 5.0;
+      if (loadingPct > 100 || regulation > limit || breakerUtilization > 100) {
         status = "overloaded";
-      } else if (loadingPct > 80 || regulation > 3.0 || breakerUtilization > 80) {
+      } else if (loadingPct > 80 || regulation > limit * 0.9 || breakerUtilization > 80) {
         status = "warning";
       }
 
@@ -603,8 +604,9 @@ export default function PowerSystemAnalysis({
 
     // Load Flow recs
     Object.values(loadFlowResults).forEach(res => {
-      if (res.regulation > 5.0) {
-        recs.push(`Node '${res.name}' exceeds the 5.0% standard voltage drop regulation limit (currently ${res.regulation.toFixed(2)}%). Consider increasing feeder wire size to lower loop resistance.`);
+      const limit = res.id === "mdp" ? 3.0 : 5.0;
+      if (res.regulation > limit) {
+        recs.push(`Node '${res.name}' exceeds the ${limit.toFixed(1)}% standard voltage drop regulation limit (currently ${res.regulation.toFixed(2)}%). Consider increasing feeder wire size to lower loop resistance.`);
       }
       if (res.breakerUtilization > 100) {
         recs.push(`Protective device at '${res.name}' is overloaded (at ${res.breakerUtilization.toFixed(1)}% of AT). Consider upsizing trip setting or re-balancing the connected branch circuits.`);

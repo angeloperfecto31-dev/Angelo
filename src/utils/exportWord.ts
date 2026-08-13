@@ -1597,7 +1597,6 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
         const R = res.R_corrected;
         const isCompliant = res.isCompliant;
         const limitPct = res.limit;
-        const isFeederLine = calc.source === "main" || subPanels.some(sp => sp.id === calc.source);
         const cLength = calc.length || 0;
         const cLoad = calc.loadA || 0;
         const cVoltage = calc.voltage || 230;
@@ -1608,7 +1607,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
           criticalLabel = calc.name || `Feeder Line ${totalLinesChecked}`;
         }
 
-        const limitText = isFeederLine ? "≤5%" : "≤3%";
+        const limitText = `≤${limitPct.toFixed(1)}%`;
 
         vdTableRows.push(new TableRow({
           children: [

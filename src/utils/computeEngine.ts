@@ -441,9 +441,8 @@ export const calculateUnifiedVD = (
   const vdPercentage = (vd / (calc.voltage || 230)) * 100;
   
   const isMainFeeder = calc.source === "main";
-  const isSubPanelFeeder = allSubPanels.some(sp => sp.id === calc.source);
-  const isFeeder = isMainFeeder || isSubPanelFeeder || (calc.name && calc.name.toLowerCase().includes("feeder"));
-  const limit = isFeeder ? 5.0 : 3.0;
+  const isSubPanelFeeder = allSubPanels.some(sp => sp.id === calc.source) || (calc.name && calc.name.toLowerCase().includes("feeder") && !isMainFeeder);
+  const limit = isMainFeeder ? 3.0 : (isSubPanelFeeder ? 5.0 : 3.0);
   
   return {
     vd: Number(vd.toFixed(2)),
@@ -2088,13 +2087,14 @@ export const computePanelScheduleValues = (
     const calc = options.vdCalculations.find((v) => v.source === pId);
     if (calc) {
       const currentA = calc.loadA || designAmp || mainCurrent.baseAmp;
+      const feederLimit = pId === "main" ? 3.0 : 5.0;
       baseWireSize = getAdjustedWireForVoltageDrop(
         baseWireSize,
         currentA,
         calc.length || 30,
         p.voltage || 230,
         p.system.includes("3PH") ? "3PH" : "1PH",
-        5.0, // Feeder/Main limit is 5%
+        feederLimit,
         selectedMainConduitType,
       );
     }

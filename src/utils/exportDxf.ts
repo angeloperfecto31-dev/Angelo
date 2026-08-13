@@ -4098,8 +4098,9 @@ export const exportToCAD = (
         const VD_v = (factor * cLength * cLoad * R_val) / 1000;
         const VD_percent = (VD_v / cVoltage) * 100;
         
-        const isFeeder = calc.source === "main" || allSpIds.has(calc.source) || calc.name.toLowerCase().includes("feeder");
-        const limit = isFeeder ? 5.0 : 3.0;
+        const isMain = calc.source === "main";
+        const isSubPanelFeeder = allSpIds.has(calc.source) || calc.name.toLowerCase().includes("feeder");
+        const limit = isMain ? 3.0 : (isSubPanelFeeder ? 5.0 : 3.0);
         const isWarning = VD_percent > limit * 0.9 && VD_percent <= limit;
         const isCompliant = VD_percent <= limit;
         const status = !isCompliant ? "CRITICAL" : (isWarning ? "WARNING" : "COMPLIANT");
@@ -4205,8 +4206,9 @@ export const exportToCAD = (
       const VD_v = (factor * cLength * cLoad * R_val) / 1000;
       const VD_percent = (VD_v / cVoltage) * 100;
       
-      const isFeeder = c.source === "main" || (subPanels || []).some(sp => sp.id === c.source) || c.name.toLowerCase().includes("feeder");
-      const limit = isFeeder ? 5.0 : 3.0;
+      const isMain = c.source === "main";
+      const isSubPanelFeeder = (subPanels || []).some(sp => sp.id === c.source) || c.name.toLowerCase().includes("feeder");
+      const limit = isMain ? 3.0 : (isSubPanelFeeder ? 5.0 : 3.0);
 
       return {
         ...c,

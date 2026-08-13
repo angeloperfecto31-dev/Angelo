@@ -1013,10 +1013,16 @@ export default function VoltageDropCalc({
 
   const isPathCompliant = useMemo(() => {
     const hasFeederViolation = selectedPathSegments
-      .filter(s => s.type === "feeder")
+      .some(s => {
+        const isMain = s.id === "segment-main" || s.calc.source === "main";
+        const limit = isMain ? 3.0 : 5.0;
+        return s.type === "feeder" && parseFloat(s.calc.result.vdPercentage) > limit;
+      });
+    const hasBranchViolation = selectedPathSegments
+      .filter(s => s.type === "branch")
       .some(s => parseFloat(s.calc.result.vdPercentage) > 3.0);
     const hasCumulativeViolation = cumulativeVdPercent > 5.0;
-    return !hasFeederViolation && !hasCumulativeViolation;
+    return !hasFeederViolation && !hasBranchViolation && !hasCumulativeViolation;
   }, [selectedPathSegments, cumulativeVdPercent]);
 
   const serviceEntranceLabel = useMemo(() => {
@@ -1410,7 +1416,8 @@ export default function VoltageDropCalc({
                     
                     // Compute compliance color
                     const pct = parseFloat(conn.vdPct);
-                    const limit = conn.isFeeder ? 5.0 : 3.0;
+                    const isMain = conn.id === "trans-mdp" || conn.calc?.source === "main";
+                    const limit = isMain ? 3.0 : (conn.isFeeder ? 5.0 : 3.0);
                     const isSelected = selectedElement?.type === "connection" && selectedElement.data.id === conn.id;
                     
                     const connColor = pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
@@ -1646,7 +1653,8 @@ export default function VoltageDropCalc({
                       const calc = node.calc;
                       const cum = node.cumResult;
                       const pct = calc ? parseFloat(calc.result.vdPercentage) : 0;
-                      const limit = 5.0; // feeder limit
+                      const isMain = node.id === "panel-main" || calc?.source === "main";
+                      const limit = isMain ? 3.0 : 5.0; // main feeder is 3%, subpanels are 5%
 
                       const pBorderColor = isSelected ? "#4F46E5" : pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
                       const pctColor = pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
@@ -1947,21 +1955,28 @@ export default function VoltageDropCalc({
 
                       <div className="mt-4">
                         <span className="text-[10px] text-slate-400">PEC Code Recommendation:</span>
-                        <div className={`p-3 rounded-lg border text-[11px] font-medium leading-relaxed mt-1.5 ${
-                          parseFloat(selectedElement.data.vdPct) <= (selectedElement.data.isFeeder ? 5.0 : 3.0)
-                            ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900 dark:text-green-300"
-                            : "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/20 dark:border-red-900 dark:text-red-300"
-                        }`}>
-                          {parseFloat(selectedElement.data.vdPct) <= (selectedElement.data.isFeeder ? 5.0 : 3.0) ? (
-                            <p>
-                              <strong>Compliant!</strong> Segment drop of {selectedElement.data.vdPct}% is within the recommended limit of {selectedElement.data.isFeeder ? "5.0%" : "3.0%"} for electrical {selectedElement.data.isFeeder ? "feeders" : "branch circuits"} (PEC Article 2.10.2.1(A) FPN No. 4).
-                            </p>
-                          ) : (
-                            <p>
-                              <strong>Action Required!</strong> Segment drop of {selectedElement.data.vdPct}% exceeds the limit of {selectedElement.data.isFeeder ? "5.0%" : "3.0%"} for electrical {selectedElement.data.isFeeder ? "feeders" : "branch circuits"}. Recommend increasing conductor cross-sectional area to decrease wire impedance.
-                            </p>
-                          )}
-                        </div>
+                        {(() => {
+                          const isMainConn = selectedElement.data.id === "trans-mdp" || selectedElement.data.calc?.source === "main";
+                          const connLimit = isMainConn ? 3.0 : (selectedElement.data.isFeeder ? 5.0 : 3.0);
+                          const isCompliant = parseFloat(selectedElement.data.vdPct) <= connLimit;
+                          return (
+                            <div className={`p-3 rounded-lg border text-[11px] font-medium leading-relaxed mt-1.5 ${
+                              isCompliant
+                                ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-900 dark:text-green-300"
+                                : "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/20 dark:border-red-900 dark:text-red-300"
+                            }`}>
+                              {isCompliant ? (
+                                <p>
+                                  <strong>Compliant!</strong> Segment drop of {selectedElement.data.vdPct}% is within the recommended limit of {connLimit.toFixed(1)}% for electrical {isMainConn ? "main feeder" : (selectedElement.data.isFeeder ? "feeders" : "branch circuits")} (PEC Article 2.10.2.1(A) FPN No. 4).
+                                </p>
+                              ) : (
+                                <p>
+                                  <strong>Action Required!</strong> Segment drop of {selectedElement.data.vdPct}% exceeds the limit of {connLimit.toFixed(1)}% for electrical {isMainConn ? "main feeder" : (selectedElement.data.isFeeder ? "feeders" : "branch circuits")}. Recommend increasing conductor cross-sectional area to decrease wire impedance.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -2247,7 +2262,9 @@ export default function VoltageDropCalc({
                   const x2 = nodePositions[idx + 1];
                   const y = 150;
                   const vdPct = parseFloat(segment.calc.result.vdPercentage);
-                  const isSegCompliant = vdPct <= 3.0;
+                  const isMain = segment.id === "segment-main" || segment.calc.source === "main";
+                  const limit = isMain ? 3.0 : (segment.type === "feeder" ? 5.0 : 3.0);
+                  const isSegCompliant = vdPct <= limit;
                   const material = getConductorMaterialForCalculation(segment.calc);
                   const strokeColor = isSegCompliant 
                     ? (material === "Copper" ? "#EA580C" : "#64748B") 
@@ -2543,13 +2560,20 @@ export default function VoltageDropCalc({
                         {segment.fromName} ➔ {segment.toName}
                       </h4>
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                      parseFloat(segment.calc.result.vdPercentage) <= 3.0
-                        ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-900 dark:text-green-400"
-                        : "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-400"
-                    }`}>
-                      Segment Drop: {segment.calc.result.vdPercentage}%
-                    </span>
+                    {(() => {
+                      const isMain = segment.id === "segment-main" || segment.calc.source === "main";
+                      const limit = isMain ? 3.0 : (segment.type === "feeder" ? 5.0 : 3.0);
+                      const isCompliant = parseFloat(segment.calc.result.vdPercentage) <= limit;
+                      return (
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+                          isCompliant
+                            ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/30 dark:border-green-900 dark:text-green-400"
+                            : "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-400"
+                        }`}>
+                          Segment Drop: {segment.calc.result.vdPercentage}% (Limit: {limit.toFixed(1)}%)
+                        </span>
+                      );
+                    })()}
                   </div>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">

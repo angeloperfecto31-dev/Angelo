@@ -193,18 +193,19 @@ export default function ReportExportModule({
 
     // 2. Load Flow checks
     Object.values(loadFlowResults).forEach((lfNode: any) => {
-      if (lfNode.regulation > 5.0) {
+      const limit = lfNode.id === "mdp" ? 3.0 : 5.0;
+      if (lfNode.regulation > limit) {
         findings.push({
           type: "danger",
           title: `Excessive Voltage Drop at ${lfNode.name}`,
-          desc: `Calculated voltage drop is ${lfNode.regulation.toFixed(2)}%, exceeding the IEEE/NEC recommended maximum limit of 5.0% for combined feeders.`,
+          desc: `Calculated voltage drop is ${lfNode.regulation.toFixed(2)}%, exceeding the IEEE/NEC recommended maximum limit of ${limit.toFixed(1)}% for this section.`,
           section: "Load Flow"
         });
-      } else if (lfNode.regulation > 3.0) {
+      } else if (lfNode.regulation > limit * 0.9) {
         findings.push({
           type: "warning",
           title: `Borderline Feeder Voltage Drop at ${lfNode.name}`,
-          desc: `Calculated voltage drop is ${lfNode.regulation.toFixed(2)}%, approaching the standard maximum limit of 3.0% for branch circuit feeders.`,
+          desc: `Calculated voltage drop is ${lfNode.regulation.toFixed(2)}%, approaching the standard maximum limit of ${limit.toFixed(1)}% for this section.`,
           section: "Load Flow"
         });
       }
