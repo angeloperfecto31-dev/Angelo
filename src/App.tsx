@@ -732,12 +732,23 @@ export default function App() {
     if (!circuits || !panel) return;
 
     if (iscSource === "auto") {
-      const { mainFeeder, totalVA } = computePanelScheduleValues(
+      const { mainFeeder, totalVA, mainCurrent } = computePanelScheduleValues(
         panel,
         circuits,
+        {
+          availableSubPanels: uniqueSubPanels,
+        }
       );
-      const totalKVA = totalVA / 1000;
-      const demandKVA = totalKVA * transformerDemandFactor;
+      const is3Phase = panel.system.includes("3PH");
+      const factor = is3Phase ? Math.sqrt(3) : 1;
+      const secVoltage = panel.voltage || 230;
+
+      // Demand Load calculation from the actual engineering engine
+      const maxDemandCurrent = mainCurrent?.baseAmp || (mainCurrent?.designAmp ? mainCurrent.designAmp / 1.25 : 0);
+      const demandKVA = maxDemandCurrent > 0 
+        ? (maxDemandCurrent * secVoltage * factor) / 1000 
+        : (totalVA / 1000) * transformerDemandFactor;
+
       const requiredKVA =
         transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
 
@@ -804,6 +815,7 @@ export default function App() {
     iscSource,
     circuits,
     panel,
+    uniqueSubPanels,
     transformerDemandFactor,
     transformerLoadingFactor,
     transformerPrimaryVoltage,
@@ -7687,6 +7699,7 @@ export default function App() {
                   <TransformerCalc
                     panel={panel}
                     circuits={circuits}
+                    subPanels={uniqueSubPanels}
                     primaryVoltage={transformerPrimaryVoltage}
                     setPrimaryVoltage={setTransformerPrimaryVoltage}
                     powerFactor={transformerPowerFactor}

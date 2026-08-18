@@ -199,10 +199,20 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
 
 
 
+  const allSubPanels = useMemo(() => {
+    const list = [...(subPanels || [])];
+    if (subSubPanels && subSubPanels.length > 0) {
+      list.push(...subSubPanels);
+    }
+    return list;
+  }, [subPanels, subSubPanels]);
+
   const panelSchedule = useMemo(() => {
     if (!panel || !circuits) return null;
-    return computePanelScheduleValues(panel, circuits);
-  }, [panel, circuits]);
+    return computePanelScheduleValues(panel, circuits, {
+      availableSubPanels: allSubPanels,
+    });
+  }, [panel, circuits, allSubPanels]);
 
   const calculation = useMemo(() => {
     const is3Phase = selectedPhaseType === '3PH';
@@ -234,10 +244,10 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     
     // Demand load from Load Schedule
     const systemVoltage = params.transformerVoltage || panel?.voltage || 230;
-    const demandAmp = panelSchedule?.mainCurrent?.designAmp || 0;
+    const demandAmp = panelSchedule?.mainCurrent?.baseAmp || panelSchedule?.mainCurrent?.designAmp || 0;
     const demandLoadKVA = demandAmp > 0 
       ? (demandAmp * systemVoltage * (is3Phase ? 1.732 : 1)) / 1000 
-      : (baseKVA * 0.8);
+      : ((panelSchedule?.totalVA ? panelSchedule.totalVA / 1000 : baseKVA) * 0.8);
 
     // 2. Transformer Impedance & Parallel Support
     let zTranspu = (params.transformerZ || 5) / 100 / connectionMultiplier;

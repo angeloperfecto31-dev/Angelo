@@ -1139,7 +1139,9 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   };
 
   // === 2.0 POWER TRANSFORMER CAPACITY CALCULATIONS ===
-  const calcMDP = computePanelScheduleValues(panel, circuits);
+  const calcMDP = computePanelScheduleValues(panel, circuits, {
+    availableSubPanels: subPanels,
+  });
   const connectedLoadKVA = calcMDP.totalVA / 1000;
   
   const tfPF = transformerConfig?.powerFactor ?? 0.85;
@@ -1147,14 +1149,17 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   const tfLF = transformerConfig?.loadingFactor ?? 0.80;
   const tfPrimaryV = transformerConfig?.primaryVoltage ?? 13800;
 
-  const demandLoadKVA = connectedLoadKVA * tfDF;
-  const requiredTransformerKVA = demandLoadKVA / tfPF / tfLF;
+  const is3PH = panel.system.includes("3PH");
+  const secVoltage = panel.voltage || 230;
+
+  const maxDemandCurrent = calcMDP.mainCurrent?.baseAmp || (calcMDP.mainCurrent?.designAmp ? calcMDP.mainCurrent.designAmp / 1.25 : 0);
+  const demandLoadKVA = maxDemandCurrent > 0
+    ? (maxDemandCurrent * secVoltage * (is3PH ? 1.732 : 1)) / 1000
+    : connectedLoadKVA * tfDF;
+  const requiredTransformerKVA = tfLF > 0 ? demandLoadKVA / tfLF : 0;
 
   const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
   const recommendedTransformerKVA = STANDARD_SIZES.find((s) => s >= requiredTransformerKVA) || 1000;
-
-  const is3PH = panel.system.includes("3PH");
-  const secVoltage = panel.voltage || 230;
 
   const primaryCurrent = is3PH 
     ? recommendedTransformerKVA / (1.732 * (tfPrimaryV / 1000))

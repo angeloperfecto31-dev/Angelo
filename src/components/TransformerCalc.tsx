@@ -11,6 +11,8 @@ import { TransformerFormulaSpec } from "./TransformerFormulaSpec";
 interface TransformerCalcProps {
   panel: PanelConfig;
   circuits: Circuit[];
+  subPanels?: any[];
+  subSubPanels?: any[];
   primaryVoltage: number;
   setPrimaryVoltage: (v: number) => void;
   powerFactor: number;
@@ -61,6 +63,8 @@ export const STANDARD_SPECS: Record<number, TransformerSpec> = {
 export default function TransformerCalc({
   panel,
   circuits,
+  subPanels,
+  subSubPanels,
   primaryVoltage,
   setPrimaryVoltage,
   powerFactor,
@@ -86,6 +90,14 @@ export default function TransformerCalc({
   const [loadAssignments, setLoadAssignments] = useState<Record<string, number | 'split'>>({});
   const [frequency, setFrequency] = useState<number>(60);
   const [txConnection, setTxConnection] = useState<string>("Delta-Wye (Dyn11)");
+
+  const allSubPanels = useMemo(() => {
+    const list = [...(subPanels || [])];
+    if (subSubPanels && subSubPanels.length > 0) {
+      list.push(...subSubPanels);
+    }
+    return list;
+  }, [subPanels, subSubPanels]);
 
   // Deriving parallel/split configuration parameters
   const numTransformers = iscParams?.parallelTransformersCount || 1;
@@ -148,8 +160,10 @@ export default function TransformerCalc({
 
   // Compute MDP panel values
   const panelValues = useMemo(() => {
-    return computePanelScheduleValues(panel, circuits);
-  }, [panel, circuits]);
+    return computePanelScheduleValues(panel, circuits, {
+      availableSubPanels: allSubPanels,
+    });
+  }, [panel, circuits, allSubPanels]);
 
   // Connected load from MDP
   const connectedLoadVA = panelValues.totalVA;
