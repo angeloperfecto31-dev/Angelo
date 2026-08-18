@@ -1108,6 +1108,56 @@ export default function TransformerCalc({
             </span>
           </div>
 
+          {/* Sizing Status Banner integrated into Configuration Console */}
+          <div className={`p-4 sm:p-5 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-4 transition-all shadow-xs ${
+            isOverloaded
+              ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-800 dark:text-red-300"
+              : "bg-green-50/70 dark:bg-green-950/20 border-green-200 dark:border-green-900/40 text-green-800 dark:text-green-300"
+          }`}>
+            <div className="flex items-center gap-3.5 text-center md:text-left flex-col md:flex-row w-full md:w-auto">
+              {isOverloaded ? (
+                <div className="p-2.5 bg-red-100 dark:bg-red-900/50 rounded-2xl shrink-0">
+                  <AlertTriangle className="w-7 h-7 text-red-600 dark:text-red-400 animate-pulse" />
+                </div>
+              ) : (
+                <div className="p-2.5 bg-green-100 dark:bg-green-900/55 rounded-2xl shrink-0">
+                  <ShieldCheck className="w-7 h-7 text-green-600 dark:text-green-400" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <span className={`text-[10px] font-black uppercase tracking-wider block ${
+                  isOverloaded ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"
+                }`}>
+                  Transformer Sizing Status
+                </span>
+                <h4 className="text-base font-black tracking-tight text-slate-800 dark:text-slate-100">
+                  {isOverloaded 
+                    ? `Warning: Loading Exceeds Allowable ${(loadingFactor * 100).toFixed(0)}% Limit!` 
+                    : `Transformer Capacity Sized Safely!`}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
+                  {isOverloaded
+                    ? (numTransformers === 1
+                      ? `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for a ${activeRating} kVA transformer.`
+                      : `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for the ${numTransformers} × ${activeRating} kVA transformer bank.`)
+                    : (numTransformers === 1
+                      ? `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA. Standard rating ${activeRating} kVA is compliant.`
+                      : `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA (${requiredKVAPerTransformer.toFixed(1)} kVA per unit). The bank of ${numTransformers} × ${activeRating} kVA (${totalInstalledCapacity} kVA total) is compliant.`)}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between md:flex-col md:items-center md:justify-center bg-white dark:bg-slate-900 px-5 py-3 rounded-2xl shadow-sm border border-slate-150 dark:border-slate-800 shrink-0 w-full md:w-auto md:min-w-[130px]">
+              <span className="text-[10px] font-bold uppercase text-slate-400">Actual Loading</span>
+              <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tighter my-0.5 ${
+                isOverloaded ? "text-red-650 dark:text-red-400" : "text-green-655 dark:text-green-400"
+              }`}>
+                {actualLoadingPct.toFixed(1)}%
+              </span>
+              <span className="text-[10px] text-slate-400 font-bold">Limit: {(loadingFactor * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             
             {/* Column 1: Grid Connections & Frequency */}
@@ -1435,56 +1485,8 @@ export default function TransformerCalc({
 
         {/* Outputs and stats panel (Full Width Landscape Layout) */}
         <div className="space-y-6">
-          
-          {/* Sizing Status */}
-          <div className={`p-6 rounded-3xl border-2 flex flex-col md:flex-row items-center justify-between gap-4 transition-all shadow-sm ${
-            isOverloaded
-              ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-red-800 dark:text-red-300"
-              : "bg-green-50/70 dark:bg-green-950/20 border-green-200 dark:border-green-900/40 text-green-800 dark:text-green-300"
-          }`}>
-            <div className="flex items-center gap-4 text-center md:text-left flex-col md:flex-row">
-              {isOverloaded ? (
-                <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-2xl">
-                  <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400 animate-pulse" />
-                </div>
-              ) : (
-                <div className="p-3 bg-green-100 dark:bg-green-900/55 rounded-2xl">
-                  <ShieldCheck className="w-8 h-8 text-green-600 dark:text-green-400" />
-                </div>
-              )}
-              <div>
-                <span className={`text-[10px] font-black uppercase mb-1 tracking-wider block ${
-                  isOverloaded ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"
-                }`}>
-                  Transformer Sizing Status
-                </span>
-                <h4 className="text-lg font-black tracking-tight text-slate-800 dark:text-slate-100">
-                  {isOverloaded 
-                    ? `Warning: Loading Exceeds Allowable ${(loadingFactor * 100).toFixed(0)}% Limit!` 
-                    : `Transformer Capacity Sized Safely!`}
-                </h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-md">
-                  {isOverloaded
-                    ? (numTransformers === 1
-                      ? `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for a ${activeRating} kVA transformer.`
-                      : `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for the ${numTransformers} × ${activeRating} kVA transformer bank.`)
-                    : (numTransformers === 1
-                      ? `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA. Standard rating ${activeRating} kVA is compliant.`
-                      : `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA (${requiredKVAPerTransformer.toFixed(1)} kVA per unit). The bank of ${numTransformers} × ${activeRating} kVA (${totalInstalledCapacity} kVA total) is compliant.`)}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-900 px-6 py-4 rounded-2xl shadow-sm border border-slate-150 dark:border-slate-800 shrink-0 self-stretch md:self-auto min-w-[150px]">
-              <span className="text-[10px] font-bold uppercase text-slate-400">Actual Loading</span>
-              <span className={`text-3xl font-black font-mono tracking-tighter ${
-                isOverloaded ? "text-red-650 dark:text-red-400" : "text-green-655 dark:text-green-400"
-              }`}>
-                {actualLoadingPct.toFixed(1)}%
-              </span>
-              <span className="text-[10px] text-slate-400 mt-1 font-bold">Limit: {(loadingFactor * 100).toFixed(0)}%</span>
-            </div>
-                   {/* Advanced Multi-Tab Engineering Suite */}
+
+          {/* Advanced Multi-Tab Engineering Suite */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-md overflow-hidden">
             {/* Header with Title and Export Options */}
             <div className="p-6 pb-4 border-b border-slate-100 dark:border-slate-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2027,8 +2029,8 @@ export default function TransformerCalc({
                     </div>
                   )}
 
-                  {/* Compliance & Individual Unit load table */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  {/* Compliance Diagnostics & Individual Unit load table */}
+                  <div className="space-y-6 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <TransformerDiagnostics
                       primaryVoltage={primaryVoltage}
                       secondaryVoltage={secondaryVoltage}
@@ -2237,7 +2239,7 @@ export default function TransformerCalc({
               )}
 
             </div>
-          </div>     </div>
+          </div>
 
           {/* Math & Formulas Section */}
           <div className="bg-slate-50 dark:bg-slate-900/30 rounded-3xl p-6 border border-slate-200/40 dark:border-slate-800/50">
