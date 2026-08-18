@@ -753,12 +753,7 @@ export default function App() {
         transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
 
       let recommendedFeederSize = mainFeeder.wire.size.toString();
-      let recommendedRuns = panel.system.includes("3PH") ? 3 : 2;
-
-      if (mainFeeder.cb > 250) {
-        recommendedRuns = mainFeeder.wire.runs;
-        recommendedFeederSize = mainFeeder.wire.size.toString();
-      }
+      let recommendedRuns = mainFeeder.wire.runs || 1;
 
       setIscParams((p) => {
         const ptCount = p.parallelTransformersCount || 1;

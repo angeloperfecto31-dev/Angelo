@@ -1334,7 +1334,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
             <div className="bg-slate-50/40 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/80 p-5 rounded-2xl space-y-3.5">
               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Transformer Rating:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.transformerKVA} kVA</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">
+                  {params.parallelTransformersCount && params.parallelTransformersCount > 1
+                    ? `${params.parallelTransformersCount}x ${params.transformerKVA} kVA (${calculation.totalTransformerKVA} kVA Total)`
+                    : `${params.transformerKVA} kVA`}
+                </span>
               </div>
               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Secondary Bus Voltage:</span>
@@ -1354,7 +1358,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
               </div>
               <div className="flex justify-between items-center text-xs pb-2 border-b border-slate-100 dark:border-slate-800/60">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Feeder Conductor:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">{params.feederRuns}x {params.feederSize}mm² {params.conductorType}</span>
+                <span className="font-mono font-bold text-slate-900 dark:text-white text-right">
+                  {params.feederRuns && params.feederRuns > 1 ? `${params.feederRuns} Sets - ` : ''}
+                  {panel?.system?.includes("3PH") ? (panel?.system?.includes("4W") ? "4x " : "3x ") : "2x "}
+                  {params.feederSize}mm² {params.conductorType || "Copper"}
+                </span>
               </div>
               <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Feeder Bus Length:</span>
@@ -1730,7 +1738,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                   <line x1="180" y1="470" x2="180" y2="580" className="sld-line" strokeWidth="3" style={{ stroke: '#ea580c' }} />
                   <text x="180" y="525" className="sld-text-val" style={{ fill: '#ea580c' }} textAnchor="middle">★ FEEDER CABLE ★</text>
                   <text x="180" y="540" className="sld-text-lbl" style={{ stroke: 'none', fill: '#9a3412', fontSize: '8px' }} textAnchor="middle">
-                    {params.feederRuns}x {params.feederSize}mm² {params.conductorType} ({params.feederLength}m)
+                    {params.feederRuns && params.feederRuns > 1 ? `${params.feederRuns} Sets - ` : ''}{panel?.system?.includes("3PH") ? (panel?.system?.includes("4W") ? "4x " : "3x ") : "2x "}{params.feederSize}mm² {params.conductorType || "Copper"} ({params.feederLength}m)
                   </text>
 
                   {/* Divider line linking */}
@@ -1912,7 +1920,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                 >
                   <div className="select-none pointer-events-none text-[9px]">
                     <div className="font-bold text-amber-800 uppercase tracking-widest text-[8px] mb-0.5">Conductor Spec</div>
-                    <div className="font-mono font-bold text-amber-900 text-[10px]">{params.feederRuns} Runs x {params.feederSize} mm²</div>
+                    <div className="font-mono font-bold text-amber-900 text-[10px]">
+                      {params.feederRuns && params.feederRuns > 1 ? `${params.feederRuns} Sets - ` : ''}
+                      {panel?.system?.includes("3PH") ? (panel?.system?.includes("4W") ? "4x " : "3x ") : "2x "}
+                      {params.feederSize} mm²
+                    </div>
                     <div className="text-slate-600 font-medium text-[8.5px]">{params.conductorType} Conductors</div>
                     <div className="text-slate-500 mt-0.5">Length: {params.feederLength} meters</div>
                   </div>
