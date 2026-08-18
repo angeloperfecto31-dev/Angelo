@@ -356,7 +356,7 @@ export const exportBomToWord = async (panel: PanelConfig, bomItems: BomItem[], c
   });
 
   const doc = new Document({
-    creator: "AI Studio Integrated Sizer",
+    creator: panel.engineer || panel.owner || "Electrical Engineering",
     title: `BOM Takeoff - ${panel.designation || 'Project'}`,
     sections: [
       {

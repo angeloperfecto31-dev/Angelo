@@ -700,10 +700,12 @@ export const exportToWord = async (
   if (panel.owner) {
     coverInfoRows.push(createCoverInfoRow("Project Owner", panel.owner, true));
   }
-  coverInfoRows.push(createCoverInfoRow("Sizing Compliance Standard", "Philippine Electrical Code (PEC) 2017", false));
-  coverInfoRows.push(createCoverInfoRow("Document Version", "v1.0.0 (Official Calculation Release)", true));
-  coverInfoRows.push(createCoverInfoRow("Generated Date", new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), false));
-  coverInfoRows.push(createCoverInfoRow("Prepared By", "AI Studio Sizer & Compliance Engine", true));
+  if (panel.engineer) {
+    coverInfoRows.push(createCoverInfoRow("Project Engineer", panel.engineer, false));
+  }
+  coverInfoRows.push(createCoverInfoRow("Sizing Compliance Standard", "Philippine Electrical Code (PEC) 2017", panel.engineer ? true : false));
+  coverInfoRows.push(createCoverInfoRow("Document Version", "v1.0.0 (Official Calculation Release)", panel.engineer ? false : true));
+  coverInfoRows.push(createCoverInfoRow("Generated Date", new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), panel.engineer ? true : false));
 
   const coverInfoTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -2411,7 +2413,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   }
 
   const doc = new Document({
-    creator: "AI Studio Integrated Sizer",
+    creator: panel.engineer || panel.owner || "Electrical Engineering",
     title: `Electrical Design Analysis - ${panel.project || 'Project'}`,
     sections: processedSections,
   });
