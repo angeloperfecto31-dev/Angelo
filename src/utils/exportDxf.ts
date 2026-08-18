@@ -328,6 +328,8 @@ const drawCadPanelSLD = (
   yBase: number,
   isSubPanel: boolean,
   fedFromLabel: string = "FED FROM MDP",
+  allSubPanels: any[] = [],
+  iscParams?: ShortCircuitParams,
 ) => {
   const previousMode = b.isSLDMode;
   b.isSLDMode = true;
@@ -367,41 +369,91 @@ const drawCadPanelSLD = (
     b.addLine(xBase - 18, yBase - 6, xBase - 10, yBase, "SLD_GEOMETRY");
     b.addLine(xBase - 10, yBase, xBase, yBase, "SLD_GEOMETRY");
 
-    // Calculate recommended transformer kVA based on total connected load
-    let totalVA = panelCircuits.reduce((sum, curr) => sum + (curr.loadVA || 0), 0);
-    const connectedLoadKVA = totalVA / 1000;
-    const demandLoadKVA = connectedLoadKVA * 0.80;
-    const requiredKVA = demandLoadKVA / 0.80;
-    const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
-    const recommendedKVA = STANDARD_SIZES.find((s) => s >= requiredKVA) || 1000;
+    // Calculate recommended transformer kVA based on total connected load & PEC demand
+    const is3PhaseSys = panel.system.includes("3PH");
+    const factor = is3PhaseSys ? Math.sqrt(3) : 1;
+    const secVoltage = panel.voltage || 230;
 
-    b.addText(
-      "POWER TRANSFORMER",
-      xBase - 22,
-      yBase + 8,
-      1.8,
-      0,
-      "TEXT_HEADER",
-      "right",
-    );
-    b.addText(
-      `RATING: ${recommendedKVA} kVA`,
-      xBase - 22,
-      yBase + 3,
-      1.5,
-      0,
-      "TEXT_DATA",
-      "right",
-    );
-    b.addText(
-      `${voltage}V, ${phaseText}, 60Hz`,
-      xBase - 22,
-      yBase - 2,
-      1.4,
-      0,
-      "TEXT_DATA",
-      "right",
-    );
+    const calcMDP = computePanelScheduleValues(panel, panelCircuits, {
+      availableSubPanels: allSubPanels,
+    });
+    const maxDemandCurrent = calcMDP.mainCurrent?.baseAmp || (calcMDP.mainCurrent?.designAmp ? calcMDP.mainCurrent.designAmp / 1.25 : 0);
+    const demandKVA = maxDemandCurrent > 0 
+      ? (maxDemandCurrent * secVoltage * factor) / 1000 
+      : (calcMDP.totalVA / 1000) * 0.80;
+
+    const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+    const ptCount = iscParams?.parallelTransformersCount || 1;
+    
+    // Determine transformer rating
+    let recommendedKVA = iscParams?.transformerKVA;
+    if (!recommendedKVA) {
+      const requiredKVA = (demandKVA / 0.80) / ptCount;
+      recommendedKVA = STANDARD_SIZES.find((s) => s >= requiredKVA) || STANDARD_SIZES[STANDARD_SIZES.length - 1];
+    }
+
+    if (ptCount > 1) {
+      const pt2Rating = iscParams?.parallelTransformersRating || recommendedKVA;
+      const ptZMatch = iscParams?.parallelTransformersZMatch !== false;
+      const ptkVAMatch = iscParams?.parallelTransformerskVAMatch !== false;
+      const totalKVA = ptZMatch && ptkVAMatch ? recommendedKVA * ptCount : recommendedKVA + (ptCount - 1) * pt2Rating;
+
+      b.addText(
+        `${ptCount}x PARALLEL POWER TRANSFORMERS`,
+        xBase - 22,
+        yBase + 8,
+        1.8,
+        0,
+        "TEXT_HEADER",
+        "right",
+      );
+      b.addText(
+        `TOTAL: ${totalKVA} kVA (${ptCount}x ${recommendedKVA} kVA)`,
+        xBase - 22,
+        yBase + 3,
+        1.5,
+        0,
+        "TEXT_DATA",
+        "right",
+      );
+      b.addText(
+        `${voltage}V, ${phaseText}, 60Hz`,
+        xBase - 22,
+        yBase - 2,
+        1.4,
+        0,
+        "TEXT_DATA",
+        "right",
+      );
+    } else {
+      b.addText(
+        "POWER TRANSFORMER",
+        xBase - 22,
+        yBase + 8,
+        1.8,
+        0,
+        "TEXT_HEADER",
+        "right",
+      );
+      b.addText(
+        `RATING: ${recommendedKVA} kVA`,
+        xBase - 22,
+        yBase + 3,
+        1.5,
+        0,
+        "TEXT_DATA",
+        "right",
+      );
+      b.addText(
+        `${voltage}V, ${phaseText}, 60Hz`,
+        xBase - 22,
+        yBase - 2,
+        1.4,
+        0,
+        "TEXT_DATA",
+        "right",
+      );
+    }
   }
 
   // 2. Feeder Cable specifications block
@@ -720,7 +772,8 @@ const drawSystemSLD = (
   mdpCalcData: any,
   subPanelsData: { id: string; panel: PanelConfig; circuits: Circuit[] }[],
   sheetWidth: number = 841,
-  sheetOffsetX: number = -1
+  sheetOffsetX: number = -1,
+  iscParams?: ShortCircuitParams,
 ) => {
   const previousMode = b.isSLDMode;
   b.isSLDMode = true;
@@ -830,7 +883,7 @@ const drawSystemSLD = (
   const yBase_MDP = topY;
 
   const mdpCircuitCoords = drawCadPanelSLD(
-    b, mdpPanel, mdpCircuits, mdpCalcData.mainFeeder, xBase_MDP, yBase_MDP, false
+    b, mdpPanel, mdpCircuits, mdpCalcData.mainFeeder, xBase_MDP, yBase_MDP, false, "FED FROM MDP", subPanelsData, iscParams
   );
 
   const leftRoots: SpLayout[] = [];
@@ -2679,7 +2732,8 @@ export const exportToCAD = (
       calcData,
       subPanels,
       sConfig.w,
-      sConfig.xOffset
+      sConfig.xOffset,
+      iscParams
     );
   }
 
