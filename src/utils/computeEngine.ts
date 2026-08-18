@@ -404,7 +404,8 @@ export const calculateUnifiedVD = (
   calc: any,
   panel?: PanelConfig,
   allSubPanels: any[] = [],
-  circuits: Circuit[] = []
+  circuits: Circuit[] = [],
+  customLimits?: { feederLimit?: number; branchLimit?: number; mainFeederLimit?: number }
 ) => {
   const data = WIRE_IMPEDANCE_TABLE[calc.wireSize] || { r: 5.76, x: 0.157 };
   let R = data.r;
@@ -442,7 +443,12 @@ export const calculateUnifiedVD = (
   
   const isMainFeeder = calc.source === "main";
   const isSubPanelFeeder = allSubPanels.some(sp => sp.id === calc.source) || (calc.name && calc.name.toLowerCase().includes("feeder") && !isMainFeeder);
-  const limit = isMainFeeder ? 3.0 : (isSubPanelFeeder ? 5.0 : 3.0);
+  
+  const mainLimit = customLimits?.mainFeederLimit ?? 3.0;
+  const feederLimit = customLimits?.feederLimit ?? 5.0;
+  const branchLimit = customLimits?.branchLimit ?? 3.0;
+  
+  const limit = isMainFeeder ? mainLimit : (isSubPanelFeeder ? feederLimit : branchLimit);
   
   return {
     vd: Number(vd.toFixed(2)),

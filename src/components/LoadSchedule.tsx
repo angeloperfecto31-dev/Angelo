@@ -232,14 +232,25 @@ const AmpsInput = ({
   };
 
   if (disabled) {
-    return <span>{c.loadA.toFixed(2)}</span>;
+    return <span className="font-mono font-bold">{c.loadA.toFixed(2)}</span>;
   }
+
+  // Determine matching color class for single phase (R, Y, B) or 3-Phase (3Ø)
+  const textColorClass = is3P
+    ? "text-indigo-600 dark:text-indigo-400"
+    : c.phases.includes("R")
+      ? "text-red-600 dark:text-red-400"
+      : c.phases.includes("Y")
+        ? "text-yellow-600 dark:text-yellow-400"
+        : c.phases.includes("B")
+          ? "text-blue-600 dark:text-blue-400"
+          : "text-slate-800 dark:text-slate-100";
 
   return (
     <input
       type="number"
       step="0.01"
-      className={`w-16 bg-transparent text-center font-mono focus:outline-none focus:border-b focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${is3P ? "text-indigo-600 dark:text-indigo-400" : ""}`}
+      className={`w-16 bg-transparent text-center font-mono font-bold focus:outline-none focus:border-b focus:border-slate-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${textColorClass}`}
       value={val}
       onChange={(e) => setVal(e.target.value)}
       onBlur={handleBlur}
@@ -821,6 +832,33 @@ export default function LoadSchedule({
     setCircuits(finalCircuits);
   };
 
+  // Automatically run phase balancing if a 3-Phase system is active and all unlocked circuits are stuck on a single phase (default/imported state)
+  const autoBalancedRef = React.useRef(false);
+
+  useEffect(() => {
+    if (!panel.system.includes("3PH")) {
+      autoBalancedRef.current = false; // Reset the guard when the system is not 3-Phase
+      return;
+    }
+    if (!circuits || circuits.length === 0) return;
+    if (autoBalancedRef.current) return;
+
+    const unlockedSinglePhase = circuits.filter(
+      (c) => c.phases.length === 1 && !c.isLocked && !isIdleSpareOrSpace(c)
+    );
+    if (unlockedSinglePhase.length < 2) return;
+
+    // Check if ALL unlocked single-phase circuits are on the exact same phase (e.g. all default to "R")
+    const firstPhase = unlockedSinglePhase[0].phases[0];
+    if (!firstPhase) return;
+
+    const allOnOnePhase = unlockedSinglePhase.every((c) => c.phases[0] === firstPhase);
+    if (allOnOnePhase) {
+      autoBalancedRef.current = true; // Set the guard BEFORE executing to block any parallel or immediate calls
+      autoBalancePhases();
+    }
+  }, [panel.system, circuits, autoBalancePhases]);
+
   // Drag and Drop Sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1175,7 +1213,13 @@ export default function LoadSchedule({
       wattage: 180,
       quantity: 1,
       voltage: panel.voltage,
-      phases: ["R"],
+      phases: panel.system.includes("3PH")
+        ? newNo % 3 === 1
+          ? ["R"]
+          : newNo % 3 === 2
+            ? ["Y"]
+            : ["B"]
+        : ["R"],
       is3PhaseMarker: false,
       loadType: LoadType.POWER,
       mcbType: MCBType.BOLT_ON,
@@ -1206,7 +1250,15 @@ export default function LoadSchedule({
       wattage: item.wattage,
       quantity: 1,
       voltage: panel.voltage,
-      phases: is3P ? ["R", "Y", "B"] : ["R"],
+      phases: is3P
+        ? ["R", "Y", "B"]
+        : panel.system.includes("3PH")
+          ? newNo % 3 === 1
+            ? ["R"]
+            : newNo % 3 === 2
+              ? ["Y"]
+              : ["B"]
+          : ["R"],
       is3PhaseMarker: is3P,
       loadType: item.loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
@@ -1245,7 +1297,15 @@ export default function LoadSchedule({
       wattage: totalVA,
       quantity: 1,
       voltage: panel.voltage,
-      phases: is3P ? ["R", "Y", "B"] : ["R"],
+      phases: is3P
+        ? ["R", "Y", "B"]
+        : panel.system.includes("3PH")
+          ? newNo % 3 === 1
+            ? ["R"]
+            : newNo % 3 === 2
+              ? ["Y"]
+              : ["B"]
+          : ["R"],
       is3PhaseMarker: is3P,
       loadType: selectedPresets[0].loadType as LoadType,
       mcbType: MCBType.BOLT_ON,
@@ -3798,7 +3858,7 @@ export default function LoadSchedule({
                         {phaseLoads.R.toLocaleString()} VA
                       </div>
                       <div
-                        className="w-12 bg-red-500 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
+                        className="w-12 bg-red-600 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
                         style={{
                           height: `${Math.max(
                             5,
@@ -3825,7 +3885,7 @@ export default function LoadSchedule({
                         {phaseLoads.Y.toLocaleString()} VA
                       </div>
                       <div
-                        className="w-12 bg-amber-400 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
+                        className="w-12 bg-yellow-400 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
                         style={{
                           height: `${Math.max(
                             5,
@@ -3852,7 +3912,7 @@ export default function LoadSchedule({
                         {phaseLoads.B.toLocaleString()} VA
                       </div>
                       <div
-                        className="w-12 bg-blue-500 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
+                        className="w-12 bg-blue-600 rounded-t-lg transition-all duration-500 relative flex items-end justify-center min-h-[8px] hover:brightness-110 cursor-pointer"
                         style={{
                           height: `${Math.max(
                             5,
@@ -4019,7 +4079,7 @@ export default function LoadSchedule({
                 <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border-b border-slate-150 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      Single-Phase Circuits Manager
+                      {panel.system.includes("3PH") ? "Three-Phase Circuits Manager" : "Single-Phase Circuits Manager"}
                     </h3>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       Change phase assignments or lock circuits so they are skipped by the Auto-Balancer heuristic.
@@ -4055,14 +4115,19 @@ export default function LoadSchedule({
                       Unlock All
                     </button>
                     <span className="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                      {circuits.filter(c => c.phases.length === 1 && c.isLocked).length} of{" "}
-                      {circuits.filter(c => c.phases.length === 1).length} Locked
+                      {circuits.filter(c => (c.phases.length === 1 || c.subPanelReflectionMode === "phase_loads" || c.description?.toLowerCase().includes("reflect panel loads")) && (c.isLocked || c.subPanelReflectionMode === "phase_loads" || c.description?.toLowerCase().includes("reflect panel loads"))).length} of{" "}
+                      {circuits.filter(c => c.phases.length === 1 || c.subPanelReflectionMode === "phase_loads" || c.description?.toLowerCase().includes("reflect panel loads")).length} Locked
                     </span>
                   </div>
                 </div>
 
                 <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                  {circuits.filter(c => c.phases.length === 1).map((c) => (
+                  {circuits.filter(c => c.phases.length === 1 || c.subPanelReflectionMode === "phase_loads" || c.description?.toLowerCase().includes("reflect panel loads")).map((c) => {
+                    const isReflectedMode = c.subPanelReflectionMode === "phase_loads" ||
+                      c.description?.toLowerCase().includes("reflect panel loads") ||
+                      c.description?.toLowerCase().includes("reflect phase loads");
+
+                    return (
                     <div key={c.id} className="p-3 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 flex items-center justify-between gap-4 text-xs">
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="font-extrabold text-indigo-600 w-6 text-center font-mono">
@@ -4082,23 +4147,35 @@ export default function LoadSchedule({
                         {/* Phase Selector Button Group */}
                         <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
                           {(["R", "Y", "B"] as Phase[]).map((p) => {
-                            const isSelected = c.phases.includes(p);
+                            const isSelected = isReflectedMode
+                              ? c.reflectedPhaseLoads
+                                ? (p === "R" && (c.reflectedPhaseLoads.R > 0 || c.reflectedPhaseLoads.ThreePhase > 0)) ||
+                                  (p === "Y" && (c.reflectedPhaseLoads.Y > 0 || c.reflectedPhaseLoads.ThreePhase > 0)) ||
+                                  (p === "B" && (c.reflectedPhaseLoads.B > 0 || c.reflectedPhaseLoads.ThreePhase > 0))
+                                : true
+                              : c.phases.includes(p);
+
                             return (
                               <button
                                 key={p}
+                                disabled={isReflectedMode}
                                 onClick={() => {
+                                  if (isReflectedMode) return;
                                   updateCircuit(c.id, {
                                     phases: [p],
                                     is3PhaseMarker: false,
                                   });
                                 }}
-                                className={`w-7 h-6 rounded font-extrabold text-[10px] flex items-center justify-center transition-all cursor-pointer ${
+                                title={isReflectedMode ? `Phase ${p} reflected from subpanel load` : `Assign to Phase ${p}`}
+                                className={`w-7 h-6 rounded font-extrabold text-[10px] flex items-center justify-center transition-all ${
+                                  isReflectedMode ? "cursor-default" : "cursor-pointer"
+                                } ${
                                   isSelected
                                     ? p === "R"
-                                      ? "bg-red-500 text-white shadow-sm"
+                                      ? "bg-red-600 text-white shadow-sm"
                                       : p === "Y"
                                         ? "bg-yellow-400 text-slate-900 shadow-sm"
-                                        : "bg-blue-500 text-white shadow-sm"
+                                        : "bg-blue-600 text-white shadow-sm"
                                     : "text-slate-400 dark:text-slate-500 hover:bg-slate-250 dark:hover:bg-slate-700"
                                 }`}
                               >
@@ -4111,18 +4188,27 @@ export default function LoadSchedule({
                         {/* Lock Button */}
                         <button
                           onClick={() => {
+                            if (isReflectedMode) return;
                             updateCircuit(c.id, {
                               isLocked: !c.isLocked,
                             });
                           }}
-                          className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                            c.isLocked
+                          className={`p-1.5 rounded-lg border transition-all ${
+                            isReflectedMode ? "cursor-default" : "cursor-pointer"
+                          } ${
+                            c.isLocked || isReflectedMode
                               ? "bg-amber-50 dark:bg-amber-950/20 text-amber-500 border-amber-200 dark:border-amber-900"
                               : "bg-white dark:bg-slate-800 text-slate-300 hover:text-slate-500 border-slate-200 dark:border-slate-700"
                           }`}
-                          title={c.isLocked ? "Unlocks circuit phase assignment for auto-balancing" : "Locks circuit phase assignment"}
+                          title={
+                            isReflectedMode
+                              ? "Locked: Panel loads are directly reflected from connected subpanel"
+                              : c.isLocked
+                                ? "Unlocks circuit phase assignment for auto-balancing"
+                                : "Locks circuit phase assignment"
+                          }
                         >
-                          {c.isLocked ? (
+                          {c.isLocked || isReflectedMode ? (
                             <Lock className="w-3.5 h-3.5 fill-amber-500/10" />
                           ) : (
                             <Unlock className="w-3.5 h-3.5" />
@@ -4130,11 +4216,12 @@ export default function LoadSchedule({
                         </button>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
 
-                  {circuits.filter(c => c.phases.length === 1).length === 0 && (
+                  {circuits.filter(c => c.phases.length === 1 || c.subPanelReflectionMode === "phase_loads" || c.description?.toLowerCase().includes("reflect panel loads")).length === 0 && (
                     <div className="p-8 text-center text-slate-400 text-xs">
-                      No single-phase circuits available in this board schedule to rebalance.
+                      No single-phase or reflected circuits available in this board schedule to rebalance.
                     </div>
                   )}
                 </div>
@@ -4514,7 +4601,7 @@ export default function LoadSchedule({
                                     Reflect Max Demand Current
                                   </option>
                                   <option value="phase_loads">
-                                    Reflect Phase Loads Directly
+                                    Reflect Panel Loads Directly
                                   </option>
                                 </select>
                               )}
@@ -4925,30 +5012,30 @@ export default function LoadSchedule({
                       <td className="px-1 py-3 text-center">
                         {isSpace ? (
                           "-"
-                        ) : c.subPanelReflectionMode === "phase_loads" &&
-                          c.reflectedPhaseLoads ? (
-                          <div className="flex gap-0.5 justify-center flex-wrap">
+                        ) : (c.subPanelReflectionMode === "phase_loads" ||
+                            c.description?.toLowerCase().includes("reflect panel loads") ||
+                            c.description?.toLowerCase().includes("reflect phase loads")) ? (
+                          <div className="inline-flex gap-0.5 bg-slate-50 dark:bg-slate-900/40 p-0.5 rounded-md border border-slate-200/30 dark:border-slate-800/30">
                             {["R", "Y", "B", "3Ø"].map((p) => {
-                              const isActive =
-                                (p === "R" && c.reflectedPhaseLoads!.R > 0) ||
-                                (p === "Y" && c.reflectedPhaseLoads!.Y > 0) ||
-                                (p === "B" && c.reflectedPhaseLoads!.B > 0) ||
-                                (p === "3Ø" &&
-                                  c.reflectedPhaseLoads!.ThreePhase > 0);
+                              const isActive = c.reflectedPhaseLoads
+                                ? (p === "R" && c.reflectedPhaseLoads.R > 0) ||
+                                  (p === "Y" && c.reflectedPhaseLoads.Y > 0) ||
+                                  (p === "B" && c.reflectedPhaseLoads.B > 0) ||
+                                  (p === "3Ø" && c.reflectedPhaseLoads.ThreePhase > 0)
+                                : p !== "3Ø";
                               if (!isActive) return null;
                               return (
                                 <span
                                   key={p}
-                                  className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                                  className={`w-6 h-5 rounded-sm font-extrabold text-[10px] flex items-center justify-center ${
                                     p === "3Ø"
                                       ? "bg-indigo-600 text-white"
                                       : p === "R"
                                         ? "bg-red-600 text-white"
                                         : p === "Y"
-                                          ? "bg-yellow-400 text-black"
+                                          ? "bg-yellow-400 text-slate-900"
                                           : "bg-blue-600 text-white"
                                   }`}
-                                  style={{ fontSize: tableFontSize - 4 }}
                                 >
                                   {p}
                                 </span>
@@ -4957,7 +5044,7 @@ export default function LoadSchedule({
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5 justify-center">
-                            <div className="flex gap-0.5 justify-center flex-wrap">
+                            <div className="inline-flex gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-md border border-slate-200/60 dark:border-slate-700/60 shadow-sm">
                               {["R", "Y", "B", "3Ø"].map((p) => (
                                 <button
                                   key={p}
@@ -4975,20 +5062,19 @@ export default function LoadSchedule({
                                       });
                                     }
                                   }}
-                                  className={`px-1 h-5 min-w-[16px] rounded-sm font-bold shrink-0 flex items-center justify-center ${
+                                  className={`w-6 h-5 rounded-sm font-extrabold text-[10px] flex items-center justify-center transition-all ${
                                     p === "3Ø" && c.phases.length === 3
-                                      ? "bg-indigo-600 text-white"
+                                      ? "bg-indigo-600 text-white shadow-xs"
                                       : p !== "3Ø" &&
                                           c.phases.includes(p as Phase) &&
                                           c.phases.length === 1
                                         ? p === "R"
-                                          ? "bg-red-600 text-white"
+                                          ? "bg-red-600 text-white shadow-xs"
                                           : p === "Y"
-                                            ? "bg-yellow-400 text-black"
-                                            : "bg-blue-600 text-white"
-                                        : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                            ? "bg-yellow-400 text-slate-900 shadow-xs"
+                                            : "bg-blue-600 text-white shadow-xs"
+                                        : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
                                   } ${!panel.system.includes("3PH") && p !== "R" ? "hidden" : ""}`}
-                                  style={{ fontSize: tableFontSize - 4 }}
                                 >
                                   {p}
                                 </button>

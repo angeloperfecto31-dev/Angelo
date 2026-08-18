@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from "react";
-import { PanelConfig, Circuit } from "../types";
-import { Zap, AlertTriangle, CheckCircle2, RefreshCw, Cpu, ShieldCheck, Lock, Download, FileSpreadsheet, FileText, Check, Layers, TrendingUp, DollarSign, Activity, Info, LayoutDashboard, Thermometer, ShieldAlert, Coins } from "lucide-react";
+import { PanelConfig, Circuit, LoadType } from "../types";
+import { Zap, AlertTriangle, CheckCircle2, RefreshCw, Cpu, ShieldCheck, Lock, Download, FileSpreadsheet, FileText, Check, Layers, TrendingUp, DollarSign, Activity, Info, LayoutDashboard, Thermometer, ShieldAlert, Coins, Sliders, Scale } from "lucide-react";
 import { computePanelScheduleValues } from "../utils/computeEngine";
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx-js-style";
+import { TransformerDiagnostics } from "./TransformerDiagnostics";
+import { TransformerTableSummary } from "./TransformerTableSummary";
+import { TransformerFormulaSpec } from "./TransformerFormulaSpec";
 
 interface TransformerCalcProps {
   panel: PanelConfig;
@@ -19,6 +22,10 @@ interface TransformerCalcProps {
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
   user?: any;
+  iscParams?: any;
+  setIscParams?: any;
+  iscSource?: string;
+  setIscSource?: (s: string) => void;
 }
 
 export const STANDARD_TRANSFORMER_SIZES = [
@@ -65,6 +72,10 @@ export default function TransformerCalc({
   isPremium = false,
   onRequestUpgrade,
   user,
+  iscParams,
+  setIscParams,
+  iscSource = "auto",
+  setIscSource,
 }: TransformerCalcProps) {
   // Enhanced component state hooks
   const [windingMaterial, setWindingMaterial] = useState<'Copper' | 'Aluminum'>('Copper');
@@ -72,7 +83,64 @@ export default function TransformerCalc({
   const [customZ, setCustomZ] = useState<number | null>(null);
   const [customXr, setCustomXr] = useState<number | null>(null);
   const [activeDetailsTab, setActiveDetailsTab] = useState<'performance' | 'fault' | 'losses' | 'physical'>('performance');
-  const [selectedManualRating, setSelectedManualRating] = useState<number | null>(null);
+  const [loadAssignments, setLoadAssignments] = useState<Record<string, number | 'split'>>({});
+  const [frequency, setFrequency] = useState<number>(60);
+  const [txConnection, setTxConnection] = useState<string>("Delta-Wye (Dyn11)");
+
+  // Deriving parallel/split configuration parameters
+  const numTransformers = iscParams?.parallelTransformersCount || 1;
+
+  const setNumTransformers = (num: number) => {
+    if (setIscParams) {
+      setIscParams((p: any) => ({
+        ...p,
+        parallelTransformersCount: num,
+      }));
+    }
+  };
+
+  const selectRating = (sz: number | null) => {
+    if (sz === null) {
+      if (setIscSource) setIscSource("auto");
+    } else {
+      if (setIscSource) setIscSource("manual");
+      if (setIscParams) {
+        const spec = STANDARD_SPECS[sz] || { zPercent: 5.0, xrRatio: 5.0 };
+        setIscParams((p: any) => ({
+          ...p,
+          transformerKVA: sz,
+          parallelTransformersRating: sz,
+          transformerZ: spec.zPercent,
+          parallelTransformersZ: spec.zPercent,
+        }));
+      }
+    }
+  };
+
+  // Helper to determine the natural/design default transformer assignment based on Load Schedule
+  const getDefaultCircuitAssignment = (c: Circuit, idx: number, totalTx: number): number | 'split' => {
+    const is3PhaseLoad =
+      c.is3PhaseMarker ||
+      (c.phases && c.phases.length === 3) ||
+      c.loadType === LoadType.SUB_PANEL ||
+      c.loadType === LoadType.SUB_SUB_PANEL ||
+      c.subPanelReflectionMode === "phase_loads" ||
+      c.description?.toLowerCase().includes("reflect panel loads") ||
+      c.description?.toLowerCase().includes("reflect phase loads");
+
+    if (totalTx === 3) {
+      if (is3PhaseLoad) return 'split';
+      if (c.phases && c.phases.length > 0) {
+        if (c.phases.includes('R') || (c.phases as string[]).includes('A') || (c.phases as string[]).includes('L1')) return 0;
+        if (c.phases.includes('Y') || (c.phases as string[]).includes('B') || (c.phases as string[]).includes('L2')) return 1;
+        if (c.phases.includes('B') || (c.phases as string[]).includes('C') || (c.phases as string[]).includes('L3')) return 2;
+      }
+      return idx % 3;
+    }
+
+    if (is3PhaseLoad) return 'split';
+    return idx % totalTx;
+  };
 
   // Deriving system properties from MDP Panel
   const is3Phase = panel.system.includes("3PH");
@@ -101,15 +169,19 @@ export default function TransformerCalc({
   // Required kVA = Maximum Demand Load (kVA) / Loading Factor
   const requiredKVA = loadingFactor > 0 ? demandLoadKVA / loadingFactor : 0;
 
+  const requiredKVAPerTransformer = requiredKVA / numTransformers;
+
   // Find nearest recommended standard transformer size
   const recommendedRating = useMemo(() => {
-    if (requiredKVA <= 0) return STANDARD_TRANSFORMER_SIZES[0];
-    const size = STANDARD_TRANSFORMER_SIZES.find((s) => s >= requiredKVA);
+    if (requiredKVAPerTransformer <= 0) return STANDARD_TRANSFORMER_SIZES[0];
+    const size = STANDARD_TRANSFORMER_SIZES.find((s) => s >= requiredKVAPerTransformer);
     return size || STANDARD_TRANSFORMER_SIZES[STANDARD_TRANSFORMER_SIZES.length - 1];
-  }, [requiredKVA]);
+  }, [requiredKVAPerTransformer]);
 
   // Currently active rating (takes manual override into account)
-  const activeRating = selectedManualRating || recommendedRating;
+  const activeRating = (iscSource === "manual" && iscParams?.transformerKVA)
+    ? iscParams.transformerKVA
+    : recommendedRating;
 
   // Let's compute all advanced transformer specifications dynamically
   const activeSpecs = useMemo(() => {
@@ -155,57 +227,115 @@ export default function TransformerCalc({
     };
   }, [activeRating, windingMaterial, coolingType, customZ, customXr]);
 
-  // Primary Current calculations
-  // I = kVA * 1000 / (V * factor) where factor is sqrt(3) for 3PH, 1 for 1PH
+  // Individual Load Assignments calculations
+  const txConnectedVA = useMemo(() => {
+    const sums = Array(numTransformers).fill(0);
+    circuits.forEach((c, idx) => {
+      const assigned = loadAssignments[c.id] !== undefined
+        ? loadAssignments[c.id]
+        : getDefaultCircuitAssignment(c, idx, numTransformers);
+
+      const va = c.loadVA || 0;
+
+      if (assigned === 'split') {
+        if (numTransformers === 3 && c.reflectedPhaseLoads) {
+          sums[0] += (c.reflectedPhaseLoads.R || 0) + ((c.reflectedPhaseLoads.ThreePhase || 0) / 3);
+          sums[1] += (c.reflectedPhaseLoads.Y || 0) + ((c.reflectedPhaseLoads.ThreePhase || 0) / 3);
+          sums[2] += (c.reflectedPhaseLoads.B || 0) + ((c.reflectedPhaseLoads.ThreePhase || 0) / 3);
+        } else {
+          const splitVal = va / numTransformers;
+          for (let i = 0; i < numTransformers; i++) {
+            sums[i] += splitVal;
+          }
+        }
+      } else {
+        const targetIdx = typeof assigned === 'number' && assigned >= 0 && assigned < numTransformers ? assigned : 0;
+        sums[targetIdx] += va;
+      }
+    });
+    return sums;
+  }, [circuits, loadAssignments, numTransformers]);
+
+  const totalConnectedVA = useMemo(() => {
+    return txConnectedVA.reduce((a, b) => a + b, 0);
+  }, [txConnectedVA]);
+
+  const txDemandKVA = useMemo(() => {
+    return txConnectedVA.map((connectedVA) => {
+      if (totalConnectedVA <= 0) return demandLoadKVA / numTransformers;
+      return demandLoadKVA * (connectedVA / totalConnectedVA);
+    });
+  }, [txConnectedVA, totalConnectedVA, demandLoadKVA, numTransformers]);
+
+  // Primary Current calculations for each individual transformer
   const primaryCurrent = useMemo(() => {
     if (primaryVoltage <= 0) return 0;
     const factor = is3Phase ? Math.sqrt(3) : 1;
     return (activeRating * 1000) / (primaryVoltage * factor);
   }, [activeRating, primaryVoltage, is3Phase]);
 
-  // Secondary Current calculations
+  // Secondary Current calculations for each individual transformer
   const secondaryCurrent = useMemo(() => {
     if (secondaryVoltage <= 0) return 0;
     const factor = is3Phase ? Math.sqrt(3) : 1;
     return (activeRating * 1000) / (secondaryVoltage * factor);
   }, [activeRating, secondaryVoltage, is3Phase]);
 
-  // Transformer actual loading percentage
-  const actualLoadingPct = useMemo(() => {
-    if (activeRating <= 0) return 0;
-    return (demandLoadKVA / activeRating) * 100;
-  }, [demandLoadKVA, activeRating]);
+  // Combined system capacity metrics
+  const totalInstalledCapacity = activeRating * numTransformers;
 
-  // Spare Capacity
+  const actualLoadingPct = useMemo(() => {
+    if (totalInstalledCapacity <= 0) return 0;
+    return (demandLoadKVA / totalInstalledCapacity) * 100;
+  }, [demandLoadKVA, totalInstalledCapacity]);
+
   const spareCapacityKVA = useMemo(() => {
-    return Math.max(0, activeRating - demandLoadKVA);
-  }, [activeRating, demandLoadKVA]);
+    return Math.max(0, totalInstalledCapacity - demandLoadKVA);
+  }, [totalInstalledCapacity, demandLoadKVA]);
+
+  const capacityMargin = requiredKVA > 0 ? ((totalInstalledCapacity - requiredKVA) / requiredKVA) * 100 : 0;
 
   const isOverloaded = actualLoadingPct > (loadingFactor * 100);
 
-  // Advanced losses & efficiency variables under demand load
-  const loadRatio = activeRating > 0 ? demandLoadKVA / activeRating : 0;
-  const operatingWindingLoss = activeSpecs.copperLoss * Math.pow(loadRatio, 2);
-  const totalOperatingLosses = activeSpecs.coreLoss + operatingWindingLoss;
+  // Advanced operating losses calculated per transformer based on its assigned demand load
+  const txOperatingLosses = useMemo(() => {
+    return txDemandKVA.map((demandK) => {
+      const txRatio = activeRating > 0 ? demandK / activeRating : 0;
+      const txCopperLoss = activeSpecs.copperLoss * Math.pow(txRatio, 2);
+      return activeSpecs.coreLoss + txCopperLoss;
+    });
+  }, [txDemandKVA, activeRating, activeSpecs]);
 
-  // Heat dissipation
+  const totalOperatingLosses = useMemo(() => {
+    return txOperatingLosses.reduce((a, b) => a + b, 0);
+  }, [txOperatingLosses]);
+
+  const operatingWindingLoss = useMemo(() => {
+    return txDemandKVA.reduce((sum, demandK) => {
+      const txRatio = activeRating > 0 ? demandK / activeRating : 0;
+      return sum + (activeSpecs.copperLoss * Math.pow(txRatio, 2));
+    }, 0);
+  }, [txDemandKVA, activeRating, activeSpecs.copperLoss]);
+
+  // Heat dissipation for the entire bank
   const operatingHeatDissipation = totalOperatingLosses * 3.412; // Watts to BTU/hr
 
-  // Efficiency calculation
+  // Efficiency of the entire bank
   const powerOutputW = demandLoadKVA * powerFactor * 1000;
   const efficiencyPct = useMemo(() => {
     if (powerOutputW <= 0) return 0;
     return (powerOutputW / (powerOutputW + totalOperatingLosses)) * 100;
   }, [powerOutputW, totalOperatingLosses]);
 
-  // Peak Efficiency operating point
+  // Peak Efficiency operating point of individual transformer
   const peakEffLoadPct = useMemo(() => {
     if (activeSpecs.copperLoss <= 0) return 0;
     return Math.sqrt(activeSpecs.coreLoss / activeSpecs.copperLoss) * 100;
   }, [activeSpecs.coreLoss, activeSpecs.copperLoss]);
   const peakEffKVA = (activeRating * peakEffLoadPct) / 100;
 
-  // Voltage Regulation (%VR)
+  // Voltage Regulation (%VR) based on average loading per transformer
+  const averageLoadRatio = activeRating > 0 ? (demandLoadKVA / numTransformers) / activeRating : 0;
   const voltageRegulationPct = useMemo(() => {
     if (activeRating <= 0) return 0;
     const rPercent = (activeSpecs.copperLoss) / (activeRating * 1000) * 100;
@@ -213,25 +343,25 @@ export default function TransformerCalc({
     const cosTheta = powerFactor;
     const sinTheta = Math.sqrt(Math.max(0, 1 - Math.pow(powerFactor, 2)));
 
-    // Exact formula for voltage regulation
-    const a = loadRatio;
+    const a = averageLoadRatio;
     const linTerm = a * (rPercent * cosTheta + xPercent * sinTheta);
     const quadTerm = Math.pow(a * (xPercent * cosTheta - rPercent * sinTheta), 2) / 200;
     return Math.max(0, linTerm + quadTerm);
-  }, [activeRating, activeSpecs, loadRatio, powerFactor]);
+  }, [activeRating, activeSpecs, averageLoadRatio, powerFactor]);
 
   const voltageDropSecVolts = (voltageRegulationPct / 100) * secondaryVoltage;
 
-  // Secondary Short-Circuit Fault Current
+  // Secondary Short-Circuit Fault Current at the main bus (including all parallel feeds)
   const secondaryFaultCurrentKA = useMemo(() => {
     if (activeSpecs.zPercent <= 0 || secondaryVoltage <= 0) return 0;
-    return (secondaryCurrent / (activeSpecs.zPercent / 100)) / 1000; // kA
-  }, [secondaryCurrent, activeSpecs.zPercent]);
+    const individualFaultKA = (secondaryCurrent / (activeSpecs.zPercent / 100)) / 1000;
+    return individualFaultKA * numTransformers;
+  }, [secondaryCurrent, activeSpecs.zPercent, numTransformers]);
 
   const shortCircuitMVA = useMemo(() => {
     if (activeSpecs.zPercent <= 0) return 0;
-    return activeRating / (activeSpecs.zPercent / 100) / 1000; // MVA
-  }, [activeRating, activeSpecs.zPercent]);
+    return totalInstalledCapacity / (activeSpecs.zPercent / 100) / 1000; // MVA
+  }, [totalInstalledCapacity, activeSpecs.zPercent]);
 
   const handleExportPdf = () => {
     if (!isPremium) {
@@ -407,15 +537,21 @@ export default function TransformerCalc({
       doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
       doc.text("3.0 RECOMMENDATION FOR MAIN DISTRIBUTION POWER TRANSFORMER", 20, 117);
 
-      doc.setFontSize(18);
+      doc.setFontSize(13);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
-      doc.text(`${activeRating} kVA`, 20, 127);
+      doc.text(
+        numTransformers === 1 
+          ? `${activeRating} kVA`
+          : `${numTransformers} × ${activeRating} kVA (${totalInstalledCapacity} kVA total)`,
+        20,
+        127
+      );
 
       doc.setFontSize(8.5);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(selectedManualRating ? "Selected Custom Transformer Rating" : "Recommended Standard Transformer Rating", 20, 131);
+      doc.text(iscSource === "manual" ? "Selected Custom Transformer Rating" : "Recommended Standard Transformer Rating", 20, 131);
 
       // Sizing Target text on right
       doc.setFontSize(8.5);
@@ -458,10 +594,10 @@ export default function TransformerCalc({
         ["Calculated Demand Load:", `${demandLoadKVA.toFixed(1)} kVA / ${demandLoadkW.toFixed(1)} kW`],
         ["Allowable Continuous Sizing Limit Load Coefficient:", `${(loadingFactor * 100).toFixed(0)}% Coefficient`],
         ["Computed Minimum kVA Requirement Threshold:", `${requiredKVA.toFixed(2)} kVA`],
-        ["Selected Transformer Rating capacity:", `${activeRating} kVA`],
+        ["Selected Transformer Configuration:", numTransformers === 1 ? `${activeRating} kVA (Single)` : `${numTransformers} × ${activeRating} kVA (${totalInstalledCapacity} kVA Bank)`],
         ["Resulting Nominal Transformer Loading Percentage:", `${actualLoadingPct.toFixed(1)}%`],
-        ["Calculated Full-Load Primary Current (Ip) at rating:", `${primaryCurrent.toFixed(2)} Amps`],
-        ["Calculated Full-Load Secondary Current (Is) at rating:", `${secondaryCurrent.toFixed(2)} Amps`],
+        ["Calculated Full-Load Primary Current (Ip) at rating:", numTransformers === 1 ? `${primaryCurrent.toFixed(2)} Amps` : `${primaryCurrent.toFixed(2)} A (Per Unit) / ${(primaryCurrent * numTransformers).toFixed(2)} A (Total)`],
+        ["Calculated Full-Load Secondary Current (Is) at rating:", numTransformers === 1 ? `${secondaryCurrent.toFixed(2)} Amps` : `${secondaryCurrent.toFixed(2)} A (Per Unit) / ${(secondaryCurrent * numTransformers).toFixed(2)} A (Total)`],
         ["Net Unused Spare kVA capacity margin:", `${spareCapacityKVA.toFixed(2)} kVA (${Math.max(0, 100 - actualLoadingPct).toFixed(1)}%)`],
       ];
 
@@ -517,11 +653,11 @@ export default function TransformerCalc({
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
 
       if (is3Phase) {
-        doc.text(`   Ip (3-Phase) = S_base / (sqrt(3) * V_primary) = (${activeRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`, 15, 259);
-        doc.text(`   Is (3-Phase) = S_base / (sqrt(3) * V_secondary) = (${activeRating} * 1000) / (1.732 * ${secondaryVoltage}) = ${secondaryCurrent.toFixed(2)} A`, 15, 263);
+        doc.text(`   Ip (3-Phase, Per Unit) = S_base / (sqrt(3) * V_primary) = (${activeRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`, 15, 259);
+        doc.text(`   Is (3-Phase, Per Unit) = S_base / (sqrt(3) * V_secondary) = (${activeRating} * 1000) / (1.732 * ${secondaryVoltage}) = ${secondaryCurrent.toFixed(2)} A`, 15, 263);
       } else {
-        doc.text(`   Ip (Single Phase) = S_base / V_primary = (${activeRating} * 1000) / ${primaryVoltage} = ${primaryCurrent.toFixed(2)} A`, 15, 259);
-        doc.text(`   Is (Single Phase) = S_base / V_secondary = (${activeRating} * 1000) / ${secondaryVoltage} = ${secondaryCurrent.toFixed(2)} A`, 15, 263);
+        doc.text(`   Ip (Single Phase, Per Unit) = S_base / V_primary = (${activeRating} * 1000) / ${primaryVoltage} = ${primaryCurrent.toFixed(2)} A`, 15, 259);
+        doc.text(`   Is (Single Phase, Per Unit) = S_base / V_secondary = (${activeRating} * 1000) / ${secondaryVoltage} = ${secondaryCurrent.toFixed(2)} A`, 15, 263);
       }
 
       // Footnote
@@ -579,9 +715,9 @@ export default function TransformerCalc({
       const section6Data = [
         ["Winding Material:", `${windingMaterial} Winding Conductor`],
         ["Cooling Classification:", `${coolingType === "Liquid" ? "ONAN (Liquid-Immersed Natural)" : "AN (Dry-Type Air-Natural)"}`],
-        ["Core Losses (No-Load Loss):", `${activeSpecs.coreLoss} Watts`],
-        ["Winding Losses (Full-Load Copper Loss):", `${activeSpecs.copperLoss} Watts`],
-        ["Operating Losses (under actual demand load):", `${totalOperatingLosses.toFixed(0)} Watts`],
+        ["Core Losses (No-Load Loss):", numTransformers === 1 ? `${activeSpecs.coreLoss} Watts` : `${activeSpecs.coreLoss * numTransformers} Watts (${activeSpecs.coreLoss} W per unit × ${numTransformers})`],
+        ["Winding Losses (Full-Load Copper Loss):", numTransformers === 1 ? `${activeSpecs.copperLoss} Watts` : `${activeSpecs.copperLoss * numTransformers} Watts (${activeSpecs.copperLoss} W per unit × ${numTransformers})`],
+        ["Operating Losses (under actual demand load):", `${totalOperatingLosses.toFixed(0)} Watts (Combined)`],
         ["Estimated Heat Dissipation at load:", `${operatingHeatDissipation.toFixed(0)} BTU/hr`],
       ];
 
@@ -618,7 +754,7 @@ export default function TransformerCalc({
 
       const section7Data = [
         ["Actual Operating Efficiency (under load):", `${efficiencyPct.toFixed(3)}%`],
-        ["Optimal Sizing Peak Efficiency Load Ratio:", `${peakEffLoadPct.toFixed(1)}% of Rating (${peakEffKVA.toFixed(1)} kVA)`],
+        ["Optimal Sizing Peak Efficiency Load Ratio:", numTransformers === 1 ? `${peakEffLoadPct.toFixed(1)}% of Rating (${peakEffKVA.toFixed(1)} kVA)` : `${peakEffLoadPct.toFixed(1)}% of Rating (${peakEffKVA.toFixed(1)} kVA per unit, ${(peakEffKVA * numTransformers).toFixed(1)} kVA total)`],
         ["Equivalent Transformer Resistance (R%):", `${rPercentVal.toFixed(3)}%`],
         ["Equivalent Transformer Reactance (X%):", `${xPercentVal.toFixed(3)}%`],
         ["Calculated Transformer Voltage Regulation (%VR):", `${voltageRegulationPct.toFixed(3)}%`],
@@ -656,9 +792,9 @@ export default function TransformerCalc({
       const section8Data = [
         ["Nominal Base Impedance (Z%):", `${activeSpecs.zPercent.toFixed(2)}%`],
         ["Nominal Inductive X/R Ratio:", `${activeSpecs.xrRatio.toFixed(1)}`],
-        ["Secondary Line Full-Load Amperes (Is_fla):", `${secondaryCurrent.toFixed(1)} Amps`],
-        ["Symmetrical Short Circuit Fault Current (I_sc):", `${secondaryFaultCurrentKA.toFixed(2)} kA`],
-        ["Short Circuit Capacity at secondary (S_sc):", `${shortCircuitMVA.toFixed(2)} MVA`],
+        ["Secondary Line Full-Load Amperes (Is_fla):", numTransformers === 1 ? `${secondaryCurrent.toFixed(1)} Amps` : `${secondaryCurrent.toFixed(1)} A per unit / ${(secondaryCurrent * numTransformers).toFixed(1)} A (Total Bank)`],
+        ["Symmetrical Short Circuit Fault Current (I_sc):", `${secondaryFaultCurrentKA.toFixed(2)} kA (Total Bus Fault)`],
+        ["Short Circuit Capacity at secondary (S_sc):", `${shortCircuitMVA.toFixed(2)} MVA (Combined)`],
         ["Asymmetrical Peak Peak-Fault Current (Ip_asym):", `${(secondaryFaultCurrentKA * (1.02 + 0.98 * Math.exp(-3 / activeSpecs.xrRatio))).toFixed(2)} kA (Multiplier: ${(1.02 + 0.98 * Math.exp(-3 / activeSpecs.xrRatio)).toFixed(2)})`],
       ];
 
@@ -768,36 +904,36 @@ export default function TransformerCalc({
         ["Nominal Load Power Factor (PF):", powerFactor.toFixed(2), "Target Required Capacity (Min):", `${requiredKVA.toFixed(2)} kVA`],
         [],
         ["DETAILED COMPUTATION RESULTS & ANALYSIS", "", "SECURE VERIFICATION AUDIT", ""],
-        ["Maximum Core Demand Load:", `${demandLoadKVA.toFixed(2)} kVA`, "Selected Rating capacity:", `${activeRating} kVA`],
+        ["Maximum Core Demand Load:", `${demandLoadKVA.toFixed(2)} kVA`, "Selected Rating capacity:", numTransformers === 1 ? `${activeRating} kVA` : `${numTransformers} × ${activeRating} kVA (${totalInstalledCapacity} kVA Bank)`],
         ["Power Equivalent Demand kW:", `${demandLoadkW.toFixed(2)} kW`, "Transformer Actual Sizing Load ratio:", `${actualLoadingPct.toFixed(1)}%`],
         ["Available Spare kVA capacity:", `${spareCapacityKVA.toFixed(2)} kVA`, "Design Compliance Status:", isOverloaded ? "OVERLOADED - NONCOMPLIANT" : "PASSED - COMPLIANT, SAFE"],
-        ["Full Load Primary Ampere (Ip):", `${primaryCurrent.toFixed(2)} A`, "Full Load Secondary Ampere (Is):", `${secondaryCurrent.toFixed(2)} A`],
+        ["Full Load Primary Ampere (Ip):", numTransformers === 1 ? `${primaryCurrent.toFixed(2)} A` : `${primaryCurrent.toFixed(2)} A (Per Unit) / ${(primaryCurrent * numTransformers).toFixed(2)} A (Total)`, "Full Load Secondary Ampere (Is):", numTransformers === 1 ? `${secondaryCurrent.toFixed(2)} A` : `${secondaryCurrent.toFixed(2)} A (Per Unit) / ${(secondaryCurrent * numTransformers).toFixed(2)} A (Total)`],
         [],
         ["ADVANCED METALLURGICAL & LOSS SPECIFICATIONS", "", "PERFORMANCE & PROTECTION STUDY", ""],
         ["Winding Conductor Material:", windingMaterial, "Transformer Impedance (Z%):", `${activeSpecs.zPercent.toFixed(2)}%`],
         ["Cooling Classification:", coolingType === "Liquid" ? "Liquid-Immersed (ONAN)" : "Dry-Type (AN)", "Inductive X/R Ratio:", `${activeSpecs.xrRatio.toFixed(1)}`],
-        ["Core Losses (No-Load Losses):", `${activeSpecs.coreLoss} Watts`, "Secondary Fault Current (Isc):", `${secondaryFaultCurrentKA.toFixed(2)} kA`],
-        ["Winding Losses (Copper Losses):", `${activeSpecs.copperLoss} Watts`, "Short Circuit Capacity (Ssc):", `${shortCircuitMVA.toFixed(2)} MVA`],
-        ["Operating Loss (at actual load):", `${totalOperatingLosses.toFixed(0)} Watts`, "Operating Efficiency:", `${efficiencyPct.toFixed(3)}%`],
-        ["Estimated Heat Dissipation:", `${operatingHeatDissipation.toFixed(0)} BTU/hr`, "Peak Efficiency Load Point:", `${peakEffLoadPct.toFixed(1)}% (${peakEffKVA.toFixed(1)} kVA)`],
+        ["Core Losses (No-Load Losses):", numTransformers === 1 ? `${activeSpecs.coreLoss} Watts` : `${activeSpecs.coreLoss * numTransformers} Watts (${activeSpecs.coreLoss} W × ${numTransformers})`, "Secondary Fault Current (Isc):", `${secondaryFaultCurrentKA.toFixed(2)} kA (Total Bus)`],
+        ["Winding Losses (Copper Losses):", numTransformers === 1 ? `${activeSpecs.copperLoss} Watts` : `${activeSpecs.copperLoss * numTransformers} Watts (${activeSpecs.copperLoss} W × ${numTransformers})`, "Short Circuit Capacity (Ssc):", `${shortCircuitMVA.toFixed(2)} MVA (Combined)`],
+        ["Operating Loss (at actual load):", `${totalOperatingLosses.toFixed(0)} Watts (Combined)`, "Operating Efficiency:", `${efficiencyPct.toFixed(3)}%`],
+        ["Estimated Heat Dissipation:", `${operatingHeatDissipation.toFixed(0)} BTU/hr`, "Peak Efficiency Load Point:", numTransformers === 1 ? `${peakEffLoadPct.toFixed(1)}% (${peakEffKVA.toFixed(1)} kVA)` : `${peakEffLoadPct.toFixed(1)}% (${peakEffKVA.toFixed(1)} kVA per unit)`],
         ["Calculated Voltage Regulation:", `${voltageRegulationPct.toFixed(3)}%`, "Terminal Voltage Drop (Vs_drop):", `${voltageDropSecVolts.toFixed(2)} Volts AC`],
         [],
         ["PHYSICAL FOOTPRINT & BUDGETARY COST ESTIMATION", "", "MECHANICAL COMPLIANCE STANDARDS", ""],
         ["Estimated Height x Width x Depth:", activeSpecs.dimensions, "Physical Footprint Volume:", `${activeSpecs.volume} m³`],
-        ["Total Weight (Operating approx):", `${activeSpecs.weight} kg (${(activeSpecs.weight * 2.204).toFixed(0)} lbs)`, "Standard/Code Compliance:", "ANSI C57 / PEC Compliant"],
-        ["Estimated Unit Equipment Cost:", `$${activeSpecs.cost.toLocaleString()} USD / ₱${(activeSpecs.cost * 58).toLocaleString()} PHP`, "Engineering Integrity Stamp:", "Digital Signature Verified"],
+        ["Total Weight (Operating approx):", numTransformers === 1 ? `${activeSpecs.weight} kg` : `${activeSpecs.weight * numTransformers} kg (Bank total) [${activeSpecs.weight} kg per unit]`, "Standard/Code Compliance:", "ANSI C57 / PEC Compliant"],
+        ["Estimated Unit Equipment Cost:", numTransformers === 1 ? `${activeSpecs.cost.toLocaleString()} USD / ₱${(activeSpecs.cost * 58).toLocaleString()} PHP` : `${(activeSpecs.cost * numTransformers).toLocaleString()} USD (${numTransformers} × ${activeSpecs.cost.toLocaleString()} per unit)`, "Engineering Integrity Stamp:", "Digital Signature Verified"],
         [],
         ["ENGINEERING METHODOLOGY AND FORMULA STRINGS"],
         ["1. Required capacity (S_req) formula:"],
         ["   Required Capacity (kVA) = Computed Demand Load / Loading Limit = " + `${demandLoadKVA.toFixed(2)} / ${loadingFactor.toFixed(2)} = ${requiredKVA.toFixed(2)} kVA`],
         ["2. Nominal Full Load Amperes Equations:"],
         [is3Phase 
-          ? `   Ip (3PH) = kVA * 1000 / (sqrt(3) * Vp) = (${activeRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`
-          : `   Ip (1PH) = kVA * 1000 / Vp = (${activeRating} * 1000) / ${primaryVoltage} = ${primaryCurrent.toFixed(2)} A`
+          ? `   Ip (3PH, Per Unit) = kVA * 1000 / (sqrt(3) * Vp) = (${activeRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`
+          : `   Ip (1PH, Per Unit) = kVA * 1000 / Vp = (${activeRating} * 1000) / ${primaryVoltage} = ${primaryCurrent.toFixed(2)} A`
         ],
         [is3Phase 
-          ? `   Is (3PH) = kVA * 1000 / (sqrt(3) * Vs) = (${activeRating} * 1000) / (1.732 * ${secondaryVoltage}) = ${secondaryCurrent.toFixed(2)} A`
-          : `   Is (1PH) = kVA * 1000 / Vs = (${activeRating} * 1000) / ${secondaryVoltage} = ${secondaryCurrent.toFixed(2)} A`
+          ? `   Is (3PH, Per Unit) = kVA * 1000 / (sqrt(3) * Vs) = (${activeRating} * 1000) / (1.732 * ${secondaryVoltage}) = ${secondaryCurrent.toFixed(2)} A`
+          : `   Is (1PH, Per Unit) = kVA * 1000 / Vs = (${activeRating} * 1000) / ${secondaryVoltage} = ${secondaryCurrent.toFixed(2)} A`
         ],
         [],
         ["This report is computed in real-time in compliance with IEEE sizing procedures & Philippine Electrical Code Standards."]
@@ -941,229 +1077,350 @@ export default function TransformerCalc({
         </div>
       </div>
 
-      {/* Main Grid: Parameters on Left, Calculations/Stats on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Landscape Layout: Parameters at the Top (Full Width), Outputs Below (Full Width) */}
+      <div className="space-y-6">
         
-        {/* Adjustable Parameters Panel */}
-        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/60 dark:border-slate-800/80 shadow-md space-y-6">
-          <div className="flex items-center gap-2 pb-4 border-b border-slate-100 dark:border-slate-800/80">
-            <Cpu className="w-5 h-5 text-indigo-500" />
-            <h4 className="text-base font-bold text-slate-800 dark:text-white">
-              Sizing Parameters
-            </h4>
+        {/* Landscape Adjustable Parameters Panel */}
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/60 dark:border-slate-800/80 shadow-md space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800/80">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-indigo-500" />
+              <h4 className="text-base font-bold text-slate-800 dark:text-white">
+                Transformer Sizing Parameters & Configuration Console
+              </h4>
+            </div>
+            <span className="text-[10px] font-black uppercase bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-2.5 py-1 rounded-md border border-indigo-100/30 dark:border-indigo-900/30">
+              Landscape Dashboard View
+            </span>
           </div>
 
-          {/* Primary Voltage Input */}
-          <div className="space-y-2">
-            <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              Primary Voltage (V)
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                value={primaryVoltage}
-                onChange={(e) => setPrimaryVoltage(Math.max(1, Number(e.target.value)))}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-600 transition-all text-slate-800 dark:text-slate-100"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                kV: {(primaryVoltage / 1000).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5 mt-1">
-              {[13800, 4160, 480, 230].map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setPrimaryVoltage(v)}
-                  className={`text-[10px] font-bold px-2 py-1 rounded-md transition-all ${
-                    primaryVoltage === v
-                      ? "bg-indigo-500 text-white"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                  }`}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            
+            {/* Column 1: Grid Connections & Frequency */}
+            <div className="space-y-4">
+              <h5 className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider pb-1 border-b border-slate-100 dark:border-slate-800">
+                1. System Connection
+              </h5>
+
+              {/* Primary Voltage Input */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  Primary Voltage (V)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={primaryVoltage}
+                    onChange={(e) => setPrimaryVoltage(Math.max(1, Number(e.target.value)))}
+                    className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-600 transition-all text-slate-800 dark:text-slate-100"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                    kV: {(primaryVoltage / 1000).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {[13800, 4160, 480, 230].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setPrimaryVoltage(v)}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-all ${
+                        primaryVoltage === v
+                          ? "bg-indigo-500 text-white"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      {v >= 1000 ? `${v / 1000}kV` : `${v}V`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* System Frequency */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  System Frequency
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[60, 50].map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setFrequency(f)}
+                      className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all border ${
+                        frequency === f
+                          ? "bg-indigo-500 border-indigo-600 text-white shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      {f} Hz
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Transformer Connection Configuration */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  Vector Connection Group
+                </label>
+                <select
+                  value={txConnection}
+                  onChange={(e) => setTxConnection(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-600 transition-all text-slate-800 dark:text-slate-100"
                 >
-                  {v >= 1000 ? `${v / 1000}kV` : `${v}V`}
-                </button>
-              ))}
+                  <option value="Delta-Wye (Dyn11)">Delta-Wye (Dyn11) - Standard</option>
+                  <option value="Wye-Wye (Yny0)">Wye-Wye (Yny0) - Grounded</option>
+                  <option value="Delta-Delta (Dd0)">Delta-Delta (Dd0) - Industrial</option>
+                  <option value="Wye-Delta (Yd1)">Wye-Delta (Yd1) - Step-Up</option>
+                </select>
+              </div>
             </div>
-          </div>
 
-          {/* Power Factor */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              <span>Power Factor</span>
-              <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                {powerFactor.toFixed(2)}
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0.5"
-              max="1.0"
-              step="0.01"
-              value={powerFactor}
-              onChange={(e) => setPowerFactor(Number(e.target.value))}
-              className="w-full accent-indigo-600"
-            />
-          </div>
+            {/* Column 2: Sizing Limits & Calculations */}
+            <div className="space-y-4">
+              <h5 className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider pb-1 border-b border-slate-100 dark:border-slate-800">
+                2. Operational Limits
+              </h5>
 
-          {/* Load Diversity/Demand Factor */}
-          <div className="space-y-2 opacity-70">
-            <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              <span>Computed Demand Factor</span>
-              <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                {(effectiveDemandFactor * 100).toFixed(0)}%
-              </span>
-            </div>
-            <div className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden">
-              <div 
-                className="h-full bg-indigo-500" 
-                style={{ width: `${effectiveDemandFactor * 100}%` }}
-              ></div>
-            </div>
-            <p className="text-[10px] text-slate-400 leading-tight">
-              Automatically derived from the engineering engine's maximum demand current.
-            </p>
-          </div>
+              {/* Power Factor */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  <span>Power Factor</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                    {powerFactor.toFixed(2)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="1.0"
+                  step="0.01"
+                  value={powerFactor}
+                  onChange={(e) => setPowerFactor(Number(e.target.value))}
+                  className="w-full accent-indigo-600"
+                />
+              </div>
 
-          {/* Allowable Loading Factor */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              <span>Allowable Loading Limit</span>
-              <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                {(loadingFactor * 100).toFixed(0)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0.4"
-              max="1.0"
-              step="0.05"
-              value={loadingFactor}
-              onChange={(e) => setLoadingFactor(Number(e.target.value))}
-              className="w-full accent-indigo-600"
-            />
-            <p className="text-[10px] text-slate-400 leading-tight">
-              Standard design practices suggest keeping utility transformers under 80% continuous rating.
-            </p>
-          </div>
+              {/* Allowable Loading Factor */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  <span>Allowable Loading Limit</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                    {(loadingFactor * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.4"
+                  max="1.0"
+                  step="0.05"
+                  value={loadingFactor}
+                  onChange={(e) => setLoadingFactor(Number(e.target.value))}
+                  className="w-full accent-indigo-600"
+                />
+              </div>
 
-          {/* Winding Material */}
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              Winding Material
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["Copper", "Aluminum"] as const).map((mat) => (
-                <button
-                  key={mat}
-                  type="button"
-                  onClick={() => setWindingMaterial(mat)}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
-                    windingMaterial === mat
-                      ? "bg-indigo-500 border-indigo-600 text-white shadow-sm"
-                      : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  {mat}
-                </button>
-              ))}
+              {/* Load Diversity/Demand Factor */}
+              <div className="space-y-2 opacity-85">
+                <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  <span>Computed Demand Factor</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                    {(effectiveDemandFactor * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <div className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden">
+                  <div 
+                    className="h-full bg-indigo-500" 
+                    style={{ width: `${effectiveDemandFactor * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">
+                  Automatically derived from the engineering engine's maximum demand current.
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Cooling Type */}
-          <div className="space-y-2">
-            <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              Cooling Classification
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["Liquid", "Dry"] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setCoolingType(type)}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
-                    coolingType === type
-                      ? "bg-indigo-500 border-indigo-600 text-white shadow-sm"
-                      : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  {type === "Liquid" ? "Liquid-Immersed" : "Dry-Type"}
-                </button>
-              ))}
-            </div>
-          </div>
+            {/* Column 3: Transformers Count & Classification */}
+            <div className="space-y-4">
+              <h5 className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider pb-1 border-b border-slate-100 dark:border-slate-800">
+                3. Asset Splitting
+              </h5>
 
-          {/* Impedance %Z Customizer */}
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-            <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              <span>Impedance (Z%)</span>
-              <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                {activeSpecs.zPercent.toFixed(2)}%
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] text-slate-400">Override Standard Z%</span>
-              <button
-                type="button"
-                onClick={() => setCustomZ(customZ === null ? activeSpecs.zPercent : null)}
-                className={`w-8 h-4 rounded-full transition-colors relative ${customZ !== null ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-700"}`}
-              >
-                <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${customZ !== null ? "right-0.5" : "left-0.5"}`} />
-              </button>
-            </div>
-            {customZ !== null && (
-              <input
-                type="range"
-                min="1.0"
-                max="12.0"
-                step="0.1"
-                value={customZ}
-                onChange={(e) => setCustomZ(Number(e.target.value))}
-                className="w-full accent-indigo-600"
-              />
-            )}
-            <p className="text-[10px] text-slate-400 leading-tight">
-              Standard base impedance determines secondary terminal symmetrical short circuit fault current.
-            </p>
-          </div>
+              {/* Transformer Capacity Splitting Sizer Controls */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                    No. of Transformers
+                  </label>
+                  <span className="font-mono text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                    {numTransformers === 1 ? "Single" : `${numTransformers} Units`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNumTransformers(Math.max(1, numTransformers - 1))}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-xs font-black"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={numTransformers}
+                    onChange={(e) => setNumTransformers(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                    className="flex-1 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-center font-mono text-xs focus:outline-none text-slate-800 dark:text-slate-100 font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNumTransformers(Math.min(10, numTransformers + 1))}
+                    className="w-8 h-8 flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-xs font-black"
+                  >
+                    +
+                  </button>
+                </div>
+                
+                {numTransformers > 1 && (
+                  <div className="bg-indigo-50/50 dark:bg-indigo-950/20 p-2.5 rounded-xl border border-indigo-100/50 dark:border-indigo-900/30 space-y-1">
+                    <div className="flex justify-between text-[9px] text-slate-500">
+                      <span>Per TX Req:</span>
+                      <span className="font-bold font-mono text-indigo-600 dark:text-indigo-400">
+                        {requiredKVAPerTransformer.toFixed(1)} kVA
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-500">
+                      <span>Total Bank:</span>
+                      <span className="font-bold font-mono text-indigo-600 dark:text-indigo-400">
+                        {totalInstalledCapacity.toFixed(1)} kVA
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-          {/* X/R Ratio Customizer */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-              <span>X/R Ratio</span>
-              <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                {activeSpecs.xrRatio.toFixed(1)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] text-slate-400">Override Standard X/R</span>
-              <button
-                type="button"
-                onClick={() => setCustomXr(customXr === null ? activeSpecs.xrRatio : null)}
-                className={`w-8 h-4 rounded-full transition-colors relative ${customXr !== null ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-700"}`}
-              >
-                <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${customXr !== null ? "right-0.5" : "left-0.5"}`} />
-              </button>
-            </div>
-            {customXr !== null && (
-              <input
-                type="range"
-                min="1.0"
-                max="15.0"
-                step="0.5"
-                value={customXr}
-                onChange={(e) => setCustomXr(Number(e.target.value))}
-                className="w-full accent-indigo-600"
-              />
-            )}
-            <p className="text-[10px] text-slate-400 leading-tight">
-              Ratio of reactance to resistance. Affects peak asymmetrical transient currents.
-            </p>
-          </div>
-        </div>
+              {/* Winding Material */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">
+                  Winding Material
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["Copper", "Aluminum"] as const).map((mat) => (
+                    <button
+                      key={mat}
+                      type="button"
+                      onClick={() => setWindingMaterial(mat)}
+                      className={`py-1 px-2 rounded-lg text-xs font-bold transition-all border ${
+                        windingMaterial === mat
+                          ? "bg-indigo-500 border-indigo-600 text-white shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      {mat}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-        {/* Outputs and stats panel */}
-        <div className="lg:col-span-8 space-y-6">
+              {/* Cooling Type */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-black uppercase text-slate-500 dark:text-slate-400">
+                  Cooling Classification
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["Liquid", "Dry"] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setCoolingType(type)}
+                      className={`py-1 px-2 rounded-lg text-[10px] font-bold transition-all border ${
+                        coolingType === type
+                          ? "bg-indigo-500 border-indigo-600 text-white shadow-sm"
+                          : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      {type === "Liquid" ? "Liquid" : "Dry"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Column 4: Impedance Overrides */}
+            <div className="space-y-4">
+              <h5 className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider pb-1 border-b border-slate-100 dark:border-slate-800">
+                4. Impedance & X/R
+              </h5>
+
+              {/* Impedance %Z Customizer */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  <span>Impedance (Z%)</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                    {activeSpecs.zPercent.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-400">Override Z%</span>
+                  <button
+                    type="button"
+                    onClick={() => setCustomZ(customZ === null ? activeSpecs.zPercent : null)}
+                    className={`w-8 h-4 rounded-full transition-colors relative ${customZ !== null ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-700"}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${customZ !== null ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {customZ !== null && (
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="12.0"
+                    step="0.1"
+                    value={customZ}
+                    onChange={(e) => setCustomZ(Number(e.target.value))}
+                    className="w-full accent-indigo-600"
+                  />
+                )}
+              </div>
+
+              {/* X/R Ratio Customizer */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
+                  <span>X/R Ratio</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400">
+                    {activeSpecs.xrRatio.toFixed(1)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-400">Override X/R</span>
+                  <button
+                    type="button"
+                    onClick={() => setCustomXr(customXr === null ? activeSpecs.xrRatio : null)}
+                    className={`w-8 h-4 rounded-full transition-colors relative ${customXr !== null ? "bg-indigo-500" : "bg-slate-300 dark:bg-slate-700"}`}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${customXr !== null ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {customXr !== null && (
+                  <input
+                    type="range"
+                    min="1.0"
+                    max="15.0"
+                    step="0.5"
+                    value={customXr}
+                    onChange={(e) => setCustomXr(Number(e.target.value))}
+                    className="w-full accent-indigo-600"
+                  />
+                )}
+              </div>
+            </div>
+
+          </div>
+        </div> {/* End of Adjustable Parameters Panel (Landscape Console) */}
+
+        {/* Outputs and stats panel (Full Width Landscape Layout) */}
+        <div className="space-y-6">
           
           {/* Sizing Status */}
           <div className={`p-6 rounded-3xl border-2 flex flex-col md:flex-row items-center justify-between gap-4 transition-all shadow-sm ${
@@ -1194,8 +1451,12 @@ export default function TransformerCalc({
                 </h4>
                 <p className="text-xs text-slate-500 mt-1 max-w-md">
                   {isOverloaded
-                    ? `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for a ${recommendedRating} kVA transformer.`
-                    : `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA. Standard rating ${recommendedRating} kVA is compliant.`}
+                    ? (numTransformers === 1
+                      ? `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for a ${activeRating} kVA transformer.`
+                      : `The actual demand of ${demandLoadKVA.toFixed(1)} kVA exceeds the specified maximum continuous limit for the ${numTransformers} × ${activeRating} kVA transformer bank.`)
+                    : (numTransformers === 1
+                      ? `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA. Standard rating ${activeRating} kVA is compliant.`
+                      : `The calculated load requires at least ${requiredKVA.toFixed(1)} kVA (${requiredKVAPerTransformer.toFixed(1)} kVA per unit). The bank of ${numTransformers} × ${activeRating} kVA (${totalInstalledCapacity} kVA total) is compliant.`)}
                 </p>
               </div>
             </div>
@@ -1361,26 +1622,31 @@ export default function TransformerCalc({
                         <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
                           Active Transformer Rating
                         </span>
-                        {selectedManualRating !== null && (
-                          <span className="bg-amber-105 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wide border border-amber-200 dark:border-amber-900/35">
+                        {iscSource === "manual" && (
+                          <span className="bg-amber-100 dark:bg-amber-900/40 text-amber-850 dark:text-amber-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wide border border-amber-200 dark:border-amber-900/35">
                             Manual Override Active
                           </span>
                         )}
                       </div>
                       <h5 className="text-3xl font-black font-mono text-indigo-600 dark:text-indigo-400 mt-1">
-                        {activeRating} <span className="text-lg">kVA</span>
+                        {numTransformers === 1 
+                          ? `${activeRating} kVA`
+                          : `${numTransformers} × ${activeRating} kVA`}
+                        <span className="text-sm font-medium text-slate-400 dark:text-slate-500 ml-2">
+                          {numTransformers > 1 && `(Total: ${totalInstalledCapacity} kVA)`}
+                        </span>
                       </h5>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
                         <p className="text-xs text-slate-400 leading-tight">
-                          {selectedManualRating !== null 
+                          {iscSource === "manual" 
                             ? `Manually sizing standard transformer. Recommended automatic rating is ${recommendedRating} kVA.` 
                             : `Nearest standard transformer rating chosen automatically to prevent operation past ${(loadingFactor * 100).toFixed(0)}% load capacity.`
                           }
                         </p>
-                        {selectedManualRating !== null && (
+                        {iscSource === "manual" && (
                           <button
                             type="button"
-                            onClick={() => setSelectedManualRating(null)}
+                            onClick={() => selectRating(null)}
                             className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-600 hover:underline shrink-0"
                           >
                             Reset to Auto
@@ -1389,26 +1655,26 @@ export default function TransformerCalc({
                       </div>
                     </div>
                     <div className="flex flex-col gap-2 items-center w-full md:w-auto">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Standard Size Selection</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Standard Size Selection (Per Unit)</span>
                       <div className="flex flex-wrap gap-1 justify-center max-w-sm">
                         {STANDARD_TRANSFORMER_SIZES.slice(0, 11).map((sz) => (
                           <button
                             key={sz}
                             type="button"
                             onClick={() => {
-                              if (sz >= requiredKVA) {
-                                setSelectedManualRating(sz === recommendedRating ? null : sz);
+                              if (sz >= requiredKVAPerTransformer) {
+                                selectRating(sz === recommendedRating ? null : sz);
                               }
                             }}
                             className={`px-2.5 py-1.5 text-[10px] font-mono font-black rounded-lg transition-all ${
                               activeRating === sz
                                 ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20 scale-105"
-                                : sz < requiredKVA
-                                ? "bg-red-50 text-red-550 dark:bg-red-950/20 dark:text-red-400/60 font-medium cursor-not-allowed border border-red-200/30 line-through"
+                                : sz < requiredKVAPerTransformer
+                                ? "bg-red-50 text-red-500 dark:bg-red-950/20 dark:text-red-400/60 font-medium cursor-not-allowed border border-red-200/30 line-through"
                                 : "bg-slate-150/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
                             }`}
-                            disabled={sz < requiredKVA}
-                            title={sz < requiredKVA ? `Capacity too small for load of ${demandLoadKVA.toFixed(1)} kVA` : `Select rating ${sz} kVA`}
+                            disabled={sz < requiredKVAPerTransformer}
+                            title={sz < requiredKVAPerTransformer ? `Capacity too small for target required per TX of ${requiredKVAPerTransformer.toFixed(1)} kVA` : `Select rating ${sz} kVA`}
                           >
                             {sz}
                           </button>
@@ -1425,9 +1691,12 @@ export default function TransformerCalc({
                     <div className="flex justify-between text-xs font-bold text-slate-400">
                       <span>0 kVA</span>
                       <span className="text-slate-800 dark:text-slate-200 font-mono">
-                        Demand: {demandLoadKVA.toFixed(1)} kVA / Rated: {activeRating} kVA
+                        {numTransformers === 1
+                          ? `Demand: ${demandLoadKVA.toFixed(1)} kVA / Rated: ${activeRating} kVA`
+                          : `Demand: ${demandLoadKVA.toFixed(1)} kVA / Total Bank: ${totalInstalledCapacity} kVA (${numTransformers} × ${activeRating} kVA)`
+                        }
                       </span>
-                      <span>{activeRating} kVA</span>
+                      <span>{totalInstalledCapacity} kVA</span>
                     </div>
                     <div className="h-4 bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden flex relative border dark:border-slate-800">
                       {/* Safe limit mark line */}
@@ -1482,6 +1751,288 @@ export default function TransformerCalc({
                         {spareCapacityKVA.toFixed(1)} kVA ({Math.max(0, 100 - actualLoadingPct).toFixed(1)}%)
                       </span>
                     </div>
+                  </div>
+
+                  {/* Load Assignment & Balancing Board */}
+                  {numTransformers > 1 && (
+                    <div className="mt-6 p-5 rounded-2xl border border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-950/20 space-y-4">
+                      <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-3">
+                        <div>
+                          <h5 className="text-sm font-black text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <Layers className="w-4 h-4 text-indigo-500" />
+                            Load Assignment & Balancing Board
+                          </h5>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                            Evenly assign branch circuits to prevent unbalanced overloading of individual units based on Load Schedule phase calculations.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {numTransformers === 3 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Automatically distribute by Load Schedule phase assignments
+                                const newAssignments: Record<string, number | 'split'> = {};
+                                circuits.forEach((c, idx) => {
+                                  newAssignments[c.id] = getDefaultCircuitAssignment(c, idx, numTransformers);
+                                });
+                                setLoadAssignments(newAssignments);
+                              }}
+                              className="px-2.5 py-1 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                              title="Map Phase A/R -> TX1, Phase B/Y -> TX2, Phase C/B -> TX3, and 3-Phase loads shared across all units"
+                            >
+                              <Scale className="w-3 h-3" />
+                              Auto-Balance by Phase (Design)
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Optimal bin-packing (LPT algorithm)
+                              const sortedCircuits = [...circuits].sort((a, b) => (b.loadVA || 0) - (a.loadVA || 0));
+                              const loads = Array(numTransformers).fill(0);
+                              const newAssignments: Record<string, number | 'split'> = {};
+
+                              sortedCircuits.forEach((c) => {
+                                const is3PhaseLoad =
+                                  c.is3PhaseMarker ||
+                                  (c.phases && c.phases.length === 3) ||
+                                  c.loadType === LoadType.SUB_PANEL ||
+                                  c.loadType === LoadType.SUB_SUB_PANEL;
+
+                                if (is3PhaseLoad) {
+                                  newAssignments[c.id] = 'split';
+                                  const splitVA = (c.loadVA || 0) / numTransformers;
+                                  for (let i = 0; i < numTransformers; i++) {
+                                    loads[i] += splitVA;
+                                  }
+                                } else {
+                                  // Find the unit with lowest current load
+                                  let minIdx = 0;
+                                  for (let i = 1; i < numTransformers; i++) {
+                                    if (loads[i] < loads[minIdx]) minIdx = i;
+                                  }
+                                  newAssignments[c.id] = minIdx;
+                                  loads[minIdx] += c.loadVA || 0;
+                                }
+                              });
+                              setLoadAssignments(newAssignments);
+                            }}
+                            className="px-2.5 py-1 text-[10px] font-bold bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-all shadow-xs cursor-pointer"
+                            title="Distribute circuits to achieve the closest possible equal load across all transformer units"
+                          >
+                            Auto-Balance by Load (Optimal)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Distribute circuits round-robin
+                              const newAssignments: Record<string, number | 'split'> = {};
+                              circuits.forEach((c, idx) => {
+                                newAssignments[c.id] = idx % numTransformers;
+                              });
+                              setLoadAssignments(newAssignments);
+                            }}
+                            className="px-2.5 py-1 text-[10px] font-bold bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg transition-all shadow-xs cursor-pointer"
+                            title="Alternate circuits sequentially across units"
+                          >
+                            Round-Robin
+                          </button>
+                          {Object.keys(loadAssignments).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setLoadAssignments({})}
+                              className="px-2 py-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-all cursor-pointer"
+                              title="Reset all manual assignments back to dynamic Load Schedule calculations"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Display summary of each transformer loading */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {Array.from({ length: numTransformers }).map((_, idx) => {
+                          const connectedKVA = txConnectedVA[idx] / 1000;
+                          const demandK = txDemandKVA[idx];
+                          const txLoadingPct = activeRating > 0 ? (demandK / activeRating) * 100 : 0;
+                          const isTxOverloaded = txLoadingPct > (loadingFactor * 100);
+
+                          const phaseLabel = numTransformers === 3
+                            ? idx === 0 ? "Phase A (R)" : idx === 1 ? "Phase B (Y)" : "Phase C (B)"
+                            : `Unit #${idx + 1}`;
+
+                          return (
+                            <div key={idx} className={`p-4 rounded-xl border transition-all ${
+                              isTxOverloaded 
+                                ? "bg-red-50/50 border-red-200 dark:bg-red-950/20 dark:border-red-900/40 shadow-xs" 
+                                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800/80 shadow-xs"
+                            } space-y-2.5`}>
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <span className="text-[11px] font-black uppercase text-slate-800 dark:text-slate-100">TX Unit #{idx + 1}</span>
+                                  {numTransformers === 3 && (
+                                    <span className="ml-1.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400">
+                                      ({phaseLabel})
+                                    </span>
+                                  )}
+                                </div>
+                                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                                  isTxOverloaded 
+                                    ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300 border border-red-200 dark:border-red-900/50" 
+                                    : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-900/40"
+                                }`}>
+                                  {txLoadingPct.toFixed(0)}% Loaded
+                                </span>
+                              </div>
+                              <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400 font-mono">
+                                <div className="flex justify-between">
+                                  <span>Capacity:</span>
+                                  <strong className="text-slate-800 dark:text-slate-100">{activeRating} kVA</strong>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Demand Load:</span>
+                                  <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{demandK.toFixed(1)} kVA</strong>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Connected VA:</span>
+                                  <strong className="text-slate-800 dark:text-slate-100">{(connectedKVA * 1000).toFixed(0)} VA</strong>
+                                </div>
+                              </div>
+                              {isTxOverloaded ? (
+                                <p className="text-[9.5px] text-red-600 dark:text-red-400 font-bold leading-tight flex items-center gap-1 pt-1">
+                                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                  Individual Unit Overloaded! Reallocate circuits.
+                                </p>
+                              ) : (
+                                <p className="text-[9.5px] text-emerald-600 dark:text-emerald-400 font-semibold leading-tight flex items-center gap-1 pt-1">
+                                  <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+                                  Safe &amp; Balanced ({(100 - txLoadingPct).toFixed(0)}% spare)
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Interactive circuit allocator */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                            Branch Circuit Assignments ({circuits.length} Circuits)
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            Click any TX button or 3Ø Split to reallocate
+                          </span>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto border border-slate-200 dark:border-slate-800/80 rounded-xl bg-white dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800/60 shadow-xs">
+                          {circuits.map((c, idx) => {
+                            const is3PhaseLoad =
+                              c.is3PhaseMarker ||
+                              (c.phases && c.phases.length === 3) ||
+                              c.loadType === LoadType.SUB_PANEL ||
+                              c.loadType === LoadType.SUB_SUB_PANEL;
+
+                            const assigned = loadAssignments[c.id] !== undefined
+                              ? loadAssignments[c.id]
+                              : getDefaultCircuitAssignment(c, idx, numTransformers);
+
+                            const phaseStr = is3PhaseLoad
+                              ? "3Ø (Balanced)"
+                              : (c.phases && c.phases.length > 0)
+                              ? `Phase ${c.phases.join(", ")}`
+                              : `Ckt #${c.circuitNo || idx + 1}`;
+
+                            return (
+                              <div key={c.id} className="p-2.5 sm:p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                <div className="space-y-0.5 min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono font-black text-slate-400 text-[10px]">
+                                      #{c.circuitNo || idx + 1}
+                                    </span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                                      {c.description || `Circuit ${c.id}`}
+                                    </span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold font-mono">
+                                      {phaseStr}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                                    Load: <strong>{c.loadVA || 0} VA</strong> | Type: {c.loadType || "Other"}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 self-end sm:self-center flex-shrink-0">
+                                  <span className="text-[9px] font-black text-slate-400 uppercase">Assign:</span>
+                                  <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-750 shadow-2xs">
+                                    {is3PhaseLoad && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setLoadAssignments((prev) => ({
+                                            ...prev,
+                                            [c.id]: 'split',
+                                          }));
+                                        }}
+                                        className={`px-2 py-1 text-[10px] font-bold border-r border-slate-200 dark:border-slate-800 transition-colors cursor-pointer ${
+                                          assigned === 'split'
+                                            ? "bg-indigo-600 text-white font-black"
+                                            : "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+                                        }`}
+                                        title="Split load evenly across all transformer units"
+                                      >
+                                        3Ø Split
+                                      </button>
+                                    )}
+                                    {Array.from({ length: numTransformers }).map((_, txIdx) => (
+                                      <button
+                                        key={txIdx}
+                                        type="button"
+                                        onClick={() => {
+                                          setLoadAssignments((prev) => ({
+                                            ...prev,
+                                            [c.id]: txIdx,
+                                          }));
+                                        }}
+                                        className={`px-2.5 py-1 text-[10px] font-bold border-r last:border-0 border-slate-200 dark:border-slate-800 transition-colors cursor-pointer ${
+                                          assigned === txIdx
+                                            ? "bg-indigo-600 text-white font-black"
+                                            : "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+                                        }`}
+                                      >
+                                        TX{txIdx + 1}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Compliance & Individual Unit load table */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <TransformerDiagnostics
+                      primaryVoltage={primaryVoltage}
+                      secondaryVoltage={secondaryVoltage}
+                      numTransformers={numTransformers}
+                      activeRating={activeRating}
+                      isOverloaded={isOverloaded}
+                      demandLoadKVA={demandLoadKVA}
+                      totalInstalledCapacity={totalInstalledCapacity}
+                      loadingFactor={loadingFactor}
+                      txDemandKVA={txDemandKVA}
+                    />
+                    <TransformerTableSummary
+                      numTransformers={numTransformers}
+                      activeRating={activeRating}
+                      txDemandKVA={txDemandKVA}
+                      txConnectedVA={txConnectedVA}
+                      loadingFactor={loadingFactor}
+                    />
                   </div>
                 </div>
               )}
@@ -1675,57 +2226,20 @@ export default function TransformerCalc({
           </div>     </div>
 
           {/* Math & Formulas Section */}
-          <div className="bg-slate-55 dark:bg-slate-900/30 rounded-3xl p-6 border border-slate-200/40 dark:border-slate-800/50 space-y-4">
-            <h4 className="text-sm font-black text-slate-700 dark:text-slate-350 uppercase tracking-wider flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-slate-400" />
-              Formula & Equation Breakdown
-            </h4>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono text-slate-600 dark:text-slate-400 bg-white/70 dark:bg-slate-950/40 p-5 rounded-2xl shadow-inner border border-slate-100 dark:border-slate-900">
-              <div className="space-y-1">
-                <div className="font-bold text-slate-800 dark:text-slate-300">1. Required Capacity Formula:</div>
-                <div className="bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50 text-indigo-600 dark:text-indigo-400 font-bold overflow-x-auto whitespace-nowrap">
-                  Required kVA = Demand Load (kVA) &divide; Loading Limit
-                </div>
-                <div className="text-[10px] text-slate-450 pt-1">
-                  Demand Load ({demandLoadKVA.toFixed(1)} kVA) &divide; {(loadingFactor).toFixed(2)} = {requiredKVA.toFixed(2)} kVA
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="font-bold text-slate-800 dark:text-slate-300">2. Demand Load Formula:</div>
-                <div className="bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50 text-indigo-600 dark:text-indigo-400 font-bold overflow-x-auto whitespace-nowrap">
-                  Demand Load = Max Demand Current &times; Voltage &times; Factor
-                </div>
-                <div className="text-[10px] text-slate-450 pt-1">
-                  Engine Current ({maxDemandCurrent.toFixed(1)} A) &times; {secondaryVoltage} V &times; {(is3Phase ? 1.732 : 1).toFixed(3)} &divide; 1000 = {demandLoadKVA.toFixed(2)} kVA
-                </div>
-              </div>
-
-              <div className="space-y-1 md:col-span-2 pt-2 border-t border-slate-100 dark:border-slate-900">
-                <div className="font-bold text-slate-800 dark:text-slate-300">3. Current Equations:</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
-                  <div>
-                    <span className="text-[10px] block text-slate-400 uppercase">Primary Ampere ({is3Phase ? "3-Phase" : "Single Phase"})</span>
-                    <div className="bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50 font-bold text-indigo-600 dark:text-indigo-400 overflow-x-auto">
-                      {is3Phase 
-                        ? `I_p = kVA × 1000 ÷ (√3 × V_p) = ${RecommendedRatingEquation(recommendedRating, primaryVoltage, true)} = ${primaryCurrent.toFixed(2)} A`
-                        : `I_p = kVA × 1000 ÷ V_p = ${RecommendedRatingEquation(recommendedRating, primaryVoltage, false)} = ${primaryCurrent.toFixed(2)} A`
-                      }
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[10px] block text-slate-400 uppercase">Secondary Ampere ({is3Phase ? "3-Phase" : "Single Phase"})</span>
-                    <div className="bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50 font-bold text-indigo-600 dark:text-indigo-400 overflow-x-auto">
-                      {is3Phase 
-                        ? `I_s = kVA × 1000 ÷ (√3 × V_s) = ${RecommendedRatingEquation(recommendedRating, secondaryVoltage, true)} = ${secondaryCurrent.toFixed(2)} A`
-                        : `I_s = kVA × 1000 ÷ V_s = ${RecommendedRatingEquation(recommendedRating, secondaryVoltage, false)} = ${secondaryCurrent.toFixed(2)} A`
-                      }
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="bg-slate-50 dark:bg-slate-900/30 rounded-3xl p-6 border border-slate-200/40 dark:border-slate-800/50">
+            <TransformerFormulaSpec
+              demandLoadKVA={demandLoadKVA}
+              loadingFactor={loadingFactor}
+              requiredKVA={requiredKVA}
+              secondaryCurrent={secondaryCurrent}
+              numTransformers={numTransformers}
+              activeSpecs={activeSpecs}
+              secondaryFaultCurrentKA={secondaryFaultCurrentKA}
+              is3Phase={is3Phase}
+              primaryVoltage={primaryVoltage}
+              secondaryVoltage={secondaryVoltage}
+              primaryCurrent={primaryCurrent}
+            />
           </div>
 
         </div>

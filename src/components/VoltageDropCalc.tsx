@@ -92,6 +92,11 @@ export default function VoltageDropCalc({
   const [hoveredElement, setHoveredElement] = useState<any>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  const [mainFeederVdLimit, setMainFeederVdLimit] = useState<number>(3.0);
+  const [feederVdLimit, setFeederVdLimit] = useState<number>(5.0);
+  const [branchVdLimit, setBranchVdLimit] = useState<number>(3.0);
+  const [cumulativeVdLimit, setCumulativeVdLimit] = useState<number>(5.0);
+
   const allSubPanels = useMemo(() => {
     const rawAllSubPanels = [...(subPanels || []), ...(subSubPanels || [])];
     const seen = new Set();
@@ -223,7 +228,11 @@ export default function VoltageDropCalc({
   }, [panel, circuits, allSubPanels, transformerPrimaryVoltage]);
 
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
-    const res = calculateUnifiedVD(calc, panel, allSubPanels, circuits || []);
+    const res = calculateUnifiedVD(calc, panel, allSubPanels, circuits || [], {
+      mainFeederLimit: mainFeederVdLimit,
+      feederLimit: feederVdLimit,
+      branchLimit: branchVdLimit,
+    });
     return {
       vd: res.vd.toFixed(2),
       vdPercentage: res.vdPercentage.toFixed(2),
@@ -238,7 +247,7 @@ export default function VoltageDropCalc({
       ...c,
       result: calculateVDAndCompliance(c),
     }));
-  }, [calculations, panel, circuits, allSubPanels]);
+  }, [calculations, panel, circuits, allSubPanels, mainFeederVdLimit, feederVdLimit, branchVdLimit]);
 
   const handleUpdateCalculation = (
     id: string,
@@ -1015,15 +1024,15 @@ export default function VoltageDropCalc({
     const hasFeederViolation = selectedPathSegments
       .some(s => {
         const isMain = s.id === "segment-main" || s.calc.source === "main";
-        const limit = isMain ? 3.0 : 5.0;
+        const limit = isMain ? mainFeederVdLimit : feederVdLimit;
         return s.type === "feeder" && parseFloat(s.calc.result.vdPercentage) > limit;
       });
     const hasBranchViolation = selectedPathSegments
       .filter(s => s.type === "branch")
-      .some(s => parseFloat(s.calc.result.vdPercentage) > 3.0);
-    const hasCumulativeViolation = cumulativeVdPercent > 5.0;
+      .some(s => parseFloat(s.calc.result.vdPercentage) > branchVdLimit);
+    const hasCumulativeViolation = cumulativeVdPercent > cumulativeVdLimit;
     return !hasFeederViolation && !hasBranchViolation && !hasCumulativeViolation;
-  }, [selectedPathSegments, cumulativeVdPercent]);
+  }, [selectedPathSegments, cumulativeVdPercent, mainFeederVdLimit, feederVdLimit, branchVdLimit, cumulativeVdLimit]);
 
   const serviceEntranceLabel = useMemo(() => {
     const systemVoltage = panel?.voltage || 230;
@@ -1192,6 +1201,107 @@ export default function VoltageDropCalc({
               <Layers className="w-4 h-4" />
               <span>{isPremium ? "Export AutoCAD Drawing" : "Export AutoCAD (Premium)"}</span>
             </button>
+          </div>
+        </div>
+
+        {/* Voltage Drop Sizing Limits Configuration */}
+        <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-150 dark:border-slate-800 rounded-2xl p-5 mb-8 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+            <div>
+              <h4 className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                <Sliders className="w-3.5 h-3.5 text-indigo-500" />
+                Voltage Drop Sizing Limits Configuration
+              </h4>
+              <p className="text-[10px] text-slate-400 mt-0.5 font-medium leading-relaxed">
+                Customize allowable voltage drop limit parameters dynamically to check real-time PEC or custom engineering compliance.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMainFeederVdLimit(3.0);
+                setFeederVdLimit(5.0);
+                setBranchVdLimit(3.0);
+                setCumulativeVdLimit(5.0);
+              }}
+              className="px-2.5 py-1 text-[10px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 rounded-lg transition-all"
+            >
+              Reset to Standard (3% / 5%)
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+            {/* Main Feeder Limit */}
+            <div className="space-y-1.5 p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-150 dark:border-slate-800/60">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 leading-none">Main Feeder Limit</span>
+                <span className="text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400">{mainFeederVdLimit.toFixed(1)}%</span>
+              </div>
+              <input
+                type="range"
+                min="1.0"
+                max="10.0"
+                step="0.1"
+                value={mainFeederVdLimit}
+                onChange={e => setMainFeederVdLimit(parseFloat(e.target.value))}
+                className="w-full accent-indigo-600 dark:accent-indigo-500 h-1 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+              />
+              <p className="text-[9px] text-slate-400 leading-tight">PEC recommended maximum: 3.0% for service main.</p>
+            </div>
+
+            {/* Sub-Panel Feeder Limit */}
+            <div className="space-y-1.5 p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-150 dark:border-slate-800/60">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 leading-none">Feeder Circuits Limit</span>
+                <span className="text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400">{feederVdLimit.toFixed(1)}%</span>
+              </div>
+              <input
+                type="range"
+                min="1.0"
+                max="10.0"
+                step="0.1"
+                value={feederVdLimit}
+                onChange={e => setFeederVdLimit(parseFloat(e.target.value))}
+                className="w-full accent-indigo-600 dark:accent-indigo-500 h-1 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+              />
+              <p className="text-[9px] text-slate-400 leading-tight">PEC recommended maximum: 5.0% for subpanel feeders.</p>
+            </div>
+
+            {/* Branch Circuit Limit */}
+            <div className="space-y-1.5 p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-150 dark:border-slate-800/60">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 leading-none">Branch Circuits Limit</span>
+                <span className="text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400">{branchVdLimit.toFixed(1)}%</span>
+              </div>
+              <input
+                type="range"
+                min="1.0"
+                max="10.0"
+                step="0.1"
+                value={branchVdLimit}
+                onChange={e => setBranchVdLimit(parseFloat(e.target.value))}
+                className="w-full accent-indigo-600 dark:accent-indigo-500 h-1 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+              />
+              <p className="text-[9px] text-slate-400 leading-tight">PEC recommended maximum: 3.0% for individual loads.</p>
+            </div>
+
+            {/* Cumulative Limit */}
+            <div className="space-y-1.5 p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-150 dark:border-slate-800/60">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 leading-none">Cumulative Max Drop</span>
+                <span className="text-xs font-bold font-mono text-indigo-600 dark:text-indigo-400">{cumulativeVdLimit.toFixed(1)}%</span>
+              </div>
+              <input
+                type="range"
+                min="1.0"
+                max="15.0"
+                step="0.1"
+                value={cumulativeVdLimit}
+                onChange={e => setCumulativeVdLimit(parseFloat(e.target.value))}
+                className="w-full accent-indigo-600 dark:accent-indigo-500 h-1 bg-slate-100 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer"
+              />
+              <p className="text-[9px] text-slate-400 leading-tight">Total drop allowed from service down to branch outlet.</p>
+            </div>
           </div>
         </div>
 
@@ -1417,7 +1527,7 @@ export default function VoltageDropCalc({
                     // Compute compliance color
                     const pct = parseFloat(conn.vdPct);
                     const isMain = conn.id === "trans-mdp" || conn.calc?.source === "main";
-                    const limit = isMain ? 3.0 : (conn.isFeeder ? 5.0 : 3.0);
+                    const limit = isMain ? mainFeederVdLimit : (conn.isFeeder ? feederVdLimit : branchVdLimit);
                     const isSelected = selectedElement?.type === "connection" && selectedElement.data.id === conn.id;
                     
                     const connColor = pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
@@ -1654,7 +1764,7 @@ export default function VoltageDropCalc({
                       const cum = node.cumResult;
                       const pct = calc ? parseFloat(calc.result.vdPercentage) : 0;
                       const isMain = node.id === "panel-main" || calc?.source === "main";
-                      const limit = isMain ? 3.0 : 5.0; // main feeder is 3%, subpanels are 5%
+                      const limit = isMain ? mainFeederVdLimit : feederVdLimit; // main feeder is 3%, subpanels are 5%
 
                       const pBorderColor = isSelected ? "#4F46E5" : pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
                       const pctColor = pct > limit ? "#EF4444" : pct > limit * 0.9 ? "#F59E0B" : "#10B981";
@@ -1764,12 +1874,12 @@ export default function VoltageDropCalc({
                       const cum = node.cumResult;
                       const cPct = calc ? parseFloat(calc.result.vdPercentage) : 0;
                       const cumPct = cum ? parseFloat(cum.vdPercentage) : 0;
-                      const limit = 3.0; // branch limit
-                      const isVdFailure = cumPct > 5.0 || cPct > limit;
+                      const limit = branchVdLimit; // branch limit
+                      const isVdFailure = cumPct > cumulativeVdLimit || cPct > limit;
 
-                      const cBorderColor = isSelected ? "#4F46E5" : isVdFailure ? "#EF4444" : (cPct > limit * 0.9 || cumPct > 5.0 * 0.9) ? "#F59E0B" : "#10B981";
+                      const cBorderColor = isSelected ? "#4F46E5" : isVdFailure ? "#EF4444" : (cPct > limit * 0.9 || cumPct > cumulativeVdLimit * 0.9) ? "#F59E0B" : "#10B981";
                       const segmentColor = cPct > limit ? "#EF4444" : cPct > limit * 0.9 ? "#F59E0B" : "#10B981";
-                      const cumulativeColor = cumPct > 5.0 ? "#EF4444" : cumPct > 4.5 ? "#F59E0B" : "#10B981";
+                      const cumulativeColor = cumPct > cumulativeVdLimit ? "#EF4444" : cumPct > cumulativeVdLimit * 0.9 ? "#F59E0B" : "#10B981";
 
                       return (
                         <foreignObject

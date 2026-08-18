@@ -199,6 +199,11 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
 
 
 
+  const panelSchedule = useMemo(() => {
+    if (!panel || !circuits) return null;
+    return computePanelScheduleValues(panel, circuits);
+  }, [panel, circuits]);
+
   const calculation = useMemo(() => {
     const is3Phase = selectedPhaseType === '3PH';
     const factor = is3Phase ? 1.732 : 2.0;
@@ -227,12 +232,32 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     const baseKV = (params.transformerVoltage || 230) / 1000;
     const zUtilitypu = baseKVA / ((params.utilityShortCircuitMVA || 500) * 1000);
     
+    // Demand load from Load Schedule
+    const systemVoltage = params.transformerVoltage || panel?.voltage || 230;
+    const demandAmp = panelSchedule?.mainCurrent?.designAmp || 0;
+    const demandLoadKVA = demandAmp > 0 
+      ? (demandAmp * systemVoltage * (is3Phase ? 1.732 : 1)) / 1000 
+      : (baseKVA * 0.8);
+
     // 2. Transformer Impedance & Parallel Support
     let zTranspu = (params.transformerZ || 5) / 100 / connectionMultiplier;
     let totalTransformerKVA = baseKVA;
-    let transformer2Share = 0;
     let transformer1Share = 100;
+    let transformer2Share = 0;
     const ptCount = params.parallelTransformersCount || 1;
+    let isBalanced = true;
+
+    const transformerDetails: Array<{
+      id: number;
+      name: string;
+      ratingKVA: number;
+      zPercent: number;
+      sharePercent: number;
+      operatingKVA: number;
+      operatingAmp: number;
+      loadingPercent: number;
+      isOverloaded: boolean;
+    }> = [];
 
     if (ptCount > 1) {
       const ptZMatch = params.parallelTransformersZMatch !== false;
@@ -241,8 +266,28 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       if (ptZMatch && ptkVAMatch) {
         zTranspu = zTranspu / ptCount;
         totalTransformerKVA = baseKVA * ptCount;
-        transformer1Share = 100 / ptCount;
-        transformer2Share = 100 / ptCount;
+        const equalShare = 100 / ptCount;
+        transformer1Share = equalShare;
+        transformer2Share = equalShare;
+        isBalanced = true;
+
+        for (let i = 1; i <= ptCount; i++) {
+          const opKVA = (demandLoadKVA * equalShare) / 100;
+          const opAmp = demandAmp > 0 
+            ? demandAmp / ptCount 
+            : (opKVA * 1000) / (factor * systemVoltage);
+          transformerDetails.push({
+            id: i,
+            name: `Transformer ${i}`,
+            ratingKVA: baseKVA,
+            zPercent: params.transformerZ || 5,
+            sharePercent: equalShare,
+            operatingKVA: opKVA,
+            operatingAmp: opAmp,
+            loadingPercent: baseKVA > 0 ? (opKVA / baseKVA) * 100 : 0,
+            isOverloaded: opKVA > baseKVA * 1.005,
+          });
+        }
       } else {
         const z1pu = zTranspu;
         const t2Rating = params.parallelTransformersRating || 100;
@@ -258,9 +303,54 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
         const s2_z2 = t2Rating / t2Z;
         const totalAdmittance = s1_z1 + (ptCount - 1) * s2_z2;
         
-        transformer1Share = totalAdmittance > 0 ? (s1_z1 / totalAdmittance) * 100 : 50;
-        transformer2Share = totalAdmittance > 0 ? (s2_z2 / totalAdmittance) * 100 : 50;
+        transformer1Share = totalAdmittance > 0 ? (s1_z1 / totalAdmittance) * 100 : (100 / ptCount);
+        transformer2Share = totalAdmittance > 0 ? (s2_z2 / totalAdmittance) * 100 : (100 / ptCount);
+        isBalanced = Math.abs(transformer1Share - transformer2Share) < 0.1;
+
+        const opKVA1 = (demandLoadKVA * transformer1Share) / 100;
+        const opAmp1 = (opKVA1 * 1000) / (factor * systemVoltage);
+        transformerDetails.push({
+          id: 1,
+          name: `Transformer 1`,
+          ratingKVA: baseKVA,
+          zPercent: params.transformerZ || 5,
+          sharePercent: transformer1Share,
+          operatingKVA: opKVA1,
+          operatingAmp: opAmp1,
+          loadingPercent: baseKVA > 0 ? (opKVA1 / baseKVA) * 100 : 0,
+          isOverloaded: opKVA1 > baseKVA * 1.005,
+        });
+
+        for (let i = 2; i <= ptCount; i++) {
+          const opKVA = (demandLoadKVA * transformer2Share) / 100;
+          const opAmp = (opKVA * 1000) / (factor * systemVoltage);
+          transformerDetails.push({
+            id: i,
+            name: `Transformer ${i}`,
+            ratingKVA: t2Rating,
+            zPercent: t2Z,
+            sharePercent: transformer2Share,
+            operatingKVA: opKVA,
+            operatingAmp: opAmp,
+            loadingPercent: t2Rating > 0 ? (opKVA / t2Rating) * 100 : 0,
+            isOverloaded: opKVA > t2Rating * 1.005,
+          });
+        }
       }
+    } else {
+      const opKVA = demandLoadKVA;
+      const opAmp = demandAmp > 0 ? demandAmp : (opKVA * 1000) / (factor * systemVoltage);
+      transformerDetails.push({
+        id: 1,
+        name: `Transformer 1`,
+        ratingKVA: baseKVA,
+        zPercent: params.transformerZ || 5,
+        sharePercent: 100,
+        operatingKVA: opKVA,
+        operatingAmp: opAmp,
+        loadingPercent: baseKVA > 0 ? (opKVA / baseKVA) * 100 : 0,
+        isOverloaded: opKVA > baseKVA * 1.005,
+      });
     }
 
     // 3. Feeder Impedance Estimate (Series vs Parallel)
@@ -339,15 +429,19 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       if (params.parallelTransformersVectorMatch === false) {
         warnings.push("WARNING: Vector group mismatch. This will result in high circulating currents through neutral/ground.");
       }
-      // Overloaded transformer check
-      const t1ActualLoad = (transformer1Share / 100) * totalTransformerKVA;
-      const t2ActualLoad = (transformer2Share / 100) * totalTransformerKVA;
-      if (t1ActualLoad > baseKVA) {
-        warnings.push(`WARNING: Transformer 1 is overloaded (${((t1ActualLoad / baseKVA) * 100).toFixed(0)}% of rating) due to mismatched impedances.`);
+      // Overloaded transformer check based on actual Load Schedule demand load
+      if (demandLoadKVA > totalTransformerKVA * 1.005) {
+        warnings.push(`WARNING: Total connected demand load (${demandLoadKVA.toFixed(1)} kVA) exceeds combined parallel transformer bank capacity (${totalTransformerKVA.toFixed(1)} kVA).`);
       }
-      if (t2ActualLoad > (params.parallelTransformersRating || 100)) {
-        warnings.push(`WARNING: Transformer 2 is overloaded (${((t2ActualLoad / (params.parallelTransformersRating || 100)) * 100).toFixed(0)}% of rating) due to mismatched impedances.`);
-      }
+
+      transformerDetails.forEach((tx) => {
+        if (tx.isOverloaded) {
+          const reason = isBalanced 
+            ? "exceeds rated capacity" 
+            : "due to mismatched impedances causing unequal load distribution";
+          warnings.push(`WARNING: ${tx.name} is overloaded (${tx.loadingPercent.toFixed(0)}% of rating, ${tx.operatingKVA.toFixed(1)} kVA / ${tx.ratingKVA} kVA) ${reason}.`);
+        }
+      });
     }
 
     if (runs > 1 && connType === 'Parallel') {
@@ -383,10 +477,13 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       totalTransformerKVA,
       transformer1Share,
       transformer2Share,
+      transformerDetails,
+      isBalanced,
+      demandLoadKVA,
       eqFeeder,
       warnings
     };
-  }, [params, motorLoadVA, panel, selectedPhaseType]);
+  }, [params, motorLoadVA, panel, selectedPhaseType, panelSchedule]);
 
   const kaicValidationData = useMemo(() => {
     const list: Array<{
@@ -922,15 +1019,80 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                       </div>
 
                       {/* Load sharing read-out */}
-                      <div className="p-2.5 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 text-amber-800 dark:text-amber-300">
-                        <span className="font-bold block mb-0.5">Transformer Load Distribution:</span>
-                        <div className="font-mono text-xxs flex justify-between">
-                          <span>Transformer 1 ({params.transformerKVA} kVA):</span>
-                          <span className="font-bold">{calculation.transformer1Share?.toFixed(1)}% share</span>
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200 shadow-xs space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-extrabold text-xs tracking-tight">
+                            Transformer Load Distribution:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParams({
+                                ...params,
+                                parallelTransformersZMatch: true,
+                                parallelTransformerskVAMatch: true,
+                                parallelTransformersRating: params.transformerKVA,
+                                parallelTransformersZ: params.transformerZ,
+                                parallelTransformersVoltageMatch: true,
+                                parallelTransformersPhaseMatch: true,
+                                parallelTransformersFreqMatch: true,
+                                parallelTransformersVectorMatch: true,
+                              });
+                            }}
+                            className="px-2 py-0.5 text-[10px] font-bold bg-amber-200/80 hover:bg-amber-300 dark:bg-amber-900/60 dark:hover:bg-amber-800 text-amber-950 dark:text-amber-100 rounded border border-amber-300 dark:border-amber-700 transition-colors cursor-pointer"
+                            title="Balance all parallel units equally based on Load Schedule calculated rating"
+                          >
+                            Auto-Balance (Equal Share)
+                          </button>
                         </div>
-                        <div className="font-mono text-xxs flex justify-between mt-1">
-                          <span>Transformer 2+ ({params.parallelTransformersCount || 1 > 1 ? (params.parallelTransformersCount || 1) - 1 : 0}x {params.parallelTransformersRating || 100} kVA):</span>
-                          <span className="font-bold">{(calculation.transformer2Share * ((params.parallelTransformersCount || 2) - 1))?.toFixed(1)}% share</span>
+
+                        <div className="space-y-1.5 divide-y divide-amber-200/50 dark:divide-amber-900/40 pt-1">
+                          {calculation.transformerDetails && calculation.transformerDetails.length > 0 ? (
+                            calculation.transformerDetails.map((tx) => (
+                              <div key={tx.id} className="pt-1.5 first:pt-0 font-mono text-[11px] flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                                    {tx.name} ({tx.ratingKVA} kVA):
+                                  </span>
+                                  <span className="text-[10px] text-amber-700 dark:text-amber-400 font-sans">
+                                    [{tx.operatingKVA.toFixed(1)} kVA / {tx.operatingAmp.toFixed(1)} A]
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-amber-950 dark:text-amber-100">
+                                    {tx.sharePercent.toFixed(1)}% share
+                                  </span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-sans font-bold ${
+                                    tx.isOverloaded 
+                                      ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300"
+                                      : "bg-emerald-100/80 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                  }`}>
+                                    {tx.loadingPercent.toFixed(0)}% load
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <>
+                              <div className="font-mono text-xxs flex justify-between">
+                                <span>Transformer 1 ({params.transformerKVA} kVA):</span>
+                                <span className="font-bold">{calculation.transformer1Share?.toFixed(1)}% share</span>
+                              </div>
+                              <div className="font-mono text-xxs flex justify-between mt-1">
+                                <span>Transformer 2+ ({params.parallelTransformersCount || 1 > 1 ? (params.parallelTransformersCount || 1) - 1 : 0}x {params.parallelTransformersRating || 100} kVA):</span>
+                                <span className="font-bold">{calculation.transformer2Share?.toFixed(1)}% share each</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="pt-1.5 border-t border-amber-200/60 dark:border-amber-900/40 text-[10px] text-amber-800/90 dark:text-amber-300 flex items-center justify-between">
+                          <span>
+                            Total Bank: <strong>{calculation.totalTransformerKVA} kVA</strong> | Schedule Demand: <strong>{calculation.demandLoadKVA?.toFixed(1)} kVA</strong>
+                          </span>
+                          <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                            {calculation.isBalanced ? "✓ Perfectly Balanced" : "⚠ Unequal Load Sharing"}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1045,10 +1207,33 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
 
           {/* DYNAMIC SAFETY WARNING BANNER */}
           {calculation.warnings && calculation.warnings.length > 0 && (
-            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl p-4 space-y-1.5 animate-fade-in">
-              <span className="text-[10px] font-black tracking-widest text-red-600 uppercase block">
-                PEC Electrical Violations & Safety Advisories ({calculation.warnings.length})
-              </span>
+            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl p-4 space-y-2 animate-fade-in">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-black tracking-widest text-red-600 uppercase block">
+                  PEC Electrical Violations & Safety Advisories ({calculation.warnings.length})
+                </span>
+                {(params.parallelTransformersCount || 1) > 1 && calculation.warnings.some(w => w.toLowerCase().includes("transformer") || w.toLowerCase().includes("impedance")) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setParams({
+                        ...params,
+                        parallelTransformersZMatch: true,
+                        parallelTransformerskVAMatch: true,
+                        parallelTransformersRating: params.transformerKVA,
+                        parallelTransformersZ: params.transformerZ,
+                        parallelTransformersVoltageMatch: true,
+                        parallelTransformersPhaseMatch: true,
+                        parallelTransformersFreqMatch: true,
+                        parallelTransformersVectorMatch: true,
+                      });
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-bold bg-red-100 hover:bg-red-200 text-red-800 dark:bg-red-900/60 dark:hover:bg-red-800 dark:text-red-200 rounded border border-red-300 dark:border-red-700 transition-colors cursor-pointer"
+                  >
+                    Auto-Balance Transformer Bank
+                  </button>
+                )}
+              </div>
               <ul className="list-disc list-inside space-y-1 text-xs text-red-700 dark:text-red-400 font-medium leading-relaxed">
                 {calculation.warnings.map((w, idx) => (
                   <li key={idx}>{w}</li>

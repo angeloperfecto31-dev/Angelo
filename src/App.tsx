@@ -741,14 +741,6 @@ export default function App() {
       const requiredKVA =
         transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;
 
-      const standardKVA = [
-        10, 15, 25, 37.5, 50, 75, 100, 167, 250, 333, 500, 750, 1000, 1500,
-        2000, 2500,
-      ];
-      const recommendedKVA =
-        standardKVA.find((k) => k >= requiredKVA) ||
-        standardKVA[standardKVA.length - 1];
-
       let recommendedFeederSize = mainFeeder.wire.size.toString();
       let recommendedRuns = panel.system.includes("3PH") ? 3 : 2;
 
@@ -758,11 +750,32 @@ export default function App() {
       }
 
       setIscParams((p) => {
+        const ptCount = p.parallelTransformersCount || 1;
+        const requiredKVAIndividual = requiredKVA / ptCount;
+
+        const standardKVA = [
+          15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500,
+          2000, 2500,
+        ];
+        const recommendedKVA =
+          standardKVA.find((k) => k >= requiredKVAIndividual) ||
+          standardKVA[standardKVA.length - 1];
+
+        const standardZTable: Record<number, number> = {
+          15: 3.0, 30: 3.0, 45: 3.0, 75: 4.0, 112.5: 4.0, 150: 4.5,
+          225: 4.5, 300: 5.0, 500: 5.0, 750: 5.75, 1000: 5.75,
+          1500: 5.75, 2000: 6.0, 2500: 6.0
+        };
+        const recommendedZ = standardZTable[recommendedKVA] || 5.0;
+
         const targetRuns = p.isFeederRunsCustomized ? p.feederRuns : recommendedRuns;
         const targetSize = p.isFeederSizeCustomized ? p.feederSize : recommendedFeederSize;
 
         if (
           p.transformerKVA === recommendedKVA &&
+          p.parallelTransformersRating === recommendedKVA &&
+          p.transformerZ === recommendedZ &&
+          p.parallelTransformersZ === recommendedZ &&
           p.transformerVoltage === panel.voltage &&
           p.primaryVoltage === transformerPrimaryVoltage &&
           p.feederSize === targetSize &&
@@ -775,6 +788,9 @@ export default function App() {
         return {
           ...p,
           transformerKVA: recommendedKVA,
+          parallelTransformersRating: recommendedKVA,
+          transformerZ: recommendedZ,
+          parallelTransformersZ: recommendedZ,
           transformerVoltage: panel.voltage,
           primaryVoltage: transformerPrimaryVoltage,
           feederSize: targetSize,
@@ -791,6 +807,7 @@ export default function App() {
     transformerDemandFactor,
     transformerLoadingFactor,
     transformerPrimaryVoltage,
+    iscParams.parallelTransformersCount,
   ]);
 
   // Real-time synchronization of Voltage Drop calculations
@@ -7685,6 +7702,10 @@ export default function App() {
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     user={user}
+                    iscParams={iscParams}
+                    setIscParams={setIscParams}
+                    iscSource={iscSource}
+                    setIscSource={setIscSource}
                   />
                 </motion.div>
               </div>
