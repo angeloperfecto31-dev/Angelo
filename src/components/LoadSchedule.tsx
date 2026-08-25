@@ -2062,6 +2062,17 @@ export default function LoadSchedule({
               </button>
             )}
             <button
+              type="button"
+              onClick={() => setShowFormulaBuilder(true)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-xs border bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60"
+              title="Configure and customize the Demand Current formula for Single-Phase and Three-Phase systems"
+            >
+              <Calculator className="w-4 h-4 text-indigo-500" />
+              <span>
+                Demand Formula {panel.demandFormulaConfig?.mode === "custom" ? "(Custom)" : "(PEC 80%)"}
+              </span>
+            </button>
+            <button
               onClick={() => {
                 if (!isPremium) {
                   if (onRequestUpgrade) onRequestUpgrade();
@@ -2962,6 +2973,47 @@ export default function LoadSchedule({
                 Enable Overrides
               </span>
             </label>
+          </div>
+
+          {/* Quick Demand Formula Customizer Banner */}
+          <div className="mb-4 p-3.5 bg-indigo-50/70 dark:bg-indigo-950/20 rounded-xl border border-indigo-200 dark:border-indigo-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-indigo-600 text-white rounded-lg shadow-xs">
+                <Calculator className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 uppercase tracking-wider">
+                    Main Breaker & Demand Current Formula (1Φ / 3Φ)
+                  </span>
+                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    panel.demandFormulaConfig?.mode === "custom"
+                      ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                      : "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25"
+                  }`}>
+                    {panel.demandFormulaConfig?.mode === "custom" ? "Custom Expression" : "Standard (PEC 80% Rule)"}
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-0.5">
+                  Current: <span className="font-mono font-bold text-indigo-900 dark:text-indigo-100">{mainCurrent.designAmp.toFixed(2)} A</span> • 
+                  Formula: <span className="font-mono text-[11px] bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                    {panel.demandFormulaConfig?.mode === "custom" 
+                      ? (panel.system.includes("3PH") 
+                          ? (panel.demandFormulaConfig.threePhaseFormula || panel.demandFormulaConfig.custom3PhFormula || "Custom 3PH") 
+                          : (panel.demandFormulaConfig.singlePhaseFormula || panel.demandFormulaConfig.custom1PhFormula || "Custom 1PH"))
+                      : (panel.system.includes("3PH") ? "(TotalConnectedVA × 0.80) / (√3 × V)" : "(TotalConnectedVA × 0.80) / V")}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFormulaBuilder(true)}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0"
+            >
+              <Calculator className="w-3.5 h-3.5" />
+              <span>Customize Formula</span>
+            </button>
           </div>
 
           {panel.mainOverrides?.isOverrideEnabled && (
@@ -5848,26 +5900,24 @@ export default function LoadSchedule({
 
       {/* Formula Builder Modal / Overlay */}
       {showFormulaBuilder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto no-print">
-          <div className="w-full max-w-5xl my-8">
-            <DemandFormulaBuilder
-              panel={panel}
-              setPanel={setPanel}
-              maxDemandDetails={{
-                is3PH: maxDemandDetails.is3PH,
-                systemVoltage: maxDemandDetails.systemVoltage,
-                totalConnectedVA: maxDemandDetails.totalConnectedVA,
-                internalConnectedVA: maxDemandDetails.internalConnectedVA,
-                HML: maxDemandDetails.HML,
-                totalAmpere: maxDemandDetails.totalAmpere,
-                total3Phase: maxDemandDetails.total3Phase,
-                phaseR: maxDemandDetails.phaseR,
-                phaseY: maxDemandDetails.phaseY,
-                phaseB: maxDemandDetails.phaseB,
-              }}
-              onClose={() => setShowFormulaBuilder(false)}
-            />
-          </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-4 md:p-6 overflow-hidden no-print animate-fade">
+          <DemandFormulaBuilder
+            panel={panel}
+            setPanel={setPanel}
+            maxDemandDetails={{
+              is3PH: maxDemandDetails.is3PH,
+              systemVoltage: maxDemandDetails.systemVoltage,
+              totalConnectedVA: maxDemandDetails.totalConnectedVA,
+              internalConnectedVA: maxDemandDetails.internalConnectedVA,
+              HML: maxDemandDetails.HML,
+              totalAmpere: maxDemandDetails.totalAmpere,
+              total3Phase: maxDemandDetails.total3Phase,
+              phaseR: maxDemandDetails.phaseR,
+              phaseY: maxDemandDetails.phaseY,
+              phaseB: maxDemandDetails.phaseB,
+            }}
+            onClose={() => setShowFormulaBuilder(false)}
+          />
         </div>
       )}
 
@@ -6446,16 +6496,39 @@ export default function LoadSchedule({
           </div>
 
           <div>
-            <h3 className="font-bold text-slate-900 mb-2">
-              2. Single-Phase vs Three-Phase Current (Ampacity)
-            </h3>
-            <p className="mb-2">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-900 mb-2">
+                2. Single-Phase vs Three-Phase Current (Ampacity)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowFormulaBuilder(true)}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-md transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <Calculator className="w-3 h-3" />
+                <span>Formula Customizer</span>
+              </button>
+            </div>
+            <p className="mb-2 text-slate-600 text-xs">
               The total design current depends on the system type (1-Phase vs
-              3-Phase). Based on PEC 2017 Part 1.
+              3-Phase) and configured calculation formulas.
             </p>
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>{`For 1-Phase: I = Total Connected VA / Voltage`}</span>
-              <span>{`For 3-Phase: I = Total Connected VA / (1.732 × Voltage)`}</span>
+              {panel.demandFormulaConfig?.mode === "custom" ? (
+                <>
+                  <span className="text-amber-700 font-bold">Custom Formula Applied:</span>
+                  <span>
+                    {panel.system.includes("3PH")
+                      ? (panel.demandFormulaConfig.threePhaseFormula || panel.demandFormulaConfig.custom3PhFormula)
+                      : (panel.demandFormulaConfig.singlePhaseFormula || panel.demandFormulaConfig.custom1PhFormula)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>{`For 1-Phase: I = Total Connected VA × 0.80 / Voltage`}</span>
+                  <span>{`For 3-Phase: I = (Total Connected VA × 0.80) / (1.732 × Voltage)`}</span>
+                </>
+              )}
             </div>
             <p className="mt-2 text-indigo-600 font-bold">
               Calculated Main Current: {mainCurrent.designAmp.toFixed(2)} Amperes
