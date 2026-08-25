@@ -17,6 +17,11 @@ import {
   getTemperatureForInsulation,
 } from "./pecAmpacityDatabase";
 import { findEgcSize } from "./exportEgcExports";
+import {
+  evaluateDemandFormula,
+  DEFAULT_1PH_DEMAND_FORMULA,
+  DEFAULT_3PH_DEMAND_FORMULA,
+} from "./formulaEngine";
 
 let globalSubPanels: Array<{
   id: string;
@@ -2034,16 +2039,69 @@ export const computePanelScheduleValues = (
 
   const is3PH = p.system.includes("3PH");
   let formulaDemandAmp = maxDesignAmp;
-  if (is3PH) {
-    const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
-    const total3Phase = phaseAmps.threePhase;
-    formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
+  const totalAmpere = Math.max(phaseAmps.R, phaseAmps.Y, phaseAmps.B);
+  const total3Phase = phaseAmps.threePhase;
+
+  const formulaConfig = p.demandFormulaConfig;
+  const isCustomFormulaMode = formulaConfig?.mode === "custom";
+  const activeFormulaStr = is3PH
+    ? (isCustomFormulaMode ? formulaConfig?.threePhaseFormula || formulaConfig?.custom3PhFormula : DEFAULT_3PH_DEMAND_FORMULA) || DEFAULT_3PH_DEMAND_FORMULA
+    : (isCustomFormulaMode ? formulaConfig?.singlePhaseFormula || formulaConfig?.custom1PhFormula : DEFAULT_1PH_DEMAND_FORMULA) || DEFAULT_1PH_DEMAND_FORMULA;
+
+  let customFormulaError: string | undefined;
+
+  if (isCustomFormulaMode) {
+    if (is3PH) {
+      const evalRes = evaluateDemandFormula(activeFormulaStr, {
+        Iline: totalAmpere,
+        "I_line": totalAmpere,
+        totalAmpere: totalAmpere,
+        "I3Φ": total3Phase,
+        "I3Phi": total3Phase,
+        "I3Phase": total3Phase,
+        total3Phase: total3Phase,
+        HML: globalHML,
+        Vsys: systemVoltage,
+        Total_Connected_VA: internalConnectedVA || totalVA,
+        internalConnectedVA: internalConnectedVA || totalVA,
+        totalConnectedVA: totalVA,
+      }, "3PH");
+
+      if (!evalRes.error && Number.isFinite(evalRes.result) && evalRes.result > 0) {
+        formulaDemandAmp = evalRes.result;
+      } else {
+        customFormulaError = evalRes.error || "Custom formula produced non-positive or invalid result.";
+        formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
+      }
+    } else {
+      const evalRes = evaluateDemandFormula(activeFormulaStr, {
+        Total_Connected_VA: internalConnectedVA || totalVA,
+        internalConnectedVA: internalConnectedVA || totalVA,
+        totalConnectedVA: totalVA,
+        Vsys: systemVoltage,
+        systemVoltage: systemVoltage,
+        HML: globalHML,
+      }, "1PH");
+
+      if (!evalRes.error && Number.isFinite(evalRes.result) && evalRes.result > 0) {
+        formulaDemandAmp = evalRes.result;
+      } else {
+        customFormulaError = evalRes.error || "Custom formula produced non-positive or invalid result.";
+        formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
+      }
+    }
     maxDesignAmp = formulaDemandAmp;
     maxBaseAmp = formulaDemandAmp / 1.25;
   } else {
-    formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
-    maxDesignAmp = formulaDemandAmp;
-    maxBaseAmp = formulaDemandAmp / 1.25;
+    if (is3PH) {
+      formulaDemandAmp = ((totalAmpere * 1.732) * 0.8 + total3Phase + 0.25 * globalHML) * 1.25;
+      maxDesignAmp = formulaDemandAmp;
+      maxBaseAmp = formulaDemandAmp / 1.25;
+    } else {
+      formulaDemandAmp = ((internalConnectedVA / systemVoltage) * 0.8 + 0.25 * globalHML) * 1.25;
+      maxDesignAmp = formulaDemandAmp;
+      maxBaseAmp = formulaDemandAmp / 1.25;
+    }
   }
   let internalDemandCurrent = formulaDemandAmp;
 
@@ -2284,6 +2342,9 @@ export const computePanelScheduleValues = (
     connectionType: p.connectionType || "Line-to-Line",
     internalDemandCurrent,
     subPanelDemandAmps,
+    formulaMode: isCustomFormulaMode ? "custom" : "default",
+    activeFormula: activeFormulaStr,
+    customFormulaError,
   };
 
   return {

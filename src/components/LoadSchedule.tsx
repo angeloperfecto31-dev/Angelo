@@ -54,6 +54,12 @@ import {
   ShortCircuitParams,
   VoltageDropCalculation,
 } from "../types";
+import DemandFormulaBuilder from "./DemandFormulaBuilder";
+import {
+  DEFAULT_1PH_DEMAND_FORMULA,
+  DEFAULT_3PH_DEMAND_FORMULA,
+  formulaToLatex,
+} from "../utils/formulaEngine";
 import { exportToCAD } from "../utils/exportDxf";
 import { findEgcSize } from "../utils/exportEgcExports";
 import {
@@ -166,6 +172,13 @@ export const INITIAL_PANEL: PanelConfig = {
   icRating: "10kA",
   voltage: 230,
   frequency: 60,
+  demandFormulaConfig: {
+    mode: "default",
+    singlePhaseFormula: "[(Total Connected VA / Vsys) * 0.80 + (0.25 * HML)] * 1.25",
+    threePhaseFormula: "[(Iline * 1.732) * 0.80 + I3Φ + (0.25 * HML)] * 1.25",
+    custom1PhFormula: "[(Total Connected VA / Vsys) * 0.80 + (0.25 * HML)] * 1.25",
+    custom3PhFormula: "[(Iline * 1.732) * 0.80 + I3Φ + (0.25 * HML)] * 1.25",
+  },
 };
 
 export interface LoadScheduleProps {
@@ -707,6 +720,7 @@ export default function LoadSchedule({
   );
 
   const [showDemandMath, setShowDemandMath] = useState<boolean>(true);
+  const [showFormulaBuilder, setShowFormulaBuilder] = useState<boolean>(false);
 
   const [showBalancer, setShowBalancer] = useState<boolean>(true);
 
@@ -5799,43 +5813,112 @@ export default function LoadSchedule({
         </div>
       </section>
 
-      <section className="bg-slate-900 p-8 rounded-2xl text-white flex justify-between items-center print:bg-white print:text-slate-900 print:border-2 print:border-slate-800 sm:p-6">
+      <section className="bg-slate-900 p-8 rounded-2xl text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:bg-white print:text-slate-900 print:border-2 print:border-slate-800 sm:p-6">
         <div>
-          <h4 className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-1 print:text-slate-500">
-            Max Demand Current
-          </h4>
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="text-slate-400 text-xs font-bold uppercase tracking-widest print:text-slate-500">
+              Max Demand Current
+            </h4>
+            {panel.demandFormulaConfig?.mode === "custom" && (
+              <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                Custom Formula
+              </span>
+            )}
+          </div>
           <p className="text-5xl font-black text-yellow-400 print:text-slate-900 md:text-3xl">
             {mainCurrent.designAmp.toFixed(1)}
             <span className="text-lg ml-2">AMPS</span>
           </p>
         </div>
-        <div className="p-4 bg-white/10 rounded-2xl print:border print:border-slate-200">
-          <Calculator className="w-8 h-8" />
+
+        <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+          <button
+            type="button"
+            onClick={() => setShowFormulaBuilder(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 rounded-xl text-xs font-bold transition-all shadow-sm no-print"
+          >
+            <Calculator className="w-4 h-4 text-indigo-400" />
+            <span>Formula Builder</span>
+          </button>
+          <div className="p-3 bg-white/10 rounded-2xl print:border print:border-slate-200 hidden sm:block">
+            <Calculator className="w-6 h-6" />
+          </div>
         </div>
       </section>
 
+      {/* Formula Builder Modal / Overlay */}
+      {showFormulaBuilder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto no-print">
+          <div className="w-full max-w-5xl my-8">
+            <DemandFormulaBuilder
+              panel={panel}
+              setPanel={setPanel}
+              maxDemandDetails={{
+                is3PH: maxDemandDetails.is3PH,
+                systemVoltage: maxDemandDetails.systemVoltage,
+                totalConnectedVA: maxDemandDetails.totalConnectedVA,
+                internalConnectedVA: maxDemandDetails.internalConnectedVA,
+                HML: maxDemandDetails.HML,
+                totalAmpere: maxDemandDetails.totalAmpere,
+                total3Phase: maxDemandDetails.total3Phase,
+                phaseR: maxDemandDetails.phaseR,
+                phaseY: maxDemandDetails.phaseY,
+                phaseB: maxDemandDetails.phaseB,
+              }}
+              onClose={() => setShowFormulaBuilder(false)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Maximum Demand Current Solver Section */}
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 sm:p-4 no-print">
-        <div
-          className="flex items-center justify-between cursor-pointer border-b border-slate-100 dark:border-slate-800 pb-4"
-          onClick={() => setShowDemandMath(!showDemandMath)}
-        >
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 gap-3">
+          <div
+            className="flex items-center gap-3 cursor-pointer select-none"
+            onClick={() => setShowDemandMath(!showDemandMath)}
+          >
             <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl">
               <Calculator className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
-              <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-wider text-sm">
-                PEC Maximum Demand Math Solver
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-wider text-sm">
+                  PEC Maximum Demand Math Solver
+                </h3>
+                {panel.demandFormulaConfig?.mode === "custom" ? (
+                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    Custom Formula Active
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">
+                    Default PEC 80%
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
                 Step-by-step mathematical substitution in LaTeX format
               </p>
             </div>
           </div>
-          <button className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-3 py-1.5 rounded-lg transition-all">
-            {showDemandMath ? "Hide Math" : "Show Math"}
-          </button>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setShowFormulaBuilder(true)}
+              className="text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
+            >
+              <Calculator className="w-3.5 h-3.5 text-indigo-500" />
+              Customize Formula
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDemandMath(!showDemandMath)}
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-3 py-1.5 rounded-lg transition-all"
+            >
+              {showDemandMath ? "Hide Math" : "Show Math"}
+            </button>
+          </div>
         </div>
 
         {showDemandMath && (
@@ -5843,17 +5926,31 @@ export default function LoadSchedule({
             {!maxDemandDetails.is3PH ? (
               <div className="space-y-4">
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    Mathematical Formula (LaTeX)
-                  </h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Mathematical Formula (Single-Phase LaTeX)
+                    </h4>
+                    {panel.demandFormulaConfig?.mode === "custom" && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-mono font-bold">
+                        User-defined formula
+                      </span>
+                    )}
+                  </div>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
-                    <LatexRenderer tex="\text{Max Demand Current (1}\Phi\text{)} = \left[ \left( \frac{\text{Total Connected VA}}{V_{sys}} \times 0.80 \right) + (0.25 \times HML) \right] \times 1.25" />
+                    <LatexRenderer
+                      tex={formulaToLatex(
+                        panel.demandFormulaConfig?.mode === "custom"
+                          ? panel.demandFormulaConfig?.singlePhaseFormula || DEFAULT_1PH_DEMAND_FORMULA
+                          : DEFAULT_1PH_DEMAND_FORMULA,
+                        "1PH"
+                      )}
+                    />
                   </div>
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 font-semibold">
-                    Step-by-Step Substations & Values
+                    Step-by-Step Substitutions & Values
                   </h4>
                   <div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
                     <p className="flex justify-between border-b border-dashed border-slate-200 dark:border-slate-800 pb-1">
@@ -5888,28 +5985,56 @@ export default function LoadSchedule({
 
                 <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-white">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-                    LaTex Solution Details
+                    LaTeX Solution Details
                   </h4>
                   <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center">
                     <div className="mx-auto">
                       <LatexRenderer
-                        tex={`\\begin{aligned}
+                        tex={
+                          panel.demandFormulaConfig?.mode === "custom"
+                            ? formulaToLatex(
+                                panel.demandFormulaConfig?.singlePhaseFormula || DEFAULT_1PH_DEMAND_FORMULA,
+                                "1PH",
+                                {
+                                  substitutionValues: {
+                                    Total_Connected_VA: maxDemandDetails.internalConnectedVA || maxDemandDetails.totalConnectedVA || 0,
+                                    Vsys: sysV,
+                                    HML: maxDemandDetails.HML || 0,
+                                  },
+                                  showResult: true,
+                                  resultVal: mainCurrent.designAmp,
+                                }
+                              )
+                            : `\\begin{aligned}
   I_{\\text{demand}} &= \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) \\right] \\times 1.25 \\\\
   &= \\left[ \\left( ${((maxDemandDetails.internalConnectedVA || 0) / sysV).toFixed(3)} \\times 0.80 \\right) + \\left( ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right) \\right] \\times 1.25 \\\\
   &= ${(((maxDemandDetails.internalConnectedVA || 0) / sysV) * 0.8 + 0.25 * (maxDemandDetails.HML || 0)).toFixed(2)} \\times 1.25 \\\\
   &= \\mathbf{${mainCurrent.designAmp.toFixed(2)}\\text{ A}}
-  \\end{aligned}`}
+  \\end{aligned}`
+                        }
                       />
                     </div>
                   </div>
                   <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">
-                      Perfect for technical paper publications and PEE
-                      submittals.
+                      {panel.demandFormulaConfig?.mode === "custom"
+                        ? "Calculated according to user-customized single-phase formula."
+                        : "Perfect for technical paper publications and PEE submittals."}
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (1\\Phi)} = \\left[ \\left( \\frac{${(maxDemandDetails.internalConnectedVA || 0).toFixed(1)}}{${sysV}} \\times 0.80 \\right) + \\left( 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right) \\right] \\times 1.25 = ${mainCurrent.designAmp.toFixed(2)}\\text{ A}`;
+                        const activeForm = panel.demandFormulaConfig?.mode === "custom"
+                          ? panel.demandFormulaConfig?.singlePhaseFormula || DEFAULT_1PH_DEMAND_FORMULA
+                          : DEFAULT_1PH_DEMAND_FORMULA;
+                        const code = formulaToLatex(activeForm, "1PH", {
+                          substitutionValues: {
+                            Total_Connected_VA: maxDemandDetails.internalConnectedVA || maxDemandDetails.totalConnectedVA || 0,
+                            Vsys: sysV,
+                            HML: maxDemandDetails.HML || 0,
+                          },
+                          showResult: true,
+                          resultVal: mainCurrent.designAmp,
+                        });
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
@@ -5922,19 +6047,31 @@ export default function LoadSchedule({
             ) : (
               <div className="space-y-4">
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    Mathematical Formula (3-Phase LaTeX)
-                  </h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Mathematical Formula (3-Phase LaTeX)
+                    </h4>
+                    {panel.demandFormulaConfig?.mode === "custom" && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-mono font-bold">
+                        User-defined formula
+                      </span>
+                    )}
+                  </div>
                   <div className="bg-white dark:bg-zinc-950 p-2 rounded-xl border border-slate-200 dark:border-zinc-800 overflow-x-auto">
                     <LatexRenderer
-                      tex={`\\text{Max Demand Current (3}\\Phi\\text{)} = \\left[ (I_{\\text{line}} \\times 1.732) \\times 0.80 + I_{3\\Phi} + 0.25 \\times \\text{HML} \\right] \\times 1.25`}
+                      tex={formulaToLatex(
+                        panel.demandFormulaConfig?.mode === "custom"
+                          ? panel.demandFormulaConfig?.threePhaseFormula || DEFAULT_3PH_DEMAND_FORMULA
+                          : DEFAULT_3PH_DEMAND_FORMULA,
+                        "3PH"
+                      )}
                     />
                   </div>
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-950/20 p-4 rounded-xl border border-slate-100 dark:border-slate-850">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 font-semibold">
-                    Step-by-Step Substations & Values (
+                    Step-by-Step Substitutions & Values (
                     {maxDemandDetails.connectionType})
                   </h4>
                   <div className="space-y-3 text-sm text-slate-600 dark:text-slate-350">
@@ -5991,30 +6128,57 @@ export default function LoadSchedule({
 
                 <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl text-white">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
-                    LaTex Solution Details
+                    LaTeX Solution Details
                   </h4>
                   <div className="bg-zinc-950 p-4 rounded-xl overflow-x-auto min-h-[140px] flex items-center">
                     <div className="mx-auto">
                       <LatexRenderer
-                        tex={`\\begin{aligned}
+                        tex={
+                          panel.demandFormulaConfig?.mode === "custom"
+                            ? formulaToLatex(
+                                panel.demandFormulaConfig?.threePhaseFormula || DEFAULT_3PH_DEMAND_FORMULA,
+                                "3PH",
+                                {
+                                  substitutionValues: {
+                                    Iline: maxDemandDetails.totalAmpere || 0,
+                                    "I3Φ": maxDemandDetails.total3Phase || 0,
+                                    HML: maxDemandDetails.HML || 0,
+                                  },
+                                  showResult: true,
+                                  resultVal: mainCurrent.designAmp,
+                                }
+                              )
+                            : `\\begin{aligned}
   I_{\\text{demand}} &= \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 \\\\
   &= \\left[ (${((maxDemandDetails.totalAmpere || 0) * 1.732).toFixed(3)}) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
   &= \\left[ ${((maxDemandDetails.totalAmpere || 0) * 1.732 * 0.8).toFixed(3)} + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + ${(0.25 * (maxDemandDetails.HML || 0)).toFixed(3)} \\right] \\times 1.25 \\\\
   &= ${mainCurrent.designAmp.toFixed(2)} \\\\
   &= \\mathbf{${mainCurrent.designAmp.toFixed(2)}\\text{ A}}
-  \\end{aligned}`}
+  \\end{aligned}`
+                        }
                       />
                     </div>
                   </div>
                   <div className="mt-4 flex justify-between items-center border-t border-zinc-800 pt-3">
                     <span className="text-[10px] text-zinc-500">
-                      Includes 80% demand factor on line currents + separate
-                      3-phase and 25% HML, adjusted by a 1.25 system-wide safety
-                      factor.
+                      {panel.demandFormulaConfig?.mode === "custom"
+                        ? "Calculated according to user-customized three-phase formula."
+                        : "Includes 80% demand factor on line currents + separate 3-phase and 25% HML, adjusted by a 1.25 system-wide safety factor."}
                     </span>
                     <button
                       onClick={() => {
-                        const code = `\\text{Max Demand Current (3\\Phi)} = \\left[ (${(maxDemandDetails.totalAmpere || 0).toFixed(2)} \\times 1.732) \\times 0.80 + ${(maxDemandDetails.total3Phase || 0).toFixed(2)} + 0.25 \\times ${(maxDemandDetails.HML || 0).toFixed(2)} \\right] \\times 1.25 = ${mainCurrent.designAmp.toFixed(2)}\\text{ A}`;
+                        const activeForm = panel.demandFormulaConfig?.mode === "custom"
+                          ? panel.demandFormulaConfig?.threePhaseFormula || DEFAULT_3PH_DEMAND_FORMULA
+                          : DEFAULT_3PH_DEMAND_FORMULA;
+                        const code = formulaToLatex(activeForm, "3PH", {
+                          substitutionValues: {
+                            Iline: maxDemandDetails.totalAmpere || 0,
+                            "I3Φ": maxDemandDetails.total3Phase || 0,
+                            HML: maxDemandDetails.HML || 0,
+                          },
+                          showResult: true,
+                          resultVal: mainCurrent.designAmp,
+                        });
                         navigator.clipboard.writeText(code);
                       }}
                       className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-lg transition-colors"

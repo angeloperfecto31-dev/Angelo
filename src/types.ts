@@ -155,6 +155,13 @@ export interface PanelConfig {
   transferSwitchModel?: string;
   transferSwitchRemarks?: string;
   transferSwitchIsCustomRating?: boolean;
+  demandFormulaConfig?: {
+    mode: 'default' | 'custom';
+    singlePhaseFormula?: string;
+    threePhaseFormula?: string;
+    custom1PhFormula?: string;
+    custom3PhFormula?: string;
+  };
 }
 
 export interface ShortCircuitParams {

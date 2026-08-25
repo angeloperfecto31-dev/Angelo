@@ -46,6 +46,13 @@ export function migrateProjectData(data: any): ProjectData {
       mainOverrides: {
         ...(INITIAL_PANEL.mainOverrides || {}),
         ...(p?.mainOverrides || {})
+      },
+      demandFormulaConfig: {
+        mode: p?.demandFormulaConfig?.mode || "default",
+        singlePhaseFormula: p?.demandFormulaConfig?.singlePhaseFormula || "[(Total Connected VA / Vsys) * 0.80 + (0.25 * HML)] * 1.25",
+        threePhaseFormula: p?.demandFormulaConfig?.threePhaseFormula || "[(Iline * 1.732) * 0.80 + I3Φ + (0.25 * HML)] * 1.25",
+        custom1PhFormula: p?.demandFormulaConfig?.custom1PhFormula || p?.demandFormulaConfig?.singlePhaseFormula || "[(Total Connected VA / Vsys) * 0.80 + (0.25 * HML)] * 1.25",
+        custom3PhFormula: p?.demandFormulaConfig?.custom3PhFormula || p?.demandFormulaConfig?.threePhaseFormula || "[(Iline * 1.732) * 0.80 + I3Φ + (0.25 * HML)] * 1.25",
       }
     };
 
