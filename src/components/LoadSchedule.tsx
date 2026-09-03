@@ -2976,17 +2976,17 @@ export default function LoadSchedule({
           </div>
 
           {/* Quick Demand Formula Customizer Banner */}
-          <div className="mb-4 p-3.5 bg-indigo-50/70 dark:bg-indigo-950/20 rounded-xl border border-indigo-200 dark:border-indigo-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-indigo-600 text-white rounded-lg shadow-xs">
+          <div className="mb-4 p-3.5 bg-indigo-50/70 dark:bg-indigo-950/20 rounded-xl border border-indigo-200 dark:border-indigo-900/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5 flex-1 min-w-0">
+              <div className="p-2 bg-indigo-600 text-white rounded-lg shadow-xs shrink-0 mt-0.5 sm:mt-0">
                 <Calculator className="w-4 h-4" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
                   <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 uppercase tracking-wider">
                     Main Breaker & Demand Current Formula (1Φ / 3Φ)
                   </span>
-                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                  <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${
                     panel.demandFormulaConfig?.mode === "custom"
                       ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30"
                       : "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25"
@@ -2994,9 +2994,9 @@ export default function LoadSchedule({
                     {panel.demandFormulaConfig?.mode === "custom" ? "Custom Expression" : "Standard (PEC 80% Rule)"}
                   </span>
                 </div>
-                <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-0.5">
+                <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1 leading-relaxed break-words">
                   Current: <span className="font-mono font-bold text-indigo-900 dark:text-indigo-100">{mainCurrent.designAmp.toFixed(2)} A</span> • 
-                  Formula: <span className="font-mono text-[11px] bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                  Formula: <span className="font-mono text-[11px] bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 break-all">
                     {panel.demandFormulaConfig?.mode === "custom" 
                       ? (panel.system.includes("3PH") 
                           ? (panel.demandFormulaConfig.threePhaseFormula || panel.demandFormulaConfig.custom3PhFormula || "Custom 3PH") 
@@ -3009,7 +3009,7 @@ export default function LoadSchedule({
             <button
               type="button"
               onClick={() => setShowFormulaBuilder(true)}
-              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0"
+              className="w-full sm:w-auto px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0 min-h-[40px] cursor-pointer"
             >
               <Calculator className="w-3.5 h-3.5" />
               <span>Customize Formula</span>
@@ -5900,7 +5900,7 @@ export default function LoadSchedule({
 
       {/* Formula Builder Modal / Overlay */}
       {showFormulaBuilder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-4 md:p-6 overflow-hidden no-print animate-fade">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-2 sm:p-4 md:p-6 overflow-y-auto no-print animate-fade">
           <DemandFormulaBuilder
             panel={panel}
             setPanel={setPanel}

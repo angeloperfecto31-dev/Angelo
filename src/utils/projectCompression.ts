@@ -5,32 +5,45 @@
  * within the 1 MiB Firestore document limit and the 5 MB localStorage quota without silent failures or crashes.
  */
 
-// Cycle-safe deep cleaning helper to prevent "Maximum call stack size exceeded" when saving projects with complex relationships.
-export const cleanFirestoreDataCycleSafe = (obj: any, seen = new WeakMap()): any => {
+// Cycle-safe deep cleaning helper that prevents infinite recursion while preserving shared DAG object references.
+export const cleanFirestoreDataCycleSafe = (
+  obj: any,
+  ancestors = new Set<any>(),
+  memo = new WeakMap<any, any>()
+): any => {
   if (obj === null || typeof obj !== "object") return obj;
   if (obj instanceof Date) return obj.toISOString();
   
-  // Prevent infinite loops by returning a reference placeholder or skipping circular structures
-  if (seen.has(obj)) {
-    return "[Circular]";
+  // True cycle check (object is an active ancestor on current call stack)
+  if (ancestors.has(obj)) {
+    return null; // break cyclic reference safely
   }
+  
+  // Memo check (object was already visited/cleaned in a shared branch of a DAG)
+  if (memo.has(obj)) {
+    return memo.get(obj);
+  }
+  
+  ancestors.add(obj);
   
   if (Array.isArray(obj)) {
     const arrCopy: any[] = [];
-    seen.set(obj, arrCopy);
+    memo.set(obj, arrCopy);
     for (const item of obj) {
-      arrCopy.push(cleanFirestoreDataCycleSafe(item, seen));
+      arrCopy.push(cleanFirestoreDataCycleSafe(item, ancestors, memo));
     }
+    ancestors.delete(obj);
     return arrCopy;
   }
   
   const result: any = {};
-  seen.set(obj, result);
+  memo.set(obj, result);
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key) && obj[key] !== undefined) {
-      result[key] = cleanFirestoreDataCycleSafe(obj[key], seen);
+      result[key] = cleanFirestoreDataCycleSafe(obj[key], ancestors, memo);
     }
   }
+  ancestors.delete(obj);
   return result;
 };
 
@@ -134,6 +147,38 @@ export async function decompressProject(project: any): Promise<any> {
         console.error("[Compression] Failed to parse uncompressed project data JSON:", err);
       }
     }
+  }
+
+  // Auto-heal legacy circular artifacts if any exist in dataField
+  if (dataField && typeof dataField === "object") {
+    if (dataField.circuits === "[Circular]" && dataField.mdps?.[0]?.circuits && Array.isArray(dataField.mdps[0].circuits)) {
+      dataField.circuits = JSON.parse(JSON.stringify(dataField.mdps[0].circuits));
+    }
+    if (dataField.subPanels === "[Circular]" && dataField.mdps?.[0]?.subPanels && Array.isArray(dataField.mdps[0].subPanels)) {
+      dataField.subPanels = JSON.parse(JSON.stringify(dataField.mdps[0].subPanels));
+    }
+    if (dataField.panel === "[Circular]" && dataField.mdps?.[0]?.panel) {
+      dataField.panel = JSON.parse(JSON.stringify(dataField.mdps[0].panel));
+    }
+
+    const sanitizeLegacyArtifacts = (item: any) => {
+      if (!item || typeof item !== "object") return;
+      for (const k of Object.keys(item)) {
+        if (item[k] === "[Circular]") {
+          if (k === "phases") item[k] = ["R"];
+          else if (k === "subLoads" || k === "circuits" || k === "subPanels") item[k] = [];
+          else item[k] = null;
+        } else if (Array.isArray(item[k])) {
+          item[k] = item[k].map((elem: any) => (elem === "[Circular]" ? "R" : elem));
+          for (const sub of item[k]) {
+            if (sub && typeof sub === "object") sanitizeLegacyArtifacts(sub);
+          }
+        } else if (typeof item[k] === "object") {
+          sanitizeLegacyArtifacts(item[k]);
+        }
+      }
+    };
+    sanitizeLegacyArtifacts(dataField);
   }
   
   return {

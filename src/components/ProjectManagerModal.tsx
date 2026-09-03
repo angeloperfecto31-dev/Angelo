@@ -80,18 +80,19 @@ export default function ProjectManagerModal({
 
   const filteredProjects = projects
     .filter(p => {
-      const matchesType = filterType === "All" || p.data?.panel?.projectType === filterType;
-      const searchLower = searchQuery.toLowerCase();
+      const panel = p.data?.panel || p.data?.mdps?.[0]?.panel;
+      const matchesType = filterType === "All" || panel?.projectType === filterType;
+      const searchLower = searchQuery.toLowerCase().trim();
       const projName = p.name?.toLowerCase() || '';
-      const projType = p.data?.panel?.projectType?.toLowerCase() || '';
-      const instName = p.data?.panel?.institution === 'Custom...'
-        ? (p.data?.panel?.customInstitutionName?.toLowerCase() || '')
-        : (p.data?.panel?.institution?.toLowerCase() || '');
+      const projType = panel?.projectType?.toLowerCase() || '';
+      const instName = panel?.institution === 'Custom...'
+        ? (panel?.customInstitutionName?.toLowerCase() || '')
+        : (panel?.institution?.toLowerCase() || '');
       
-      const matchesSearch = projName.includes(searchLower) || projType.includes(searchLower) || instName.includes(searchLower);
+      const matchesSearch = !searchLower || projName.includes(searchLower) || projType.includes(searchLower) || instName.includes(searchLower);
       return matchesType && matchesSearch;
     })
-    .sort((a, b) => b.lastModified - a.lastModified);
+    .sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
 
   useEffect(() => {
     if (!isOpen) {
@@ -665,7 +666,12 @@ export default function ProjectManagerModal({
           <div className="space-y-3">
             <div className="flex flex-col md:flex-row gap-3 justify-between items-stretch md:items-center bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
               <div className="flex items-center justify-between md:justify-start gap-4">
-                <h3 className="text-sm font-bold tracking-wider text-slate-500 uppercase">Saved Projects</h3>
+                <h3 className="text-sm font-bold tracking-wider text-slate-500 uppercase flex items-center gap-1.5">
+                  <span>Saved Projects</span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                    {projects.length}
+                  </span>
+                </h3>
                 <label className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm select-none">
                   <Upload className="w-3.5 h-3.5" />
                   <span>Import Project</span>
@@ -701,10 +707,31 @@ export default function ProjectManagerModal({
               </div>
             </div>
             {filteredProjects.length === 0 ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No saved projects found.</p>
+              <div className="text-center py-8 space-y-2">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {projects.length > 0
+                    ? `No projects match your search query or filter (${projects.length} total saved).`
+                    : "No saved projects found. Save your current project or import an existing file."}
+                </p>
+                {(searchQuery || filterType !== "All") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setFilterType("All");
+                    }}
+                    className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                  >
+                    Clear Search & Filters
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="space-y-2">
-                {filteredProjects.map(p => (
+                {filteredProjects.map(p => {
+                  const circuitsCount = p.data?.circuits?.length || p.data?.mdps?.[0]?.circuits?.length || 0;
+                  const subPanelsCount = p.data?.subPanels?.length || p.data?.mdps?.[0]?.subPanels?.length || 0;
+                  return (
                   <div 
                     key={p.id} 
                     onClick={() => handleLoad(p)}
@@ -730,7 +757,7 @@ export default function ProjectManagerModal({
                            Last modified: {new Date(p.lastModified).toLocaleString()}
                          </p>
                          <p className="text-xs text-slate-400 font-medium bg-slate-100 dark:bg-slate-800 px-2 rounded-md">
-                           {p.data?.circuits?.length || 0} Circuits {p.data?.subPanels && p.data.subPanels.length > 0 ? `• ${p.data.subPanels.length} Sub-Panels` : ''}
+                           {circuitsCount} Circuits {subPanelsCount > 0 ? `• ${subPanelsCount} Sub-Panels` : ''}
                          </p>
                          <p className="text-[10px] text-slate-400 font-bold bg-indigo-50/50 dark:bg-indigo-950/25 text-indigo-600/90 dark:text-indigo-400/90 px-2 rounded-md">
                            File Size: ~{getEstimatedCompressedSize(p)}
@@ -789,7 +816,8 @@ export default function ProjectManagerModal({
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

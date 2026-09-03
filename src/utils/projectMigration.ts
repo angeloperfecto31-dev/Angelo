@@ -36,6 +36,17 @@ export function migrateProjectData(data: any): ProjectData {
     };
   }
 
+  // Auto-recover root circuits/subPanels/panel if they were damaged or missing but present in mdps[0]
+  if ((!Array.isArray(data.circuits) || data.circuits.length === 0) && data.mdps?.[0]?.circuits && Array.isArray(data.mdps[0].circuits) && data.mdps[0].circuits.length > 0) {
+    data.circuits = JSON.parse(JSON.stringify(data.mdps[0].circuits));
+  }
+  if ((!Array.isArray(data.subPanels) || data.subPanels.length === 0) && data.mdps?.[0]?.subPanels && Array.isArray(data.mdps[0].subPanels) && data.mdps[0].subPanels.length > 0) {
+    data.subPanels = JSON.parse(JSON.stringify(data.mdps[0].subPanels));
+  }
+  if ((!data.panel || typeof data.panel !== "object") && data.mdps?.[0]?.panel && typeof data.mdps[0].panel === "object") {
+    data.panel = JSON.parse(JSON.stringify(data.mdps[0].panel));
+  }
+
   const seenCircuitIds = new Set<string>();
 
   // 1. Ensure panel normalization & defaults
@@ -101,6 +112,9 @@ export function migrateProjectData(data: any): ProjectData {
             } else {
               p = p.split(",").map((s: string) => s.trim()).filter((s: string) => ["R", "Y", "B"].includes(s));
             }
+          }
+          if (Array.isArray(p)) {
+            p = p.filter((s: any) => typeof s === "string" && s !== "[Circular]");
           }
           if (!Array.isArray(p) || p.length === 0) {
             p = panel.system.includes("3PH") ? ["R", "Y", "B"] : ["R"];
