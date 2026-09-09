@@ -7695,6 +7695,9 @@ export default function App() {
                     panel={panel}
                     circuits={circuits}
                     subPanels={uniqueSubPanels}
+                    mdps={mdps}
+                    activeMdpId={activeMdpId}
+                    onSelectMdp={(id) => setActiveMdpId(id)}
                     primaryVoltage={transformerPrimaryVoltage}
                     setPrimaryVoltage={setTransformerPrimaryVoltage}
                     powerFactor={transformerPowerFactor}

@@ -1,4 +1,4 @@
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
+import { initializeApp, applicationDefault, getApps, getApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -12,10 +12,10 @@ try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     
     // Initialize admin SDK using application default credentials (works in cloud run)
-    const app = initializeApp({
+    const app = getApps().length === 0 ? initializeApp({
       credential: applicationDefault(),
       projectId: config.projectId
-    });
+    }) : getApp();
     
     // Initialize firestore with the specific database ID if present
     if (config.firestoreDatabaseId) {

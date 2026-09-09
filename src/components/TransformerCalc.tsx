@@ -1,6 +1,36 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { PanelConfig, Circuit, LoadType } from "../types";
-import { Zap, AlertTriangle, CheckCircle2, RefreshCw, Cpu, ShieldCheck, Lock, Download, FileSpreadsheet, FileText, Check, Layers, TrendingUp, DollarSign, Activity, Info, LayoutDashboard, Thermometer, ShieldAlert, Coins, Sliders, Scale } from "lucide-react";
+import { MdpData } from "../types/project";
+import {
+  Zap,
+  AlertTriangle,
+  CheckCircle2,
+  RefreshCw,
+  Cpu,
+  ShieldCheck,
+  Lock,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Check,
+  Layers,
+  TrendingUp,
+  DollarSign,
+  Activity,
+  Info,
+  LayoutDashboard,
+  Thermometer,
+  ShieldAlert,
+  Coins,
+  Sliders,
+  Scale,
+  Search,
+  ChevronDown,
+  Sparkles,
+  CheckSquare,
+  X,
+  Gauge
+} from "lucide-react";
 import { computePanelScheduleValues } from "../utils/computeEngine";
 import { jsPDF } from "jspdf";
 import * as XLSX from "xlsx-js-style";
@@ -13,6 +43,9 @@ interface TransformerCalcProps {
   circuits: Circuit[];
   subPanels?: any[];
   subSubPanels?: any[];
+  mdps?: MdpData[];
+  activeMdpId?: string;
+  onSelectMdp?: (id: string) => void;
   primaryVoltage: number;
   setPrimaryVoltage: (v: number) => void;
   powerFactor: number;
@@ -31,8 +64,51 @@ interface TransformerCalcProps {
 }
 
 export const STANDARD_TRANSFORMER_SIZES = [
-  15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500
+  5,
+  10,
+  15,
+  25,
+  30,
+  37.5,
+  45,
+  50,
+  75,
+  100,
+  112.5,
+  150,
+  167,
+  200,
+  225,
+  250,
+  300,
+  400,
+  500,
+  600,
+  750,
+  800,
+  1000,
+  1250,
+  1500,
+  1600,
+  2000,
+  2500,
+  3000,
+  3150,
+  4000,
+  5000,
+  6000,
+  7500,
+  10000,
 ];
+
+export function formatTransformerCapacity(kva: number): string {
+  if (kva >= 1000) {
+    const mva = kva / 1000;
+    const mvaStr = Number.isInteger(mva) ? mva.toString() : mva.toFixed(2).replace(/\.?0+$/, "");
+    return `${kva.toLocaleString()} kVA (${mvaStr} MVA)`;
+  }
+  return `${kva} kVA`;
+}
 
 export interface TransformerSpec {
   coreLoss: number;     // Watts
@@ -44,20 +120,41 @@ export interface TransformerSpec {
 }
 
 export const STANDARD_SPECS: Record<number, TransformerSpec> = {
+  5: { coreLoss: 40, copperLoss: 140, zPercent: 2.5, xrRatio: 1.2, weight: 65, cost: 950 },
+  10: { coreLoss: 65, copperLoss: 260, zPercent: 2.8, xrRatio: 1.4, weight: 110, cost: 1350 },
   15: { coreLoss: 90, copperLoss: 400, zPercent: 3.0, xrRatio: 1.5, weight: 180, cost: 1800 },
+  25: { coreLoss: 120, copperLoss: 620, zPercent: 3.0, xrRatio: 1.7, weight: 240, cost: 2200 },
   30: { coreLoss: 140, copperLoss: 750, zPercent: 3.0, xrRatio: 1.8, weight: 280, cost: 2500 },
+  37.5: { coreLoss: 160, copperLoss: 920, zPercent: 3.0, xrRatio: 2.0, weight: 330, cost: 2850 },
   45: { coreLoss: 180, copperLoss: 1100, zPercent: 3.0, xrRatio: 2.2, weight: 380, cost: 3200 },
+  50: { coreLoss: 200, copperLoss: 1200, zPercent: 3.5, xrRatio: 2.4, weight: 420, cost: 3500 },
   75: { coreLoss: 280, copperLoss: 1600, zPercent: 4.0, xrRatio: 2.8, weight: 520, cost: 4500 },
+  100: { coreLoss: 340, copperLoss: 1950, zPercent: 4.0, xrRatio: 3.0, weight: 620, cost: 5200 },
   112.5: { coreLoss: 380, copperLoss: 2200, zPercent: 4.0, xrRatio: 3.2, weight: 680, cost: 5800 },
   150: { coreLoss: 460, copperLoss: 2800, zPercent: 4.5, xrRatio: 3.8, weight: 850, cost: 7200 },
+  167: { coreLoss: 500, copperLoss: 3100, zPercent: 4.5, xrRatio: 4.0, weight: 920, cost: 7800 },
+  200: { coreLoss: 560, copperLoss: 3550, zPercent: 4.5, xrRatio: 4.2, weight: 1020, cost: 8600 },
   225: { coreLoss: 620, copperLoss: 3900, zPercent: 4.5, xrRatio: 4.5, weight: 1100, cost: 9500 },
+  250: { coreLoss: 680, copperLoss: 4250, zPercent: 4.8, xrRatio: 4.8, weight: 1200, cost: 10500 },
   300: { coreLoss: 780, copperLoss: 4800, zPercent: 5.0, xrRatio: 5.2, weight: 1350, cost: 12000 },
+  400: { coreLoss: 960, copperLoss: 6000, zPercent: 5.0, xrRatio: 5.8, weight: 1680, cost: 15200 },
   500: { coreLoss: 1150, copperLoss: 7200, zPercent: 5.0, xrRatio: 6.5, weight: 2000, cost: 18500 },
+  600: { coreLoss: 1320, copperLoss: 8300, zPercent: 5.5, xrRatio: 7.0, weight: 2350, cost: 21500 },
   750: { coreLoss: 1550, copperLoss: 9800, zPercent: 5.75, xrRatio: 7.8, weight: 2800, cost: 25000 },
+  800: { coreLoss: 1640, copperLoss: 10300, zPercent: 5.75, xrRatio: 8.0, weight: 2950, cost: 26500 },
   1000: { coreLoss: 1950, copperLoss: 12200, zPercent: 5.75, xrRatio: 8.5, weight: 3500, cost: 32000 },
+  1250: { coreLoss: 2300, copperLoss: 14800, zPercent: 5.75, xrRatio: 9.2, weight: 4100, cost: 38500 },
   1500: { coreLoss: 2700, copperLoss: 17500, zPercent: 5.75, xrRatio: 10.0, weight: 4800, cost: 45000 },
+  1600: { coreLoss: 2850, copperLoss: 18500, zPercent: 5.75, xrRatio: 10.3, weight: 5100, cost: 48000 },
   2000: { coreLoss: 3400, copperLoss: 22000, zPercent: 6.0, xrRatio: 11.2, weight: 5800, cost: 58000 },
-  2500: { coreLoss: 4000, copperLoss: 27500, zPercent: 6.0, xrRatio: 12.0, weight: 7000, cost: 72000 }
+  2500: { coreLoss: 4000, copperLoss: 27500, zPercent: 6.0, xrRatio: 12.0, weight: 7000, cost: 72000 },
+  3000: { coreLoss: 4700, copperLoss: 32000, zPercent: 6.25, xrRatio: 12.5, weight: 8200, cost: 84000 },
+  3150: { coreLoss: 4900, copperLoss: 33500, zPercent: 6.25, xrRatio: 12.8, weight: 8600, cost: 88000 },
+  4000: { coreLoss: 5900, copperLoss: 41000, zPercent: 6.5, xrRatio: 13.5, weight: 10500, cost: 110000 },
+  5000: { coreLoss: 7200, copperLoss: 50000, zPercent: 6.5, xrRatio: 14.5, weight: 12800, cost: 135000 },
+  6000: { coreLoss: 8400, copperLoss: 58000, zPercent: 7.0, xrRatio: 15.2, weight: 15200, cost: 160000 },
+  7500: { coreLoss: 10200, copperLoss: 70000, zPercent: 7.0, xrRatio: 16.0, weight: 18500, cost: 195000 },
+  10000: { coreLoss: 13000, copperLoss: 90000, zPercent: 7.5, xrRatio: 17.5, weight: 24000, cost: 250000 },
 };
 
 export default function TransformerCalc({
@@ -65,6 +162,9 @@ export default function TransformerCalc({
   circuits,
   subPanels,
   subSubPanels,
+  mdps,
+  activeMdpId,
+  onSelectMdp,
   primaryVoltage,
   setPrimaryVoltage,
   powerFactor,
@@ -82,6 +182,12 @@ export default function TransformerCalc({
   setIscSource,
 }: TransformerCalcProps) {
   // Enhanced component state hooks
+  const [selectedMdpId, setSelectedMdpId] = useState<string>(activeMdpId || (mdps && mdps[0]?.id) || "mdp-1");
+  const [capacitySearch, setCapacitySearch] = useState<string>("");
+  const [capacityFilterCategory, setCapacityFilterCategory] = useState<'all' | 'low' | 'medium' | 'mva'>('all');
+  const [isCapacityDropdownOpen, setIsCapacityDropdownOpen] = useState<boolean>(false);
+  const capacityDropdownRef = useRef<HTMLDivElement>(null);
+
   const [windingMaterial, setWindingMaterial] = useState<'Copper' | 'Aluminum'>('Copper');
   const [coolingType, setCoolingType] = useState<'Liquid' | 'Dry'>('Liquid');
   const [customZ, setCustomZ] = useState<number | null>(null);
@@ -91,13 +197,52 @@ export default function TransformerCalc({
   const [frequency, setFrequency] = useState<number>(60);
   const [txConnection, setTxConnection] = useState<string>("Delta-Wye (Dyn11)");
 
-  const allSubPanels = useMemo(() => {
-    const list = [...(subPanels || [])];
-    if (subSubPanels && subSubPanels.length > 0) {
+  // Keep selected MDP in sync with external changes
+  useEffect(() => {
+    if (activeMdpId) {
+      setSelectedMdpId(activeMdpId);
+    }
+  }, [activeMdpId]);
+
+  // Click outside to close capacity dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (capacityDropdownRef.current && !capacityDropdownRef.current.contains(event.target as Node)) {
+        setIsCapacityDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Selected MDP Data resolution
+  const currentMdp = useMemo(() => {
+    if (mdps && mdps.length > 0) {
+      const found = mdps.find((m) => m.id === selectedMdpId);
+      if (found) return found;
+    }
+    return {
+      id: activeMdpId || "mdp-1",
+      panel,
+      circuits,
+      subPanels: subPanels || [],
+      subSubPanels: subSubPanels || [],
+    };
+  }, [mdps, selectedMdpId, panel, circuits, subPanels, subSubPanels, activeMdpId]);
+
+  const effectivePanel = currentMdp.panel || panel;
+  const effectiveCircuits = currentMdp.circuits || circuits;
+  const effectiveSubPanels = useMemo(() => {
+    const list = [...(currentMdp.subPanels || subPanels || [])];
+    if (currentMdp.subSubPanels && currentMdp.subSubPanels.length > 0) {
+      list.push(...currentMdp.subSubPanels);
+    } else if (subSubPanels && subSubPanels.length > 0) {
       list.push(...subSubPanels);
     }
     return list;
-  }, [subPanels, subSubPanels]);
+  }, [currentMdp, subPanels, subSubPanels]);
+
+  const allSubPanels = effectiveSubPanels;
 
   // Deriving parallel/split configuration parameters
   const numTransformers = iscParams?.parallelTransformersCount || 1;
@@ -108,24 +253,6 @@ export default function TransformerCalc({
         ...p,
         parallelTransformersCount: num,
       }));
-    }
-  };
-
-  const selectRating = (sz: number | null) => {
-    if (sz === null) {
-      if (setIscSource) setIscSource("auto");
-    } else {
-      if (setIscSource) setIscSource("manual");
-      if (setIscParams) {
-        const spec = STANDARD_SPECS[sz] || { zPercent: 5.0, xrRatio: 5.0 };
-        setIscParams((p: any) => ({
-          ...p,
-          transformerKVA: sz,
-          parallelTransformersRating: sz,
-          transformerZ: spec.zPercent,
-          parallelTransformersZ: spec.zPercent,
-        }));
-      }
     }
   };
 
@@ -154,16 +281,16 @@ export default function TransformerCalc({
     return idx % totalTx;
   };
 
-  // Deriving system properties from MDP Panel
-  const is3Phase = panel.system.includes("3PH");
-  const secondaryVoltage = panel.voltage || 230;
+  // Deriving system properties from selected MDP Panel
+  const is3Phase = effectivePanel.system.includes("3PH");
+  const secondaryVoltage = effectivePanel.voltage || 230;
 
-  // Compute MDP panel values
+  // Compute MDP panel values using computeEngine
   const panelValues = useMemo(() => {
-    return computePanelScheduleValues(panel, circuits, {
+    return computePanelScheduleValues(effectivePanel, effectiveCircuits, {
       availableSubPanels: allSubPanels,
     });
-  }, [panel, circuits, allSubPanels]);
+  }, [effectivePanel, effectiveCircuits, allSubPanels]);
 
   // Connected load from MDP
   const connectedLoadVA = panelValues.totalVA;
@@ -181,11 +308,12 @@ export default function TransformerCalc({
 
   // Required transformer size based on loading factor
   // Required kVA = Maximum Demand Load (kVA) / Loading Factor
-  const requiredKVA = loadingFactor > 0 ? demandLoadKVA / loadingFactor : 0;
+  const requiredKVA = loadingFactor > 0 ? demandLoadKVA / loadingFactor : demandLoadKVA;
 
   const requiredKVAPerTransformer = requiredKVA / numTransformers;
 
   // Find nearest recommended standard transformer size
+  // Smallest available transformer capacity that is equal to or greater than the calculated requirement
   const recommendedRating = useMemo(() => {
     if (requiredKVAPerTransformer <= 0) return STANDARD_TRANSFORMER_SIZES[0];
     const size = STANDARD_TRANSFORMER_SIZES.find((s) => s >= requiredKVAPerTransformer);
@@ -196,6 +324,66 @@ export default function TransformerCalc({
   const activeRating = (iscSource === "manual" && iscParams?.transformerKVA)
     ? iscParams.transformerKVA
     : recommendedRating;
+
+  // Total installed bank capacity
+  const totalInstalledCapacity = activeRating * numTransformers;
+
+  // Transformer Utilization (%): Maximum Demand Load ÷ Transformer Rated Capacity × 100
+  const transformerUtilization = totalInstalledCapacity > 0
+    ? (demandLoadKVA / totalInstalledCapacity) * 100
+    : 0;
+
+  // Transformer Margin (headroom between installed rating and calculated requirement / demand)
+  const marginKVA = totalInstalledCapacity - requiredKVA;
+  const marginFromDemandKVA = totalInstalledCapacity - demandLoadKVA;
+  const marginPct = requiredKVA > 0 ? (marginKVA / requiredKVA) * 100 : 0;
+
+  // Check if selected transformer is insufficient
+  const isInsufficient = activeRating < requiredKVAPerTransformer || totalInstalledCapacity < requiredKVA;
+
+  const selectRating = (sz: number | null) => {
+    if (sz === null) {
+      if (setIscSource) setIscSource("auto");
+      if (setIscParams) {
+        const spec = STANDARD_SPECS[recommendedRating] || { zPercent: 5.0, xrRatio: 5.0, coreLoss: recommendedRating * 4, copperLoss: recommendedRating * 15, weight: recommendedRating * 6, cost: recommendedRating * 40 };
+        setIscParams((p: any) => ({
+          ...p,
+          transformerKVA: recommendedRating,
+          parallelTransformersRating: recommendedRating,
+          transformerZ: spec.zPercent,
+          parallelTransformersZ: spec.zPercent,
+        }));
+      }
+    } else {
+      if (setIscSource) setIscSource("manual");
+      if (setIscParams) {
+        const spec = STANDARD_SPECS[sz] || { zPercent: 5.0, xrRatio: 5.0, coreLoss: sz * 4, copperLoss: sz * 15, weight: sz * 6, cost: sz * 40 };
+        setIscParams((p: any) => ({
+          ...p,
+          transformerKVA: sz,
+          parallelTransformersRating: sz,
+          transformerZ: spec.zPercent,
+          parallelTransformersZ: spec.zPercent,
+        }));
+      }
+    }
+  };
+
+  // Filtered standard sizes for searchable dropdown
+  const filteredSizes = useMemo(() => {
+    return STANDARD_TRANSFORMER_SIZES.filter((sz) => {
+      if (capacityFilterCategory === "low" && sz > 100) return false;
+      if (capacityFilterCategory === "medium" && (sz < 112.5 || sz > 800)) return false;
+      if (capacityFilterCategory === "mva" && sz < 1000) return false;
+
+      if (!capacitySearch.trim()) return true;
+      const q = capacitySearch.trim().toLowerCase();
+      const kvaStr = `${sz}`.toLowerCase();
+      const formatted = formatTransformerCapacity(sz).toLowerCase();
+      const mvaVal = sz >= 1000 ? `${sz / 1000}`.toLowerCase() : "";
+      return kvaStr.includes(q) || formatted.includes(q) || mvaVal.includes(q);
+    });
+  }, [capacitySearch, capacityFilterCategory]);
 
   // Let's compute all advanced transformer specifications dynamically
   const activeSpecs = useMemo(() => {
@@ -296,8 +484,6 @@ export default function TransformerCalc({
   }, [activeRating, secondaryVoltage, is3Phase]);
 
   // Combined system capacity metrics
-  const totalInstalledCapacity = activeRating * numTransformers;
-
   const actualLoadingPct = useMemo(() => {
     if (totalInstalledCapacity <= 0) return 0;
     return (demandLoadKVA / totalInstalledCapacity) * 100;
@@ -1571,133 +1757,534 @@ export default function TransformerCalc({
               {/* Tab 1: Capacity & Sizing */}
               {activeDetailsTab === "performance" && (
                 <div className="space-y-6">
-                  {/* Sizing Overview Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* MDP Reference Info */}
-                    <div className="bg-slate-50 dark:bg-slate-950/45 p-4 rounded-2xl space-y-3 border border-slate-100 dark:border-slate-900">
-                      <span className="text-[10px] font-black uppercase text-indigo-500">MDP Load Reference</span>
-                      <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
-                        <div className="flex justify-between">
-                          <span>System:</span>
-                          <strong className="text-slate-800 dark:text-slate-100 font-mono">{panel.system.includes("3PH") ? "3-Phase (3Φ)" : "1-Phase (1Φ)"}</strong>
+                  {/* MDP / Load Schedule Selector (Multiple MDP Support) */}
+                  <div className="bg-slate-50/80 dark:bg-slate-950/40 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                          <Layers className="w-4 h-4" />
+                        </span>
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider block">
+                            Select Load Schedule / MDP
+                          </span>
+                          <h4 className="text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                            Calculation Data Source
+                          </h4>
                         </div>
-                        <div className="flex justify-between">
-                          <span>Voltage:</span>
-                          <strong className="text-slate-800 dark:text-slate-100 font-mono">{secondaryVoltage} V</strong>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Connected Load:</span>
-                          <strong className="text-slate-810 dark:text-slate-100 font-mono">{(connectedLoadKVA).toFixed(1)} kVA / {connectedLoadkW.toFixed(1)} kW</strong>
-                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                          {mdps && mdps.length > 1 ? `${mdps.length} Load Schedules Available` : "Single Main Distribution Panel"}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Demand Calculator results */}
-                    <div className="bg-slate-50 dark:bg-slate-950/45 p-4 rounded-2xl space-y-3 border border-slate-100 dark:border-slate-900">
-                      <span className="text-[10px] font-black uppercase text-indigo-500">Demand Calculations</span>
-                      <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Demand Load:</span>
-                          <strong className="text-slate-800 dark:text-slate-100 font-mono">{demandLoadKVA.toFixed(1)} kVA / {demandLoadkW.toFixed(1)} kW</strong>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Power Factor:</span>
-                          <strong className="text-slate-800 dark:text-slate-100 font-mono">{powerFactor.toFixed(2)}</strong>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Required Min Size:</span>
-                          <strong className="text-slate-800 dark:text-slate-100 font-mono">{requiredKVA.toFixed(1)} kVA</strong>
-                        </div>
-                      </div>
-                    </div>
+                    {/* MDP Selection List/Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
+                      {(mdps && mdps.length > 0
+                        ? mdps
+                        : [{ id: "mdp-1", panel, circuits, subPanels: subPanels || [] }]
+                      ).map((m, idx) => {
+                        const isSelected = m.id === selectedMdpId;
+                        const mdpPanel = m.panel || panel;
+                        const mdpCircuits = m.circuits || [];
+                        const mdpValues = computePanelScheduleValues(mdpPanel, mdpCircuits, {
+                          availableSubPanels: m.subPanels || [],
+                        });
+                        const mdpConnectedKVA = (mdpValues.totalVA || 0) / 1000;
+                        const mdpDemandKVA =
+                          (mdpValues.mainCurrent.baseAmp *
+                            (mdpPanel.voltage || 230) *
+                            (mdpPanel.system.includes("3PH") ? Math.sqrt(3) : 1)) /
+                          1000;
 
-                    {/* Calculated Output */}
-                    <div className="bg-slate-50 dark:bg-slate-950/45 p-4 rounded-2xl space-y-3 border border-slate-100 dark:border-slate-900">
-                      <span className="text-[10px] font-black uppercase text-indigo-500">Calculated Output</span>
-                      <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
-                        <div className="flex justify-between">
-                          <span>Primary Voltage:</span>
-                          <strong className="text-slate-800 dark:text-slate-100 font-mono">{primaryVoltage >= 1000 ? `${primaryVoltage / 1000} kV` : `${primaryVoltage} V`}</strong>
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMdpId(m.id);
+                              if (onSelectMdp) onSelectMdp(m.id);
+                            }}
+                            className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer ${
+                              isSelected
+                                ? "bg-indigo-50/80 dark:bg-indigo-950/50 border-indigo-500 dark:border-indigo-400 shadow-sm ring-1 ring-indigo-500"
+                                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
+                                {mdpPanel.designation || `MDP-${idx + 1}`}
+                              </span>
+                              {isSelected ? (
+                                <span className="flex items-center gap-1 text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.5 rounded-md">
+                                  <Check className="w-3 h-3" /> ACTIVE
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400">MDP-{idx + 1}</span>
+                              )}
+                            </div>
+                            <div className="mt-2 space-y-1 text-[11px] text-slate-600 dark:text-slate-400">
+                              <div className="flex justify-between">
+                                <span>System:</span>
+                                <strong className="font-mono text-slate-800 dark:text-slate-200">
+                                  {mdpPanel.system.includes("3PH") ? "3Φ" : "1Φ"} {mdpPanel.voltage || 230}V
+                                </strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Connected:</span>
+                                <strong className="font-mono text-slate-700 dark:text-slate-300">
+                                  {mdpConnectedKVA.toFixed(1)} kVA
+                                </strong>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Max Demand:</span>
+                                <strong className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">
+                                  {mdpDemandKVA.toFixed(1)} kVA
+                                </strong>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Load Schedule Parameters - 7 Explicitly Retrieved Values */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                        Retrieved MDP Load Schedule Parameters ({effectivePanel.designation || "Main MDP"})
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
+                      {/* 1. Total Connected Load */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="Total Connected Load">
+                          Connected Load
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-slate-800 dark:text-slate-100">
+                          {connectedLoadKVA.toFixed(1)} <span className="text-[10px] font-bold text-slate-400">kVA</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span>Primary Amps:</span>
-                          <strong className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">{primaryCurrent.toFixed(2)} A</strong>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          {connectedLoadkW.toFixed(1)} kW
+                        </span>
+                      </div>
+
+                      {/* 2. Demand Factor */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="Calculated Demand Factor">
+                          Demand Factor
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-slate-800 dark:text-slate-100">
+                          {(effectiveDemandFactor * 100).toFixed(1)}%
                         </div>
-                        <div className="flex justify-between">
-                          <span>Secondary Amps:</span>
-                          <strong className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">{secondaryCurrent.toFixed(2)} A</strong>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          Demand / Connect
+                        </span>
+                      </div>
+
+                      {/* 3. Maximum Demand Load */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="Maximum Demand Load">
+                          Max Demand Load
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-indigo-600 dark:text-indigo-400">
+                          {demandLoadKVA.toFixed(1)} <span className="text-[10px] font-bold text-indigo-400">kVA</span>
                         </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          {demandLoadkW.toFixed(1)} kW
+                        </span>
+                      </div>
+
+                      {/* 4. Maximum Demand Current */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="Maximum Demand Current">
+                          Demand Current
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-slate-800 dark:text-slate-100">
+                          {maxDemandCurrent.toFixed(1)} <span className="text-[10px] font-bold text-slate-400">A</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          Main Bus Current
+                        </span>
+                      </div>
+
+                      {/* 5. System Voltage */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="System Voltage (Secondary)">
+                          System Voltage
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-slate-800 dark:text-slate-100">
+                          {secondaryVoltage} <span className="text-[10px] font-bold text-slate-400">V</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          Pri: {primaryVoltage >= 1000 ? `${primaryVoltage / 1000} kV` : `${primaryVoltage} V`}
+                        </span>
+                      </div>
+
+                      {/* 6. Number of Phases */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="Number of Phases">
+                          Phases
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-slate-800 dark:text-slate-100">
+                          {is3Phase ? "3-Phase" : "1-Phase"}
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          {is3Phase ? "3Φ Wye/Delta" : "1Φ 2-Wire/3W"}
+                        </span>
+                      </div>
+
+                      {/* 7. Power Factor */}
+                      <div className="bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-100 dark:border-slate-900">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight block truncate" title="Power Factor">
+                          Power Factor
+                        </span>
+                        <div className="mt-1 font-mono font-black text-sm text-slate-800 dark:text-slate-100">
+                          {powerFactor.toFixed(2)}
+                        </div>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                          cos θ (Lagging)
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Recommendation Display with clickable buttons */}
-                  <div className="flex flex-col md:flex-row items-center gap-4 bg-indigo-50/40 dark:bg-indigo-950/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-950/30">
-                    <div className="text-center md:text-left flex-1">
-                      <div className="flex items-center gap-2 justify-center md:justify-start">
-                        <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">
-                          Active Transformer Rating
+                  {/* Automatic Recommendation & Utilization 3-Column Summary Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 rounded-2xl bg-gradient-to-br from-indigo-50/50 via-white to-slate-50 dark:from-indigo-950/20 dark:via-slate-900 dark:to-slate-950 border border-indigo-100 dark:border-indigo-950/40 shadow-xs">
+                    {/* Column 1: Required Capacity */}
+                    <div className="space-y-1.5 p-3 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                        Calculated Required Capacity
+                      </span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl sm:text-3xl font-black font-mono text-slate-900 dark:text-slate-100">
+                          {requiredKVA.toFixed(1)}
                         </span>
-                        {iscSource === "manual" && (
-                          <span className="bg-amber-100 dark:bg-amber-900/40 text-amber-850 dark:text-amber-300 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wide border border-amber-200 dark:border-amber-900/35">
-                            Manual Override Active
-                          </span>
-                        )}
+                        <span className="text-xs font-bold text-slate-400">kVA</span>
                       </div>
-                      <h5 className="text-3xl font-black font-mono text-indigo-600 dark:text-indigo-400 mt-1">
-                        {numTransformers === 1 
-                          ? `${activeRating} kVA`
-                          : `${numTransformers} × ${activeRating} kVA`}
-                        <span className="text-sm font-medium text-slate-400 dark:text-slate-500 ml-2">
-                          {numTransformers > 1 && `(Total: ${totalInstalledCapacity} kVA)`}
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                        Based on <strong className="font-mono text-slate-700 dark:text-slate-300">{demandLoadKVA.toFixed(1)} kVA</strong> demand at <strong className="font-mono text-slate-700 dark:text-slate-300">{(loadingFactor * 100).toFixed(0)}%</strong> max design load limit.
+                      </p>
+                    </div>
+
+                    {/* Column 2: Recommended Transformer */}
+                    <div className="space-y-1.5 p-3 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80 relative overflow-hidden">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">
+                          Recommended Transformer
                         </span>
-                      </h5>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
-                        <p className="text-xs text-slate-400 leading-tight">
-                          {iscSource === "manual" 
-                            ? `Manually sizing standard transformer. Recommended automatic rating is ${recommendedRating} kVA.` 
-                            : `Nearest standard transformer rating chosen automatically to prevent operation past ${(loadingFactor * 100).toFixed(0)}% load capacity.`
-                          }
-                        </p>
-                        {iscSource === "manual" && (
-                          <button
-                            type="button"
-                            onClick={() => selectRating(null)}
-                            className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-600 hover:underline shrink-0"
-                          >
-                            Reset to Auto
-                          </button>
-                        )}
+                        <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide">
+                          PEC Standard
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl sm:text-3xl font-black font-mono text-indigo-600 dark:text-indigo-400">
+                          {formatTransformerCapacity(recommendedRating)}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                        Transformer Margin: <strong className={`font-mono font-bold ${(recommendedRating - requiredKVA) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
+                          {(recommendedRating - requiredKVA) >= 0 ? "+" : ""}{(recommendedRating - requiredKVA).toFixed(1)} kVA
+                        </strong> (Spare headroom: {(((recommendedRating - demandLoadKVA) / recommendedRating) * 100).toFixed(1)}%)
+                      </p>
+                    </div>
+
+                    {/* Column 3: Transformer Utilization */}
+                    <div className="space-y-1.5 p-3 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                          Transformer Utilization
+                        </span>
+                        <span
+                          className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide ${
+                            actualLoadingPct > 100
+                              ? "bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300"
+                              : actualLoadingPct > (loadingFactor * 100)
+                              ? "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300"
+                              : "bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300"
+                          }`}
+                        >
+                          {actualLoadingPct > 100 ? "OVERLOADED" : actualLoadingPct > (loadingFactor * 100) ? "HEAVY LOAD" : "SAFE / COMPLIANT"}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span
+                          className={`text-2xl sm:text-3xl font-black font-mono ${
+                            actualLoadingPct > 100
+                              ? "text-rose-600 dark:text-rose-400"
+                              : actualLoadingPct > (loadingFactor * 100)
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-slate-900 dark:text-slate-100"
+                          }`}
+                        >
+                          {actualLoadingPct.toFixed(1)}%
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                        Formula: <span className="font-mono text-[10px]">{demandLoadKVA.toFixed(1)} kVA ÷ {totalInstalledCapacity.toFixed(1)} kVA × 100</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Transformer Capacity Selection Control Panel (Auto vs Manual + Searchable Dropdown) */}
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-indigo-500 tracking-wider block">
+                          Transformer Capacity Selection Mode
+                        </span>
+                        <h4 className="text-base font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                          <span>
+                            {numTransformers === 1
+                              ? formatTransformerCapacity(activeRating)
+                              : `${numTransformers} × ${formatTransformerCapacity(activeRating)}`}
+                          </span>
+                          <span className="text-xs font-normal text-slate-400 font-mono">
+                            (Total: {formatTransformerCapacity(totalInstalledCapacity)})
+                          </span>
+                        </h4>
+                      </div>
+
+                      {/* Sizing Mode Toggle */}
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => selectRating(null)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            iscSource !== "manual"
+                              ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>Auto Recommended</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (iscSource !== "manual") {
+                              selectRating(activeRating || recommendedRating);
+                            }
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            iscSource === "manual"
+                              ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs"
+                              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          <Sliders className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>Manual Selection</span>
+                        </button>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2 items-center w-full md:w-auto">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Standard Size Selection (Per Unit)</span>
-                      <div className="flex flex-wrap gap-1 justify-center max-w-sm">
-                        {STANDARD_TRANSFORMER_SIZES.slice(0, 11).map((sz) => (
-                          <button
-                            key={sz}
-                            type="button"
-                            onClick={() => {
-                              if (sz >= requiredKVAPerTransformer) {
-                                selectRating(sz === recommendedRating ? null : sz);
-                              }
-                            }}
-                            className={`px-2.5 py-1.5 text-[10px] font-mono font-black rounded-lg transition-all ${
-                              activeRating === sz
-                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20 scale-105"
-                                : sz < requiredKVAPerTransformer
-                                ? "bg-red-50 text-red-500 dark:bg-red-950/20 dark:text-red-400/60 font-medium cursor-not-allowed border border-red-200/30 line-through"
-                                : "bg-slate-150/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                            }`}
-                            disabled={sz < requiredKVAPerTransformer}
-                            title={sz < requiredKVAPerTransformer ? `Capacity too small for target required per TX of ${requiredKVAPerTransformer.toFixed(1)} kVA` : `Select rating ${sz} kVA`}
-                          >
-                            {sz}
-                          </button>
-                        ))}
-                        {STANDARD_TRANSFORMER_SIZES.length > 11 && (
-                          <span className="text-[10px] text-slate-400 font-bold self-center ml-1">...</span>
+
+                    {/* Insufficient Capacity Warning Banner */}
+                    {iscSource === "manual" && isInsufficient && (
+                      <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400/80 dark:border-amber-600/70 rounded-2xl p-4 flex items-start gap-3 shadow-xs animate-in fade-in duration-300">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div className="space-y-1 text-xs">
+                          <h6 className="font-black text-amber-900 dark:text-amber-200 text-sm">
+                            ⚠️ Selected transformer capacity is insufficient for the calculated load requirement.
+                          </h6>
+                          <p className="text-amber-850 dark:text-amber-300/90 leading-relaxed font-medium">
+                            Calculated required capacity is <strong className="font-mono font-bold text-amber-950 dark:text-amber-100">{requiredKVA.toFixed(1)} kVA</strong> (Demand: {demandLoadKVA.toFixed(1)} kVA), but the selected transformer rating of <strong className="font-mono font-bold text-amber-950 dark:text-amber-100">{formatTransformerCapacity(activeRating)}</strong> {numTransformers > 1 ? `(Bank Total: ${formatTransformerCapacity(totalInstalledCapacity)})` : ""} creates a deficit of <strong className="font-mono font-bold text-rose-600 dark:text-rose-400">{(requiredKVA - totalInstalledCapacity).toFixed(1)} kVA</strong>. Transformer utilization will reach <strong className="font-mono font-bold text-rose-600 dark:text-rose-400">{actualLoadingPct.toFixed(1)}%</strong> under full demand load.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Searchable Dropdown & Standard Capacities Selector */}
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Select Standard Transformer Capacity (35 Standard Sizes Available)
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {iscSource === "manual" ? "Manual Override Enabled" : `Auto set to recommended ${formatTransformerCapacity(recommendedRating)}`}
+                        </span>
+                      </div>
+
+                      {/* Dropdown Container */}
+                      <div className="relative" ref={capacityDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsCapacityDropdownOpen(!isCapacityDropdownOpen)}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-400 dark:hover:border-indigo-500 transition-all cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="p-1.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                              <Zap className="w-4 h-4" />
+                            </span>
+                            <div>
+                              <span className="text-sm font-black font-mono text-slate-900 dark:text-slate-100">
+                                {formatTransformerCapacity(activeRating)}
+                              </span>
+                              <span className="text-xs text-slate-400 ml-2 font-mono">
+                                (Utilization: {actualLoadingPct.toFixed(1)}%)
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {activeRating === recommendedRating && (
+                              <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-md uppercase">
+                                Recommended
+                              </span>
+                            )}
+                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isCapacityDropdownOpen ? "rotate-180" : ""}`} />
+                          </div>
+                        </button>
+
+                        {/* Searchable Dropdown Popover */}
+                        {isCapacityDropdownOpen && (
+                          <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl z-50 p-3 space-y-2.5 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                            {/* Search Input */}
+                            <div className="relative">
+                              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                value={capacitySearch}
+                                onChange={(e) => setCapacitySearch(e.target.value)}
+                                placeholder="Search standard capacity (e.g. 75, 500, 1 MVA, 10000)..."
+                                className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                autoFocus
+                              />
+                              {capacitySearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCapacitySearch("")}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Category Filter Tabs */}
+                            <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-bold">
+                              {[
+                                { id: "all", label: `All (${STANDARD_TRANSFORMER_SIZES.length})` },
+                                { id: "low", label: "Low (5-100 kVA)" },
+                                { id: "medium", label: "Medium (112.5-800 kVA)" },
+                                { id: "mva", label: "Substation (1-10 MVA)" },
+                              ].map((cat) => (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  onClick={() => setCapacityFilterCategory(cat.id as any)}
+                                  className={`px-2.5 py-1 rounded-lg shrink-0 transition-all cursor-pointer ${
+                                    capacityFilterCategory === cat.id
+                                      ? "bg-indigo-600 text-white shadow-xs"
+                                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                  }`}
+                                >
+                                  {cat.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* Scrollable List of Sizes */}
+                            <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+                              {filteredSizes.length === 0 ? (
+                                <div className="text-center py-6 text-xs text-slate-400">
+                                  No transformer capacity matching "{capacitySearch}"
+                                </div>
+                              ) : (
+                                filteredSizes.map((sz) => {
+                                  const isSelected = activeRating === sz;
+                                  const isRec = sz === recommendedRating;
+                                  const isTooSmall = sz < requiredKVAPerTransformer;
+                                  const szUtil = ((demandLoadKVA / (sz * numTransformers)) * 100);
+
+                                  return (
+                                    <button
+                                      key={sz}
+                                      type="button"
+                                      onClick={() => {
+                                        selectRating(sz);
+                                        setIsCapacityDropdownOpen(false);
+                                        setCapacitySearch("");
+                                      }}
+                                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all text-left cursor-pointer ${
+                                        isSelected
+                                          ? "bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-400 dark:border-indigo-600 font-bold"
+                                          : isTooSmall
+                                          ? "hover:bg-rose-50/60 dark:hover:bg-rose-950/20 text-slate-600 dark:text-slate-400"
+                                          : "hover:bg-slate-100 dark:hover:bg-slate-800/70 text-slate-800 dark:text-slate-200"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        {isSelected ? (
+                                          <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                        ) : (
+                                          <span className="w-4 h-4 shrink-0" />
+                                        )}
+                                        <span className="font-mono font-bold text-sm">
+                                          {formatTransformerCapacity(sz)}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`text-[10px] font-mono ${szUtil > 100 ? "text-rose-500 font-bold" : "text-slate-400"}`}>
+                                          Util: {szUtil.toFixed(1)}%
+                                        </span>
+                                        {isRec && (
+                                          <span className="bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[9px] font-black px-1.5 py-0.5 rounded">
+                                            REC
+                                          </span>
+                                        )}
+                                        {isTooSmall && (
+                                          <span className="bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 text-[9px] font-black px-1.5 py-0.5 rounded">
+                                            UNDERSIZED
+                                          </span>
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
                         )}
+                      </div>
+
+                      {/* Quick Pick Chips for Standard Commercial/Industrial Sizes */}
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                          Quick Selection (Common Standard Ratings):
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[15, 25, 30, 45, 50, 75, 100, 112.5, 150, 200, 225, 250, 300, 500, 750, 1000, 1500, 2000, 2500, 5000].map((sz) => {
+                            const isSelected = activeRating === sz;
+                            const isRec = sz === recommendedRating;
+                            const isTooSmall = sz < requiredKVAPerTransformer;
+
+                            return (
+                              <button
+                                key={sz}
+                                type="button"
+                                onClick={() => selectRating(sz)}
+                                className={`px-2.5 py-1 text-[11px] font-mono font-bold rounded-lg transition-all cursor-pointer ${
+                                  isSelected
+                                    ? "bg-indigo-600 text-white shadow-xs"
+                                    : isTooSmall
+                                    ? "bg-rose-50 text-rose-600 dark:bg-rose-950/30 dark:text-rose-400 border border-rose-200 dark:border-rose-900/50"
+                                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                                }`}
+                                title={
+                                  isTooSmall
+                                    ? `Undersized for required ${requiredKVAPerTransformer.toFixed(1)} kVA`
+                                    : `${sz} kVA (Util: ${((demandLoadKVA / (sz * numTransformers)) * 100).toFixed(1)}%)`
+                                }
+                              >
+                                {sz >= 1000 ? `${sz / 1000}M` : `${sz}k`}
+                                {isRec && <span className="ml-1 text-[9px] text-emerald-400 font-black">★</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1708,11 +2295,11 @@ export default function TransformerCalc({
                       <span>0 kVA</span>
                       <span className="text-slate-800 dark:text-slate-200 font-mono">
                         {numTransformers === 1
-                          ? `Demand: ${demandLoadKVA.toFixed(1)} kVA / Rated: ${activeRating} kVA`
-                          : `Demand: ${demandLoadKVA.toFixed(1)} kVA / Total Bank: ${totalInstalledCapacity} kVA (${numTransformers} × ${activeRating} kVA)`
+                          ? `Demand: ${demandLoadKVA.toFixed(1)} kVA / Rated: ${formatTransformerCapacity(activeRating)}`
+                          : `Demand: ${demandLoadKVA.toFixed(1)} kVA / Total Bank: ${formatTransformerCapacity(totalInstalledCapacity)} (${numTransformers} × ${formatTransformerCapacity(activeRating)})`
                         }
                       </span>
-                      <span>{totalInstalledCapacity} kVA</span>
+                      <span>{formatTransformerCapacity(totalInstalledCapacity)}</span>
                     </div>
                     <div className="h-4 bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden flex relative border dark:border-slate-800">
                       {/* Safe limit mark line */}
@@ -1730,7 +2317,7 @@ export default function TransformerCalc({
                         className={`transition-all duration-500 h-full ${
                           isOverloaded
                             ? "bg-gradient-to-r from-red-500 to-rose-600"
-                            : "bg-gradient-to-r from-teal-500 to-indigo-505"
+                            : "bg-gradient-to-r from-teal-500 to-indigo-500"
                         }`}
                         style={{ width: `${Math.min(100, actualLoadingPct)}%` }}
                       />
@@ -1747,7 +2334,7 @@ export default function TransformerCalc({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 pt-1">
                     <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-100 dark:border-slate-800/80">
                       <span className="text-xs font-bold text-slate-500">Active Transformer Rating</span>
-                      <span className="text-sm font-black font-mono text-slate-800 dark:text-slate-200">{activeRating} kVA</span>
+                      <span className="text-sm font-black font-mono text-slate-800 dark:text-slate-200">{formatTransformerCapacity(activeRating)}</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-100 dark:border-slate-800/80">
                       <span className="text-xs font-bold text-slate-500">Actual Connected Load</span>
@@ -1758,7 +2345,7 @@ export default function TransformerCalc({
                       <span className="text-sm font-black font-mono text-slate-800 dark:text-slate-200">{demandLoadKVA.toFixed(1)} kVA</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-100 dark:border-slate-800/80">
-                      <span className="text-xs font-bold text-slate-500">Transformer Loading Percentage</span>
+                      <span className="text-xs font-bold text-slate-500">Transformer Utilization</span>
                       <span className={`text-sm font-black font-mono ${isOverloaded ? "text-red-600" : "text-green-655"}`}>{actualLoadingPct.toFixed(1)}%</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-100 dark:border-slate-800/80 md:col-span-2">
