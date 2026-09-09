@@ -1314,7 +1314,7 @@ export const calculateCircuitValues = (
       ? c.mcbATOverride || c.mcbAT || 30
       : c.mcbATOverride || requiredMcbAT;
 
-  const mcbAF = getBreakerFrameSize(mcbAT);
+  const mcbAF = isSubPanelLink && c.mcbAF ? c.mcbAF : getBreakerFrameSize(mcbAT);
 
   const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
   const panelKaic = panel.icRating ? parseFloat(panel.icRating) || 10 : 10;
@@ -1370,7 +1370,11 @@ export const calculateCircuitValues = (
     }
   }
 
-  const calcBaseWireSize = c.wireSizeOverride ? parseFloat(c.wireSizeOverride) || baseWireSize : baseWireSize;
+  const calcBaseWireSize = c.wireSizeOverride
+    ? parseFloat(c.wireSizeOverride) || baseWireSize
+    : isSubPanelLink && c.wireSize
+      ? parseFloat(c.wireSize) || baseWireSize
+      : baseWireSize;
 
   const calculatedWireSizeStr = isSubPanelLink && c.wireSize
     ? c.wireSize
@@ -1438,7 +1442,7 @@ export const calculateCircuitValues = (
     mcbType: c.mcbType || ("Bolt-on" as any),
     wireSize: finalWireSize,
     calculatedWireSize: calculatedWireSizeStr,
-    calculatedWireSets: wire.runs,
+    calculatedWireSets: isSubPanelLink && c.wireSets ? c.wireSets : wire.runs,
     wireType: finalWireType,
     calculatedWireType: calculatedWireTypeStr,
     groundSize: finalGroundSize,

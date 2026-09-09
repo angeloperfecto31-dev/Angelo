@@ -919,7 +919,10 @@ export const exportToWord = async (
     // === 1. LOAD SCHEDULE ===
     docChildren.push(createHeader(`1. Electrical Load Schedule and Feeder Sizing: ${p?.designation || 'Main Panel'}`));
 
-    const calcValues = computePanelScheduleValues(p, c);
+    const calcValues = computePanelScheduleValues(p, c, {
+      availableSubPanels: subPanels,
+      vdCalculations,
+    });
     const {
       totalVA,
       phaseLoads,

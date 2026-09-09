@@ -175,13 +175,25 @@ export default function SystemSLD({
     setZoom((z) => Math.max(0.1, z - 0.1));
   };
 
+  const allSubPanels = useMemo(() => {
+    const rawAllSubPanels = [...subPanels];
+    const seen = new Set();
+    return rawAllSubPanels.filter((sp) => {
+      if (!sp || !sp.id) return false;
+      if (seen.has(sp.id)) return false;
+      seen.add(sp.id);
+      return true;
+    });
+  }, [subPanels]);
+
   const mdpData = useMemo(
     () =>
       computePanelScheduleValues(panel, circuits, {
         vdCalculations,
         panelId: "main",
+        availableSubPanels: allSubPanels,
       }),
-    [panel, circuits, vdCalculations],
+    [panel, circuits, vdCalculations, allSubPanels],
   );
   const mdpRows = useMemo(
     () => getPanelRows(circuits, panel.system),
@@ -191,18 +203,11 @@ export default function SystemSLD({
   const mdpHeight = 320 + mdpRows.length * 60 + 100;
 
   const spLayouts = useMemo(() => {
-    const rawAllSubPanels = [...subPanels];
-    const seen = new Set();
-    const allSubPanels = rawAllSubPanels.filter((sp) => {
-      if (!sp || !sp.id) return false;
-      if (seen.has(sp.id)) return false;
-      seen.add(sp.id);
-      return true;
-    });
     return allSubPanels.map((sp, idx) => {
       const spData = computePanelScheduleValues(sp.panel, sp.circuits, {
         vdCalculations,
         panelId: sp.id,
+        availableSubPanels: allSubPanels,
       });
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
       const spHeight = 320 + spRows.length * 60 + 100;

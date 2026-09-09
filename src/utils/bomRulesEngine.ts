@@ -217,26 +217,31 @@ export const runBomQuantityTakeoff = (
   logs.push(`[${timestamp}] Initiated PEC-compliant BOM Takeoff Rules Engine.`);
 
   const is3Phase = panel.system.includes("3PH");
-  const mdpValues = computePanelScheduleValues(panel, circuits);
+  const mdpValues = computePanelScheduleValues(panel, circuits, {
+    availableSubPanels: uniqueConnectedSubPanels,
+  });
   const totalMdpConnectedVA = mdpValues.totalVA;
 
   // Calculate total connected and demand load for MDP and all sub-panels combined
   let totalConnectedLoadVA = totalMdpConnectedVA;
-  let totalDemandVA = mdpValues.mainCurrent.baseAmp * panel.voltage * (is3Phase ? Math.sqrt(3) : 1);
-
-  uniqueConnectedSubPanels.forEach(sp => {
-    const spValues = computePanelScheduleValues(sp.panel, sp.circuits);
-    totalConnectedLoadVA += spValues.totalVA;
-    const spIs3Ph = sp.panel.system.includes("3PH");
-    totalDemandVA += spValues.mainCurrent.baseAmp * sp.panel.voltage * (spIs3Ph ? Math.sqrt(3) : 1);
-  });
+  let totalDemandVA =
+    (mdpValues.mainCurrent?.baseAmp ||
+      (mdpValues.mainCurrent?.designAmp
+        ? mdpValues.mainCurrent.designAmp / 1.25
+        : 0)) *
+    panel.voltage *
+    (is3Phase ? Math.sqrt(3) : 1);
 
   const totalDemandKVA = totalDemandVA / 1000;
 
   // 1. DYNAMIC MAIN STEP-DOWN TRANSFORMER SIZING ENGINE (PEC Article 4.50)
   // Transformer sized at a minimum of 125% of the continuous demand load, or matching user's custom capacity.
   const reqTransformerKVA = totalDemandKVA * 1.25;
-  const standardTransformerSizes = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
+  const standardTransformerSizes = [
+    5, 10, 15, 25, 30, 37.5, 45, 50, 75, 100, 112.5, 150, 167, 200, 225, 250,
+    300, 400, 500, 600, 750, 800, 1000, 1250, 1500, 1600, 2000, 2500, 3000,
+    3150, 4000, 5000, 6000, 7500, 10000,
+  ];
   const transformerSizeKVA = (iscParams && iscParams.transformerKVA > 0)
     ? iscParams.transformerKVA
     : (standardTransformerSizes.find(size => size >= reqTransformerKVA) || 15);
@@ -248,9 +253,13 @@ export const runBomQuantityTakeoff = (
 
   if (isTransformerNeeded) {
     const transCostMap: Record<number, number> = {
-      15: 110000, 30: 155000, 45: 210000, 75: 310000, 112.5: 395000,
-      150: 480000, 225: 620000, 300: 780000, 500: 1150000, 750: 1650000,
-      1000: 2100000, 1500: 2950000, 2000: 3800000, 2500: 4800000
+      5: 45000, 10: 75000, 15: 110000, 25: 140000, 30: 155000, 37.5: 185000,
+      45: 210000, 50: 235000, 75: 310000, 100: 360000, 112.5: 395000,
+      150: 480000, 167: 520000, 200: 580000, 225: 620000, 250: 690000,
+      300: 780000, 400: 950000, 500: 1150000, 600: 1380000, 750: 1650000,
+      800: 1750000, 1000: 2100000, 1250: 2550000, 1500: 2950000, 1600: 3100000,
+      2000: 3800000, 2500: 4800000, 3000: 5700000, 3150: 6000000, 4000: 7500000,
+      5000: 9200000, 6000: 11000000, 7500: 13500000, 10000: 17800000
     };
     const transCost = transCostMap[transformerSizeKVA] || (transformerSizeKVA * 2000);
 
@@ -412,7 +421,9 @@ export const runBomQuantityTakeoff = (
 
   // 3. MAIN SERVICE ENTRANCE & PANELBOARD TAKEOFF (PEC Article 2.30)
   const mdpId = panel.designation || "Main Distribution Panel";
-  const computedMDP = computePanelScheduleValues(panel, circuits);
+  const computedMDP = computePanelScheduleValues(panel, circuits, {
+    availableSubPanels: uniqueConnectedSubPanels,
+  });
   const mdpFeeder = computedMDP.mainFeeder;
 
   const mBreakerAmp = mdpFeeder.cb || 100;
@@ -1013,7 +1024,9 @@ export const runBomQuantityTakeoff = (
   // Process Subpanels
   uniqueConnectedSubPanels.forEach(sp => {
     const spId = sp.panel.designation || `Sub-Panel ${sp.id}`;
-    const computedSP = computePanelScheduleValues(sp.panel, sp.circuits);
+    const computedSP = computePanelScheduleValues(sp.panel, sp.circuits, {
+      availableSubPanels: uniqueConnectedSubPanels,
+    });
     const spFeeder = computedSP.mainFeeder;
 
     const spMainAmp = spFeeder.cb || sp.panel.mainBreakerAT || 60;

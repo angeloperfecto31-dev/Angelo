@@ -760,17 +760,20 @@ export default function App() {
         const requiredKVAIndividual = requiredKVA / ptCount;
 
         const standardKVA = [
-          15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500,
-          2000, 2500,
+          5, 10, 15, 25, 30, 37.5, 45, 50, 75, 100, 112.5, 150, 167, 200,
+          225, 250, 300, 400, 500, 600, 750, 800, 1000, 1250, 1500, 1600,
+          2000, 2500, 3000, 3150, 4000, 5000, 6000, 7500, 10000,
         ];
         const recommendedKVA =
           standardKVA.find((k) => k >= requiredKVAIndividual) ||
           standardKVA[standardKVA.length - 1];
 
         const standardZTable: Record<number, number> = {
-          15: 3.0, 30: 3.0, 45: 3.0, 75: 4.0, 112.5: 4.0, 150: 4.5,
-          225: 4.5, 300: 5.0, 500: 5.0, 750: 5.75, 1000: 5.75,
-          1500: 5.75, 2000: 6.0, 2500: 6.0
+          5: 2.0, 10: 2.0, 15: 2.5, 25: 2.5, 30: 2.5, 37.5: 3.0, 45: 3.0, 50: 3.0,
+          75: 4.0, 100: 4.0, 112.5: 4.0, 150: 4.5, 167: 4.5, 200: 4.5, 225: 4.5,
+          250: 5.0, 300: 5.0, 400: 5.0, 500: 5.0, 600: 5.5, 750: 5.75, 800: 5.75,
+          1000: 5.75, 1250: 5.75, 1500: 5.75, 1600: 5.75, 2000: 6.0, 2500: 6.0,
+          3000: 6.5, 3150: 6.5, 4000: 6.5, 5000: 7.0, 6000: 7.0, 7500: 7.0, 10000: 7.0,
         };
         const recommendedZ = standardZTable[recommendedKVA] || 5.0;
 
@@ -2347,6 +2350,7 @@ export default function App() {
         } = computePanelScheduleValues(p, c, {
           vdCalculations,
           panelId: item.id,
+          availableSubPanels: uniqueSubPanels,
         });
 
         const formatWireSize = (size: number): string =>
@@ -6860,7 +6864,9 @@ export default function App() {
                     {/* Interactive Real-Time Phase Balance Chart */}
                     {(() => {
                       const { phaseLoads, phaseImbalance } =
-                        computePanelScheduleValues(panel, circuits);
+                        computePanelScheduleValues(panel, circuits, {
+                          availableSubPanels: uniqueSubPanels,
+                        });
                       const rKVA = (phaseLoads.R || 0) / 1000;
                       const yKVA = (phaseLoads.Y || 0) / 1000;
                       const bKVA = (phaseLoads.B || 0) / 1000;
@@ -7318,7 +7324,21 @@ export default function App() {
                             panelId={sp.id}
                             onRemoveSubPanel={() => {
                               setSubPanels((prev) =>
-                                prev.filter((p) => p.id !== sp.id),
+                                prev
+                                  .filter((p) => p.id !== sp.id)
+                                  .map((p) => ({
+                                    ...p,
+                                    circuits: p.circuits.map((c) =>
+                                      c.linkedSubPanelId === sp.id
+                                        ? {
+                                            ...c,
+                                            linkedSubPanelId: undefined,
+                                            loadType: LoadType.SPARE,
+                                            description: `${c.description || "Sub-Panel"} (Disconnected)`,
+                                          }
+                                        : c,
+                                    ),
+                                  })),
                               );
                               // Disconnect sub panel reference from MDP circuits
                               setCircuits((prevCircuits) =>

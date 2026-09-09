@@ -971,7 +971,9 @@ const drawSystemSLD = (
       const sp = layout.sp;
       const xBase = positions.get(sp.id) || xOffset + 355;
       
-      const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits);
+      const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits, {
+        availableSubPanels: subPanelsData,
+      });
       const parentLabel = layout.parentId === "mdp" ? `FED FROM ${mdpPanel.designation || "MDP"}` : `FED FROM SUB-PANEL`;
       
       const coords = drawCadPanelSLD(
@@ -1166,7 +1168,10 @@ export const exportToCAD = (
   };
 
   // Run Load Schedule calculations
-  const calcData = computePanelScheduleValues(panel, circuits);
+  const calcData = computePanelScheduleValues(panel, circuits, {
+    availableSubPanels: subPanels,
+    vdCalculations,
+  });
   const is3Phase = panel.system.includes("3PH");
 
   const formatLatexForCAD = (text: any) => {
@@ -2761,7 +2766,11 @@ export const exportToCAD = (
       const sheetContentOffset = xOffset + 20 + localXOffset;
 
       // Run Calculations for local Sub Panel
-      const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits);
+      const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits, {
+        availableSubPanels: subPanels,
+        vdCalculations,
+        panelId: sp.id,
+      });
 
       // Draw corresponding table grids and row schedules with exact layout offset
       drawPanelSchedule(

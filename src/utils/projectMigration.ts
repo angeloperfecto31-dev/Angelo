@@ -282,7 +282,9 @@ export function migrateProjectData(data: any): ProjectData {
 
   const migratedVdCalculations = rawVdCalculations.map((vd: any) => {
     if (vd.source === "main") {
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(activePanel, activeCircuits);
+      const { mainCurrent, mainFeeder } = computePanelScheduleValues(activePanel, activeCircuits, {
+        availableSubPanels: activeSubPanels,
+      });
       return {
         ...vd,
         loadA: Number(mainCurrent.designAmp.toFixed(2)),
@@ -294,7 +296,9 @@ export function migrateProjectData(data: any): ProjectData {
     } else if (vd.source !== "custom") {
       const sp = activeSubPanels.find((s) => s.id === vd.source);
       if (sp) {
-        const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits);
+        const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, {
+          availableSubPanels: activeSubPanels,
+        });
         return {
           ...vd,
           loadA: Number(mainCurrent.designAmp.toFixed(2)),
