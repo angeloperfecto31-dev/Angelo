@@ -743,11 +743,15 @@ export default function App() {
       const factor = is3Phase ? Math.sqrt(3) : 1;
       const secVoltage = panel.voltage || 230;
 
-      // Demand Load calculation from the actual engineering engine
-      const maxDemandCurrent = mainCurrent?.baseAmp || (mainCurrent?.designAmp ? mainCurrent.designAmp / 1.25 : 0);
-      const demandKVA = maxDemandCurrent > 0 
-        ? (maxDemandCurrent * secVoltage * factor) / 1000 
-        : (totalVA / 1000) * transformerDemandFactor;
+      // Demand Load calculation for transformer sizing (PEC compliant)
+      const connectedKVA = totalVA / 1000;
+      const effectiveDF = (typeof transformerDemandFactor === "number" && transformerDemandFactor > 0 && transformerDemandFactor <= 1.0)
+        ? transformerDemandFactor
+        : 0.8;
+      const demandKVA = connectedKVA * effectiveDF;
+      const maxDemandCurrent = demandKVA > 0 && secVoltage > 0
+        ? (demandKVA * 1000) / (secVoltage * factor)
+        : 0;
 
       const requiredKVA =
         transformerLoadingFactor > 0 ? demandKVA / transformerLoadingFactor : 0;

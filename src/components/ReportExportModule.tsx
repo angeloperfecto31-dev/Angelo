@@ -99,7 +99,9 @@ export default function ReportExportModule({
     const secondaryVoltage = panel.voltage || 230;
     const primaryVoltage = transformerPrimaryVoltage || iscParams.primaryVoltage || 13800;
     const powerFactor = transformerPowerFactor ?? 0.85;
-    const demandFactor = transformerDemandFactor ?? 1.0;
+    const demandFactor = (typeof transformerDemandFactor === "number" && transformerDemandFactor > 0 && transformerDemandFactor <= 1.0)
+      ? transformerDemandFactor
+      : 0.8;
     const loadingFactor = transformerLoadingFactor ?? 0.8;
 
     const panelValues = computePanelScheduleValues(panel, circuits, { availableSubPanels: subPanels });
@@ -107,11 +109,11 @@ export default function ReportExportModule({
     const connectedLoadKVA = connectedLoadVA / 1000;
     const connectedLoadkW = connectedLoadKVA * powerFactor;
 
-    const maxDemandCurrent = panelValues.mainCurrent?.baseAmp || (panelValues.mainCurrent?.designAmp ? panelValues.mainCurrent.designAmp / 1.25 : 0);
     const factor = is3Phase ? Math.sqrt(3) : 1;
-    const demandLoadKVA = maxDemandCurrent > 0 
-      ? (maxDemandCurrent * secondaryVoltage * factor) / 1000 
-      : connectedLoadKVA * demandFactor;
+    const demandLoadKVA = connectedLoadKVA * demandFactor;
+    const maxDemandCurrent = (demandLoadKVA > 0 && secondaryVoltage > 0)
+      ? (demandLoadKVA * 1000) / (secondaryVoltage * factor)
+      : 0;
     const demandLoadkW = demandLoadKVA * powerFactor;
 
     const requiredKVA = loadingFactor > 0 ? demandLoadKVA / loadingFactor : 0;

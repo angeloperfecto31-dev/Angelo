@@ -325,11 +325,14 @@ export function migrateProjectData(data: any): ProjectData {
   };
 
   // 7. Ensure modern transformer configuration fields
-  const transformerConfig = data.transformerConfig || {
-    primaryVoltage: 13800,
-    powerFactor: 0.85,
-    demandFactor: 0.8,
-    loadingFactor: 0.8,
+  const rawDf = data.transformerConfig?.demandFactor;
+  // If an existing project was saved with an exaggerated demand factor (> 1.0) due to previous calculation flaw, sanitize to compliant PEC standard 0.8
+  const sanitizedDf = (typeof rawDf === "number" && rawDf > 0 && rawDf <= 1.0) ? rawDf : 0.8;
+  const transformerConfig = {
+    primaryVoltage: data.transformerConfig?.primaryVoltage ?? 13800,
+    powerFactor: data.transformerConfig?.powerFactor ?? 0.85,
+    demandFactor: sanitizedDf,
+    loadingFactor: data.transformerConfig?.loadingFactor ?? 0.8,
   };
 
   // 8. Ensure main source config parameters

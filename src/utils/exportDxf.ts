@@ -377,10 +377,9 @@ const drawCadPanelSLD = (
     const calcMDP = computePanelScheduleValues(panel, panelCircuits, {
       availableSubPanels: allSubPanels,
     });
-    const maxDemandCurrent = calcMDP.mainCurrent?.baseAmp || (calcMDP.mainCurrent?.designAmp ? calcMDP.mainCurrent.designAmp / 1.25 : 0);
-    const demandKVA = maxDemandCurrent > 0 
-      ? (maxDemandCurrent * secVoltage * factor) / 1000 
-      : (calcMDP.totalVA / 1000) * 0.80;
+    const tfDF = calcMDP.actualDemandFactor ?? 0.80;
+    const demandKVA = (calcMDP.totalVA / 1000) * tfDF;
+    const maxDemandCurrent = demandKVA > 0 ? (demandKVA * 1000) / (secVoltage * factor) : 0;
 
     const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
     const ptCount = iscParams?.parallelTransformersCount || 1;

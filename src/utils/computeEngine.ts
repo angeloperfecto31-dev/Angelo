@@ -2362,6 +2362,15 @@ export const computePanelScheduleValues = (
     mainCurrent,
     maxDemandDetails,
     lightingReceptacleDemand,
+    totalDemandVA: Math.round(
+      Math.max(
+        0,
+        totalVA - Math.max(0, lightingReceptacleVA - lightingReceptacleDemand)
+      )
+    ),
+    actualDemandFactor: totalVA > 0
+      ? Math.min(1.0, Math.max(0.1, (totalVA - Math.max(0, lightingReceptacleVA - lightingReceptacleDemand)) / totalVA))
+      : 0.80,
     totalMotorDemandVA:
       motorVAs.reduce((a, b) => a + b, 0) + largestMotor * 0.25,
     lightingReceptacleVA,

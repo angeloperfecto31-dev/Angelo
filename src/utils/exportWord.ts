@@ -1155,10 +1155,10 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   const is3PH = panel.system.includes("3PH");
   const secVoltage = panel.voltage || 230;
 
-  const maxDemandCurrent = calcMDP.mainCurrent?.baseAmp || (calcMDP.mainCurrent?.designAmp ? calcMDP.mainCurrent.designAmp / 1.25 : 0);
-  const demandLoadKVA = maxDemandCurrent > 0
-    ? (maxDemandCurrent * secVoltage * (is3PH ? 1.732 : 1)) / 1000
-    : connectedLoadKVA * tfDF;
+  const demandLoadKVA = connectedLoadKVA * tfDF;
+  const maxDemandCurrent = demandLoadKVA > 0
+    ? (demandLoadKVA * 1000) / (secVoltage * (is3PH ? 1.732 : 1))
+    : 0;
   const requiredTransformerKVA = tfLF > 0 ? demandLoadKVA / tfLF : 0;
 
   const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];

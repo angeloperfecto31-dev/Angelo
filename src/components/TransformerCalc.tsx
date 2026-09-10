@@ -296,15 +296,42 @@ export default function TransformerCalc({
   const connectedLoadVA = panelValues.totalVA;
   const connectedLoadKVA = connectedLoadVA / 1000;
   const connectedLoadkW = connectedLoadKVA * powerFactor;
-
-  // Demand Load calculation from the actual engineering engine
-  const maxDemandCurrent = panelValues.mainCurrent.baseAmp;
   const factor = is3Phase ? Math.sqrt(3) : 1;
-  const demandLoadKVA = (maxDemandCurrent * secondaryVoltage * factor) / 1000;
+
+  // Auto-calculated PEC engineering baseline demand factor based on PEC Article 2.20 load schedules
+  const computedEngineDemandFactor = useMemo(() => {
+    if (connectedLoadVA <= 0) return 0.80;
+    const lightingReduction = Math.max(
+      0,
+      (panelValues.lightingReceptacleVA || 0) - (panelValues.lightingReceptacleDemand || 0)
+    );
+    const pecDemandVA = Math.max(0, connectedLoadVA - lightingReduction);
+    const rawRatio = pecDemandVA / connectedLoadVA;
+    // If PEC demand reductions are active and yield a factor < 1.0, use it; otherwise default to standard PEC 80% continuous/diversity rule
+    if (rawRatio < 0.999) {
+      return Number(Math.max(0.20, Math.min(1.00, rawRatio)).toFixed(2));
+    }
+    return 0.80;
+  }, [connectedLoadVA, panelValues.lightingReceptacleVA, panelValues.lightingReceptacleDemand]);
+
+  // Effective demand factor: Use user-adjusted value if valid (0.10 to 1.00), otherwise fallback to computed PEC engine value
+  const effectiveDemandFactor = useMemo(() => {
+    if (typeof demandFactor === "number" && demandFactor > 0 && demandFactor <= 1.0) {
+      return demandFactor;
+    }
+    return computedEngineDemandFactor;
+  }, [demandFactor, computedEngineDemandFactor]);
+
+  // Actual Maximum Demand Load calculation:
+  // S_demand (kVA) = S_connected (kVA) × Demand Factor
+  const demandLoadKVA = connectedLoadKVA * effectiveDemandFactor;
   const demandLoadkW = demandLoadKVA * powerFactor;
 
-  // Auto-calculated effective Demand Factor
-  const effectiveDemandFactor = connectedLoadKVA > 0 ? demandLoadKVA / connectedLoadKVA : 1.0;
+  // Real physical Maximum Demand Line Current at secondary voltage:
+  // I_demand = (S_demand × 1000) / (V_secondary × (is3Phase ? √3 : 1))
+  const maxDemandCurrent = (demandLoadKVA > 0 && secondaryVoltage > 0)
+    ? (demandLoadKVA * 1000) / (secondaryVoltage * factor)
+    : 0;
 
   // Required transformer size based on loading factor
   // Required kVA = Maximum Demand Load (kVA) / Loading Factor
@@ -844,7 +871,7 @@ export default function TransformerCalc({
       doc.text("2. Demand Load Calculation Formulation:", 15, 244);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`   Demand Load = Computed Max Demand Current x Voltage x Factor = ${demandLoadKVA.toFixed(2)} kVA`, 15, 248);
+      doc.text(`   Demand Load = Connected kVA x Demand Factor = ${connectedLoadKVA.toFixed(2)} kVA x ${(effectiveDemandFactor * 100).toFixed(0)}% = ${demandLoadKVA.toFixed(2)} kVA`, 15, 248);
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(71, 85, 105);
@@ -1126,6 +1153,7 @@ export default function TransformerCalc({
         ["ENGINEERING METHODOLOGY AND FORMULA STRINGS"],
         ["1. Required capacity (S_req) formula:"],
         ["   Required Capacity (kVA) = Computed Demand Load / Loading Limit = " + `${demandLoadKVA.toFixed(2)} / ${loadingFactor.toFixed(2)} = ${requiredKVA.toFixed(2)} kVA`],
+        ["   Maximum Demand Load (kVA) = Connected Load × Demand Factor = " + `${connectedLoadKVA.toFixed(2)} × ${(effectiveDemandFactor * 100).toFixed(0)}% = ${demandLoadKVA.toFixed(2)} kVA`],
         ["2. Nominal Full Load Amperes Equations:"],
         [is3Phase 
           ? `   Ip (3PH, Per Unit) = kVA * 1000 / (sqrt(3) * Vp) = (${activeRating} * 1000) / (1.732 * ${primaryVoltage}) = ${primaryCurrent.toFixed(2)} A`
@@ -1471,22 +1499,75 @@ export default function TransformerCalc({
                 />
               </div>
 
-              {/* Load Diversity/Demand Factor */}
-              <div className="space-y-2 opacity-85">
+              {/* Load Diversity / Demand Factor (DF) */}
+              <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs font-black uppercase text-slate-500 dark:text-slate-400">
-                  <span>Computed Demand Factor</span>
-                  <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                    {(effectiveDemandFactor * 100).toFixed(0)}%
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span>Demand Factor (DF)</span>
+                    {Math.abs(effectiveDemandFactor - computedEngineDemandFactor) < 0.005 ? (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50">
+                        PEC Auto
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 border border-amber-200/50 dark:border-amber-800/50">
+                        Adjusted
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 text-xs">
+                      {(effectiveDemandFactor * 100).toFixed(0)}%
+                    </span>
+                    {Math.abs(effectiveDemandFactor - computedEngineDemandFactor) >= 0.005 && (
+                      <button
+                        type="button"
+                        onClick={() => setDemandFactor(computedEngineDemandFactor)}
+                        className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5"
+                        title="Reset to PEC engine computed demand factor"
+                      >
+                        Reset Auto
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden">
-                  <div 
-                    className="h-full bg-indigo-500" 
-                    style={{ width: `${effectiveDemandFactor * 100}%` }}
-                  ></div>
+                <input
+                  type="range"
+                  min="0.2"
+                  max="1.0"
+                  step="0.05"
+                  value={effectiveDemandFactor}
+                  onChange={(e) => setDemandFactor(Number(e.target.value))}
+                  className="w-full accent-indigo-600 cursor-pointer"
+                />
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>20% (Light)</span>
+                  <div className="flex gap-1">
+                    {[
+                      { label: `Auto (${(computedEngineDemandFactor * 100).toFixed(0)}%)`, val: computedEngineDemandFactor },
+                      { label: "80%", val: 0.8 },
+                      { label: "85%", val: 0.85 },
+                      { label: "100%", val: 1.0 },
+                    ].map((btn) => (
+                      <button
+                        key={btn.label}
+                        type="button"
+                        onClick={() => setDemandFactor(btn.val)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors ${
+                          Math.abs(effectiveDemandFactor - btn.val) < 0.01
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                  <span>100% (Full)</span>
                 </div>
                 <p className="text-[9px] text-slate-400 leading-tight">
-                  Automatically derived from the engineering engine's maximum demand current.
+                  {Math.abs(effectiveDemandFactor - computedEngineDemandFactor) < 0.005
+                    ? `PEC-computed from load schedule demand reductions (${(computedEngineDemandFactor * 100).toFixed(0)}%). Slide or select presets to adjust.`
+                    : `Custom demand factor applied (${(effectiveDemandFactor * 100).toFixed(0)}%). Baseline PEC auto value is ${(computedEngineDemandFactor * 100).toFixed(0)}%.`}
                 </p>
               </div>
             </div>
