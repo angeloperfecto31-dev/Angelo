@@ -142,7 +142,8 @@ export function buildSolarDxf(
     "EPH-ANNO": 18,
   };
   Object.entries(layerLineweights).forEach(([name, lw]) => setLayerLineweight(name, lw));
-  d.header("LWDISPLAY", [[290, 1]]);
+  // Lineweights are kept for plotting, but not shown on screen (LWDISPLAY off) so lines stay thin
+  d.header("LWDISPLAY", [[290, 0]]);
 
   // Paper scaling: Sheet 1 can be enlarged (A3 -> A2 -> A1) so its SLD text stays legible when
   // plotted. Every sheet is laid out in A3 millimetres; lines, circles and text pass through here.
