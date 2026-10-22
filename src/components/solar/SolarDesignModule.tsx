@@ -9,6 +9,7 @@ import {
 } from "../../utils/solarEngine";
 import { computePanelScheduleValues } from "../../utils/computeEngine";
 import { exportSolarToDxf } from "../../utils/exportSolarDxf";
+import { computeLinkedPanelData } from "../../utils/solarLinkedPanel";
 import { exportSolarToExcel } from "../../utils/exportSolarExcel";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { exportSolarToPdf } from "../../utils/exportSolarPdf";
@@ -261,7 +262,9 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   }, [currentConfig, calc]);
 
   const handleExportDxf = () => {
-    exportSolarToDxf(resolvedConfigForExport, calc);
+    // Same linked panel data (main breaker, busbar, feeder, panel name) as the SLD page export
+    const linkedPanelData = computeLinkedPanelData(resolvedConfigForExport, panels, circuits, subPanels, vdCalculations);
+    exportSolarToDxf(resolvedConfigForExport, calc, linkedPanelData);
   };
 
   const handleExportExcel = () => {

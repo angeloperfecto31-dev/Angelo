@@ -112,10 +112,12 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
 
   // Array block. The string notes sit left of the modules, so the array starts after the widest note.
   const mod = calc.selectedModule;
+  const tMin = config.minOperatingTempC ?? 18; // same default as the calculation engine
   const noteLines = (n: number) => [
     `STRING ${n}`,
-    `${eff.modulesPerString} UNITS X ${mod.voc.toFixed(2)}`,
-    `= ${(eff.modulesPerString * mod.voc).toFixed(2)} V`,
+    `${eff.modulesPerString} UNITS X ${mod.voc.toFixed(2)} V`,
+    `= ${(eff.modulesPerString * mod.voc).toFixed(2)} V (Voc, STC)`,
+    `= ${calc.stringVoc} V (Voc @ ${tMin}°C)`,
   ];
   const noteWidth = Math.max(...noteLines(Math.max(1, eff.numberOfStrings)).map((t) => textWidth(t, NOTE_FS)));
   const arrayX = Math.max(175, NOTE_X + noteWidth + 34);
@@ -142,7 +144,7 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
 
   // Protection row
   // Minimum keeps the solar tap (and its callout) below the service feeder callout on short drawings
-  const yBk = Math.max(arrayBottom + 95, top + 505);
+  const yBk = Math.max(arrayBottom + 95, top + 540);
   const isoX = riserBase - 22;
   const isoW = (nD - 1) * RISER_PITCH + PAIR_GAP + 44 + nD * 10 + 10;
   const bkX0 = isoX + isoW + 50;
@@ -270,6 +272,17 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   const showEps = options.showEpsLoad && isHybrid;
   const dcConduit = config.cabling?.dcCable?.conduitType || "RSC";
   const acConduit = config.cabling?.acCable?.conduitType || "RSC";
+  const dcInsulation = config.cabling?.dcCable?.insulation || "PV1-F";
+  const acInsulation = config.cabling?.acCable?.insulation || "THHN";
+  const egcInsulation = config.dcProtection?.egcInsulation || "TW";
+  const al = (m?: string) => (m === "Al" ? " AL" : "");
+  const multiInverter = eff.inverterQuantity > 1;
+  const acCalloutLines = [
+    `${eff.acBreakerPoles} - ${eff.acCableSizeMm2}mm²${al(config.cabling?.acCable?.material)} ${acInsulation}`,
+    `1 - ${eff.acEgcSizeMm2}mm² ${egcInsulation} (G)`,
+    `IN ${eff.acConduitSizeMm}mm Ø ${acConduit}`,
+    ...(multiInverter ? ["(EACH INVERTER OUTPUT)"] : []),
+  ];
   const dcBreakerVolts = config.dcProtection?.fuseVoltageVolts ?? 1000;
   const acSpdVolts = config.acProtection?.spdRatingVolts ?? 440;
   const modelLines = wrapLines(inv.model, INV_W - 24, 12);
@@ -572,8 +585,8 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         y={L.arrayBottom + 52}
         width={L.riserX(0) + PAIR_GAP + 8 - (L.riserX(L.nD - 1) - 340)}
         lines={[
-          `2 - ${eff.dcCableSizeMm2}mm² PV1-F, 1 - ${eff.dcEgcSizeMm2}mm²`,
-          `TW (G) IN ${eff.dcConduitSizeMm}mm Ø ${dcConduit}`,
+          `2 - ${eff.dcCableSizeMm2}mm²${al(config.cabling?.dcCable?.material)} ${dcInsulation}`,
+          `1 - ${eff.dcEgcSizeMm2}mm² ${egcInsulation} (G) IN ${eff.dcConduitSizeMm}mm Ø ${dcConduit}`,
         ]}
       />
 
@@ -582,6 +595,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       <Txt x={L.isoX + L.isoW / 2} y={L.yBk + ISO_H + 18} size={13} anchor="middle">
         {eff.dcIsolatorRatingAmps}A, {config.dcProtection?.isolatorVoltageVolts ?? 1000}V DC
       </Txt>
+      {eff.numberOfStrings > 1 && (
+        <Txt x={L.isoX + L.isoW / 2} y={L.yBk + ISO_H + 34} size={12} anchor="middle" muted>
+          (PER STRING)
+        </Txt>
+      )}
 
       {/* ISO outputs to each string breaker (farthest breaker uses the highest route) */}
       {L.strings.map((_, k) => {
@@ -732,6 +750,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 73} size={14}>
           AC SPD
         </Txt>
+        {multiInverter && (
+          <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 92} size={12} muted>
+            (EACH INV.)
+          </Txt>
+        )}
       </g>
       <Wire
         pts={[
@@ -745,7 +768,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       {/* ===================== AC ISOLATOR ===================== */}
       <Isolator x={L.acIsoCx - 26} y={L.acIsoY} w={52} label="AC ISO." onClick={() => onSelect("ac_disconnect")} />
       <Txt x={L.acIsoCx + 34} y={L.acIsoY + ISO_H - 8} size={13}>
-        {eff.acIsolatorRatingAmps || eff.acBreakerAtAmps}A, {eff.acBreakerPoles}P
+        {eff.acIsolatorRatingAmps || eff.acBreakerAtAmps}A, {eff.acBreakerPoles}P{multiInverter ? " EACH" : ""}
       </Txt>
 
       {/* AC ISO -> (REC meter) -> interconnection */}
@@ -767,16 +790,18 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           {/* Solar interconnection to the service bus */}
           <Wire pts={[[L.acIsoCx, L.solarTapY], [L.busX, L.solarTapY]]} />
           <Dot x={L.busX} y={L.solarTapY} />
+          {multiInverter && (
+            <Txt x={L.busX - 8} y={L.solarTapY + 20} size={12} anchor="end">
+              SOLAR MAIN DISCONNECT: {calc.acMainDisconnectAmps} AT
+            </Txt>
+          )}
           <Callout
             x={L.acIsoCx + 30}
             y={L.solarTapY}
             side="right"
             width={200}
             onHorizontalWire
-            lines={[
-              `${eff.acBreakerPoles} - ${eff.acCableSizeMm2}mm² THHN, 1 - ${eff.acEgcSizeMm2}mm²`,
-              `TW (G) IN ${eff.acConduitSizeMm}mm Ø ${acConduit}`,
-            ]}
+            lines={acCalloutLines}
           />
 
           {/* Service entrance -> bi-directional meter -> main service */}
@@ -869,10 +894,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             side="right"
             width={200}
             onHorizontalWire
-            lines={[
-              `${eff.acBreakerPoles} - ${eff.acCableSizeMm2}mm² THHN, 1 - ${eff.acEgcSizeMm2}mm²`,
-              `TW (G) IN ${eff.acConduitSizeMm}mm Ø ${acConduit}`,
-            ]}
+            lines={acCalloutLines}
           />
         </g>
       )}
