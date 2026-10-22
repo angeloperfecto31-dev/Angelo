@@ -82,6 +82,14 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const [cadTheme, setCadTheme] = useState<"cad_white" | "blueprint" | "cad_dark">("cad_white");
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setCanvasWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
   // Synchronized System SLD Panel Data Engine
@@ -213,11 +221,151 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const stringsCount = Math.max(1, calc.effective.numberOfStrings || 1);
 
   // Sheet size follows the pictorial diagram (rows per string, battery) plus the notes / title block band
-  const pictorialTop = 110;
+  const pictorialTop = 116;
   const pictorialLayout = computePictorialLayout(config, calc, pictorialTop);
-  const notesHeight = 185;
   const svgWidth = 2000;
-  const svgHeight = Math.max(1100, pictorialLayout.bottom + notesHeight + 32 + 30);
+
+  // ---------- Sheet notes & title block band (wrapped monospace text; the band grows to fit) ----------
+  const SHEET_FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  const NOTE_FS = 12;
+  const NOTE_LINE_H = 16;
+  const NOTE_CHAR_W = NOTE_FS * 0.62; // monospace advance with margin
+  const notesX = 44;
+  const notesWidth = 1440;
+  const notesColW = notesWidth / 3;
+  const notesCharsPerLine = Math.floor((notesColW - 26) / NOTE_CHAR_W);
+  const tbX = 1496;
+  const tbWidth = 460;
+
+  const wrapText = (text: string, maxChars: number, firstLineIndent = 0) => {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let cur = "";
+    for (const w of words) {
+      const limit = lines.length === 0 ? maxChars - firstLineIndent : maxChars;
+      if (!cur) cur = w;
+      else if ((cur + " " + w).length <= limit) cur += " " + w;
+      else {
+        lines.push(cur);
+        cur = w;
+      }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+
+  const sheetNotes = useMemo(() => {
+    const eff = calc.effective;
+    const utilityName = (config.netMetering?.utilityProvider || "DISTRIBUTION UTILITY").toUpperCase();
+    const sysV = config.utilityVoltage || 230;
+    const sysPh = isThreePhase ? "3PH 3W" : "1PH 2W";
+    const dcLimit = config.cabling?.dcMaxDropPercent ?? 2.0;
+    const acLimit = config.cabling?.acMaxDropPercent ?? 1.5;
+    const mainA = linkedPanelData.mainFeeder.cb;
+    const busA = linkedPanelData.mainFeeder.af || config.serviceCapacityAmps || 200;
+    const infeed = mainA + eff.acBreakerAtAmps;
+    const busMax = Math.round(busA * 1.2);
+    const busOk = infeed <= busMax;
+    const columns: Array<{ title: string; items: Array<{ label: string; text: string; highlight?: boolean }> }> = [
+      {
+        title: "I. GENERAL DRAWING & CODE MANDATES (PEC 2017)",
+        items: [
+          { label: "CODE COMPLIANCE", text: "ALL WORKS SHALL STRICTLY CONFORM WITH PEC 2017 PARTS 1 & 2 (ART. 6.90 SOLAR PV), RA 7920 (EE LAW), AND RA 9513 (RE ACT)." },
+          { label: "PEE SUPERVISION", text: "INSTALLATION SHALL BE EXECUTED UNDER DIRECT SUPERVISION OF A DULY LICENSED PROFESSIONAL ELECTRICAL ENGR. (PEE)." },
+          { label: "UTILITY PERMITTING", text: `SECURE ELECTRICAL PERMIT, CFEI, AND NET-METERING INTERCONNECTION APPROVAL FROM ${utilityName} PRIOR TO SYSTEM ENERGIZATION.` },
+          { label: "WORKING CLEARANCE", text: "MAINTAIN ≥ 900mm FRONT CLEARANCE, ≥ 750mm WIDTH AND ≥ 2000mm HEADROOM AROUND ALL INVERTERS AND PANELS (PEC 1.10.2.1)." },
+          { label: "SOLID BONDING", text: "METALLIC FRAMES, RACKS, CONDUITS & CASINGS SOLIDLY BONDED TO EGC. EARTH ELECTRODE RESISTANCE SHALL NOT EXCEED 5.0 Ω." },
+          { label: "SAFETY LABELS", text: 'PERMANENT UV-RATED WARNING SIGNS "SOLAR PV SOURCE" AND DIRECTORIES SHALL BE AFFIXED ON ALL DISCONNECTS & METERS (PEC 6.90.6).' },
+        ],
+      },
+      {
+        title: "II. TECHNICAL MATERIAL SPECIFICATIONS",
+        items: [
+          { label: "PV MODULES", text: `${calc.totalModules}x ${calc.selectedModule.manufacturer.toUpperCase()} ${calc.selectedModule.model.toUpperCase()} (${calc.selectedModule.ratedPowerWp}Wp), IEC 61215/61730, IP68 JUNCTION BOX W/ BYPASS DIODES.` },
+          { label: "INVERTER", text: `${eff.inverterQuantity}x ${calc.selectedInverter.manufacturer.toUpperCase()} (${calc.totalInverterAcKw} kW AC), UL 1741, IEEE 1547, IEC 62109, MULTI-MPPT, ANTI-ISLANDING & GFDI INTEGRATED.` },
+          { label: "DC WIRING", text: `2 × ${eff.dcCableSizeMm2} mm² PV1-F / EN 50618 XLPO DC TINNED CU IN ${eff.dcConduitSizeMm}mm CONDUIT. VOLTAGE DROP Vd = ${calc.dcVoltageDropPercent}% (LIMIT ≤ ${dcLimit}%).` },
+          { label: "AC FEEDERS", text: `${eff.acBreakerPoles} × ${eff.acCableSizeMm2} mm² CU THHN/THWN-2 (90°C) IN ${eff.acConduitSizeMm}mm CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (LIMIT ≤ ${acLimit}%).` },
+          { label: "DC PROTECTION", text: `${eff.dcIsolatorRatingAmps}A DC ${config.dcProtection?.isolatorVoltageVolts ?? 1000}V ROTARY ISOLATOR (PEC 6.90.3.1) + ${eff.dcFuseRatingAmps}A ${config.dcProtection?.fuseVoltageVolts ?? 1000}V gPV PROTECTION + TYPE 2 DC SPD (${config.dcProtection?.spdInKa ?? 20}/${config.dcProtection?.spdImaxKa ?? 40}kA).` },
+          { label: "AC PROTECTION", text: `${eff.acBreakerAtAmps}A AT (${eff.acBreakerPoles}P) BREAKER (${linkedPanelData.mainFeeder.kaic} kAIC) + AC TYPE 2 SPD RATED FOR ${sysV}V ${sysPh} AT THE MAIN BUSBAR INTERCONNECTION POINT.` },
+        ],
+      },
+      {
+        title: "III. INTERCONNECTION, SAFETY & COMMISSIONING",
+        items: [
+          {
+            label: "120% BUSBAR RULE",
+            text: `MAIN (${mainA}A) + SOLAR (${eff.acBreakerAtAmps}A) = ${infeed}A ${busOk ? "≤" : ">"} 120% BUS CAPACITY (${busMax}A). PEC 6.90.7.2(D) ${busOk ? "PASS" : "EXCEEDED - REVISE DESIGN"}.`,
+            highlight: true,
+          },
+          { label: "RAPID SHUTDOWN", text: "PV CIRCUITS ON OR IN BUILDINGS SHALL REDUCE ARRAY BOUNDARY CONDUCTORS TO ≤ 80V WITHIN 30 SECONDS OF INITIATION (PEC 6.90.2.3)." },
+          { label: "ANTI-ISLANDING", text: "INVERTER TRIPS WITHIN ≤ 2.0s UPON LOSS OF UTILITY GRID VOLTAGE OR ABNORMAL FREQUENCY AS PER IEEE 1547 & PEC 6.90.7.1." },
+          { label: "VERIFICATION TESTS", text: "MANDATORY PRE-ENERGIZATION POLARITY CHECK, Voc, Isc, AND INSULATION RESISTANCE TEST (MEGGER > 1.0 MΩ @ 1000V DC TEST)." },
+          { label: "REVENUE METERING", text: "BI-DIRECTIONAL 4-QUADRANT SMART NET-METER AND VISIBLE-BREAK LOCKABLE AC DISCONNECT ACCESSIBLE 24/7 TO DU CREW." },
+          { label: "AS-BUILT DOSSIER", text: "COMPLETE O&M MANUALS, FACTORY WARRANTIES, AND PEE SIGNED/SEALED AS-BUILT SLD MUST BE SUBMITTED TO THE OWNER." },
+        ],
+      },
+    ];
+    // Wrap each item; the bold "n. LABEL:" prefix shares the first line
+    const wrapped = columns.map((col) => ({
+      ...col,
+      items: col.items.map((it, i) => {
+        const prefix = `${i + 1}. ${it.label}: `;
+        const lines = wrapText(`${prefix}${it.text}`, notesCharsPerLine);
+        return { ...it, prefix, lines };
+      }),
+    }));
+    const maxLines = Math.max(...wrapped.map((c) => c.items.reduce((n, it) => n + it.lines.length, 0)));
+    const height = 30 + 26 + 12 + maxLines * NOTE_LINE_H + 6 * 7 + 12;
+    return { columns: wrapped, height, busOk };
+  }, [calc, config, linkedPanelData, isThreePhase, notesCharsPerLine]);
+
+  // Title block: long values wrap onto extra lines (rows grow) instead of being cut off
+  const TB_VALUE_FS = 14;
+  const TB_LINE_H = 18;
+  const titleBlock = useMemo(() => {
+    const sysTypeClean = (config.systemType || "GRID-TIED").toUpperCase().replace(/_/g, " ");
+    const rows: Array<Array<{ label: string; value: string; highlight?: boolean; big?: boolean }>> = [
+      [
+        { label: "PROJECT TITLE:", value: (config.projectName || "SOLAR PV INSTALLATION").toUpperCase().trim() },
+        { label: "LOCATION:", value: (config.projectLocation || "PHILIPPINES").toUpperCase().trim() },
+      ],
+      [
+        { label: "CAPACITY:", value: `${calc.totalDcCapacityKwp} kWp DC / ${calc.totalInverterAcKw} kW AC` },
+        { label: "SYSTEM TYPE:", value: `${sysTypeClean} (${config.utilityVoltage}V ${isThreePhase ? "3PH" : "1PH"})` },
+      ],
+      [
+        { label: "DESIGNED BY:", value: (config.designerName || "ELECTRICALPH").toUpperCase() },
+        { label: "CHECKED / APPROVED BY:", value: "PEE REG. ENGR.", highlight: true },
+      ],
+      [
+        { label: "SCALE:", value: "N.T.S." },
+        { label: "DATE:", value: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }) },
+        { label: "REVISION:", value: "REV 0" },
+        { label: "SHEET NO:", value: "E-01", highlight: true, big: true },
+      ],
+    ];
+    let y = 30;
+    const laidOut = rows.map((cells) => {
+      const cellW = tbWidth / cells.length;
+      const maxChars = Math.max(4, Math.floor((cellW - 20) / (TB_VALUE_FS * 0.62)));
+      const wrapped = cells.map((c) => ({ ...c, lines: c.big ? [c.value] : wrapText(c.value, maxChars) }));
+      const lineCount = Math.max(...wrapped.map((c) => c.lines.length));
+      const h = 30 + lineCount * TB_LINE_H + 8;
+      const row = { y, h, cellW, cells: wrapped };
+      y += h;
+      return row;
+    });
+    return { rows: laidOut, height: y };
+  }, [calc, config, isThreePhase]);
+  const tbHeight = titleBlock.height;
+
+  const bandHeight = Math.max(showGeneralNotes ? sheetNotes.height : 0, showTitleBlock ? tbHeight : 0);
+  const svgHeight = Math.max(1100, pictorialLayout.bottom + (bandHeight ? bandHeight + 40 : 0) + 50);
+  // Canvas height follows the sheet proportions so "Fit" uses the full width (text stays legible)
+  const canvasHeight = canvasWidth
+    ? Math.round(Math.min(Math.max(520, ((canvasWidth - 32) * svgHeight) / svgWidth + 40), 1600))
+    : 720;
+  const bandTop = svgHeight - 44 - bandHeight;
 
   // Pan & Zoom handlers
   const fitToScreen = () => {
@@ -284,7 +432,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
 
   useEffect(() => {
     fitToScreen();
-  }, [isMaximized, stringsCount, hasBattery]);
+  }, [isMaximized, stringsCount, hasBattery, canvasHeight, svgHeight]);
 
   // Export handlers
   const handleDownloadPNG = async () => {
@@ -467,8 +615,11 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         width={svgWidth}
         height={svgHeight}
-        className="w-full h-auto select-none font-mono"
+        className="select-none font-mono"
         style={{
+          width: svgWidth,
+          height: svgHeight,
+          maxWidth: "none",
           backgroundColor: themeColors.bg,
           color: themeColors.text,
         }}
@@ -507,39 +658,39 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         {showSheetBorder && (
           <g>
             <rect
-              x="20"
-              y="20"
-              width={svgWidth - 40}
-              height={svgHeight - 40}
+              x="12"
+              y="12"
+              width={svgWidth - 24}
+              height={svgHeight - 24}
               fill="none"
               stroke={themeColors.border}
               strokeWidth="2.5"
             />
             <rect
-              x="28"
-              y="28"
-              width={svgWidth - 56}
-              height={svgHeight - 56}
+              x="34"
+              y="34"
+              width={svgWidth - 68}
+              height={svgHeight - 68}
               fill="none"
               stroke={themeColors.border}
               strokeWidth="1.2"
             />
-            {/* Grid Coordinates (1-8 & A-E) */}
+            {/* Grid Coordinates (1-8 & A-E), centred in the margin between the two border lines */}
             {[1, 2, 3, 4, 5, 6, 7, 8].map((num, i) => {
-              const xPos = 28 + (i + 0.5) * ((svgWidth - 56) / 8);
+              const xPos = 34 + (i + 0.5) * ((svgWidth - 68) / 8);
               return (
                 <g key={`coord-x-${num}`}>
-                  <text x={xPos} y="24" fontSize="9px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{num}</text>
-                  <text x={xPos} y={svgHeight - 16} fontSize="9px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{num}</text>
+                  <text x={xPos} y="28" fontSize="13px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{num}</text>
+                  <text x={xPos} y={svgHeight - 18} fontSize="13px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{num}</text>
                 </g>
               );
             })}
             {["A", "B", "C", "D", "E"].map((letter, i) => {
-              const yPos = 28 + (i + 0.5) * ((svgHeight - 56) / 5);
+              const yPos = 34 + (i + 0.5) * ((svgHeight - 68) / 5) + 5;
               return (
                 <g key={`coord-y-${letter}`}>
-                  <text x="24" y={yPos} fontSize="9px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{letter}</text>
-                  <text x={svgWidth - 16} y={yPos} fontSize="9px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{letter}</text>
+                  <text x="23" y={yPos} fontSize="13px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{letter}</text>
+                  <text x={svgWidth - 23} y={yPos} fontSize="13px" fontWeight="bold" fill={themeColors.textMuted} textAnchor="middle">{letter}</text>
                 </g>
               );
             })}
@@ -549,8 +700,8 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         {/* Top Header Text */}
         <text
           x={svgWidth / 2}
-          y="60"
-          fontSize="18px"
+          y="64"
+          fontSize="22px"
           fontWeight="900"
           letterSpacing="1.5"
           fill={themeColors.text}
@@ -560,8 +711,8 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         </text>
         <text
           x={svgWidth / 2}
-          y="78"
-          fontSize="11px"
+          y="88"
+          fontSize="14px"
           fontWeight="bold"
           fill={themeColors.textMuted}
           textAnchor="middle"
@@ -598,250 +749,111 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         {/* ========================================================================= */}
         {/* 8. GENERAL NOTES & TECHNICAL SPECIFICATIONS (CAD SHEET BLOCK)             */}
         {/* ========================================================================= */}
-        {showGeneralNotes && (() => {
-          const notesWidth = 1260;
-          const notesHeight = 185;
-          const notesX = 225;
-          const notesY = svgHeight - notesHeight - 32;
-          const colW = notesWidth / 3; // 420px per column
-          const midNotesX = notesWidth / 2;
+        {showGeneralNotes && (
+          <g
+            id="sld-general-notes"
+            className="cursor-pointer transition-opacity hover:opacity-95"
+            onClick={() => setSelectedElement("general_notes")}
+            transform={`translate(${notesX}, ${bandTop})`}
+            fontFamily={SHEET_FONT}
+          >
+            <rect x="0" y="0" width={notesWidth} height={bandHeight} fill={themeColors.equipmentFill} stroke={themeColors.border} strokeWidth="1.8" />
 
-          const utilityName = (config.netMetering?.utilityProvider || "DISTRIBUTION UTILITY").toUpperCase();
-          const sysV = config.utilityVoltage || 230;
-          const sysPh = isThreePhase ? "3PH 3W" : "1PH 2W";
+            {/* Main Banner Header */}
+            <rect x="0" y="0" width={notesWidth} height="30" fill={themeColors.border} />
+            <text x="14" y="20" fontSize="13px" fontWeight="900" fill="#ffffff" letterSpacing="0.4">
+              GENERAL NOTES &amp; TECHNICAL SPECIFICATIONS (PEC 2017 PART 1 ART. 6.90 / RA 7920 / RA 9513)
+            </text>
+            <text x={notesWidth - 14} y="20" fontSize="11px" fontWeight="bold" fill="#ffffff" textAnchor="end">
+              [CLICK FOR FULL CITATIONS]
+            </text>
 
-          return (
-            <g
-              id="sld-general-notes"
-              className="cursor-pointer transition-opacity hover:opacity-95"
-              onClick={() => setSelectedElement("general_notes")}
-              transform={`translate(${notesX}, ${notesY})`}
-            >
-              {/* Outer Enclosure */}
-              <rect
-                x="0"
-                y="0"
-                width={notesWidth}
-                height={notesHeight}
-                fill={themeColors.equipmentFill}
-                stroke={themeColors.border}
-                strokeWidth="1.8"
-              />
-
-              {/* Main Banner Header */}
-              <rect x="0" y="0" width={notesWidth} height="22" fill={themeColors.border} />
-              <text x={midNotesX} y="15" fontSize="10px" fontWeight="900" fill="#ffffff" textAnchor="middle" letterSpacing="0.8">
-                GENERAL NOTES &amp; TECHNICAL SPECIFICATIONS (PEC 2017 PART 1 ART. 6.90 / RA 7920 / RA 9513)
-              </text>
-              <text x={notesWidth - 14} y="15" fontSize="8px" fontWeight="bold" fill="#ffffff" textAnchor="end">
-                [CLICK FOR FULL CITATIONS &amp; EXPORT]
-              </text>
-
-              {/* Vertical Column Separators */}
-              <line x1={colW} y1="22" x2={colW} y2={notesHeight} stroke={themeColors.line} strokeWidth="1" />
-              <line x1={colW * 2} y1="22" x2={colW * 2} y2={notesHeight} stroke={themeColors.line} strokeWidth="1" />
-
-              {/* Sub-Header Banners */}
-              <rect x="0" y="22" width={colW} height="17" fill={themeColors.badgeFill} stroke={themeColors.line} strokeWidth="0.6" />
-              <text x="12" y="34" fontSize="8px" fontWeight="900" fill={themeColors.textHighlight}>
-                I. GENERAL DRAWING &amp; CODE MANDATES (PEC 2017)
-              </text>
-
-              <rect x={colW} y="22" width={colW} height="17" fill={themeColors.badgeFill} stroke={themeColors.line} strokeWidth="0.6" />
-              <text x={colW + 12} y="34" fontSize="8px" fontWeight="900" fill={themeColors.textHighlight}>
-                II. TECHNICAL MATERIAL SPECIFICATIONS
-              </text>
-
-              <rect x={colW * 2} y="22" width={colW} height="17" fill={themeColors.badgeFill} stroke={themeColors.line} strokeWidth="0.6" />
-              <text x={colW * 2 + 12} y="34" fontSize="8px" fontWeight="900" fill={themeColors.textHighlight}>
-                III. INTERCONNECTION, SAFETY &amp; COMMISSIONING
-              </text>
-
-              {/* Column 1: General Notes */}
-              <g fontSize="6.8px" fill={themeColors.text}>
-                <text x="12" y="50" fontWeight="bold">1. CODE COMPLIANCE:</text>
-                <text x="82" y="50" fill={themeColors.textMuted}>ALL WORKS SHALL STRICTLY CONFORM WITH PEC 2017</text>
-                <text x="20" y="60" fill={themeColors.textMuted}>PARTS 1 &amp; 2 (ART. 6.90 SOLAR PV), RA 7920 (EE LAW), AND RA 9513 (RE ACT).</text>
-
-                <text x="12" y="72" fontWeight="bold">2. PEE SUPERVISION:</text>
-                <text x="88" y="72" fill={themeColors.textMuted}>INSTALLATION SHALL BE EXECUTED UNDER DIRECT</text>
-                <text x="20" y="82" fill={themeColors.textMuted}>SUPERVISION OF A DULY LICENSED PROFESSIONAL ELECTRICAL ENGR. (PEE).</text>
-
-                <text x="12" y="94" fontWeight="bold">3. UTILITY PERMITTING:</text>
-                <text x="96" y="94" fill={themeColors.textMuted}>SECURE ELECTRICAL PERMIT, CFEI, AND NET-METERING</text>
-                <text x="20" y="104" fill={themeColors.textMuted}>INTERCONNECTION APPROVAL FROM {utilityName} PRIOR TO SYSTEM ENERGIZATION.</text>
-
-                <text x="12" y="116" fontWeight="bold">4. WORKING CLEARANCE:</text>
-                <text x="98" y="116" fill={themeColors.textMuted}>MAINTAIN ≥ 900mm FRONT CLEARANCE, ≥ 750mm WIDTH</text>
-                <text x="20" y="126" fill={themeColors.textMuted}>AND ≥ 2000mm HEADROOM AROUND ALL INVERTERS AND PANELS (PEC 1.10.2.1).</text>
-
-                <text x="12" y="138" fontWeight="bold">5. SOLID BONDING:</text>
-                <text x="78" y="138" fill={themeColors.textMuted}>METALLIC FRAMES, RACKS, CONDUITS &amp; CASINGS SOLIDLY</text>
-                <text x="20" y="148" fill={themeColors.textMuted}>BONDED TO EGC. EARTH ELECTRODE RESISTANCE SHALL NOT EXCEED 5.0 Ω.</text>
-
-                <text x="12" y="160" fontWeight="bold">6. SAFETY LABELS:</text>
-                <text x="76" y="160" fill={themeColors.textMuted}>PERMANENT UV-RATED WARNING SIGNS "SOLAR PV SOURCE"</text>
-                <text x="20" y="170" fill={themeColors.textMuted}>AND DIRECTORIES SHALL BE AFFIXED ON ALL DISCONNECTS &amp; METERS (PEC 6.90.6).</text>
-              </g>
-
-              {/* Column 2: Technical Specifications */}
-              <g fontSize="6.8px" fill={themeColors.text}>
-                <text x={colW + 12} y="50" fontWeight="bold">1. PV MODULES:</text>
-                <text x={colW + 72} y="50" fill={themeColors.textMuted}>{calc.totalModules}x {calc.selectedModule.manufacturer.toUpperCase()} {calc.selectedModule.model.toUpperCase()} ({calc.selectedModule.ratedPowerWp}Wp)</text>
-                <text x={colW + 20} y="60" fill={themeColors.textMuted}>IEC 61215/61730, IP68 JUNCTION BOX W/ BYPASS DIODES, 25-YR WARRANTY.</text>
-
-                <text x={colW + 12} y="72" fontWeight="bold">2. INVERTER:</text>
-                <text x={colW + 62} y="72" fill={themeColors.textMuted}>{calc.effective.inverterQuantity}x {calc.selectedInverter.manufacturer.toUpperCase()} ({calc.totalInverterAcKw} kW AC), UL 1741,</text>
-                <text x={colW + 20} y="82" fill={themeColors.textMuted}>IEEE 1547, IEC 62109, MULTI-MPPT, ANTI-ISLANDING &amp; GFDI INTEGRATED.</text>
-
-                <text x={colW + 12} y="94" fontWeight="bold">3. DC WIRING:</text>
-                <text x={colW + 66} y="94" fill={themeColors.textMuted}>2 × {calc.effective.dcCableSizeMm2} mm² PV1-F / EN 50618 XLPO 1500V DC TINNED CU</text>
-                <text x={colW + 20} y="104" fill={themeColors.textMuted}>IN {calc.effective.dcConduitSizeMm} CONDUIT. VOLTAGE DROP Vd = {calc.dcVoltageDropPercent}% (PEC LIMIT ≤ 2.0%).</text>
-
-                <text x={colW + 12} y="116" fontWeight="bold">4. AC FEEDERS:</text>
-                <text x={colW + 74} y="116" fill={themeColors.textMuted}>{calc.effective.acBreakerPoles} × {calc.effective.acCableSizeMm2} mm² CU THHN/THWN-2 (90°C) IN {calc.effective.acConduitSizeMm}</text>
-                <text x={colW + 20} y="126" fill={themeColors.textMuted}>CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = {calc.acVoltageDropPercent}% (STRICTLY ≤ 1.5%).</text>
-
-                <text x={colW + 12} y="138" fontWeight="bold">5. DC PROTECTION:</text>
-                <text x={colW + 86} y="138" fill={themeColors.textMuted}>{calc.effective.dcIsolatorRatingAmps}A DC 1000V ROTARY SWITCH (PEC 6.90.3.1) +</text>
-                <text x={colW + 20} y="148" fill={themeColors.textMuted}>{calc.effective.dcFuseRatingAmps}A 1000V gPV FUSES + TYPE 2 DC SURGE ARRESTER (SPD 20/40kA).</text>
-
-                <text x={colW + 12} y="160" fontWeight="bold">6. AC PROTECTION:</text>
-                <text x={colW + 86} y="160" fill={themeColors.textMuted}>{calc.effective.acBreakerAtAmps}A AT ({calc.effective.acBreakerPoles}P) MCCB ({linkedPanelData.mainFeeder.kaic} kAIC) + AC TYPE 2 SPD</text>
-                <text x={colW + 20} y="170" fill={themeColors.textMuted}>RATED FOR {sysV}V {sysPh} AT THE MAIN BUSBAR INTERCONNECTION POINT.</text>
-              </g>
-
-              {/* Column 3: Interconnection & Commissioning */}
-              <g fontSize="6.8px" fill={themeColors.text}>
-                <text x={colW * 2 + 12} y="50" fontWeight="bold">1. 120% BUSBAR RULE:</text>
-                <text x={colW * 2 + 96} y="50" fill={themeColors.textMuted}>MAIN ({linkedPanelData.mainFeeder.cb}A) + SOLAR ({calc.effective.acBreakerAtAmps}A) = {linkedPanelData.mainFeeder.cb + calc.effective.acBreakerAtAmps}A</text>
-                <text x={colW * 2 + 20} y="60" fill={themeColors.textHighlight} fontWeight="bold">≤ 120% BUS CAPACITY ({Math.round((linkedPanelData.mainFeeder.af || config.serviceCapacityAmps || 200) * 1.2)}A MAX RATING). PEC 6.90.7.2(D) PASS.</text>
-
-                <text x={colW * 2 + 12} y="72" fontWeight="bold">2. RAPID SHUTDOWN:</text>
-                <text x={colW * 2 + 90} y="72" fill={themeColors.textMuted}>SYSTEM INITIATES RAPID CONTROL (PEC 6.90.2.3)</text>
-                <text x={colW * 2 + 20} y="82" fill={themeColors.textMuted}>TO REDUCE ARRAY BOUNDARY CONDUCTORS TO ≤ 80V WITHIN 30 SECONDS.</text>
-
-                <text x={colW * 2 + 12} y="94" fontWeight="bold">3. ANTI-ISLANDING:</text>
-                <text x={colW * 2 + 86} y="94" fill={themeColors.textMuted}>INVERTER TRIPS WITHIN ≤ 2.0s UPON LOSS OF UTILITY</text>
-                <text x={colW * 2 + 20} y="104" fill={themeColors.textMuted}>GRID VOLTAGE OR ABNORMAL FREQUENCY AS PER IEEE 1547 &amp; PEC 6.90.7.1.</text>
-
-                <text x={colW * 2 + 12} y="116" fontWeight="bold">4. VERIFICATION TESTS:</text>
-                <text x={colW * 2 + 98} y="116" fill={themeColors.textMuted}>MANDATORY PRE-ENERGIZATION POLARITY CHECK, Voc,</text>
-                <text x={colW * 2 + 20} y="126" fill={themeColors.textMuted}>Isc, AND INSULATION RESISTANCE TEST (MEGGER &gt; 1.0 MΩ @ 1000V DC TEST).</text>
-
-                <text x={colW * 2 + 12} y="138" fontWeight="bold">5. REVENUE METERING:</text>
-                <text x={colW * 2 + 98} y="138" fill={themeColors.textMuted}>BI-DIRECTIONAL 4-QUADRANT SMART NET-METER AND</text>
-                <text x={colW * 2 + 20} y="148" fill={themeColors.textMuted}>VISIBLE-BREAK LOCKABLE AC DISCONNECT ACCESSIBLE 24/7 TO DU CREW.</text>
-
-                <text x={colW * 2 + 12} y="160" fontWeight="bold">6. AS-BUILT DOSSIER:</text>
-                <text x={colW * 2 + 88} y="160" fill={themeColors.textMuted}>COMPLETE O&amp;M MANUALS, FACTORY WARRANTIES,</text>
-                <text x={colW * 2 + 20} y="170" fill={themeColors.textMuted}>AND PEE SIGNED/SEALED AS-BUILT SLD MUST BE SUBMITTED TO THE OWNER.</text>
-              </g>
-            </g>
-          );
-        })()}
+            {sheetNotes.columns.map((col, ci) => {
+              const cx = ci * notesColW;
+              let lineNo = 0;
+              return (
+                <g key={col.title}>
+                  {ci > 0 && <line x1={cx} y1="30" x2={cx} y2={bandHeight} stroke={themeColors.line} strokeWidth="1" />}
+                  <rect x={cx} y="30" width={notesColW} height="26" fill={themeColors.badgeFill} stroke={themeColors.line} strokeWidth="0.6" />
+                  <text x={cx + 12} y="48" fontSize="12px" fontWeight="900" fill={themeColors.textHighlight}>
+                    {col.title}
+                  </text>
+                  {col.items.map((it, ii) => {
+                    const y0 = 56 + 24 + lineNo * NOTE_LINE_H + ii * 7;
+                    lineNo += it.lines.length;
+                    const bodyFill = it.highlight ? (sheetNotes.busOk ? themeColors.textHighlight : "#dc2626") : themeColors.textMuted;
+                    const bodyWeight = it.highlight ? "bold" : "normal";
+                    return (
+                      <g key={ii} fontSize={`${NOTE_FS}px`}>
+                        {it.lines.map((ln, li) => {
+                          const y = y0 + li * NOTE_LINE_H;
+                          if (li === 0 && ln.startsWith(it.prefix.trim())) {
+                            return (
+                              <text key={li} x={cx + 12} y={y} fill={themeColors.text}>
+                                <tspan fontWeight="bold">{it.prefix}</tspan>
+                                <tspan fill={bodyFill} fontWeight={bodyWeight}>
+                                  {ln.slice(it.prefix.length)}
+                                </tspan>
+                              </text>
+                            );
+                          }
+                          return (
+                            <text key={li} x={cx + 12} y={y} fill={bodyFill} fontWeight={bodyWeight}>
+                              {ln}
+                            </text>
+                          );
+                        })}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </g>
+        )}
 
         {/* ========================================================================= */}
         {/* 9. ENGINEERING TITLE BLOCK (BOTTOM RIGHT)                                */}
         {/* ========================================================================= */}
-        {showTitleBlock && (() => {
-          const tbWidth = 465;
-          const tbHeight = 185;
-          const tbX = 1505;
-          const tbY = svgHeight - tbHeight - 32;
-          const midX = tbWidth / 2;
-          const colW = tbWidth / 4;
-
-          const projNameRaw = (config.projectName || "SOLAR PV INSTALLATION").toUpperCase().trim();
-          const projNameDisplay = projNameRaw.length > 25 ? projNameRaw.slice(0, 24) + "…" : projNameRaw;
-          const projNameFontSize = projNameDisplay.length > 18 ? "8px" : "9.5px";
-
-          const locRaw = (config.projectLocation || "PHILIPPINES").toUpperCase().trim();
-          const locDisplay = locRaw.length > 25 ? locRaw.slice(0, 24) + "…" : locRaw;
-
-          const sysTypeClean = (config.systemType || "GRID-TIED").toUpperCase().replace(/_/g, " ");
-          const sysTypeDisplay = `${sysTypeClean} (${config.utilityVoltage}V ${isThreePhase ? "3PH" : "1PH"})`;
-          const sysTypeFontSize = sysTypeDisplay.length > 22 ? "7.5px" : "8.5px";
-
-          return (
-            <g id="sld-title-block" transform={`translate(${tbX}, ${tbY})`}>
-              {/* Outer Enclosure */}
-              <rect
-                x="0"
-                y="0"
-                width={tbWidth}
-                height={tbHeight}
-                fill={themeColors.equipmentFill}
-                stroke={themeColors.border}
-                strokeWidth="1.8"
-              />
-              {/* Header Bar */}
-              <rect x="0" y="0" width={tbWidth} height="22" fill={themeColors.border} />
-              <text x={midX} y="15" fontSize="9.5px" fontWeight="900" fill="#ffffff" textAnchor="middle">
-                ELECTRICAL ENGINEERING TITLE BLOCK (RA 7920 / RA 9513)
-              </text>
-
-              {/* Row 2: Project & Location */}
-              <line x1="0" y1="62" x2={tbWidth} y2="62" stroke={themeColors.line} strokeWidth="0.8" />
-              <line x1={midX} y1="22" x2={midX} y2="62" stroke={themeColors.line} strokeWidth="0.8" />
-              
-              <text x="10" y="36" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>PROJECT TITLE:</text>
-              <text x="10" y="52" fontSize={projNameFontSize} fontWeight="black" fill={themeColors.text}>{projNameDisplay}</text>
-
-              <text x={midX + 10} y="36" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>LOCATION:</text>
-              <text x={midX + 10} y="52" fontSize="9px" fontWeight="bold" fill={themeColors.text}>{locDisplay}</text>
-
-              {/* Row 3: Capacity & System Type */}
-              <line x1="0" y1="102" x2={tbWidth} y2="102" stroke={themeColors.line} strokeWidth="0.8" />
-              <line x1={midX} y1="62" x2={midX} y2="102" stroke={themeColors.line} strokeWidth="0.8" />
-
-              <text x="10" y="76" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>CAPACITY:</text>
-              <text x="10" y="92" fontSize="9.5px" fontWeight="bold" fill={themeColors.text}>
-                {calc.totalDcCapacityKwp} kWp DC / {calc.totalInverterAcKw} kW AC
-              </text>
-
-              <text x={midX + 10} y="76" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>SYSTEM TYPE:</text>
-              <text x={midX + 10} y="92" fontSize={sysTypeFontSize} fontWeight="bold" fill={themeColors.text}>
-                {sysTypeDisplay}
-              </text>
-
-              {/* Row 4: Designer & Reviewer */}
-              <line x1="0" y1="142" x2={tbWidth} y2="142" stroke={themeColors.line} strokeWidth="0.8" />
-              <line x1={midX} y1="102" x2={midX} y2="142" stroke={themeColors.line} strokeWidth="0.8" />
-
-              <text x="10" y="116" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>DESIGNED BY:</text>
-              <text x="10" y="132" fontSize="9px" fontWeight="bold" fill={themeColors.text}>
-                {(config.designerName || "ELECTRICALPH").toUpperCase().slice(0, 24)}
-              </text>
-
-              <text x={midX + 10} y="116" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>CHECKED / APPROVED BY:</text>
-              <text x={midX + 10} y="132" fontSize="8.5px" fontWeight="bold" fill={themeColors.textHighlight}>
-                PEE REG. ENGR. (PEC APPROVED)
-              </text>
-
-              {/* Row 5: Scale, Date, Revision, Sheet No */}
-              <line x1={colW} y1="142" x2={colW} y2={tbHeight} stroke={themeColors.line} strokeWidth="0.8" />
-              <line x1={colW * 2} y1="142" x2={colW * 2} y2={tbHeight} stroke={themeColors.line} strokeWidth="0.8" />
-              <line x1={colW * 3} y1="142" x2={colW * 3} y2={tbHeight} stroke={themeColors.line} strokeWidth="0.8" />
-              
-              <text x="10" y="156" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>SCALE:</text>
-              <text x="10" y="172" fontSize="9px" fontWeight="bold" fill={themeColors.text}>N.T.S.</text>
-
-              <text x={colW + 10} y="156" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>DATE:</text>
-              <text x={colW + 10} y="172" fontSize="9px" fontWeight="bold" fill={themeColors.text}>
-                {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-              </text>
-
-              <text x={colW * 2 + 10} y="156" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>REVISION:</text>
-              <text x={colW * 2 + 10} y="172" fontSize="9px" fontWeight="bold" fill={themeColors.text}>REV 0</text>
-
-              <text x={colW * 3 + 10} y="156" fontSize="7.5px" fontWeight="bold" fill={themeColors.textMuted}>SHEET NO:</text>
-              <text x={colW * 3 + colW / 2} y="174" fontSize="15px" fontWeight="black" fill={themeColors.textHighlight} textAnchor="middle">
-                E-01
-              </text>
-            </g>
-          );
-        })()}
+        {showTitleBlock && (
+          <g id="sld-title-block" transform={`translate(${tbX}, ${bandTop})`} fontFamily={SHEET_FONT}>
+            <rect x="0" y="0" width={tbWidth} height={bandHeight} fill={themeColors.equipmentFill} stroke={themeColors.border} strokeWidth="1.8" />
+            <rect x="0" y="0" width={tbWidth} height="30" fill={themeColors.border} />
+            <text x={tbWidth / 2} y="20" fontSize="12px" fontWeight="900" fill="#ffffff" textAnchor="middle">
+              ENGINEERING TITLE BLOCK (RA 7920 / RA 9513)
+            </text>
+            {titleBlock.rows.map((row, ri) => (
+              <g key={ri}>
+                {ri < titleBlock.rows.length - 1 && (
+                  <line x1="0" y1={row.y + row.h} x2={tbWidth} y2={row.y + row.h} stroke={themeColors.line} strokeWidth="0.8" />
+                )}
+                {row.cells.map((c, ci) => (
+                  <g key={ci}>
+                    {ci > 0 && (
+                      <line x1={ci * row.cellW} y1={row.y} x2={ci * row.cellW} y2={row.y + row.h} stroke={themeColors.line} strokeWidth="0.8" />
+                    )}
+                    <text x={ci * row.cellW + 10} y={row.y + 19} fontSize="11px" fontWeight="bold" fill={themeColors.textMuted}>
+                      {c.label}
+                    </text>
+                    {c.lines.map((ln, li) => (
+                      <text
+                        key={li}
+                        x={c.big ? ci * row.cellW + row.cellW / 2 : ci * row.cellW + 10}
+                        y={row.y + 40 + li * TB_LINE_H}
+                        fontSize={c.big ? "18px" : `${TB_VALUE_FS}px`}
+                        fontWeight="bold"
+                        textAnchor={c.big ? "middle" : "start"}
+                        fill={c.highlight ? themeColors.textHighlight : themeColors.text}
+                      >
+                        {ln}
+                      </text>
+                    ))}
+                  </g>
+                ))}
+              </g>
+            ))}
+          </g>
+        )}
       </svg>
     );
   };
@@ -1086,7 +1098,8 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       {/* 3. Interactive CAD Canvas Container */}
       <div
         ref={containerRef}
-        className="relative w-full h-[720px] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-950 cursor-grab active:cursor-grabbing flex items-center justify-center"
+        style={{ height: canvasHeight }}
+        className="relative w-full rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-950 cursor-grab active:cursor-grabbing flex items-center justify-center"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -1103,12 +1116,12 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         >
           {renderSLDContent()}
         </div>
+      </div>
 
-        {/* Hover / Inspector Floating Callout */}
-        <div className="absolute bottom-4 left-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 shadow-md flex items-center gap-2">
-          <MousePointer className="w-3.5 h-3.5 text-amber-500" />
-          <span>Click any equipment on the drawing to inspect engineering values and specifications.</span>
-        </div>
+      {/* Inspector hint (below the canvas so it never covers the drawing) */}
+      <div className="mt-2 px-1 text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
+        <MousePointer className="w-3.5 h-3.5 text-amber-500" />
+        <span>Click any equipment on the drawing to inspect engineering values and specifications.</span>
       </div>
 
       {/* 4. Component Inspector / Details Panel (When element clicked) */}

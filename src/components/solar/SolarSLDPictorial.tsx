@@ -52,10 +52,32 @@ const BREAKER_H = 90;
 const SPD_W = 16;
 const PAIR_PITCH = 70;
 const INV_W = 210;
-const INV_H = 200;
+const INV_H = 222;
 const ISO_H = 90;
 
-type ColSlot = { kind: "module"; index: number } | { kind: "gap" };
+// Text metrics (diagram text is Arial). Widths are estimated generously so labels never collide.
+const NOTE_X = 52;
+const NOTE_FS = 13;
+const TITLE_FS = 15;
+const textWidth = (text: string, fontSize: number) => text.length * fontSize * 0.56;
+/** Word-wraps text into lines that fit maxWidth at the given font size (nothing is cut off). */
+const wrapLines = (text: string, maxWidth: number, fontSize: number) => {
+  const maxChars = Math.max(6, Math.floor(maxWidth / (fontSize * 0.56)));
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of text.split(/\s+/).filter(Boolean)) {
+    if (!cur) cur = w;
+    else if ((cur + " " + w).length <= maxChars) cur += " " + w;
+    else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+};
+
+type ColSlot ={ kind: "module"; index: number } | { kind: "gap" };
 
 /** Columns drawn for one string: all modules up to MAX_COLS, else first modules, a gap, and the last one. */
 function stringColumns(modulesPerString: number): ColSlot[] {
@@ -86,9 +108,24 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
     (config.systemType === "hybrid" || config.systemType === "off-grid") && Boolean(config.battery?.enabled);
   const isOffGrid = config.systemType === "off-grid";
 
-  // Array block
-  const arrayX = 175;
+  // Array block. The string notes sit left of the modules, so the array starts after the widest note.
+  const mod = calc.selectedModule;
+  const noteLines = (n: number) => [
+    `STRING ${n}`,
+    `${eff.modulesPerString} UNITS X ${mod.voc.toFixed(2)}`,
+    `= ${(eff.modulesPerString * mod.voc).toFixed(2)} V`,
+  ];
+  const noteWidth = Math.max(...noteLines(Math.max(1, eff.numberOfStrings)).map((t) => textWidth(t, NOTE_FS)));
+  const arrayX = Math.max(175, NOTE_X + noteWidth + 34);
   const arrayRight = arrayX + cols.length * MODULE_PITCH - (MODULE_PITCH - MODULE_W);
+  const isBifacial = /bi-?facial/i.test(`${mod.manufacturer} ${mod.model}`);
+  const rowTitle = `${eff.modulesPerString} X ${mod.ratedPowerWp} Watts ${isBifacial ? "BI-FACIAL " : ""}Solar Panel in Series Connection`;
+  const hidden = eff.numberOfStrings === 4 ? "STRING 3 IS" : `STRINGS 3 TO ${eff.numberOfStrings - 1} ARE`;
+  const hiddenNote = `${hidden} IDENTICAL (NOT SHOWN) - ${eff.numberOfStrings} STRINGS TOTAL`;
+  // Titles are centred over the modules but never start left of the sheet margin
+  const titleW = Math.max(textWidth(rowTitle, TITLE_FS), hasHiddenStrings ? textWidth(hiddenNote, 14) : 0);
+  const titleCx = Math.max((arrayX + arrayRight) / 2, NOTE_X + titleW / 2);
+  const titleRight = titleCx + titleW / 2;
   const rows = strings.map((s, i) => ({
     stringNo: s,
     y: top + 10 + i * ROW_H + (hasHiddenStrings && i >= 1 ? NOTE_ROW_H : 0),
@@ -96,12 +133,14 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const arrayBottom = rows[rows.length - 1].y + ROW_H - 10;
   const nD = strings.length;
 
-  // Home-run risers (top row uses the rightmost riser so leads never cross)
-  const riserBase = arrayRight + 45;
+  // Home-run risers (top row uses the rightmost riser so leads never cross).
+  // They run down past the lower rows, so they must clear the widest row title.
+  const riserBase = Math.max(arrayRight + 45, titleRight + 24);
   const riserX = (rowIdx: number) => riserBase + (nD - 1 - rowIdx) * RISER_PITCH;
 
   // Protection row
-  const yBk = Math.max(arrayBottom + 95, top + 480);
+  // Minimum keeps the solar tap (and its callout) below the service feeder callout on short drawings
+  const yBk = Math.max(arrayBottom + 95, top + 505);
   const isoX = riserBase - 22;
   const isoW = (nD - 1) * RISER_PITCH + PAIR_GAP + 44 + nD * 10 + 10;
   const bkX0 = isoX + isoW + 50;
@@ -137,12 +176,18 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const epsX = acIsoCx + 70;
   const batBkY = yUnderMax + 60;
   const batBankY = batBkY + BREAKER_H + 30;
-  const labelsBottom = yUnderMax + 70;
+  const dcLabelY = yUnderMax + 34;
+  const labelsBottom = dcLabelY + 4 * 17;
   const bottom = Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150) + 20;
 
   const width = (isOffGrid ? acIsoCx + 300 : panelX + 50) + 20;
 
   return {
+    noteLines,
+    rowTitle,
+    hiddenNote,
+    titleCx,
+    dcLabelY,
     strings,
     hasHiddenStrings,
     cols,
@@ -220,11 +265,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   const hasNetMetering = isGridTied && config.netMetering?.enabled !== false;
   // EPS backup output exists on hybrid inverters; off-grid AC output already feeds the panel board
   const showEps = options.showEpsLoad && isHybrid;
-  const isBifacial = /bi-?facial/i.test(`${mod.manufacturer} ${mod.model}`);
   const dcConduit = config.cabling?.dcCable?.conduitType || "RSC";
   const acConduit = config.cabling?.acCable?.conduitType || "RSC";
   const dcBreakerVolts = config.dcProtection?.fuseVoltageVolts ?? 1000;
   const acSpdVolts = config.acProtection?.spdRatingVolts ?? 440;
+  const modelLines = wrapLines(inv.model, INV_W - 24, 12);
   const invLabel = L.isOffGrid ? "OFF-GRID" : isHybrid ? "HYBRID" : "GRID-TIE";
 
   const font = "Arial, Helvetica, sans-serif";
@@ -245,7 +290,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     <text
       x={p.x}
       y={p.y}
-      fontSize={`${p.size ?? 12}px`}
+      fontSize={`${p.size ?? 14}px`}
       fontFamily={font}
       fontWeight={p.weight ?? "normal"}
       textAnchor={p.anchor ?? "start"}
@@ -300,7 +345,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         )}
         <line x1={x - 4} y1={y + 5} x2={x + 4} y2={y - 5} stroke={stroke} strokeWidth={1.4} />
         {lines.map((t, i) => (
-          <Txt key={i} x={tx} y={y - 7 - (lines.length - 1 - i) * 14} size={11} anchor="middle">
+          <Txt key={i} x={tx} y={y - 7 - (lines.length - 1 - i) * 14} size={13} anchor="middle">
             {t}
           </Txt>
         ))}
@@ -342,7 +387,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     return (
       <g className="cursor-pointer" onClick={onClick}>
         <rect x={x} y={y} width={w} height={ISO_H} rx={3} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
-        <Txt x={cx} y={y + 16} size={11} anchor="middle">
+        <Txt x={cx} y={y + 16} size={13} anchor="middle">
           {label}
         </Txt>
         <circle cx={cx} cy={cy} r={17} fill="none" stroke={stroke} strokeWidth={1.4} />
@@ -388,14 +433,13 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   const Meter = ({ cx, cy, onClick }: { cx: number; cy: number; onClick?: () => void }) => (
     <g className={onClick ? "cursor-pointer" : undefined} onClick={onClick}>
       <circle cx={cx} cy={cy} r={16} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1.6} />
-      <Txt x={cx} y={cy + 5} size={14} anchor="middle">
+      <Txt x={cx} y={cy + 5} size={16} anchor="middle">
         M
       </Txt>
     </g>
   );
 
   // ---------- drawing ----------
-  const stringVoc = (n: number) => (n * mod.voc).toFixed(2);
 
   return (
     <g id="sld-pictorial" transform={`translate(${offsetX}, 0)`} fontFamily={font}>
@@ -404,7 +448,6 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         {L.rows.map((row, rowIdx) => {
           const y0 = row.y;
           const modY = y0 + 56;
-          const titleX = (L.arrayX + L.arrayRight) / 2;
           const modXs = L.cols.map((_, c) => L.arrayX + c * MODULE_PITCH);
           const firstX = modXs[0];
           const lastX = modXs[modXs.length - 1];
@@ -414,23 +457,19 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           const rx = L.riserX(rowIdx);
           return (
             <g key={row.stringNo}>
-              <Txt x={titleX} y={y0 + 14} size={13} anchor="middle">
-                {eff.modulesPerString} X {mod.ratedPowerWp} Watts {isBifacial ? "BI-FACIAL " : ""}Solar Panel in Series Connection
+              <Txt x={L.titleCx} y={y0 + 14} size={TITLE_FS} anchor="middle">
+                {L.rowTitle}
               </Txt>
-              <Txt x={titleX} y={y0 + 31} size={13} anchor="middle">
+              <Txt x={L.titleCx} y={y0 + 32} size={TITLE_FS} anchor="middle">
                 ( STRING {row.stringNo} )
               </Txt>
 
               {/* Left string note */}
-              <Txt x={60} y={modY + 18} size={11}>
-                STRING {row.stringNo}
-              </Txt>
-              <Txt x={60} y={modY + 32} size={11}>
-                {eff.modulesPerString} UNITS X {mod.voc.toFixed(2)}
-              </Txt>
-              <Txt x={60} y={modY + 46} size={11}>
-                = {stringVoc(eff.modulesPerString)} V
-              </Txt>
+              {L.noteLines(row.stringNo).map((t, i) => (
+                <Txt key={i} x={NOTE_X} y={modY + 26 + i * 17} size={NOTE_FS}>
+                  {t}
+                </Txt>
+              ))}
 
               {/* Frame bonding conductor along the top of the row */}
               {options.showGrounding && (
@@ -451,10 +490,10 @@ export const SolarSLDPictorial: React.FC<Props> = ({
                   <PvModule key={c} x={modXs[c]} y={modY} />
                 ) : (
                   <g key={c}>
-                    <Txt x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2} size={16} anchor="middle" weight="bold">
+                    <Txt x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2} size={18} anchor="middle" weight="bold">
                       ...
                     </Txt>
-                    <Txt x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2 + 16} size={9} anchor="middle" muted>
+                    <Txt x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2 + 16} size={12} anchor="middle" muted>
                       {eff.modulesPerString - (L.cols.length - 1)} MORE
                     </Txt>
                   </g>
@@ -505,8 +544,8 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           );
         })}
         {L.hasHiddenStrings && (
-          <Txt x={(L.arrayX + L.arrayRight) / 2} y={L.rows[1].y - 14} size={12} anchor="middle" muted>
-            STRINGS 3 TO {eff.numberOfStrings - 1} IDENTICAL (NOT SHOWN) - {eff.numberOfStrings} STRINGS TOTAL
+          <Txt x={L.titleCx} y={L.rows[1].y - 14} size={14} anchor="middle" muted>
+            {L.hiddenNote}
           </Txt>
         )}
       </g>
@@ -524,7 +563,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
 
       {/* ===================== DC ISOLATOR ===================== */}
       <Isolator x={L.isoX} y={L.yBk} w={L.isoW} label="DC ISO." onClick={() => onSelect("dc_disconnect")} />
-      <Txt x={L.isoX + L.isoW / 2} y={L.yBk + ISO_H + 18} size={11} anchor="middle">
+      <Txt x={L.isoX + L.isoW / 2} y={L.yBk + ISO_H + 18} size={13} anchor="middle">
         {eff.dcIsolatorRatingAmps}A, {config.dcProtection?.isolatorVoltageVolts ?? 1000}V DC
       </Txt>
 
@@ -547,7 +586,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
               <Spd x={sx} y={L.yBk} />
               <line x1={bx + BREAKER_W} y1={L.yBk + BREAKER_H - 9} x2={sx} y2={L.yBk + BREAKER_H - 9} stroke={stroke} strokeWidth={1.1} />
               <Dot x={bx + BREAKER_W} y={L.yBk + BREAKER_H - 9} />
-              <Txt x={bx + BREAKER_W / 2 + 5} y={L.yBk - 5} size={9} muted>
+              <Txt x={bx + BREAKER_W / 2 + 5} y={L.yBk - 5} size={12} muted>
                 S{s}
               </Txt>
               {/* Breaker output to inverter PV input (nearest breaker uses the lowest route) */}
@@ -562,12 +601,17 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             </g>
           );
         })}
-        <Txt x={L.isoX} y={L.yUnderMax + 30} size={11}>
-          {eff.dcFuseRatingAmps} AT, 2P, {dcBreakerVolts}V DC BREAKER{L.nD > 1 ? " (PER STRING)" : ""}
-        </Txt>
-        <Txt x={L.isoX} y={L.yUnderMax + 45} size={11}>
-          DC SPD, Uc = {eff.dcSpdUcVolts}V
-        </Txt>
+        {/* Short stacked lines under the breakers, kept left of the battery / EPS conductors */}
+        {[
+          `${eff.dcFuseRatingAmps} AT, 2P`,
+          `${dcBreakerVolts}V DC BREAKER`,
+          `DC SPD, Uc = ${eff.dcSpdUcVolts}V`,
+          ...(L.nD > 1 ? ["(1 SET PER STRING)"] : []),
+        ].map((t, i) => (
+          <Txt key={i} x={L.bkX(0) - 8} y={L.dcLabelY + i * 17} size={13}>
+            {t}
+          </Txt>
+        ))}
       </g>
 
       {/* ===================== INVERTER ===================== */}
@@ -587,24 +631,19 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         {[0, 1, 2, 3].map((i) => (
           <rect key={i} x={L.invX + INV_W / 2 - 17 + i * 9} y={L.invY + 66} width={7} height={6} fill="none" stroke={stroke} strokeWidth={1} />
         ))}
-        <Txt x={L.invX + INV_W / 2} y={L.invY + 122} size={16} anchor="middle">
+        <Txt x={L.invX + INV_W / 2} y={L.invY + 122} size={18} anchor="middle">
           {invLabel}
         </Txt>
-        <Txt x={L.invX + INV_W / 2} y={L.invY + 142} size={10} anchor="middle" muted>
+        <Txt x={L.invX + INV_W / 2} y={L.invY + 142} size={12} anchor="middle" muted>
           {eff.inverterQuantity}x {inv.manufacturer}
         </Txt>
-        <text
-          x={L.invX + INV_W / 2}
-          y={L.invY + 156}
-          fontSize="9px"
-          fontFamily={font}
-          textAnchor="middle"
-          fill={theme.textMuted}
-          {...(inv.model.length * 5.2 > INV_W - 24 ? { textLength: INV_W - 24, lengthAdjust: "spacingAndGlyphs" } : {})}
-        >
-          {inv.model}
-        </text>
-        <Txt x={L.invX + INV_W / 2} y={L.invY + 171} size={10} anchor="middle" muted>
+        {/* Model name wraps (up to 3 lines) inside the enclosure instead of being squeezed */}
+        {modelLines.map((ln, i) => (
+          <Txt key={i} x={L.invX + INV_W / 2} y={L.invY + 158 + i * 14} size={12} anchor="middle" muted>
+            {ln}
+          </Txt>
+        ))}
+        <Txt x={L.invX + INV_W / 2} y={L.invY + 162 + modelLines.length * 14} size={12} anchor="middle" muted>
           {calc.totalInverterAcKw} kW AC, {inv.phase} {inv.acVoltage}V
         </Txt>
         {/* Side bracket */}
@@ -617,14 +656,14 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         {showEps && <rect x={L.epsPortX - 6} y={L.invBottom} width={12} height={16} fill="none" stroke={stroke} strokeWidth={1.2} />}
         <rect x={L.gridPortX - 10} y={L.invBottom} width={20} height={14} fill="none" stroke={stroke} strokeWidth={1.2} />
         {eff.inverterQuantity > 1 && (
-          <Txt x={L.invX + INV_W / 2} y={L.invY - 10} size={11} anchor="middle">
+          <Txt x={L.invX + INV_W / 2} y={L.invY - 10} size={13} anchor="middle">
             TYP. OF {eff.inverterQuantity} INVERTERS
           </Txt>
         )}
-        <Txt x={L.invX} y={L.invBottom + 34} size={9} muted>
+        <Txt x={L.invX - 6} y={L.invBottom + 26} size={12} anchor="end" muted>
           PV IN
         </Txt>
-        <Txt x={L.gridPortX + 6} y={L.invBottom + 30} size={9} muted>
+        <Txt x={L.gridPortX + 6} y={L.invBottom + 26} size={12} muted>
           {L.isOffGrid ? "AC OUT" : "GRID"}
         </Txt>
       </g>
@@ -635,7 +674,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           <Wire pts={[[L.batPortX, L.invBottom + 22], [L.batPortX, L.batBkY]]} />
           <g className="cursor-pointer" onClick={() => onSelect("battery_breaker")}>
             <Breaker2P x={L.batPortX - BREAKER_W / 2} y={L.batBkY} />
-            <Txt x={L.batPortX + BREAKER_W / 2 + 8} y={L.batBkY + 40} size={11}>
+            <Txt x={L.batPortX + BREAKER_W / 2 + 8} y={L.batBkY + 40} size={13}>
               BATTERY OCPD
             </Txt>
           </g>
@@ -648,10 +687,10 @@ export const SolarSLDPictorial: React.FC<Props> = ({
                 <circle cx={L.batPortX + 48} cy={L.batBankY + 19 + i * 24} r={2.5} fill={stroke} />
               </g>
             ))}
-            <Txt x={L.batPortX} y={L.batBankY + 108} size={12} anchor="middle">
+            <Txt x={L.batPortX} y={L.batBankY + 108} size={14} anchor="middle">
               BATTERY BANK - {calc.batteryUsableEnergyKwh} kWh USABLE
             </Txt>
-            <Txt x={L.batPortX} y={L.batBankY + 123} size={10} anchor="middle" muted>
+            <Txt x={L.batPortX} y={L.batBankY + 123} size={12} anchor="middle" muted>
               {eff.batteryUnits}x {config.battery.manufacturer} {config.battery.model} ({config.battery.voltageV}V / {config.battery.capacityAh}Ah)
             </Txt>
           </g>
@@ -665,16 +704,16 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         <Spd x={L.acBkX + BREAKER_W + 6} y={L.yBk} />
         <line x1={L.acBkX + BREAKER_W} y1={L.yBk + BREAKER_H - 9} x2={L.acBkX + BREAKER_W + 6} y2={L.yBk + BREAKER_H - 9} stroke={stroke} strokeWidth={1.1} />
         <Dot x={L.acBkX + BREAKER_W} y={L.yBk + BREAKER_H - 9} />
-        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 22} size={12}>
+        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 22} size={14}>
           {eff.acBreakerAtAmps} AT
         </Txt>
-        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 37} size={12}>
+        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 37} size={14}>
           {eff.acBreakerPoles}P, AC
         </Txt>
-        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 58} size={12}>
+        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 58} size={14}>
           {acSpdVolts}V
         </Txt>
-        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 73} size={12}>
+        <Txt x={L.acBkX + BREAKER_W + SPD_W + 14} y={L.yBk + 73} size={14}>
           AC SPD
         </Txt>
       </g>
@@ -689,7 +728,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
 
       {/* ===================== AC ISOLATOR ===================== */}
       <Isolator x={L.acIsoCx - 26} y={L.acIsoY} w={52} label="AC ISO." onClick={() => onSelect("ac_disconnect")} />
-      <Txt x={L.acIsoCx + 34} y={L.acIsoY + ISO_H - 8} size={11}>
+      <Txt x={L.acIsoCx + 34} y={L.acIsoY + ISO_H - 8} size={13}>
         {eff.acIsolatorRatingAmps || eff.acBreakerAtAmps}A, {eff.acBreakerPoles}P
       </Txt>
 
@@ -698,7 +737,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         <g>
           <Wire pts={[[L.acIsoCx, L.acIsoY], [L.acIsoCx, L.recCy + 16]]} />
           <Meter cx={L.acIsoCx} cy={L.recCy} onClick={() => onSelect("solar_meter")} />
-          <Txt x={L.acIsoCx - 26} y={L.recCy + 5} size={13} anchor="end">
+          <Txt x={L.acIsoCx - 26} y={L.recCy + 5} size={15} anchor="end">
             REC METER
           </Txt>
           <Wire pts={[[L.acIsoCx, L.recCy - 16], [L.acIsoCx, L.solarTapY]]} />
@@ -734,12 +773,12 @@ export const SolarSLDPictorial: React.FC<Props> = ({
               stroke={stroke}
               strokeWidth={1.4}
             />
-            <Txt x={L.busX - 428} y={L.serviceY + 5} size={13} anchor="end">
+            <Txt x={L.busX - 428} y={L.serviceY + 5} size={15} anchor="end">
               SERVICE ENTRANCE
             </Txt>
             <Wire pts={[[L.busX - 352, L.serviceY], [L.busX - 276, L.serviceY]]} />
             <Meter cx={L.busX - 260} cy={L.serviceY} onClick={() => onSelect("utility_meter")} />
-            <Txt x={L.busX - 260} y={L.serviceY + 34} size={12} anchor="middle">
+            <Txt x={L.busX - 260} y={L.serviceY + 34} size={14} anchor="middle">
               {hasNetMetering ? "BI-DIRECTIONAL METER" : "UTILITY kWh METER"}
             </Txt>
             <Wire pts={[[L.busX - 244, L.serviceY], [L.busX, L.serviceY], [L.busX, L.mainSvcY - 14]]} />
@@ -749,10 +788,10 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           <g className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
             <rect x={L.busX - 9} y={L.mainSvcY - 14} width={18} height={28} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1.4} />
             <path d={`M ${L.busX - 4} ${L.mainSvcY - 8} A 8 8 0 0 1 ${L.busX - 4} ${L.mainSvcY + 8}`} fill="none" stroke={stroke} strokeWidth={1.2} />
-            <Txt x={L.busX + 16} y={L.mainSvcY - 6} size={10}>
+            <Txt x={L.busX + 16} y={L.mainSvcY - 6} size={12}>
               MAIN SERVICE
             </Txt>
-            <Txt x={L.busX + 16} y={L.mainSvcY + 7} size={10}>
+            <Txt x={L.busX + 16} y={L.mainSvcY + 7} size={12}>
               {service.mainBreakerAmps} AT, {service.mainBreakerPoles}P
             </Txt>
           </g>
@@ -775,18 +814,21 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             <Wire pts={[[L.busX, L.panelTapY], [L.panelX, L.panelTapY], [L.panelX, L.panelTapY + 60]]} />
             <rect x={L.panelX - 42} y={L.panelTapY + 60} width={84} height={120} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
             <circle cx={L.panelX} cy={L.panelTapY + 70} r={2.5} fill={stroke} />
-            <Txt x={L.panelX} y={L.panelTapY + 112} size={10} anchor="middle">
+            <Txt x={L.panelX} y={L.panelTapY + 112} size={12} anchor="middle">
               EXISTING
             </Txt>
-            <Txt x={L.panelX} y={L.panelTapY + 125} size={10} anchor="middle">
+            <Txt x={L.panelX} y={L.panelTapY + 125} size={12} anchor="middle">
               PANEL
             </Txt>
-            <Txt x={L.panelX} y={L.panelTapY + 138} size={10} anchor="middle">
+            <Txt x={L.panelX} y={L.panelTapY + 138} size={12} anchor="middle">
               BOARD
             </Txt>
-            <Txt x={L.panelX} y={L.panelTapY + 214} size={10} anchor="middle" muted>
-              {service.panelDesignation}
-            </Txt>
+            {/* Left-aligned to the panel so it never reaches back over the service bus */}
+            {wrapLines(service.panelDesignation, sheetWidth - 44 - (offsetX + L.panelX - 42), 12).map((ln, i) => (
+              <Txt key={i} x={L.panelX - 42} y={L.panelTapY + 214 + i * 15} size={12} muted>
+                {ln}
+              </Txt>
+            ))}
             <GroundSym x={L.panelX} y={L.panelTapY + 180} />
           </g>
         </g>
@@ -795,13 +837,13 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           {/* Off-grid: inverter output feeds the panel board directly */}
           <Wire pts={[[L.acIsoCx, L.solarTapY], [L.acIsoCx + 200, L.solarTapY], [L.acIsoCx + 200, L.solarTapY + 40]]} />
           <rect x={L.acIsoCx + 158} y={L.solarTapY + 40} width={84} height={120} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
-          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 98} size={10} anchor="middle">
+          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 98} size={12} anchor="middle">
             PANEL BOARD
           </Txt>
-          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 194} size={10} anchor="middle" muted>
+          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 194} size={12} anchor="middle" muted>
             {service.panelDesignation}
           </Txt>
-          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 210} size={10} anchor="middle" muted>
+          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 210} size={12} anchor="middle" muted>
             STAND-ALONE - NO UTILITY CONNECTION
           </Txt>
           <GroundSym x={L.acIsoCx + 200} y={L.solarTapY + 160} />
@@ -833,10 +875,10 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             </g>
           ))}
           <line x1={L.epsX} y1={L.yBk - 10} x2={L.epsX} y2={L.yBk + BREAKER_H + 10} stroke={stroke} strokeWidth={1.2} />
-          <Txt x={L.epsX + 64} y={L.yBk + 30} size={12}>
+          <Txt x={L.epsX + 64} y={L.yBk + 30} size={14}>
             EPS
           </Txt>
-          <Txt x={L.epsX + 64} y={L.yBk + 45} size={10} muted>
+          <Txt x={L.epsX + 64} y={L.yBk + 45} size={12} muted>
             BACKUP LOADS
           </Txt>
           <GroundSym x={L.epsX + 40} y={L.yBk + BREAKER_H + 10} />
