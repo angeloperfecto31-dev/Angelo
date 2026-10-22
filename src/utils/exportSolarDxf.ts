@@ -1,5 +1,7 @@
 import Drawing from "dxf-writer";
 // @ts-ignore
+import DatabaseObject from "dxf-writer/src/DatabaseObject.js";
+// @ts-ignore
 import TextStyle from "dxf-writer/src/TextStyle.js";
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults } from "../types/solar";
@@ -24,10 +26,14 @@ try {
  * Implements disciplined automated CAD layout spacing:
  * - Prevents all text overlapping, colliding equipment annotations, or line cut-throughs
  * - Guarantees 100% border containment: zero elements bleed outside sheet margins
- * - Structured 3-Sheet Engineering Drawing Package (ISO A3):
- *   - SHEET 1 OF 3: Solar PV Master Single Line Diagram (SLD) & Symbols Legend
- *   - SHEET 2 OF 3: Solar Design Data, Sizing Calculations & Equipment Schedule
- *   - SHEET 3 OF 3: General Notes, PEC Mandates, Safety Warning Placards & Checklist
+ * - Structured 4-Sheet Engineering Drawing Package (ISO A3):
+ *   - SHEET 1 OF 4: Solar PV Master Single Line Diagram (SLD) & Symbols Legend
+ *   - SHEET 2 OF 4: Solar Design Data, Sizing Calculations & Equipment Schedule
+ *   - SHEET 3 OF 4: General Notes, PEC Mandates, Safety Warning Placards & Checklist
+ *   - SHEET 4 OF 4: PV Module, Inverter & Battery Datasheet Tables
+ *
+ * The drawing reflects the actual design: off-grid systems omit utility interconnection,
+ * the 120% busbar status follows the calculation, and commissioning tests are left blank.
  */
 export function exportSolarToDxf(
   config: SolarDesignConfig,
@@ -68,12 +74,54 @@ export function exportSolarToDxf(
   d.addLayer("EPH-DIM", 3, "CONTINUOUS");      // Green
   d.addLayer("EPH-ANNO", 2, "CONTINUOUS");     // Yellow
 
+  // DC conductor runs use a short dashed linetype sized for the A3 millimetre sheet
+  d.addLineType("EPH_DC_DASH", "__ __ __", [2.0, -1.0]);
+  d.addLayer("EPH-DC", 1, "EPH_DC_DASH");      // Red, dashed
+
   // Cross-compatibility layer aliases with System SLD
   d.addLayer("BORDER", 2, "CONTINUOUS");
   d.addLayer("TEXT_TITLE", 4, "CONTINUOUS");
   d.addLayer("TEXT_HEADER", 5, "CONTINUOUS");
   d.addLayer("TEXT_DATA", 7, "CONTINUOUS");
   d.addLayer("TABLE_GRID", 8, "CONTINUOUS");
+
+  // Layer lineweights (DXF group 370, hundredths of a mm). dxf-writer's Layer does not
+  // emit 370, so the record is written here with the lineweight before the plot-style handle.
+  const setLayerLineweight = (name: string, lineweight: number) => {
+    const layer = (d as any).layers?.[name];
+    if (!layer) return;
+    layer.tags = function (manager: any) {
+      manager.push(0, "LAYER");
+      DatabaseObject.prototype.tags.call(this, manager);
+      manager.push(2, this.name);
+      if (this.trueColor !== -1) manager.push(420, this.trueColor);
+      else manager.push(62, this.colorNumber);
+      manager.push(70, 0);
+      if (this.lineTypeName) manager.push(6, this.lineTypeName);
+      manager.push(370, lineweight);
+      manager.push(390, 1);
+    };
+  };
+  const layerLineweights: Record<string, number> = {
+    "EPH-BORDER": 50,
+    "EPH-TITLE": 25,
+    "EPH-SLD": 35,
+    "EPH-PV": 35,
+    "EPH-INVERTER": 35,
+    "EPH-PANEL": 35,
+    "EPH-BREAKER": 35,
+    "EPH-CABLE": 50,
+    "EPH-DC": 50,
+    "EPH-GROUND": 35,
+    "EPH-BATTERY": 35,
+    "EPH-LEGEND": 18,
+    "EPH-NOTES": 18,
+    "EPH-TEXT": 18,
+    "EPH-DIM": 13,
+    "EPH-ANNO": 18,
+  };
+  Object.entries(layerLineweights).forEach(([name, lw]) => setLayerLineweight(name, lw));
+  d.header("LWDISPLAY", [[290, 1]]);
 
   // Geometric CAD primitive drawing helpers
   const drawBox = (layer: string, x: number, y: number, w: number, h: number) => {
@@ -146,9 +194,42 @@ export function exportSolarToDxf(
   };
 
   // Resolved parameters
-  const isHybrid =
+  const hasBattery =
     (config.systemType === "hybrid" || config.systemType === "off-grid") &&
     Boolean(config.battery?.enabled);
+  const isOffGrid = config.systemType === "off-grid";
+  const isGridTied = !isOffGrid;
+  const hasNetMetering = isGridTied && config.netMetering?.enabled !== false;
+  // The 120% busbar rule governs load-side interconnections only
+  const applies120Rule = isGridTied && config.netMetering?.interconnectionType !== "supply_side";
+  const eff = calc.effective;
+  const inverterTitle = isOffGrid
+    ? "OFF-GRID INVERTER / CHARGER"
+    : config.systemType === "hybrid"
+      ? "HYBRID STORAGE INVERTER"
+      : "SOLAR GRID-TIE INVERTER";
+  const inverterQty = Math.max(1, eff.inverterQuantity || 1);
+  const stringsPerInverter = Math.ceil((eff.numberOfStrings || 0) / inverterQty);
+  const mpptsTotal = calc.selectedInverter.numMppts;
+  // Derived from the design (one string per MPPT, capped at the inverter's MPPT count);
+  // config.mpptsUsedPerInverter is not maintained by the calculation engine.
+  const mpptsUsed = Math.min(mpptsTotal, Math.max(1, stringsPerInverter));
+  const dcIsolatorVolts = config.dcProtection?.isolatorVoltageVolts ?? 1000;
+  const dcFuseVolts = config.dcProtection?.fuseVoltageVolts ?? 1000;
+  const dcSpdInKa = config.dcProtection?.spdInKa ?? 20;
+  const dcSpdImaxKa = config.dcProtection?.spdImaxKa ?? 40;
+  const acSpdVolts = config.acProtection?.spdRatingVolts ?? 440;
+  const dcMaxDropPct = config.cabling?.dcMaxDropPercent ?? 2.0;
+  const acMaxDropPct = config.cabling?.acMaxDropPercent ?? 1.5;
+  const utilityName = sanitizeStringForDxf(config.netMetering?.utilityProvider || "DISTRIBUTION UTILITY");
+  // Drawing date in Philippine Standard Time (YYYY-MM-DD)
+  const issueDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const TOTAL_SHEETS = 4;
   const pName = sanitizeStringForDxf(panelData?.designation || "MAIN DISTRIBUTION PANEL (MDP)");
   const pMain = panelData?.mainFeeder?.cb || config.serviceCapacityAmps || 100;
   const pAf =
@@ -293,9 +374,33 @@ export function exportSolarToDxf(
       tbW - 6
     );
 
+    // Revision Table (Y: tbY+24 to tbY+36, between drawing title and sign-off)
+    const revTop = tbY + tbH - 38;
+    const revRowH = 4;
+    const revCols = [0, 12, 34, 106, tbW]; // REV | DATE | DESCRIPTION | BY
+    d.setActiveLayer("EPH-BORDER");
+    for (let r = 1; r <= 3; r++) {
+      d.drawLine(tbX, revTop - r * revRowH, tbX + tbW, revTop - r * revRowH);
+    }
+    revCols.slice(1, -1).forEach((cx) => {
+      d.drawLine(tbX + cx, revTop, tbX + cx, revTop - 3 * revRowH);
+    });
+    const revHeaders = ["REV", "DATE", "DESCRIPTION", "BY"];
+    const designerInitials = sanitizeStringForDxf(config.designerName || "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0].toUpperCase())
+      .join("")
+      .slice(0, 4);
+    const revRow0 = ["0", issueDate, "INITIAL ISSUE FOR REVIEW", designerInitials];
+    revHeaders.forEach((h, i) => {
+      drawText("EPH-TITLE", tbX + revCols[i] + 1.5, revTop - revRowH + 1.4, 1.3, h);
+      drawText("EPH-TEXT", tbX + revCols[i] + 1.5, revTop - 2 * revRowH + 1.4, 1.2, revRow0[i], "left", revCols[i + 1] - revCols[i] - 3);
+    });
+
     // Sign-off Matrix
     d.setActiveLayer("EPH-BORDER");
-    d.drawLine(tbX + 63, tbY, tbX + 63, tbY + tbH - 38);
+    d.drawLine(tbX + 63, tbY, tbX + 63, revTop - 3 * revRowH);
 
     drawText("EPH-TEXT", tbX + 3, tbY + 20, 1.6, "DESIGNED BY:");
     drawText("EPH-TITLE", tbX + 3, tbY + 14, 1.8, sanitizeStringForDxf(config.designerName), "left", 58);
@@ -308,8 +413,8 @@ export function exportSolarToDxf(
     // Bottom Status Bar
     drawBox("EPH-BORDER", tbX, tbY, tbW, 6);
     drawText("EPH-TEXT", tbX + 3, tbY + 2, 1.5, "SCALE: N.T.S.");
-    drawText("EPH-TEXT", tbX + 43, tbY + 2, 1.5, `DATE: ${new Date().toISOString().slice(0, 10)}`);
-    drawText("EPH-TITLE", tbX + 83, tbY + 2, 1.8, `SHEET: E-0${sheetIndex} OF 03`);
+    drawText("EPH-TEXT", tbX + 43, tbY + 2, 1.5, `DATE: ${issueDate}`);
+    drawText("EPH-TITLE", tbX + 83, tbY + 2, 1.8, `SHEET: E-0${sheetIndex} OF 0${TOTAL_SHEETS}`);
   };
 
   // ==========================================
@@ -389,54 +494,75 @@ export function exportSolarToDxf(
   d.drawLine(lastModX, str1Y + 4 + modH / 2, lastModX + modW, str1Y + 4 + modH / 2);
   d.drawLine(startModX + 44, str1Y + 4 + modH - 3, lastModX, str1Y + 4 + modH - 3);
 
-  // String N (Bottom String)
+  // String N (Bottom String) - only drawn when the array has more than one string
   const strNY = arrayBoxY + 18;
-  drawText(
-    "EPH-TITLE",
-    arrayBoxX + 4,
-    strNY + 23,
-    1.5,
-    `STRING ${calc.effective.numberOfStrings} (1..${calc.effective.modulesPerString} IN SERIES)`
-  );
-
-  for (let i = 0; i < 3; i++) {
-    const mx = startModX + i * (modW + modGap);
-    drawBox("EPH-PV", mx, strNY + 4, modW, modH);
-    d.setActiveLayer("EPH-PV");
-    d.drawLine(mx + modW / 2, strNY + 4, mx + modW / 2, strNY + 4 + modH);
-    d.drawLine(mx, strNY + 4 + modH / 2, mx + modW, strNY + 4 + modH / 2);
-    if (i < 2) {
-      d.drawLine(mx + modW, strNY + 4 + modH - 3, mx + modW + modGap, strNY + 4 + modH - 3);
-    }
+  const hasMultipleStrings = eff.numberOfStrings > 1;
+  if (eff.numberOfStrings > 2) {
+    drawText(
+      "EPH-TEXT",
+      arrayBoxX + 4,
+      arrayBoxY + 49,
+      1.3,
+      eff.numberOfStrings === 3
+        ? "STRING 2 IDENTICAL (NOT SHOWN)"
+        : `STRINGS 2 TO ${eff.numberOfStrings - 1} IDENTICAL (NOT SHOWN)`,
+      "left",
+      arrayBoxW - 8
+    );
   }
-  d.setActiveLayer("EPH-PV");
-  d.drawLine(
-    startModX + 2 * (modW + modGap) + modW,
-    strNY + 4 + modH - 3,
-    startModX + 2 * (modW + modGap) + modW + 3,
-    strNY + 4 + modH - 3
-  );
-  drawText("EPH-TEXT", startModX + 39, strNY + 10, 2.0, "...", "center");
+  if (hasMultipleStrings) {
+    drawText(
+      "EPH-TITLE",
+      arrayBoxX + 4,
+      strNY + 23,
+      1.5,
+      `STRING ${calc.effective.numberOfStrings} (1..${calc.effective.modulesPerString} IN SERIES)`
+    );
 
-  drawBox("EPH-PV", lastModX, strNY + 4, modW, modH);
-  d.setActiveLayer("EPH-PV");
-  d.drawLine(lastModX + modW / 2, strNY + 4, lastModX + modW / 2, strNY + 4 + modH);
-  d.drawLine(lastModX, strNY + 4 + modH / 2, lastModX + modW, strNY + 4 + modH / 2);
-  d.drawLine(startModX + 44, strNY + 4 + modH - 3, lastModX, strNY + 4 + modH - 3);
+    for (let i = 0; i < 3; i++) {
+      const mx = startModX + i * (modW + modGap);
+      drawBox("EPH-PV", mx, strNY + 4, modW, modH);
+      d.setActiveLayer("EPH-PV");
+      d.drawLine(mx + modW / 2, strNY + 4, mx + modW / 2, strNY + 4 + modH);
+      d.drawLine(mx, strNY + 4 + modH / 2, mx + modW, strNY + 4 + modH / 2);
+      if (i < 2) {
+        d.drawLine(mx + modW, strNY + 4 + modH - 3, mx + modW + modGap, strNY + 4 + modH - 3);
+      }
+    }
+    d.setActiveLayer("EPH-PV");
+    d.drawLine(
+      startModX + 2 * (modW + modGap) + modW,
+      strNY + 4 + modH - 3,
+      startModX + 2 * (modW + modGap) + modW + 3,
+      strNY + 4 + modH - 3
+    );
+    drawText("EPH-TEXT", startModX + 39, strNY + 10, 2.0, "...", "center");
+
+    drawBox("EPH-PV", lastModX, strNY + 4, modW, modH);
+    d.setActiveLayer("EPH-PV");
+    d.drawLine(lastModX + modW / 2, strNY + 4, lastModX + modW / 2, strNY + 4 + modH);
+    d.drawLine(lastModX, strNY + 4 + modH / 2, lastModX + modW, strNY + 4 + modH / 2);
+    d.drawLine(startModX + 44, strNY + 4 + modH - 3, lastModX, strNY + 4 + modH - 3);
+  }
 
   drawText("EPH-TEXT", arrayBoxX + 4, arrayBoxY + 11, 1.5, `Voc_cold: ${calc.stringVoc}V | Vmp_hot: ${calc.stringVmp}V`);
   drawText("EPH-TEXT", arrayBoxX + 4, arrayBoxY + 5, 1.4, `Imp: ${calc.stringImp}A | Isc: ${calc.stringIsc}A | Total I_dc: ${calc.totalDcCurrent}A`);
 
-  // DC Output Bus from Array to Combiner
-  d.setActiveLayer("EPH-BREAKER");
+  // DC Output Bus from Array to Combiner (dashed DC conductor runs)
+  d.setActiveLayer("EPH-DC");
   d.drawLine(lastModX + modW, str1Y + 17, arrayBoxX + arrayBoxW + 6, str1Y + 17);
   d.drawLine(arrayBoxX + arrayBoxW + 6, str1Y + 17, arrayBoxX + arrayBoxW + 6, busY + 3);
   d.drawLine(arrayBoxX + arrayBoxW + 6, busY + 3, 98, busY + 3);
   drawText("EPH-BREAKER", 95, busY + 5, 1.3, "(+) DC", "center");
 
-  d.drawLine(lastModX + modW, strNY + 7, arrayBoxX + arrayBoxW + 6, strNY + 7);
-  d.drawLine(arrayBoxX + arrayBoxW + 6, strNY + 7, arrayBoxX + arrayBoxW + 6, busY - 3);
-  d.drawLine(arrayBoxX + arrayBoxW + 6, busY - 3, 98, busY - 3);
+  // Negative lead returns from the last string; a single string returns on its own riser
+  // so it does not overlap the positive lead.
+  const negLeadY = hasMultipleStrings ? strNY + 7 : str1Y + 7;
+  const negRiserX = hasMultipleStrings ? arrayBoxX + arrayBoxW + 6 : arrayBoxX + arrayBoxW + 3;
+  d.setActiveLayer("EPH-DC");
+  d.drawLine(lastModX + modW, negLeadY, negRiserX, negLeadY);
+  d.drawLine(negRiserX, negLeadY, negRiserX, busY - 3);
+  d.drawLine(negRiserX, busY - 3, 98, busY - 3);
   drawText("EPH-BREAKER", 95, busY - 6.5, 1.3, "(-) DC", "center");
 
   // B. DC Combiner Box & Disconnect (X: 98 to 138)
@@ -470,9 +596,9 @@ export function exportSolarToDxf(
   d.setActiveLayer("EPH-BREAKER");
   d.drawLine(dcBoxX + 28, busY - 3, dcBoxX + 28, dcBoxY + 20);
 
-  drawText("EPH-TEXT", dcBoxX + 2, dcBoxY + 4, 1.4, `ISOLATOR: ${calc.effective.dcIsolatorRatingAmps}A DC 1000V`);
+  drawText("EPH-TEXT", dcBoxX + 2, dcBoxY + 4, 1.4, `ISOLATOR: ${calc.effective.dcIsolatorRatingAmps}A DC ${dcIsolatorVolts}V`);
 
-  d.setActiveLayer("EPH-BREAKER");
+  d.setActiveLayer("EPH-DC");
   d.drawLine(dcBoxX + dcBoxW, busY + 2, 156, busY + 2);
   d.drawLine(dcBoxX + dcBoxW, busY - 2, 156, busY - 2);
 
@@ -486,7 +612,7 @@ export function exportSolarToDxf(
     dcAnnoX,
     dcAnnoY,
     1.25,
-    `Vd = ${calc.dcVoltageDropV}V (${calc.dcVoltageDropPercent}% <= 2.0%) | Amp = ${calc.dcCableAmpacity}A`,
+    `Vd = ${calc.dcVoltageDropV}V (${calc.dcVoltageDropPercent}% <= ${dcMaxDropPct}%) | Amp = ${calc.dcCableAmpacity}A`,
     "left",
     56
   );
@@ -508,7 +634,9 @@ export function exportSolarToDxf(
     invBoxX + 3,
     invBoxY + invBoxH + 4,
     2.2,
-    config.systemType === "hybrid" ? "HYBRID STORAGE INVERTER" : "SOLAR GRID-TIE INVERTER"
+    inverterQty > 1 ? `${inverterTitle} (TYP. OF ${inverterQty})` : inverterTitle,
+    "left",
+    invBoxW + 8
   );
   drawText(
     "EPH-TEXT",
@@ -516,6 +644,15 @@ export function exportSolarToDxf(
     invBoxY + invBoxH - 6,
     1.7,
     `${calc.effective.inverterQuantity}x ${sanitizeStringForDxf(calc.selectedInverter.manufacturer)} ${sanitizeStringForDxf(calc.selectedInverter.model)}`,
+    "left",
+    invBoxW - 6
+  );
+  drawText(
+    "EPH-TEXT",
+    invBoxX + 3,
+    invBoxY + invBoxH - 11,
+    1.35,
+    `${stringsPerInverter} STRING(S)/INV | MPPT USED: ${mpptsUsed} OF ${mpptsTotal}`,
     "left",
     invBoxW - 6
   );
@@ -546,7 +683,7 @@ export function exportSolarToDxf(
     invBoxX + 3,
     invBoxY + 6.5,
     1.4,
-    `${calc.selectedInverter.phase} ${calc.selectedInverter.acVoltage || 400}V 60Hz | I_max: ${calc.inverterMaxAcCurrent}A`
+    `${calc.selectedInverter.phase} ${calc.selectedInverter.acVoltage || pVolt}V ${calc.selectedInverter.frequencyHz || config.utilityFrequency || 60}Hz | I_max: ${calc.inverterMaxAcCurrent}A`
   );
   drawText(
     "EPH-TEXT",
@@ -559,7 +696,7 @@ export function exportSolarToDxf(
   // Ground Bus Line (Green Layer) - positioned at Y = 130
   const groundBusY = 130;
 
-  if (isHybrid) {
+  if (hasBattery) {
     // Battery Storage Box - cleanly positioned with 6mm clearance above Legend (Y=82) and 6mm below Ground Bus (Y=130)
     const battBoxX = invBoxX + 4;
     const battBoxY = 88;
@@ -576,7 +713,9 @@ export function exportSolarToDxf(
       1.35,
       `${calc.effective.batteryUnits} Units (${config.battery.voltageV}V / ${config.battery.capacityAh}Ah)`
     );
-    drawText("EPH-TEXT", battBoxX + 3, battBoxY + battBoxH - 22, 1.25, `Backup Load: ${config.battery.requiredBackupLoadKw || 25} kW`);
+    if (config.battery.requiredBackupLoadKw > 0) {
+      drawText("EPH-TEXT", battBoxX + 3, battBoxY + battBoxH - 22, 1.25, `Backup Load: ${config.battery.requiredBackupLoadKw} kW`);
+    }
 
     drawBox("EPH-BATTERY", battBoxX + 19, battBoxY + 3, 16, 6);
     drawText("EPH-TEXT", battBoxX + 27, battBoxY + 5.5, 1.2, "BATT OCPD", "center");
@@ -612,11 +751,19 @@ export function exportSolarToDxf(
 
   drawBox("EPH-CABLE", acBoxX + 12, acBoxY + 8, 14, 12);
   drawText("EPH-TEXT", acBoxX + 13, acBoxY + 16, 1.3, "TYPE 2 SPD");
-  drawText("EPH-TEXT", acBoxX + 13, acBoxY + 10, 1.2, "Uc=385V AC");
+  drawText("EPH-TEXT", acBoxX + 13, acBoxY + 10, 1.2, `Uc=${acSpdVolts}V AC`);
   d.setActiveLayer("EPH-CABLE");
   d.drawLine(acBoxX + 19, busY - 7, acBoxX + 19, acBoxY + 20);
 
-  drawText("EPH-TEXT", acBoxX + 2, acBoxY + 4, 1.4, `RATING: ${calc.effective.acBreakerAtAmps}A ${calc.effective.acBreakerPoles}P 600V`);
+  drawText(
+    "EPH-TEXT",
+    acBoxX + 2,
+    acBoxY + 4,
+    1.4,
+    `RATING: ${eff.acIsolatorRatingAmps || eff.acBreakerAtAmps}A ${eff.acBreakerPoles}P ${pVolt}V`,
+    "left",
+    acBoxW - 4
+  );
 
   d.setActiveLayer("EPH-CABLE");
   d.drawLine(acBoxX + acBoxW, busY, 282, busY);
@@ -631,7 +778,7 @@ export function exportSolarToDxf(
     acAnnoX,
     acAnnoY,
     1.25,
-    `Vd = ${calc.acVoltageDropV}V (${calc.acVoltageDropPercent}% <= 1.5%) | Amp = ${calc.acCableAmpacity}A`,
+    `Vd = ${calc.acVoltageDropV}V (${calc.acVoltageDropPercent}% <= ${acMaxDropPct}%) | Amp = ${calc.acCableAmpacity}A`,
     "left",
     52
   );
@@ -649,7 +796,7 @@ export function exportSolarToDxf(
   drawBox("EPH-PANEL", panelX + 1.5, panelY + 1.5, panelW - 3, panelH - 3);
 
   drawText("EPH-TITLE", panelX + 3, panelY + panelH + 4, 2.0, pName, "left", panelW - 6);
-  drawText("EPH-TEXT", panelX + 3, panelY + panelH - 6, 1.5, `SYSTEM: ${pVolt}V ${pPhase} 60Hz`);
+  drawText("EPH-TEXT", panelX + 3, panelY + panelH - 6, 1.5, `SYSTEM: ${pVolt}V ${pPhase} ${config.utilityFrequency || 60}Hz`);
   drawText("EPH-TEXT", panelX + 3, panelY + panelH - 11, 1.5, `BUSBAR RATING: ${busRating}A`);
 
   drawBox("EPH-BREAKER", panelX + 5, busY - 5, 20, 10);
@@ -665,62 +812,81 @@ export function exportSolarToDxf(
   d.drawLine(panelX + 27, panelY + 18, panelX + 27, panelY + panelH - 16);
 
   drawBox("EPH-BORDER", panelX + 3, panelY + 4, panelW - 6, 24);
-  drawText("EPH-TITLE", panelX + 5, panelY + 23, 1.4, "120% BUSBAR RULE (PEC 6.90.7.2.D):");
-  drawText(
-    "EPH-TEXT",
-    panelX + 5,
-    panelY + 17.5,
-    1.3,
-    `Main (${pMain}A) + Solar (${calc.effective.acBreakerAtAmps}A) = ${totalInfeed}A`
-  );
-  drawText("EPH-TEXT", panelX + 5, panelY + 12, 1.3, `120% Bus Limit = ${maxBus120}A (${busRating}A x 1.2)`);
-  drawText(
-    is120Pass ? "EPH-GROUND" : "EPH-BREAKER",
-    panelX + 5,
-    panelY + 6.5,
-    1.4,
-    is120Pass ? "STATUS: [PASS] FULLY COMPLIANT" : "STATUS: [WARNING] EXCEEDS BUSBAR"
-  );
+  if (applies120Rule) {
+    drawText("EPH-TITLE", panelX + 5, panelY + 23, 1.4, "120% BUSBAR RULE (PEC 6.90.7.2.D):");
+    drawText(
+      "EPH-TEXT",
+      panelX + 5,
+      panelY + 17.5,
+      1.3,
+      `Main (${pMain}A) + Solar (${calc.effective.acBreakerAtAmps}A) = ${totalInfeed}A`
+    );
+    drawText("EPH-TEXT", panelX + 5, panelY + 12, 1.3, `120% Bus Limit = ${maxBus120}A (${busRating}A x 1.2)`);
+    drawText(
+      is120Pass ? "EPH-GROUND" : "EPH-BREAKER",
+      panelX + 5,
+      panelY + 6.5,
+      1.4,
+      is120Pass ? "STATUS: [PASS] FULLY COMPLIANT" : "STATUS: [WARNING] EXCEEDS BUSBAR"
+    );
+  } else {
+    drawText("EPH-TITLE", panelX + 5, panelY + 23, 1.4, "INTERCONNECTION:");
+    drawText(
+      "EPH-TEXT",
+      panelX + 5,
+      panelY + 15,
+      1.3,
+      isOffGrid
+        ? "OFF-GRID SYSTEM - NO UTILITY INTERCONNECTION"
+        : "SUPPLY-SIDE CONNECTION - 120% BUSBAR RULE NOT APPLICABLE",
+      "left",
+      panelW - 10
+    );
+  }
 
-  // F. Net-Metering Revenue Meter & Utility Grid (X: 344 to 398 - clean 8mm clearance from border at 406)
-  const meterX = 344;
-  const meterY = 158;
-  const meterW = 22;
-  const meterH = 34;
+  if (isGridTied) {
+    // F. Revenue Meter & Utility Grid (X: 344 to 398 - clean 8mm clearance from border at 406)
+    const meterX = 344;
+    const meterY = 158;
+    const meterW = 22;
+    const meterH = 34;
 
-  d.setActiveLayer("EPH-CABLE");
-  d.drawLine(panelX + panelW, busY, meterX, busY);
+    d.setActiveLayer("EPH-CABLE");
+    d.drawLine(panelX + panelW, busY, meterX, busY);
 
-  drawBox("EPH-SLD", meterX, meterY, meterW, meterH);
-  drawCircle("EPH-SLD", meterX + meterW / 2, busY, 8.0);
-  drawText("EPH-TITLE", meterX + meterW / 2, meterY + meterH + 4, 1.7, "BI-DIRECTIONAL METER", "center");
-  drawText("EPH-TEXT", meterX + meterW / 2, busY + 2, 1.4, "<= kWh =>", "center");
-  drawText("EPH-TEXT", meterX + meterW / 2, busY - 4, 1.2, "NET-METERING", "center");
-  drawText("EPH-TEXT", meterX + meterW / 2, meterY + 4, 1.2, "ERC COMPLIANT", "center");
+    drawBox("EPH-SLD", meterX, meterY, meterW, meterH);
+    drawCircle("EPH-SLD", meterX + meterW / 2, busY, 8.0);
+    drawText(
+      "EPH-TITLE",
+      meterX + meterW / 2,
+      meterY + meterH + 4,
+      1.7,
+      hasNetMetering ? "BI-DIRECTIONAL METER" : "UTILITY kWh METER",
+      "center"
+    );
+    drawText("EPH-TEXT", meterX + meterW / 2, busY + 2, 1.4, hasNetMetering ? "<= kWh =>" : "kWh", "center");
+    drawText("EPH-TEXT", meterX + meterW / 2, busY - 4, 1.2, hasNetMetering ? "NET-METERING" : "NO NET-METERING", "center");
+    if (hasNetMetering) {
+      drawText("EPH-TEXT", meterX + meterW / 2, meterY + 4, 1.2, "ERC COMPLIANT", "center");
+    }
 
-  const utilGridX = 374;
-  const utilGridY = 158;
-  const utilGridW = 22;
-  const utilGridH = 34;
+    const utilGridX = 374;
+    const utilGridY = 158;
+    const utilGridW = 22;
+    const utilGridH = 34;
 
-  d.setActiveLayer("EPH-CABLE");
-  d.drawLine(meterX + meterW, busY, utilGridX, busY);
+    d.setActiveLayer("EPH-CABLE");
+    d.drawLine(meterX + meterW, busY, utilGridX, busY);
 
-  drawBox("EPH-SLD", utilGridX, utilGridY, utilGridW, utilGridH);
-  drawCircle("EPH-SLD", utilGridX + utilGridW / 2, busY, 6.0);
-  drawCircle("EPH-SLD", utilGridX + utilGridW / 2, busY, 3.0);
+    drawBox("EPH-SLD", utilGridX, utilGridY, utilGridW, utilGridH);
+    drawCircle("EPH-SLD", utilGridX + utilGridW / 2, busY, 6.0);
+    drawCircle("EPH-SLD", utilGridX + utilGridW / 2, busY, 3.0);
 
-  drawText("EPH-TITLE", utilGridX + utilGridW / 2, utilGridY + utilGridH + 5, 1.5, "UTILITY GRID", "center");
-  drawText("EPH-TITLE", utilGridX + utilGridW / 2, utilGridY + utilGridH + 1, 1.4, "PCC INTERCONNECTION", "center");
-  drawText(
-    "EPH-TEXT",
-    utilGridX + utilGridW / 2,
-    busY - 8.5,
-    1.3,
-    sanitizeStringForDxf(config.netMetering.utilityProvider || "MERALCO"),
-    "center"
-  );
-  drawText("EPH-TEXT", utilGridX + utilGridW / 2, utilGridY + 3.5, 1.2, `${config.utilityVoltage}V ${config.utilityPhase}`, "center");
+    drawText("EPH-TITLE", utilGridX + utilGridW / 2, utilGridY + utilGridH + 5, 1.5, "UTILITY GRID", "center");
+    drawText("EPH-TITLE", utilGridX + utilGridW / 2, utilGridY + utilGridH + 1, 1.4, "PCC INTERCONNECTION", "center");
+    drawText("EPH-TEXT", utilGridX + utilGridW / 2, busY - 8.5, 1.3, utilityName, "center", utilGridW);
+    drawText("EPH-TEXT", utilGridX + utilGridW / 2, utilGridY + 3.5, 1.2, `${config.utilityVoltage}V ${config.utilityPhase}`, "center");
+  }
 
   // G. Grounding Bus Line (Green Layer)
   d.setActiveLayer("EPH-GROUND");
@@ -789,9 +955,17 @@ export function exportSolarToDxf(
   drawText("EPH-TEXT", legX + 18, legY + 8, 1.5, "ROTARY DISCONNECT / ISOLATOR");
 
   // Column 2 Symbols
-  // 5. Net Meter
-  drawCircle("EPH-SLD", legX + legColW + 9, legY + 50, 4.5);
-  drawText("EPH-TEXT", legX + legColW + 18, legY + 49, 1.5, "BI-DIRECTIONAL kWh REVENUE METER");
+  // 5. Revenue Meter (grid-tied systems only)
+  if (isGridTied) {
+    drawCircle("EPH-SLD", legX + legColW + 9, legY + 50, 4.5);
+    drawText(
+      "EPH-TEXT",
+      legX + legColW + 18,
+      legY + 49,
+      1.5,
+      hasNetMetering ? "BI-DIRECTIONAL kWh REVENUE METER" : "UTILITY kWh REVENUE METER"
+    );
+  }
 
   // 6. Distribution Panel
   drawBox("EPH-PANEL", legX + legColW + 4, legY + 32, 10, 8);
@@ -812,13 +986,15 @@ export function exportSolarToDxf(
   drawText("EPH-TEXT", legX + legColW + 18, legY + 8, 1.5, "GROUND ELECTRODE (EARTH ROD)");
 
   // Column 3 Symbols
-  // 9. Utility Grid PCC
-  drawCircle("EPH-SLD", legX + 2 * legColW + 9, legY + 50, 4.5);
-  drawCircle("EPH-SLD", legX + 2 * legColW + 9, legY + 50, 2.2);
-  drawText("EPH-TEXT", legX + 2 * legColW + 18, legY + 49, 1.5, "UTILITY DISTRIBUTION GRID (PCC)");
+  // 9. Utility Grid PCC (grid-tied systems only)
+  if (isGridTied) {
+    drawCircle("EPH-SLD", legX + 2 * legColW + 9, legY + 50, 4.5);
+    drawCircle("EPH-SLD", legX + 2 * legColW + 9, legY + 50, 2.2);
+    drawText("EPH-TEXT", legX + 2 * legColW + 18, legY + 49, 1.5, "UTILITY DISTRIBUTION GRID (PCC)");
+  }
 
   // 10. Battery System (If used)
-  if (isHybrid) {
+  if (hasBattery) {
     drawBox("EPH-BATTERY", legX + 2 * legColW + 4, legY + 32, 10, 8);
     drawText("EPH-BATTERY", legX + 2 * legColW + 9, legY + 36, 1.2, "BATT", "center");
     drawText("EPH-TEXT", legX + 2 * legColW + 18, legY + 35, 1.5, "BATTERY ENERGY STORAGE (BESS)");
@@ -826,8 +1002,8 @@ export function exportSolarToDxf(
     drawText("EPH-TEXT", legX + 2 * legColW + 18, legY + 35, 1.5, "DC FUSE (gPV STRING RATED)");
   }
 
-  // 11. Conductor Line
-  d.setActiveLayer("EPH-BREAKER");
+  // 11. DC Conductor Line (dashed)
+  d.setActiveLayer("EPH-DC");
   d.drawLine(legX + 2 * legColW + 4, legY + 22, legX + 2 * legColW + 14, legY + 22);
   drawText("EPH-TEXT", legX + 2 * legColW + 18, legY + 21, 1.5, "DC CONDUIT / CONDUCTOR RUN");
 
@@ -926,23 +1102,29 @@ export function exportSolarToDxf(
     {
       param: "DC Cable & Conduit Specification",
       val: dcCableStr,
-      ref: `Vd=${calc.dcVoltageDropV}V (${calc.dcVoltageDropPercent}% <= 2.0%)`,
+      ref: `Vd=${calc.dcVoltageDropV}V (${calc.dcVoltageDropPercent}% <= ${dcMaxDropPct}%)`,
     },
     {
       param: "AC Cable & Conduit Specification",
       val: acCableStr,
-      ref: `Vd=${calc.acVoltageDropV}V (${calc.acVoltageDropPercent}% <= 1.5%)`,
+      ref: `Vd=${calc.acVoltageDropV}V (${calc.acVoltageDropPercent}% <= ${acMaxDropPct}%)`,
     },
     {
       param: "Equipment Grounding Conductor",
       val: `${calc.effective.dcEgcSizeMm2} mm² Cu (DC) / ${calc.effective.acEgcSizeMm2} mm² Cu (AC)`,
       ref: "PEC Table 2.50.6.13",
     },
-    {
-      param: "120% Panel Busbar Verification",
-      val: `${totalInfeed}A <= ${maxBus120}A Busbar Limit`,
-      ref: is120Pass ? "PEC 6.90.7.2.D [COMPLIANT]" : "EXCEEDS BUSBAR [WARNING]",
-    },
+    applies120Rule
+      ? {
+          param: "120% Panel Busbar Verification",
+          val: `${totalInfeed}A ${is120Pass ? "<=" : ">"} ${maxBus120}A Busbar Limit`,
+          ref: is120Pass ? "PEC 6.90.7.2.D [COMPLIANT]" : "EXCEEDS BUSBAR [WARNING]",
+        }
+      : {
+          param: "120% Panel Busbar Verification",
+          val: "NOT APPLICABLE",
+          ref: isOffGrid ? "Off-grid: no utility interconnection" : "Supply-side interconnection",
+        },
   ];
 
   calcSummaryData.forEach((row, idx) => {
@@ -988,12 +1170,12 @@ export function exportSolarToDxf(
     },
     {
       eq: "DC ISOLATOR",
-      spec: `${calc.effective.dcIsolatorRatingAmps}A DC 1000V\nRotary Lockable Switch`,
+      spec: `${calc.effective.dcIsolatorRatingAmps}A DC ${dcIsolatorVolts}V\nRotary Lockable Switch`,
       std: "IEC 60947-3",
     },
     {
       eq: "DC FUSES",
-      spec: `${calc.effective.dcFuseRatingAmps}A gPV 1000V DC\n10x38mm Ceramic`,
+      spec: `${calc.effective.dcFuseRatingAmps}A gPV ${dcFuseVolts}V DC\n10x38mm Ceramic`,
       std: "IEC 60269-6",
     },
     {
@@ -1003,7 +1185,7 @@ export function exportSolarToDxf(
     },
     {
       eq: "SURGE SPD",
-      spec: `DC: ${calc.effective.dcSpdUcVolts}V / AC: 385V\nIn=20kA, Imax=40kA`,
+      spec: `DC: ${calc.effective.dcSpdUcVolts}V / AC: ${acSpdVolts}V\nIn=${dcSpdInKa}kA, Imax=${dcSpdImaxKa}kA`,
       std: "IEC 61643-11",
     },
     {
@@ -1012,11 +1194,15 @@ export function exportSolarToDxf(
       std: "PEC 2.50",
     },
     {
-      eq: isHybrid ? "BATTERY" : "METER",
-      spec: isHybrid
-        ? `${calc.batteryUsableEnergyKwh} kWh LiFePO4`
-        : "Bi-Directional kWh",
-      std: isHybrid ? "UL 1973 / 9540" : "ERC Resolution",
+      eq: hasBattery ? "BATTERY" : "METER",
+      spec: hasBattery
+        ? `${calc.batteryUsableEnergyKwh} kWh ${sanitizeStringForDxf(config.battery.chemistry || "LiFePO4")}`
+        : hasNetMetering
+          ? "Bi-Directional kWh"
+          : isGridTied
+            ? "Utility kWh Meter"
+            : "N/A (Off-Grid)",
+      std: hasBattery ? "UL 1973 / 9540" : hasNetMetering ? "ERC Resolution" : "-",
     },
   ];
 
@@ -1062,9 +1248,34 @@ export function exportSolarToDxf(
     body: string[];
   }
 
-  const structuredNotes: NoteItem[] = [
+  const busbarNote: Omit<NoteItem, "num"> = applies120Rule
+    ? {
+        title: "120% BUSBAR RULE COMPLIANCE (PEC 6.90.7.2.D)",
+        body: [
+          `Main OCPD (${pMain}A) + Solar Interconnection Breaker (${calc.effective.acBreakerAtAmps}A) = ${totalInfeed}A total infeed.`,
+          is120Pass
+            ? `Shall not exceed 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [PASS - COMPLIANT].`
+            : `EXCEEDS 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [WARNING] - REVISE DESIGN BEFORE ISSUE.`
+        ]
+      }
+    : isOffGrid
+      ? {
+          title: "STAND-ALONE (OFF-GRID) SYSTEM",
+          body: [
+            "This system is not interconnected with the distribution utility. The 120% busbar rule and",
+            "net-metering requirements do not apply. Any future utility connection requires a revised design."
+          ]
+        }
+      : {
+          title: "SUPPLY-SIDE INTERCONNECTION",
+          body: [
+            "The PV system is connected on the supply side of the service disconnect; the 120% busbar rule",
+            "(PEC 6.90.7.2.D) does not apply. Supply-side tap conductors and OCPD shall be sized per PEC."
+          ]
+        };
+
+  const noteDrafts: Array<Omit<NoteItem, "num">> = [
     {
-      num: "1.",
       title: "CODE COMPLIANCE & LEGAL MANDATES",
       body: [
         "All works shall strictly comply with the Philippine Electrical Code (PEC) 2017 Part 1,",
@@ -1072,47 +1283,39 @@ export function exportSolarToDxf(
       ]
     },
     {
-      num: "2.",
       title: "DIRECT PROFESSIONAL SUPERVISION",
       body: [
         "Electrical installation, testing, and commissioning shall be under the direct supervision",
         "of a duly licensed Professional Electrical Engineer (PEE) or Registered Electrical Engineer (REE)."
       ]
     },
+    busbarNote,
     {
-      num: "3.",
-      title: "120% BUSBAR RULE COMPLIANCE (PEC 6.90.7.2.D)",
-      body: [
-        `Main OCPD (${pMain}A) + Solar Interconnection Breaker (${calc.effective.acBreakerAtAmps}A) = ${totalInfeed}A total infeed.`,
-        `Shall not exceed 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [PASS - COMPLIANT].`
-      ]
-    },
-    {
-      num: "4.",
       title: "RAPID SHUTDOWN REQUIREMENTS (PEC 6.90.2.2)",
       body: [
-        "PV system incorporates rapid shutdown capability reducing array boundary voltage to <= 80V",
-        "within 30 seconds of initiation, and <= 30V for conductors outside the array boundary."
+        "PV system circuits on or in buildings shall include rapid shutdown reducing conductor voltage to <= 80V",
+        "inside the array boundary and <= 30V outside the array boundary within 30 seconds of initiation."
       ]
     },
+    ...(isGridTied
+      ? [
+          {
+            title: "ANTI-ISLANDING & GRID INTERCONNECTION (IEEE 1547 / UL 1741)",
+            body: [
+              "Grid-interactive inverters shall be listed with anti-islanding protection that disconnects",
+              "from the distribution utility within 2.0 seconds of power outage or abnormal grid parameters."
+            ]
+          }
+        ]
+      : []),
     {
-      num: "5.",
-      title: "ANTI-ISLANDING & GRID INTERCONNECTION (IEEE 1547 / UL 1741)",
-      body: [
-        "Inverters feature certified anti-islanding trip protection that automatically disconnects",
-        "from the distribution utility within 2.0 seconds of power outage or abnormal grid parameters."
-      ]
-    },
-    {
-      num: "6.",
       title: "GROUND FAULT DETECTION & INTERRUPTION (GFDI - PEC 6.90.1.5)",
       body: [
-        "Ground-fault protection device is integrated into inverters to detect, interrupt, and indicate",
-        "any ground-fault current per PEC 6.90.1.5 mandates."
+        "Ground-fault protection shall be provided (integral to the listed inverter where applicable) to detect,",
+        "interrupt, and indicate any ground-fault current per PEC 6.90.1.5 mandates."
       ]
     },
     {
-      num: "7.",
       title: "CONDUCTOR & CONDUIT SPECIFICATIONS",
       body: [
         "DC PV wiring shall be 1000V XLPE PV1-F UV-resistant cable. AC power feeders shall be copper",
@@ -1120,7 +1323,6 @@ export function exportSolarToDxf(
       ]
     },
     {
-      num: "8.",
       title: "EQUIPMENT GROUNDING & BONDING SYSTEM (PEC 2.50)",
       body: [
         "All exposed non-current-carrying metal frames, racks, enclosures, and inverters shall be solidly",
@@ -1128,8 +1330,10 @@ export function exportSolarToDxf(
       ]
     }
   ];
+  const structuredNotes: NoteItem[] = noteDrafts.map((note, i) => ({ ...note, num: `${i + 1}.` }));
+  const placardNoteNum = structuredNotes.length + 1;
 
-  // Render structured notes 1 through 8 cleanly in the upper section of Sheet 3
+  // Render the structured notes in the upper section of Sheet 3
   let curNoteY = notesBoxY + notesBoxH - 18;
   structuredNotes.forEach((note) => {
     drawText(
@@ -1173,7 +1377,7 @@ export function exportSolarToDxf(
     placX + 4,
     placY + placH - 6.5,
     1.9,
-    "9. PERMANENT DIRECTORY & SAFETY WARNING PLACARDS (PEC 6.90.7 / PEC 6.90.54)"
+    `${placardNoteNum}. PERMANENT DIRECTORY & SAFETY WARNING PLACARDS (PEC 6.90.7 / PEC 6.90.54)`
   );
 
   // Placard 1: Main Dual Source Warning Placard (Left Half)
@@ -1184,14 +1388,23 @@ export function exportSolarToDxf(
 
   drawBox("EPH-BREAKER", p1X, p1Y, p1W, p1H);
   drawBox("EPH-BREAKER", p1X + 1, p1Y + p1H - 9, p1W - 2, 8);
-  drawText("EPH-BREAKER", p1X + p1W / 2, p1Y + p1H - 6.5, 1.6, "WARNING: DUAL POWER SOURCE", "center");
+  drawText(
+    "EPH-BREAKER",
+    p1X + p1W / 2,
+    p1Y + p1H - 6.5,
+    1.6,
+    isGridTied ? "WARNING: DUAL POWER SOURCE" : "WARNING: SOLAR PV POWER SOURCE",
+    "center"
+  );
 
   drawText(
     "EPH-TEXT",
     p1X + 4,
     p1Y + p1H - 14,
     1.3,
-    "SECOND SOURCE IS ON-SITE SOLAR PHOTOVOLTAIC SYSTEM",
+    isGridTied
+      ? "SECOND SOURCE IS ON-SITE SOLAR PHOTOVOLTAIC SYSTEM"
+      : "POWER SOURCE IS ON-SITE SOLAR PHOTOVOLTAIC SYSTEM",
     "left",
     p1W - 8
   );
@@ -1227,7 +1440,7 @@ export function exportSolarToDxf(
     p1X + 4,
     p1Y + p1H - 40,
     1.15,
-    "RAPID SHUTDOWN SWITCH LOCATED AT MAIN SERVICE PANEL (PEC 6.90.2.2)",
+    "RAPID SHUTDOWN INITIATOR LOCATION: ____________________ (PEC 6.90.2.2)",
     "left",
     p1W - 8
   );
@@ -1279,23 +1492,29 @@ export function exportSolarToDxf(
     p2W - 8
   );
   drawText(
-    "EPH-TEXT",
+    applies120Rule && !is120Pass ? "EPH-BREAKER" : "EPH-TEXT",
     p2X + 4,
     p2Y + p2H - 33,
     1.2,
-    `120% BUSBAR RULE COMPLIANCE: ${totalInfeed}A <= ${maxBus120}A (PEC 6.90.7.2.D)`,
+    applies120Rule
+      ? `120% BUSBAR RULE: ${totalInfeed}A ${is120Pass ? "<=" : ">"} ${maxBus120}A (PEC 6.90.7.2.D) ${is120Pass ? "[PASS]" : "[WARNING]"}`
+      : isOffGrid
+        ? "STAND-ALONE SYSTEM: NOT CONNECTED TO DISTRIBUTION UTILITY"
+        : "SUPPLY-SIDE INTERCONNECTION: 120% BUSBAR RULE N/A",
     "left",
     p2W - 8
   );
-  drawText(
-    "EPH-ANNO",
-    p2X + 4,
-    p2Y + p2H - 40,
-    1.15,
-    `WARNING: DO NOT RELOCATE SOLAR INTERCONNECTION BREAKER FROM BUS END`,
-    "left",
-    p2W - 8
-  );
+  if (applies120Rule) {
+    drawText(
+      "EPH-ANNO",
+      p2X + 4,
+      p2Y + p2H - 40,
+      1.15,
+      `WARNING: DO NOT RELOCATE SOLAR INTERCONNECTION BREAKER FROM BUS END`,
+      "left",
+      p2W - 8
+    );
+  }
   drawText(
     "EPH-TEXT",
     p2X + 4,
@@ -1316,24 +1535,162 @@ export function exportSolarToDxf(
   drawBox("EPH-BORDER", chkX + 1, chkY + chkH - 12, chkW - 2, 11);
   drawText("EPH-TITLE", chkX + 4, chkY + chkH - 8, 2.3, "COMMISSIONING AUDIT CHECKLIST");
 
+  // Tests are left unchecked: results are recorded on site during commissioning
   const checklistItems = [
-    "[PASS] Array Open Circuit Voltage (Voc) Test",
-    "[PASS] String Operating Current (Imp) Verification",
-    "[PASS] Ground Fault Resistance (Riso) >= 1.0 M-Ohm",
-    "[PASS] Earth Grounding Resistance (R) <= 5.0 Ohms",
-    "[PASS] Polarity Verification (+ / -) Prior to Connection",
-    "[PASS] Inverter Anti-Islanding Trip Test (<= 2.0s)",
-    "[PASS] Rapid Shutdown Initiation & Discharge Check",
-    "[PASS] 120% Busbar Rule Verification & Main OCPD",
-    "[PASS] Terminal Torque Verification per Manufacturer",
-    "[PASS] Phenolic Danger & Dual Source Warning Plaques",
-    "[PASS] Net-Metering Revenue Meter Bi-Directional Test",
-    "[PASS] As-Built Documentation Signed & Sealed by PEE",
+    "Array Open Circuit Voltage (Voc) Test",
+    "String Operating Current (Imp) Verification",
+    "Ground Fault Resistance (Riso) >= 1.0 M-Ohm",
+    "Earth Grounding Resistance (R) <= 5.0 Ohms",
+    "Polarity Verification (+ / -) Prior to Connection",
+    ...(isGridTied ? ["Inverter Anti-Islanding Trip Test (<= 2.0s)"] : []),
+    "Rapid Shutdown Initiation & Discharge Check",
+    ...(applies120Rule ? ["120% Busbar Rule Verification & Main OCPD"] : []),
+    ...(hasBattery ? ["Battery OCPD, Polarity & BMS Communication Check"] : []),
+    "Terminal Torque Verification per Manufacturer",
+    isGridTied ? "Phenolic Danger & Dual Source Warning Plaques" : "Phenolic Danger & PV Source Warning Plaques",
+    ...(hasNetMetering ? ["Net-Metering Revenue Meter Bi-Directional Test"] : []),
+    "As-Built Documentation Signed & Sealed by PEE",
   ];
 
+  const chkRowH = Math.min(9.8, 112 / checklistItems.length);
   checklistItems.forEach((item, idx) => {
-    drawText("EPH-TEXT", chkX + 6, chkY + chkH - 22 - idx * 9.8, 1.45, item, "left", chkW - 12);
+    drawText("EPH-TEXT", chkX + 6, chkY + chkH - 22 - idx * chkRowH, 1.45, `[   ] ${item}`, "left", chkW - 12);
   });
+
+  // Commissioning sign-off lines
+  drawText("EPH-TEXT", chkX + 6, chkY + 13, 1.4, "TESTED BY: ________________________________", "left", chkW - 12);
+  drawText("EPH-TEXT", chkX + 6, chkY + 5, 1.4, "DATE TESTED: ______________________________", "left", chkW - 12);
+
+  // ==========================================
+  // SHEET 4 OF 4: EQUIPMENT DATASHEET TABLES
+  // Origin X: 1335
+  // ==========================================
+  const s4OriginX = 1335;
+  drawStandardSheet(s4OriginX, 4, "EQUIPMENT DATASHEET SPECIFICATIONS");
+  drawStandardTitleBlock(s4OriginX, 4, "EQUIPMENT DATASHEETS");
+
+  const fmt = (v: any, unit = "") =>
+    v === undefined || v === null || v === "" || (typeof v === "number" && !isFinite(v))
+      ? "-"
+      : `${v}${unit}`;
+
+  // Top-anchored two-column specification table; returns the table's bottom Y
+  const drawSpecTable = (
+    x: number,
+    topY: number,
+    w: number,
+    labelW: number,
+    title: string,
+    rows: Array<[string, string]>,
+    rowH: number
+  ) => {
+    const titleH = 11;
+    const headH = 9;
+    const h = titleH + headH + rows.length * rowH + 1;
+    const y = topY - h;
+    const headTop = topY - titleH;
+
+    drawBox("EPH-BORDER", x, y, w, h);
+    drawBox("EPH-BORDER", x + 1, headTop, w - 2, titleH - 1);
+    drawText("EPH-TITLE", x + 4, topY - 7, 2.3, title, "left", w - 8);
+
+    d.setActiveLayer("EPH-BORDER");
+    d.drawLine(x, headTop - headH, x + w, headTop - headH);
+    d.drawLine(x + labelW, y, x + labelW, headTop);
+    drawText("EPH-TITLE", x + 3, headTop - headH + 3, 1.7, "PARAMETER");
+    drawText("EPH-TITLE", x + labelW + 3, headTop - headH + 3, 1.7, "VALUE");
+
+    rows.forEach(([label, value], i) => {
+      const ry = headTop - headH - (i + 1) * rowH;
+      if (i < rows.length - 1) {
+        d.setActiveLayer("EPH-BORDER");
+        d.drawLine(x, ry, x + w, ry);
+      }
+      const ty = ry + (rowH - 1.5) / 2;
+      drawText("EPH-TITLE", x + 3, ty, 1.45, label, "left", labelW - 6);
+      drawText("EPH-TEXT", x + labelW + 3, ty, 1.45, value, "left", w - labelW - 6);
+    });
+    return y;
+  };
+
+  const mod = calc.selectedModule;
+  const moduleRows: Array<[string, string]> = [
+    ["Manufacturer", fmt(mod.manufacturer)],
+    ["Model", fmt(mod.model)],
+    ["Rated Power (Pmax @ STC)", fmt(mod.ratedPowerWp, " Wp")],
+    ["Open Circuit Voltage (Voc)", fmt(mod.voc, " V")],
+    ["Short Circuit Current (Isc)", fmt(mod.isc, " A")],
+    ["Max. Power Voltage (Vmp)", fmt(mod.vmp, " V")],
+    ["Max. Power Current (Imp)", fmt(mod.imp, " A")],
+    ["Maximum System Voltage", fmt(mod.maxSystemVoltage, " V DC")],
+    ["Module Efficiency", fmt(mod.efficiencyPercent, " %")],
+    ["Temp. Coefficient of Voc", fmt(mod.tempCoeffVoc, " %/°C")],
+    ["Temp. Coefficient of Isc", fmt(mod.tempCoeffIsc, " %/°C")],
+    ["Temp. Coefficient of Pmax", fmt(mod.tempCoeffPmax, " %/°C")],
+    ["Dimensions (L x W x T)", `${fmt(mod.lengthMm)} x ${fmt(mod.widthMm)} x ${fmt(mod.thicknessMm)} mm`],
+    ["Weight", fmt(mod.weightKg, " kg")],
+    [`Module Voc @ ${fmt(config.minOperatingTempC, "°C")} (Design)`, fmt(calc.vocCold, " V")],
+    [`Module Vmp @ ${fmt(config.maxOperatingTempC, "°C")} (Design)`, fmt(calc.vmpHot, " V")],
+    ["Quantity", `${fmt(calc.totalModules)} pcs (${eff.numberOfStrings} x ${eff.modulesPerString})`],
+  ];
+  const moduleBottom = drawSpecTable(
+    s4OriginX + 18,
+    264,
+    250,
+    120,
+    "PV MODULE DATASHEET",
+    moduleRows,
+    6.5
+  );
+
+  if (hasBattery) {
+    const b = config.battery;
+    const batteryRows: Array<[string, string]> = [
+      ["Manufacturer", fmt(b.manufacturer)],
+      ["Model", fmt(b.model)],
+      ["Chemistry", fmt(b.chemistry)],
+      ["Nominal Voltage (per unit)", fmt(b.voltageV, " V")],
+      ["Capacity (per unit)", fmt(b.capacityAh, " Ah")],
+      ["Energy (per unit)", fmt(b.energyKwh, " kWh")],
+      ["Depth of Discharge", fmt(b.dodPercent, " %")],
+      ["Round-Trip Efficiency", fmt(b.efficiencyPercent, " %")],
+      ["Units (Series x Parallel)", `${fmt(eff.batteryUnits)} (${fmt(b.unitsInSeries)} S x ${fmt(b.unitsInParallel)} P)`],
+      ["Battery Bank Voltage", fmt(b.batteryBankVoltage, " V")],
+      ["Total Bank Energy", fmt(b.totalEnergyKwh, " kWh")],
+      ["Usable Bank Energy (Design)", fmt(calc.batteryUsableEnergyKwh, " kWh")],
+      ["Backup Duration (Design)", calc.batteryBackupHoursActual > 0 ? fmt(calc.batteryBackupHoursActual, " h") : "-"],
+    ];
+    drawSpecTable(s4OriginX + 18, moduleBottom - 6, 250, 120, "BATTERY STORAGE DATASHEET", batteryRows, 6.5);
+  }
+
+  const inv = calc.selectedInverter;
+  const inverterRows: Array<[string, string]> = [
+    ["Manufacturer", fmt(inv.manufacturer)],
+    ["Model", fmt(inv.model)],
+    ["Rated AC Power", fmt(inv.ratedAcPowerKw, " kW")],
+    ["Max. DC Input Power", fmt(inv.maxDcInputPowerKw, " kW")],
+    ["Max. DC Input Voltage", fmt(inv.maxDcVoltage, " V")],
+    ["MPPT Voltage Range", `${fmt(inv.mpptVoltageRangeMin)} - ${fmt(inv.mpptVoltageRangeMax)} V`],
+    ["Number of MPPTs", fmt(inv.numMppts)],
+    ["Max. Input Current / MPPT", fmt(inv.maxInputCurrentPerMppt, " A")],
+    ["Max. Isc / MPPT", fmt(inv.maxIscPerMppt, " A")],
+    ["Rated AC Current", fmt(inv.ratedAcCurrent, " A")],
+    ["Max. AC Current", fmt(inv.maxAcCurrent, " A")],
+    ["AC Output", `${fmt(inv.phase)} ${fmt(inv.acVoltage, "V")} ${fmt(inv.frequencyHz, "Hz")}`],
+    ["Max. Efficiency", fmt(inv.efficiencyPercent, " %")],
+    ["Enclosure Rating", fmt(inv.ipRating)],
+    ["Quantity", `${inverterQty} unit(s)`],
+  ];
+  const invBottom = drawSpecTable(s4OriginX + 276, 264, 126, 62, "INVERTER DATASHEET", inverterRows, 7.5);
+  drawText(
+    "EPH-ANNO",
+    s4OriginX + 278,
+    invBottom - 6,
+    1.3,
+    "Values as entered in ElectricalPH. Verify against the manufacturer's latest datasheet before procurement and construction.",
+    "left",
+    122
+  );
 
   // Ensure all AutoCAD text styles utilize Arial TrueType font, matching System SLD
   const styleTable = (d as any).tables?.["STYLE"];
