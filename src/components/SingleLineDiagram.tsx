@@ -11,9 +11,10 @@ interface SingleLineDiagramProps {
   isSubPanel?: boolean;
   iscParams?: any;
   parentDesignation?: string;
+  solarConfig?: any;
 }
 
-export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, xOffset = 0, yOffset = 0 }) => {
+export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, solarConfig, xOffset = 0, yOffset = 0 }) => {
   // SVG Dimensions Calculation
   const startY = 320;
   const rowHeight = 60;
@@ -28,6 +29,18 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   const phaseText = is3Phase ? `3-Φ` : `1-Φ ${connectionStr}`.trim();
   
   const wireNumber = parsedSys.wireCount; 
+
+  const solarDetails = React.useMemo(() => {
+    if (!solarConfig) return null;
+    const invKw = Math.round((solarConfig.inverter?.ratedPowerKw * (solarConfig.inverter?.quantity || 1) || 10) * 10) / 10;
+    const pvKwp = Math.round((solarConfig.targetCapacityKwp || (solarConfig.pvModule?.powerWatts * (solarConfig.pvModule?.stringsCount || 1) * (solarConfig.pvModule?.modulesPerString || 1) / 1000) || 12) * 10) / 10;
+    const at = solarConfig.acProtection?.atAmps || 40;
+    const af = solarConfig.acProtection?.afAmps || 100;
+    const poles = solarConfig.acProtection?.poles || (panel.system.includes("3PH") ? 3 : 2);
+    const cable = solarConfig.cabling?.acCable?.conductorSizeMm2 || 14.0;
+    const conduit = solarConfig.cabling?.acCable?.conduitSizeMm || 25;
+    return { invKw, pvKwp, at, af, poles, cable, conduit };
+  }, [solarConfig, panel.system]); 
 
   // Helpers to describe sub-panel dynamic connection configurations
   const getFeederText = (c: Circuit) => {
@@ -340,11 +353,77 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
          );
       })}
 
-      {/* Ground Symbol Bottom Center outside Box */}
-      <line x1="400" y1={boxBottom} x2="400" y2={boxBottom + 20} className="sld-line" />
-      <line x1="370" y1={boxBottom + 20} x2="430" y2={boxBottom + 20} className="sld-line" />
-      <line x1="380" y1={boxBottom + 28} x2="420" y2={boxBottom + 28} className="sld-line" />
-      <line x1="390" y1={boxBottom + 36} x2="410" y2={boxBottom + 36} className="sld-line" />
+      {/* Solar PV Generation Feeder (PEC 6.90.7.2(D) Opposite-End Interconnection) */}
+      {solarDetails && !isSubPanel && (
+        <g>
+          {/* Opposite End Solar Interconnection Breaker */}
+          <line x1="400" y1={boxBottom} x2="400" y2={boxBottom + 25} className="sld-line stroke-amber-600" strokeWidth="2" />
+          <circle cx="400" cy={boxBottom + 25} r="3" fill="#d97706" />
+          <path d={`M 400,${boxBottom + 25} A 12 12 0 0 1 400,${boxBottom + 49}`} className="sld-line stroke-amber-600" strokeWidth="2.5" fill="none" />
+          <circle cx="400" cy={boxBottom + 49} r="3" fill="#d97706" />
+          
+          <text x="420" y={boxBottom + 35} className="sld-text fill-amber-700 font-bold" style={{ fontSize: '11px' }}>
+            {solarDetails.at} AT / {solarDetails.af} AF ({solarDetails.poles}P)
+          </text>
+          <text x="420" y={boxBottom + 48} className="sld-text-small fill-slate-500" style={{ fontSize: '9px' }}>
+            PEC 6.90.7.2(D) BACKFEED OCPD
+          </text>
+
+          {/* Line to AC Disconnect */}
+          <line x1="400" y1={boxBottom + 49} x2="400" y2={boxBottom + 75} className="sld-line stroke-amber-600" strokeWidth="2" />
+
+          {/* AC Isolator */}
+          <rect x="388" y={boxBottom + 75} width="24" height="16" rx="2" className="sld-line stroke-amber-600" fill="#fffbeb" />
+          <text x="400" y={boxBottom + 86} className="sld-text fill-amber-800" style={{ fontSize: '8px', fontWeight: 'bold' }} textAnchor="middle">AC ISO</text>
+          <text x="420" y={boxBottom + 86} className="sld-text-small fill-slate-600" style={{ fontSize: '9px' }}>
+            {solarDetails.cable} mm² THHN in {solarDetails.conduit} mmØ PVC
+          </text>
+
+          {/* Line to Inverter */}
+          <line x1="400" y1={boxBottom + 91} x2="400" y2={boxBottom + 110} className="sld-line stroke-amber-600" strokeWidth="2" />
+
+          {/* Grid-Tie Inverter Block */}
+          <rect x="350" y={boxBottom + 110} width="100" height="38" rx="4" className="sld-line stroke-amber-600" fill="#fef3c7" />
+          <line x1="350" y1={boxBottom + 148} x2="450" y2={boxBottom + 110} className="sld-line stroke-amber-400" strokeWidth="1" strokeDasharray="3 2" />
+          <text x="366" y={boxBottom + 125} className="sld-text fill-amber-900" style={{ fontSize: '9px', fontWeight: 'bold' }}>DC</text>
+          <text x="424" y={boxBottom + 140} className="sld-text fill-amber-900" style={{ fontSize: '9px', fontWeight: 'bold' }}>AC</text>
+          <text x="400" y={boxBottom + 133} className="sld-text fill-amber-950 font-black" style={{ fontSize: '10px' }} textAnchor="middle">
+            {solarDetails.invKw} kW INV
+          </text>
+
+          {/* Line to DC Isolator */}
+          <line x1="400" y1={boxBottom + 148} x2="400" y2={boxBottom + 168} className="sld-line stroke-amber-600" strokeWidth="2" />
+
+          {/* DC Isolator / Combiner Box */}
+          <rect x="388" y={boxBottom + 168} width="24" height="16" rx="2" className="sld-line stroke-amber-600" fill="#fffbeb" />
+          <text x="400" y={boxBottom + 179} className="sld-text fill-amber-800" style={{ fontSize: '8px', fontWeight: 'bold' }} textAnchor="middle">DC ISO</text>
+          <text x="420" y={boxBottom + 179} className="sld-text-small fill-slate-600" style={{ fontSize: '9px' }}>
+            1000V DC Isolator + gPV Fuses + Type II SPD
+          </text>
+
+          {/* Line to Solar PV Array */}
+          <line x1="400" y1={boxBottom + 184} x2="400" y2={boxBottom + 200} className="sld-line stroke-amber-600" strokeWidth="2" />
+
+          {/* Solar PV Array Symbol */}
+          <rect x="330" y={boxBottom + 200} width="140" height="36" rx="4" className="sld-line stroke-amber-600" fill="#f59e0b" fillOpacity="0.2" />
+          <line x1="365" y1={boxBottom + 200} x2="365" y2={boxBottom + 236} className="sld-line stroke-amber-500" strokeWidth="1" />
+          <line x1="400" y1={boxBottom + 200} x2="400" y2={boxBottom + 236} className="sld-line stroke-amber-500" strokeWidth="1" />
+          <line x1="435" y1={boxBottom + 200} x2="435" y2={boxBottom + 236} className="sld-line stroke-amber-500" strokeWidth="1" />
+          <line x1="330" y1={boxBottom + 218} x2="470" y2={boxBottom + 218} className="sld-line stroke-amber-500" strokeWidth="1" />
+          <text x="400" y={boxBottom + 248} className="sld-text fill-amber-900 font-bold" style={{ fontSize: '10px' }} textAnchor="middle">
+            SOLAR PV ARRAY: {solarDetails.pvKwp} kWp DC
+          </text>
+          <text x="400" y={boxBottom + 260} className="sld-text-small fill-slate-500" style={{ fontSize: '8px' }} textAnchor="middle">
+            Grid-Tied Solar Interconnection (PEC 2017 Article 6.90)
+          </text>
+        </g>
+      )}
+
+      {/* Ground Symbol */}
+      <line x1={solarDetails && !isSubPanel ? 300 : 400} y1={boxBottom} x2={solarDetails && !isSubPanel ? 300 : 400} y2={boxBottom + 20} className="sld-line" />
+      <line x1={(solarDetails && !isSubPanel ? 300 : 400) - 30} y1={boxBottom + 20} x2={(solarDetails && !isSubPanel ? 300 : 400) + 30} y2={boxBottom + 20} className="sld-line" />
+      <line x1={(solarDetails && !isSubPanel ? 300 : 400) - 20} y1={boxBottom + 28} x2={(solarDetails && !isSubPanel ? 300 : 400) + 20} y2={boxBottom + 28} className="sld-line" />
+      <line x1={(solarDetails && !isSubPanel ? 300 : 400) - 10} y1={boxBottom + 36} x2={(solarDetails && !isSubPanel ? 300 : 400) + 10} y2={boxBottom + 36} className="sld-line" />
 
     </g>
   );
@@ -355,7 +434,8 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = (props) => {
   const startY = 320;
   const rowHeight = 60;
   const boxBottom = startY + numRows * rowHeight;
-  const svgHeight = boxBottom + 100;
+  const extraBottom = props.solarConfig && !props.isSubPanel ? 280 : 100;
+  const svgHeight = boxBottom + extraBottom;
   const svgWidth = 800;
 
   return (

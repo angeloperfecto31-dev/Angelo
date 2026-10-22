@@ -27,6 +27,10 @@ import {
   RefreshCw,
   Scale,
   ChevronDown,
+  Sun,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowUpRight,
 } from "lucide-react";
 import {
   DndContext,
@@ -54,6 +58,8 @@ import {
   ShortCircuitParams,
   VoltageDropCalculation,
 } from "../types";
+import { SolarDesignConfig } from "../types/solar";
+import { computeSolarDesign } from "../utils/solarEngine";
 import DemandFormulaBuilder from "./DemandFormulaBuilder";
 import {
   DEFAULT_1PH_DEMAND_FORMULA,
@@ -213,6 +219,8 @@ export interface LoadScheduleProps {
   vdCalculations?: VoltageDropCalculation[];
   transformerPrimaryVoltage?: number;
   setTransformerPrimaryVoltage?: (val: number) => void;
+  solarConfig?: SolarDesignConfig;
+  onNavigateToSolar?: () => void;
 }
 
 const AmpsInput = ({
@@ -582,7 +590,10 @@ export default function LoadSchedule({
   parentMdpConnection,
   transformerPrimaryVoltage,
   setTransformerPrimaryVoltage,
+  solarConfig,
+  onNavigateToSolar,
 }: LoadScheduleProps & { isAdmin?: boolean }) {
+  const [showSolarCard, setShowSolarCard] = useState<boolean>(true);
   const circuits = useMemo(() => {
     return (rawCircuits || []).map((c) => {
       let p: any = c.phases;
@@ -610,6 +621,122 @@ export default function LoadSchedule({
   const [tableFontSize, setTableFontSize] = useState<number>(11);
   const [isInstDropdownOpen, setIsInstDropdownOpen] = useState(false);
   const [instSearchTerm, setInstSearchTerm] = useState('');
+
+  // Solar PV Integration and PEC 6.90.7.2(D) Sizing
+  const isSolarLinked = useMemo(() => {
+    if (!solarConfig) return false;
+    const currentId = panelId || panel.id || panel.designation || "mdp";
+    if (solarConfig.selectedMdpId) {
+      return (
+        solarConfig.selectedMdpId === currentId ||
+        solarConfig.selectedMdpId === panel.designation ||
+        solarConfig.selectedMdpId === panel.id
+      );
+    }
+    // Default link to MDP if not sub-panel
+    return !isSubPanel && !isSubSubPanel;
+  }, [solarConfig, panelId, panel.id, panel.designation, isSubPanel, isSubSubPanel]);
+
+  const solarCalc = useMemo(() => {
+    if (!solarConfig || !isSolarLinked) return null;
+    return computeSolarDesign(solarConfig, panel, circuits, availableSubPanels);
+  }, [solarConfig, isSolarLinked, panel, circuits, availableSubPanels]);
+
+  // PEC 6.90.7.2(D) 120% Busbar Rule Verification
+  const solarBusbarRule = useMemo(() => {
+    if (!solarCalc || !solarConfig) return null;
+    const busbarAmp = (panel as any).busRating || panel.mainBreakerAF || panel.mainBreakerAT || 200;
+    const mainOcpdAmp = panel.mainBreakerAT || (panel as any).mainBreakerRating || 175;
+    const solarOcpdAmp = solarCalc.acBreakerRecommendedAmps || solarConfig.acProtection.atAmps || 40;
+    const totalSuppliedAmps = mainOcpdAmp + solarOcpdAmp;
+    const maxAllowedBusbarAmps = Math.round(busbarAmp * 1.2);
+    const isCompliant = totalSuppliedAmps <= maxAllowedBusbarAmps;
+    const margin = maxAllowedBusbarAmps - totalSuppliedAmps;
+
+    return {
+      busbarAmp,
+      mainOcpdAmp,
+      solarOcpdAmp,
+      totalSuppliedAmps,
+      maxAllowedBusbarAmps,
+      isCompliant,
+      margin,
+    };
+  }, [solarCalc, solarConfig, (panel as any).busRating, panel.mainBreakerAF, panel.mainBreakerAT]);
+
+  // Check if solar circuit is already present in this panel
+  const existingSolarCircuit = useMemo(() => {
+    return circuits.find(
+      (c) =>
+        c.description.toLowerCase().includes("solar pv") ||
+        c.description.toLowerCase().includes("inverter output") ||
+        c.description.toLowerCase().includes("solar backfeed")
+    );
+  }, [circuits]);
+
+  const handleSyncSolarCircuit = useCallback(() => {
+    if (!solarCalc || !solarConfig) return;
+    const solarAcKw = solarCalc.totalInverterAcKw || 10;
+    const solarVa = Math.round(solarAcKw * 1000);
+    const is3Ph = panel.system.includes("3PH");
+    const solarPoles = solarConfig.acProtection.poles || (is3Ph ? 3 : 2);
+    const solarAt = solarCalc.acBreakerRecommendedAmps || 40;
+    const solarAf = solarCalc.acBreakerAfRecommended || 100;
+    const wireMm2 = solarConfig.cabling.acCable.conductorSizeMm2 || 14.0;
+    const conduitMm = solarConfig.cabling.acCable.conduitSizeMm || 25;
+    const egcResult = findEgcSize(solarAt, panel.conductorMaterial || "Copper");
+    const groundSizeStr = `${egcResult.sizeMm2} mm²`;
+
+    const existingIndex = circuits.findIndex(
+      (c) =>
+        c.description.toLowerCase().includes("solar pv") ||
+        c.description.toLowerCase().includes("inverter output") ||
+        c.description.toLowerCase().includes("solar backfeed")
+    );
+
+    const solarCurrent = is3Ph ? Math.round((solarVa / (Math.sqrt(3) * (panel.voltage || 400))) * 10) / 10 : Math.round((solarVa / (panel.voltage || 230)) * 10) / 10;
+
+    if (existingIndex >= 0) {
+      const updated = [...circuits];
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        loadVA: solarVa,
+        wattage: solarVa,
+        loadA: solarCurrent,
+        mcbAT: solarAt,
+        mcbAF: solarAf,
+        mcbP: `${solarPoles}P`,
+        wireSize: wireMm2.toString(),
+        conduitSize: conduitMm.toString(),
+      };
+      setCircuits(updated);
+    } else {
+      const nextCircuitNo = circuits.length > 0 ? Math.max(...circuits.map((c) => c.circuitNo)) + 1 : 1;
+      const newCircuit: Circuit = {
+        id: `solar-pv-feed-${Date.now()}`,
+        circuitNo: nextCircuitNo,
+        description: `Solar PV Inverter AC Output (${solarAcKw} kW)`,
+        loadType: LoadType.POWER,
+        loadVA: solarVa,
+        wattage: solarVa,
+        quantity: 1,
+        loadA: solarCurrent,
+        voltage: panel.voltage || (is3Ph ? 400 : 230),
+        phases: is3Ph ? ["R", "Y", "B"] : ["R"],
+        mcbAT: solarAt,
+        mcbAF: solarAf,
+        mcbP: `${solarPoles}P`,
+        mcbKAIC: 10,
+        mcbType: MCBType.MCCB,
+        wireSize: wireMm2.toString(),
+        wireType: "THHN",
+        groundSize: groundSizeStr,
+        conduitSize: conduitMm.toString(),
+        conduitType: "PVC",
+      };
+      setCircuits([...circuits, newCircuit]);
+    }
+  }, [solarCalc, solarConfig, circuits, panel.system, panel.voltage, panel.conductorMaterial, setCircuits]);
 
   // Helper to determine eligible subpanels for selection on circuit `c`
   const getEligibleSubPanels = useCallback((circuitId: string) => {
@@ -678,7 +805,12 @@ export default function LoadSchedule({
       });
     });
 
+    const seen = new Set<string>();
     return availableSubPanels.filter((sp) => {
+      if (!sp || !sp.id) return false;
+      if (seen.has(sp.id)) return false;
+      seen.add(sp.id);
+
       // Cannot select self
       if (sp.id === actualCurrentId) return false;
 
@@ -1511,7 +1643,7 @@ export default function LoadSchedule({
   const mainFeeder = computedMainFeeder;
 
   useEffect(() => {
-    if (!circuits || circuits.length === 0) return;
+    if (readOnly || !circuits || circuits.length === 0) return;
 
     // Evaluate if any branch circuit needs an automatic kAIC upgrade
     const targetKaic = mainFeeder.kaic;
@@ -1542,7 +1674,7 @@ export default function LoadSchedule({
     if (changed) {
       setCircuits(nextCircuits);
     }
-  }, [mainFeeder.kaic, circuits]);
+  }, [mainFeeder.kaic, circuits, readOnly]);
 
   const nonCompliantBranchCircuits = useMemo(() => {
     return circuits.filter((c) => {
@@ -2017,6 +2149,164 @@ export default function LoadSchedule({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Solar PV Interconnection & PEC 6.90 Compliance Card */}
+      {isSolarLinked && solarCalc && solarConfig && (
+        <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-300 dark:border-amber-700/60 rounded-2xl p-5 shadow-sm space-y-4 no-print transition-all">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200 dark:border-amber-800/40 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500 text-white shadow-xs">
+                <Sun className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                    Solar PV Grid Interconnection (PEC 6.90)
+                  </h3>
+                  <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                    Synchronized
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Connected to this panel board • DC Array: <strong className="text-amber-700 dark:text-amber-300">{solarCalc.totalDcCapacityKwp} kWp</strong> • Inverter Output: <strong className="text-amber-700 dark:text-amber-300">{solarCalc.totalInverterAcKw} kW AC</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSyncSolarCircuit}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                title="Automatically create or update the dedicated Solar PV backfeed circuit in this panel schedule"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{existingSolarCircuit ? "Update Solar Circuit" : "Insert Solar Circuit"}</span>
+              </button>
+              {onNavigateToSolar && (
+                <button
+                  type="button"
+                  onClick={onNavigateToSolar}
+                  className="px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Navigate to Solar Design Module"
+                >
+                  <span>Solar Module</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 1. Generation Metrics */}
+            <div className="bg-white/80 dark:bg-slate-900/80 rounded-xl p-3.5 border border-amber-100 dark:border-amber-900/40 space-y-2">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
+                Inverter Output Sizing
+              </span>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[10px] block">AC Rated Output</span>
+                  <strong className="text-sm font-black text-slate-800 dark:text-slate-100">{solarCalc.totalInverterAcKw} kW</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">Max AC Current</span>
+                  <strong className="text-sm font-black text-slate-800 dark:text-slate-100">{solarCalc.totalSystemAcCurrent} A</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">Required OCPD (125%)</span>
+                  <strong className="font-bold text-amber-700 dark:text-amber-400">
+                    {solarCalc.acBreakerRecommendedAmps} AT / {solarCalc.acBreakerAfRecommended} AF
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">Feeder Cable</span>
+                  <strong className="font-bold text-slate-700 dark:text-slate-300">
+                    {solarConfig.cabling.acCable.conductorSizeMm2} mm² THHN
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. PEC 6.90.7.2(D) 120% Busbar Rule */}
+            {solarBusbarRule && (
+              <div className={`rounded-xl p-3.5 border space-y-2 ${
+                solarBusbarRule.isCompliant
+                  ? "bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+                  : "bg-rose-50/80 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800"
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                    PEC 120% Busbar Rule
+                  </span>
+                  {solarBusbarRule.isCompliant ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-md">
+                      <CheckCircle2 className="w-3 h-3" /> PASS
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-900/60 px-2 py-0.5 rounded-md">
+                      <AlertTriangle className="w-3 h-3" /> NON-COMPLIANT
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">Main OCPD + Solar OCPD:</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                      {solarBusbarRule.mainOcpdAmp}A + {solarBusbarRule.solarOcpdAmp}A = {solarBusbarRule.totalSuppliedAmps}A
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-slate-500">120% Busbar Limit ({solarBusbarRule.busbarAmp}A × 1.2):</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                      {solarBusbarRule.maxAllowedBusbarAmps}A
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-700/50">
+                    {solarBusbarRule.isCompliant
+                      ? `Compliant: ${solarBusbarRule.margin}A busbar headroom available.`
+                      : `Violation: Exceeds busbar rating by ${Math.abs(solarBusbarRule.margin)}A. Upgrade busbar or derate main OCPD.`}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Schedule Circuit Status */}
+            <div className="bg-white/80 dark:bg-slate-900/80 rounded-xl p-3.5 border border-amber-100 dark:border-amber-900/40 space-y-2">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 block uppercase tracking-wider">
+                Panel Circuit Schedule
+              </span>
+              {existingSolarCircuit ? (
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Configured on Circuit #{existingSolarCircuit.circuitNo}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {existingSolarCircuit.description} • {existingSolarCircuit.mcbAT} AT / {existingSolarCircuit.mcbAF} AF ({existingSolarCircuit.mcbP})
+                  </p>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded">
+                    Note: Place breaker at the opposite end of the busbar from utility mains per PEC 6.90.7.2(D).
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2 text-xs">
+                  <p className="text-slate-500 dark:text-slate-400 text-[11px]">
+                    No dedicated Solar PV circuit found in this panel schedule. Click below to add it with PEC-calculated ratings:
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSyncSolarCircuit}
+                    className="w-full py-1.5 text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 rounded-lg transition-colors cursor-pointer"
+                  >
+                    + Add Solar Circuit ({solarCalc.totalInverterAcKw} kW)
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -4635,9 +4925,9 @@ export default function LoadSchedule({
                                   ? "Sub-Sub Panel"
                                   : "Sub-Panel"}
                               </option>
-                              {getEligibleSubPanels(c.id).map((sp) => (
+                              {getEligibleSubPanels(c.id).map((sp, spIdx) => (
                                 <option
-                                  key={sp.id}
+                                  key={`eligible-sp-${sp.id}-${spIdx}`}
                                   value={sp.id}
                                   className="dark:bg-slate-900 dark:text-slate-100"
                                 >

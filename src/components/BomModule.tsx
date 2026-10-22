@@ -63,6 +63,7 @@ interface BomModuleProps {
   onSaveBom?: (items: BomItem[], settings: any) => void;
   illumParams?: any;
   mainSource?: any;
+  solarConfig?: any;
 }
 
 // Default standard Materials Library
@@ -166,7 +167,8 @@ export default function BomModule({
   savedBomSettings,
   onSaveBom,
   illumParams,
-  mainSource
+  mainSource,
+  solarConfig
 }: BomModuleProps) {
 
   // Active sub-tab
@@ -262,7 +264,8 @@ export default function BomModule({
         preferredBrandAccessories
       },
       illumParams,
-      mainSource
+      mainSource,
+      solarConfig
     );
 
     // Map generated items to base library pricing to synchronize edited values in real-time
@@ -686,6 +689,20 @@ export default function BomModule({
       value: Math.round(categories[cat])
     })).sort((a, b) => b.value - a.value);
   }, [bomItems]);
+
+  const costSplitData = useMemo(() => [
+    { name: "Materials Base", value: costCalculations.materialsSum },
+    { name: "Labor cost", value: costCalculations.laborSum },
+    { name: "Contingency", value: costCalculations.contingencyAmount },
+    { name: "Profit Margin", value: costCalculations.profitAmount },
+    { name: "Government Tax", value: costCalculations.taxAmount },
+  ], [
+    costCalculations.materialsSum,
+    costCalculations.laborSum,
+    costCalculations.contingencyAmount,
+    costCalculations.profitAmount,
+    costCalculations.taxAmount,
+  ]);
 
   const COLORS = ["#4F46E5", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#6366F1", "#F97316"];
 
@@ -1501,7 +1518,7 @@ export default function BomModule({
                 {categoryData.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-xs text-slate-400 font-mono">No data</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <BarChart data={categoryData} layout="vertical" margin={{ left: 20, right: 10, top: 10, bottom: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" tickFormatter={(v) => `₱${v/1000}k`} />
@@ -1523,16 +1540,10 @@ export default function BomModule({
                 Full Cost Division Split
               </h3>
               <div className="h-64 w-full flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <PieChart>
                     <Pie
-                      data={[
-                        { name: "Materials Base", value: costCalculations.materialsSum },
-                        { name: "Labor cost", value: costCalculations.laborSum },
-                        { name: "Contingency", value: costCalculations.contingencyAmount },
-                        { name: "Profit Margin", value: costCalculations.profitAmount },
-                        { name: "Government Tax", value: costCalculations.taxAmount }
-                      ]}
+                      data={costSplitData}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -1540,8 +1551,8 @@ export default function BomModule({
                       paddingAngle={4}
                       dataKey="value"
                     >
-                      {[0,1,2,3,4].map((index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      {costSplitData.map((_, index) => (
+                        <Cell key={`cost-split-cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip formatter={(value) => `₱${value.toLocaleString()}`} />

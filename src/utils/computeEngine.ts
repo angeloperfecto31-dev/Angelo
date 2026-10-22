@@ -1318,14 +1318,16 @@ export const calculateCircuitValues = (
 
   const baseCalculated = mcbAT <= 50 ? 10 : mcbAT <= 100 ? 18 : 25;
   const panelKaic = panel.icRating ? parseFloat(panel.icRating) || 10 : 10;
-  const computedMcbKAIC = Math.max(baseCalculated, panelKaic);
+  const computedMcbKAIC = Math.max(baseCalculated, panelKaic, c.mcbKAICCalculated || 0);
 
   const mcbKAIC =
     c.kaicOverride !== undefined
       ? c.kaicOverride
       : isSubPanelLink && c.mcbKAIC
         ? c.mcbKAIC
-        : computedMcbKAIC;
+        : c.mcbKAIC !== undefined && c.mcbKAIC >= computedMcbKAIC
+          ? c.mcbKAIC
+          : computedMcbKAIC;
 
   const calculatedWireTypeStr = panel.insulationType || "THHN";
   const finalWireType = c.wireTypeOverride || calculatedWireTypeStr;

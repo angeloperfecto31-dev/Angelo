@@ -63,6 +63,9 @@ import PowerSystemAnalysis from "./components/PowerSystemAnalysis";
 import SystemSLD from "./components/SystemSLD";
 import IlluminationCalc from "./components/IlluminationCalc";
 import FloorPlanUploader from "./components/FloorPlanUploader";
+import { SolarDesignModule } from "./components/solar/SolarDesignModule";
+import { SolarDesignConfig } from "./types/solar";
+import { DEFAULT_SOLAR_CONFIG } from "./utils/solarEngine";
 import InvoiceManager from "./components/InvoiceManager";
 import ProfitDashboard from "./components/ProfitDashboard";
 import { NotificationBell } from "./components/NotificationBell";
@@ -91,7 +94,7 @@ import { ProjectData, MainSourceConfig, MdpData, SavedProject } from "./types/pr
 import ProjectManagerModal from "./components/ProjectManagerModal";
 import { exportToWord } from "./utils/exportWord";
 import { syncHierarchyData } from "./utils/hierarchyEngine";
-import { migrateProjectData } from "./utils/projectMigration";
+import { migrateProjectData, CURRENT_SCHEMA_VERSION } from "./utils/projectMigration";
 import {
   compressData,
   decompressData,
@@ -113,23 +116,13 @@ import {
   findCompanionSource,
 } from "./utils/computeEngine";
 import { exportToCAD } from "./utils/exportDxf";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Cell,
-} from "recharts";
-
 import { toPng } from "html-to-image";
 import { Auth } from "./components/Auth";
 import PECCurrentCalculator from "./components/PECCurrentCalculator";
 import EgcSizingCalculator from "./components/EgcSizingCalculator";
 import TransformerCalc from "./components/TransformerCalc";
 import BomModule from "./components/BomModule";
+import PhaseBalanceChart from "./components/PhaseBalanceChart";
 import { BomItem } from "./utils/bomRulesEngine";
 import {
   ModuleManagement,
@@ -390,7 +383,7 @@ export default function App() {
           let hasMigration = false;
           const updatedProjects = projects.map((p: any) => {
             const projectData = p.data;
-            if (projectData && projectData.schemaVersion !== 4) {
+            if (projectData && projectData.schemaVersion !== CURRENT_SCHEMA_VERSION) {
               hasMigration = true;
               console.log(`[Auto-Migration] Guest user project "${p.name || 'Untitled'}" (${p.id}) is outdated. Upgrading...`);
               const migratedData = migrateProjectData(projectData);
@@ -439,7 +432,7 @@ export default function App() {
             }
           }
 
-          if (projectData && projectData.schemaVersion !== 4) {
+          if (projectData && projectData.schemaVersion !== CURRENT_SCHEMA_VERSION) {
             console.log(`[Auto-Migration] Authenticated user project "${projectDocData.name || 'Untitled'}" (${projectId}) is outdated. Upgrading...`);
             
             const migratedData = migrateProjectData(projectData);
@@ -570,6 +563,7 @@ export default function App() {
     | "egc"
     | "system-sld"
     | "transformer"
+    | "solar"
     | "bom"
     | "power-suite"
     | "billing"
@@ -653,7 +647,16 @@ export default function App() {
   const activeMdp = useMemo(() => mdps.find((m) => m.id === activeMdpId) || mdps[0], [mdps, activeMdpId]);
   const panel = activeMdp.panel || INITIAL_PANEL;
   const circuits = activeMdp.circuits || [];
-  const subPanels = activeMdp.subPanels || [];
+  const subPanels = useMemo(() => {
+    const rawList = activeMdp?.subPanels || [];
+    const seen = new Set<string>();
+    return rawList.filter((sp) => {
+      if (!sp || !sp.id) return false;
+      if (seen.has(sp.id)) return false;
+      seen.add(sp.id);
+      return true;
+    });
+  }, [activeMdp?.subPanels]);
 
   const setPanel = useCallback((val: React.SetStateAction<PanelConfig>) => {
     setMdps((prev) => {
@@ -684,22 +687,51 @@ export default function App() {
       const activeId = prev.find((x) => x.id === activeMdpId)?.id || prev[0].id;
       return prev.map((m) => {
         if (m.id === activeId) {
-          return { ...m, subPanels: typeof val === "function" ? (val as Function)(m.subPanels) : val };
+          const resolved = typeof val === "function" ? (val as Function)(m.subPanels) : val;
+          const seen = new Set<string>();
+          const deduped = Array.isArray(resolved)
+            ? resolved.filter((sp: any) => {
+                if (!sp || !sp.id) return false;
+                if (seen.has(sp.id)) return false;
+                seen.add(sp.id);
+                return true;
+              })
+            : resolved;
+          return { ...m, subPanels: deduped };
         }
         return m;
       });
     });
   }, [activeMdpId]);
 
-  const uniqueSubPanels = useMemo(() => {
-    const seen = new Set<string>();
-    return subPanels.filter((sp) => {
-      if (!sp || !sp.id) return false;
-      if (seen.has(sp.id)) return false;
-      seen.add(sp.id);
-      return true;
-    });
-  }, [subPanels]);
+  const setHierarchy = useCallback(
+    (
+      newCircuits: Circuit[],
+      newSubPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[],
+    ) => {
+      setMdps((prev) => {
+        const activeId = prev.find((x) => x.id === activeMdpId)?.id || prev[0].id;
+        return prev.map((m) => {
+          if (m.id === activeId) {
+            const seen = new Set<string>();
+            const deduped = Array.isArray(newSubPanels)
+              ? newSubPanels.filter((sp: any) => {
+                  if (!sp || !sp.id) return false;
+                  if (seen.has(sp.id)) return false;
+                  seen.add(sp.id);
+                  return true;
+                })
+              : newSubPanels;
+            return { ...m, circuits: newCircuits, subPanels: deduped };
+          }
+          return m;
+        });
+      });
+    },
+    [activeMdpId],
+  );
+
+  const uniqueSubPanels = subPanels;
 
   useEffect(() => {
     setGlobalSubPanels(uniqueSubPanels);
@@ -723,6 +755,18 @@ export default function App() {
     useState<number>(0.8);
   const [transformerLoadingFactor, setTransformerLoadingFactor] =
     useState<number>(0.8);
+
+  const [solarConfig, setSolarConfig] =
+    useState<SolarDesignConfig>(DEFAULT_SOLAR_CONFIG);
+
+  const allPanelsList = useMemo(() => {
+    const list: PanelConfig[] = [];
+    if (panel) list.push(panel);
+    (uniqueSubPanels || []).forEach((sp) => {
+      if (sp?.panel) list.push(sp.panel);
+    });
+    return list;
+  }, [panel, uniqueSubPanels]);
 
   const [bomItems, setBomItems] = useState<BomItem[]>([]);
   const [bomSettings, setBomSettings] = useState<any>(null);
@@ -1130,6 +1174,7 @@ export default function App() {
   const [illumParams, setIllumParams] = useState<IlluminationParams>(
     INITIAL_ILLUMINATION_PARAMS,
   );
+  const isIllumSyncingRef = useRef(false);
 
   // One-way sync: Illumination Saved Rooms -> Circuits
   useEffect(() => {
@@ -1165,13 +1210,22 @@ export default function App() {
         return c;
       });
 
-      return circuitsChanged ? nextCircuits : prevCircuits;
+      if (circuitsChanged) {
+        isIllumSyncingRef.current = true;
+        return nextCircuits;
+      }
+      return prevCircuits;
     });
   }, [illumParams, setCircuits]);
 
   // Backward sync: Load Schedule Circuits -> Illumination Saved Rooms
   useEffect(() => {
     if (!circuits || !illumParams || !illumParams.savedRooms) return;
+
+    if (isIllumSyncingRef.current) {
+      isIllumSyncingRef.current = false;
+      return;
+    }
 
     let savedRoomsChanged = false;
 
@@ -1476,10 +1530,9 @@ export default function App() {
       syncHierarchyData(panel, circuits, subPanels, vdCalculations);
 
     if (hasChanges) {
-      setCircuits(updatedMdpCircuits);
-      setSubPanels(updatedSubPanels);
+      setHierarchy(updatedMdpCircuits, updatedSubPanels);
     }
-  }, [panel, circuits, subPanels, vdCalculations]);
+  }, [panel, circuits, subPanels, vdCalculations, setHierarchy]);
 
   const [illumSnapshots, setIllumSnapshots] = useState<Record<string, string>>(
     {},
@@ -1595,9 +1648,104 @@ export default function App() {
       setTransformerLoadingFactor(data.transformerConfig.loadingFactor ?? 0.8);
     }
 
+    if (data.solarConfig) {
+      const is3Ph = data.panel?.system?.includes("3PH") || false;
+      const computedMdp = data.panel
+        ? computePanelScheduleValues(data.panel, data.circuits || [], {
+            availableSubPanels: data.subPanels || [],
+          })
+        : null;
+      const mdpCb =
+        computedMdp?.mainFeeder?.cb ||
+        data.panel?.mainBreakerAT ||
+        data.panel?.mainOverrides?.breakerAT ||
+        (is3Ph ? 100 : 60);
+
+      const isResProject = (data.panel?.projectType || "").toLowerCase().includes("res");
+      const shouldAutoModule =
+        !data.solarConfig.selectedModuleId ||
+        data.solarConfig.selectedModuleId === "auto" ||
+        data.solarConfig.autoModuleSelection === true ||
+        (isResProject && data.solarConfig.selectedModuleId === "longi-himo6-635");
+
+      const shouldAutoInverter =
+        !data.solarConfig.selectedInverterId ||
+        data.solarConfig.selectedInverterId === "auto" ||
+        data.solarConfig.autoInverterSelection === true ||
+        (!is3Ph && data.solarConfig.selectedInverterId === "huawei-sun2000-100ktl-m2");
+
+      const sanitizedSolar: SolarDesignConfig = {
+        ...DEFAULT_SOLAR_CONFIG,
+        ...data.solarConfig,
+        projectName: data.panel?.project || data.solarConfig.projectName || "Solar PV Installation",
+        projectLocation: data.panel?.location || data.solarConfig.projectLocation || "Philippines",
+        clientName: data.panel?.owner || data.solarConfig.clientName || "Valued Client",
+        designerName: data.panel?.engineer || data.solarConfig.designerName || "Electrical Engineer",
+        projectType: isResProject ? "residential" : (data.solarConfig.projectType || (is3Ph ? "commercial" : "residential")),
+        utilityVoltage: data.solarConfig.utilityVoltage || data.panel?.voltage || (is3Ph ? 400 : 230),
+        utilityPhase: data.solarConfig.utilityPhase || (is3Ph ? "3PH" : "1PH"),
+        utilityFrequency: data.panel?.frequency || data.solarConfig.utilityFrequency || 60,
+        selectedMdpId: data.solarConfig.selectedMdpId || (data.panel as any)?.id || data.panel?.designation || "mdp-1",
+        selectedModuleId: shouldAutoModule ? "auto" : data.solarConfig.selectedModuleId,
+        autoModuleSelection: shouldAutoModule,
+        selectedInverterId: shouldAutoInverter ? "auto" : data.solarConfig.selectedInverterId,
+        autoInverterSelection: shouldAutoInverter,
+        serviceCapacityAmps:
+          data.solarConfig.serviceCapacityAmps && data.solarConfig.serviceCapacityAmps !== 800
+            ? data.solarConfig.serviceCapacityAmps
+            : mdpCb,
+      };
+      setSolarConfig(sanitizedSolar);
+    } else {
+      const is3Ph = data.panel?.system?.includes("3PH") || false;
+      const isResProject = (data.panel?.projectType || "").toLowerCase().includes("res");
+      const computedMdp = data.panel
+        ? computePanelScheduleValues(data.panel, data.circuits || [], {
+            availableSubPanels: data.subPanels || [],
+          })
+        : null;
+      const mdpCb =
+        computedMdp?.mainFeeder?.cb ||
+        data.panel?.mainBreakerAT ||
+        data.panel?.mainOverrides?.breakerAT ||
+        (is3Ph ? 100 : 60);
+
+      setSolarConfig({
+        ...DEFAULT_SOLAR_CONFIG,
+        projectName: data.panel?.project || "Solar PV Installation",
+        projectLocation: data.panel?.location || "Philippines",
+        clientName: data.panel?.owner || "Valued Client",
+        designerName: data.panel?.engineer || "Electrical Engineer",
+        projectType: isResProject ? "residential" : (is3Ph ? "commercial" : "residential"),
+        utilityVoltage: data.panel?.voltage || (is3Ph ? 400 : 230),
+        utilityPhase: is3Ph ? "3PH" : "1PH",
+        utilityFrequency: data.panel?.frequency || 60,
+        serviceCapacityAmps: mdpCb,
+        selectedMdpId: (data.panel as any)?.id || data.panel?.designation || "mdp-1",
+        selectedModuleId: "auto",
+        autoModuleSelection: true,
+        overrides: {},
+        manualModuleOverride: false,
+      });
+    }
+
     if (data.mdps && data.mdps.length > 0) {
-      setMdps(data.mdps);
-      setActiveMdpId(data.mdps[0].id);
+      const sanitizedMdps = data.mdps.map((m: any) => {
+        const seen = new Set<string>();
+        return {
+          ...m,
+          subPanels: Array.isArray(m.subPanels)
+            ? m.subPanels.filter((sp: any) => {
+                if (!sp || !sp.id) return false;
+                if (seen.has(sp.id)) return false;
+                seen.add(sp.id);
+                return true;
+              })
+            : [],
+        };
+      });
+      setMdps(sanitizedMdps);
+      setActiveMdpId(sanitizedMdps[0].id);
     }
 
     if (data.mainSource) {
@@ -1609,7 +1757,7 @@ export default function App() {
     setBomSettings(data.bomSettings || null);
 
     // Automatically and transparently save migrated & recalculated data back to persistence (Firestore or localStorage) ONLY if migration was actually necessary
-    const needsMigrationSave = !rawData || rawData.schemaVersion !== 4;
+    const needsMigrationSave = !rawData || rawData.schemaVersion !== CURRENT_SCHEMA_VERSION;
     if (needsMigrationSave) {
       const runTransparentSave = async () => {
         try {
@@ -1667,6 +1815,7 @@ export default function App() {
       demandFactor: transformerDemandFactor,
       loadingFactor: transformerLoadingFactor,
     },
+    solarConfig,
     bomItems,
     bomSettings,
   };
@@ -1782,6 +1931,7 @@ export default function App() {
     transformerDemandFactor,
     transformerLoadingFactor,
     mainSource,
+    solarConfig,
     user,
     isOnline,
   ]);
@@ -1833,6 +1983,34 @@ export default function App() {
     setBomItems([]);
     setBomSettings(null);
 
+    const is3PhNew = finalOverrides?.system?.includes("3PH") || false;
+    const initialVoltage = finalOverrides?.voltage || (is3PhNew ? 400 : 230);
+    const initialPhase = is3PhNew ? "3PH" : "1PH";
+    const initialFreq = finalOverrides?.frequency || 60;
+    const initialServiceCb = is3PhNew ? 100 : 60;
+
+    const isResProjectNew = (finalOverrides?.projectType || "").toLowerCase().includes("res");
+
+    const freshSolarConfig: SolarDesignConfig = {
+      ...DEFAULT_SOLAR_CONFIG,
+      projectName: finalOverrides?.project || "Untitled Project Station",
+      projectLocation: finalOverrides?.location || "Philippines",
+      clientName: finalOverrides?.owner || "Valued Client",
+      designerName: finalOverrides?.engineer || "Electrical Engineer",
+      projectType: isResProjectNew ? "residential" : (is3PhNew ? "commercial" : "residential"),
+      utilityVoltage: initialVoltage,
+      utilityPhase: initialPhase,
+      utilityFrequency: initialFreq,
+      serviceCapacityAmps: initialServiceCb,
+      selectedMdpId: "mdp-1",
+      selectedModuleId: "auto",
+      autoModuleSelection: true,
+      overrides: {},
+      manualModuleOverride: false,
+      bomItems: [],
+    };
+    setSolarConfig(freshSolarConfig);
+
     // Save this new project immediately so it's persisted in the background!
     const freshData: ProjectData = {
       mainSource: freshMainSource,
@@ -1850,6 +2028,7 @@ export default function App() {
         demandFactor: 0.8,
         loadingFactor: 0.8,
       },
+      solarConfig: freshSolarConfig,
       bomItems: [],
       bomSettings: null,
     };
@@ -2092,6 +2271,7 @@ export default function App() {
     transformerDemandFactor,
     transformerLoadingFactor,
     mainSource,
+    solarConfig,
   ]);
 
   // Debounced auto-save effect
@@ -2232,6 +2412,13 @@ export default function App() {
       icon: Cpu,
       color: "text-rose-600",
       bg: "bg-rose-50",
+    },
+    {
+      id: "solar",
+      label: "Solar Design",
+      icon: Sun,
+      color: "text-amber-500",
+      bg: "bg-amber-50",
     },
     {
       id: "bom",
@@ -4163,6 +4350,7 @@ export default function App() {
             width: width,
             height: height,
             skipFonts: true,
+            fontEmbedCSS: "",
             style: {
               opacity: "1",
               visibility: "visible",
@@ -4384,6 +4572,12 @@ export default function App() {
                     id: "transformer",
                     label: "Transformer Capacity",
                     icon: Cpu,
+                    requiresPremium: false,
+                  },
+                  {
+                    id: "solar",
+                    label: "Solar Design",
+                    icon: Sun,
                     requiresPremium: false,
                   },
                   {
@@ -5291,6 +5485,7 @@ export default function App() {
                       { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
                       { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
                       { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: false },
+                      { id: "solar", label: "Solar Design", icon: Sun, requiresPremium: false },
                       { id: "bom", label: "Bill of Materials", icon: FileSpreadsheet, requiresPremium: true },
                     ]
                       .filter((item) => {
@@ -6635,6 +6830,54 @@ export default function App() {
                         );
                       })()}
 
+                    {/* Solar PV Design Status Card */}
+                    {getModuleStatus("solar") !== "hidden" &&
+                      (() => {
+                        const totalKwp = ((solarConfig.modulesPerString * solarConfig.numberOfStrings * 550) / 1000).toFixed(1);
+                        return (
+                          <div
+                            className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden ${
+                              getModuleStatus("solar") !== "active" ? "opacity-60" : ""
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                  Solar PV Design
+                                </span>
+                                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                                  <Sun className="w-5 h-5" />
+                                </div>
+                              </div>
+
+                              <div className="mt-4">
+                                <h4 className="text-2xl font-black text-slate-900 dark:text-white">
+                                  {solarConfig.targetCapacityKwp || totalKwp} <span className="text-base font-bold text-slate-400">kWp</span>
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                  {solarConfig.projectType.toUpperCase()} • {solarConfig.systemType.toUpperCase()} (PEC 6.90)
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Net Metering Ready
+                              </span>
+                              {getModuleStatus("solar") === "active" && (
+                                <button
+                                  onClick={() => setActiveTab("solar")}
+                                  className="text-amber-600 dark:text-amber-400 font-extrabold hover:underline flex items-center gap-1 relative z-20"
+                                >
+                                  Open Solar{" "}
+                                  <ArrowUpRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                     {/* Illumination target status */}
                     {getModuleStatus("lighting") !== "hidden" &&
                       (() => {
@@ -6866,135 +7109,11 @@ export default function App() {
                     </div>
 
                     {/* Interactive Real-Time Phase Balance Chart */}
-                    {(() => {
-                      const { phaseLoads, phaseImbalance } =
-                        computePanelScheduleValues(panel, circuits, {
-                          availableSubPanels: uniqueSubPanels,
-                        });
-                      const rKVA = (phaseLoads.R || 0) / 1000;
-                      const yKVA = (phaseLoads.Y || 0) / 1000;
-                      const bKVA = (phaseLoads.B || 0) / 1000;
-
-                      const chartData = [
-                        {
-                          name: "Phase R",
-                          Load: parseFloat(rKVA.toFixed(2)),
-                          color: "#ef4444",
-                        },
-                        {
-                          name: "Phase Y",
-                          Load: parseFloat(yKVA.toFixed(2)),
-                          color: "#f59e0b",
-                        },
-                        {
-                          name: "Phase B",
-                          Load: parseFloat(bKVA.toFixed(2)),
-                          color: "#3b82f6",
-                        },
-                      ];
-
-                      return (
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col justify-between space-y-4">
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                                <h4 className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-xs">
-                                  Phase Loading Balance
-                                </h4>
-                              </div>
-                              <span
-                                className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
-                                  phaseImbalance <= 15
-                                    ? "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400"
-                                    : "bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400"
-                                }`}
-                              >
-                                {phaseImbalance.toFixed(2)}% Imbalance
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-400 leading-normal">
-                              Symmetrical current alignment per phase. Minimize
-                              imbalance to optimize feeder wire sizes and limit
-                              transformer temperature expansion under full load.
-                            </p>
-                          </div>
-
-                          <div className="h-32 w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart
-                                data={chartData}
-                                margin={{
-                                  top: 10,
-                                  right: 10,
-                                  left: -25,
-                                  bottom: 0,
-                                }}
-                              >
-                                <CartesianGrid
-                                  strokeDasharray="3 3"
-                                  vertical={false}
-                                  stroke="#f1f5f9"
-                                  className="dark:stroke-slate-800"
-                                />
-                                <XAxis
-                                  dataKey="name"
-                                  stroke="#94a3b8"
-                                  fontSize={10}
-                                  tickLine={false}
-                                />
-                                <YAxis
-                                  stroke="#94a3b8"
-                                  fontSize={10}
-                                  tickLine={false}
-                                  unit="k"
-                                />
-                                <Tooltip
-                                  cursor={{ fill: "transparent" }}
-                                  contentStyle={{
-                                    background: "#1e293b",
-                                    border: "none",
-                                    borderRadius: "8px",
-                                    color: "#fff",
-                                    fontSize: "10px",
-                                    fontFamily: "monospace",
-                                  }}
-                                />
-                                <Bar dataKey="Load" radius={[6, 6, 0, 0]}>
-                                  {chartData.map((entry, index) => (
-                                    <Cell
-                                      key={`cell-${index}`}
-                                      fill={entry.color}
-                                    />
-                                  ))}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-
-                          <div className="flex items-center justify-between text-[10px] font-mono border-t border-slate-100 dark:border-slate-800 pt-3 text-slate-500">
-                            <span>
-                              R:{" "}
-                              <strong className="text-red-600 font-bold">
-                                {rKVA.toFixed(2)}k
-                              </strong>
-                            </span>
-                            <span>
-                              Y:{" "}
-                              <strong className="text-amber-500 font-bold">
-                                {yKVA.toFixed(2)}k
-                              </strong>
-                            </span>
-                            <span>
-                              B:{" "}
-                              <strong className="text-blue-500 font-bold">
-                                {bKVA.toFixed(2)}k
-                              </strong>
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <PhaseBalanceChart
+                      panel={panel}
+                      circuits={circuits}
+                      subPanels={uniqueSubPanels}
+                    />
 
                     {/* PEC Quick Reference Guide */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
@@ -7198,7 +7317,7 @@ export default function App() {
                         {/* Sub Panels Tags */}
                         {uniqueSubPanels.map((sp) => (
                           <button
-                            key={sp.id}
+                            key={`sp-tab-${sp.id}`}
                             onClick={() => setActiveScheduleTab(sp.id)}
                             className={`px-4 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer ${
                               activeScheduleTab === sp.id
@@ -7295,7 +7414,7 @@ export default function App() {
                       }
 
                       return (
-                        <React.Fragment key={sp.id}>
+                        <React.Fragment key={`sp-schedule-${sp.id}`}>
                           <LoadSchedule
                             panel={sp.panel}
                             setPanel={(newPanel) => {
@@ -7593,6 +7712,7 @@ export default function App() {
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     vdCalculations={vdCalculations}
+                    solarConfig={solarConfig}
                   />
                 </motion.div>
               </div>
@@ -7745,6 +7865,35 @@ export default function App() {
                 </motion.div>
               </div>
 
+              {/* Solar Design Tab */}
+              <div
+                className={activeTab === "solar" ? "w-full" : "hidden"}
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={
+                    activeTab === "solar" ? { opacity: 1, y: 0 } : {}
+                  }
+                  transition={{ duration: 0.2 }}
+                  className="w-full"
+                >
+                  <SolarDesignModule
+                    key={currentProjectId || "default-solar"}
+                    solarConfig={solarConfig}
+                    onUpdateSolarConfig={(newConf) => {
+                      setSolarConfig(newConf);
+                    }}
+                    panels={allPanelsList}
+                    circuits={circuits}
+                    subPanels={uniqueSubPanels}
+                    projectName={panel?.project || "Solar PV Installation"}
+                    projectLocation={panel?.location || "Philippines"}
+                    clientName={panel?.owner || "Valued Client"}
+                    designerName={panel?.engineer || "Electrical Engineer"}
+                  />
+                </motion.div>
+              </div>
+
               {/* Bill of Materials (BOM) Tab */}
               <div
                 className={activeTab === "bom" ? "w-full" : "hidden"}
@@ -7801,6 +7950,7 @@ export default function App() {
                       }}
                       illumParams={illumParams}
                       mainSource={mainSource}
+                      solarConfig={solarConfig}
                     />
                   )}
                 </motion.div>

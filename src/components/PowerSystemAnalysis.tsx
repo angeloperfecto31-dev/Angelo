@@ -146,7 +146,11 @@ export default function PowerSystemAnalysis({
     ];
 
     // Sub-panels
+    const seenSpIds = new Set<string>();
     subPanels.forEach(sp => {
+      if (!sp || !sp.id || seenSpIds.has(sp.id)) return;
+      seenSpIds.add(sp.id);
+
       let spConnectedVA = 0;
       let spDemandVA = 0;
       sp.circuits.forEach(c => {
@@ -1109,13 +1113,13 @@ export default function PowerSystemAnalysis({
 
               {/* Simple tree flow diagram */}
               <div className="space-y-2 mt-2">
-                {networkTopology.map(node => {
+                {networkTopology.map((node, nIdx) => {
                   const results = loadFlowResults[node.id];
                   const isSelected = selectedNodeId === node.id;
                   
                   return (
                     <button
-                      key={node.id}
+                      key={`topology-node-${node.id}-${nIdx}`}
                       onClick={() => setSelectedNodeId(node.id)}
                       className={`w-full text-left p-2.5 rounded-lg border transition flex items-center justify-between ${
                         isSelected 
@@ -1406,8 +1410,8 @@ export default function PowerSystemAnalysis({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {Object.values(faultResults).map(res => (
-                      <tr key={res.id} className="hover:bg-slate-900/30">
+                    {Object.values(faultResults).map((res, rIdx) => (
+                      <tr key={`fault-result-${res.id}-${rIdx}`} className="hover:bg-slate-900/30">
                         <td className="py-2.5 font-bold text-white">{res.name}</td>
                         <td className="py-2.5 text-center font-mono font-bold text-yellow-400">
                           {res.iAvailable.toFixed(2)} kA

@@ -505,6 +505,22 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       status: "PASS" | "FAIL";
       recommendation: string;
     }> = [];
+    const seenIds = new Set<string>();
+
+    const pushUnique = (item: {
+      id: string;
+      location: string;
+      type: string;
+      faultCurrentA: number;
+      selectedKAIC: number;
+      status: "PASS" | "FAIL";
+      recommendation: string;
+    }) => {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        list.push(item);
+      }
+    };
 
     if (!panel) return list;
 
@@ -517,7 +533,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     const mdpPass = mdpKAICSelected >= mdpFaultKA;
     const recMdp = standardKAICRatings.find(k => k >= mdpFaultKA) || 100;
 
-    list.push({
+    pushUnique({
       id: "mdp-main",
       location: panel.designation || "Main Distribution Panel (MDP) Main Breaker",
       type: "Main Protective Device",
@@ -539,7 +555,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
         const bPass = branchKAICSelected >= branchFaultKA;
         const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
 
-        list.push({
+        pushUnique({
           id: `mdp-branch-${c.circuitNo}`,
           location: `${panel.designation || "MDP"} - Circuit ${c.circuitNo} (${c.description})`,
           type: "Branch Circuit Breaker",
@@ -586,7 +602,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
         const spPass = spKAICSelected >= spFaultKA;
         const recSp = standardKAICRatings.find(k => k >= spFaultKA) || 100;
 
-        list.push({
+        pushUnique({
           id: `sp-${sp.id}-main`,
           location: `${sp.panel.designation || `Subpanel ${sp.id}`} Main Breaker`,
           type: "Subpanel Main Device",
@@ -606,7 +622,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
           const bPass = branchKAICSelected >= branchFaultKA;
           const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
 
-          list.push({
+          pushUnique({
             id: `sp-${sp.id}-branch-${c.circuitNo}`,
             location: `${sp.panel.designation || `Subpanel ${sp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
             type: "Branch Circuit Breaker",
@@ -650,7 +666,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
         const sspPass = sspKAICSelected >= sspFaultKA;
         const recSsp = standardKAICRatings.find(k => k >= sspFaultKA) || 100;
 
-        list.push({
+        pushUnique({
           id: `ssp-${ssp.id}-main`,
           location: `${ssp.panel.designation || `Sub-Subpanel ${ssp.id}`} Main Breaker`,
           type: "Sub-Subpanel Main Device",
@@ -669,7 +685,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
           const bPass = branchKAICSelected >= branchFaultKA;
           const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
 
-          list.push({
+          pushUnique({
             id: `ssp-${ssp.id}-branch-${c.circuitNo}`,
             location: `${ssp.panel.designation || `Sub-Subpanel ${ssp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
             type: "Branch Circuit Breaker",
@@ -2049,10 +2065,10 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-300">
-              {kaicValidationData.map(d => {
+              {kaicValidationData.map((d, dIdx) => {
                 const isFail = d.status === "FAIL";
                 return (
-                  <tr key={d.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/20 transition-all duration-150">
+                  <tr key={`kaic-${d.id}-${dIdx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/20 transition-all duration-150">
                     <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-100">{d.location}</td>
                     <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{d.type}</td>
                     <td className="py-3.5 px-4 text-center font-mono font-bold text-amber-600 dark:text-amber-400">

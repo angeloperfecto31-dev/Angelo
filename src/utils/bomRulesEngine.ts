@@ -1,5 +1,6 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
 import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles, getBreakerFrameSize, getActiveWireCount } from "./computeEngine";
+import { computeSolarDesign, generateSolarBOM } from "./solarEngine";
 
 export interface BomItem {
   id: string;
@@ -129,7 +130,8 @@ export const runBomQuantityTakeoff = (
     preferredBrandAccessories: string;
   },
   illumParams?: any,
-  mainSource?: any
+  mainSource?: any,
+  solarConfig?: any
 ): { items: BomItem[]; logs: string[] } => {
   const logs: string[] = [];
   const generatedItems: BomItem[] = [];
@@ -1273,6 +1275,97 @@ export const runBomQuantityTakeoff = (
     // Process Subpanel Circuits
     processPanelCircuits(sp.panel, sp.circuits, spId);
   });
+
+  // Solar PV System Bill of Materials Integration
+  if (solarConfig) {
+    try {
+      const solarResult = computeSolarDesign(solarConfig);
+      const solarBom = generateSolarBOM(solarConfig, solarResult);
+      logs.push(`[${timestamp}] Rules Engine: Integrating Solar PV Bill of Materials (${solarBom.length} items)...`);
+
+      solarBom.forEach((sItem) => {
+        let category: BomItem["category"] = "Equipment";
+        if (sItem.category === "Wiring & Conduit") {
+          category = sItem.itemDescription.toLowerCase().includes("cable") ? "Conductors" : "Conduits";
+        } else if (sItem.category === "AC Equipment" && sItem.itemDescription.toLowerCase().includes("breaker")) {
+          category = "Breakers";
+        } else if (sItem.category === "Safety & Accessories") {
+          category = sItem.itemDescription.toLowerCase().includes("ground") ? "Grounding" : "Accessories";
+        } else if (sItem.category === "DC Equipment" && sItem.itemDescription.toLowerCase().includes("fuse")) {
+          category = "Protection";
+        }
+
+        // Standard unit pricing estimate in PHP
+        let unitCost = 0;
+        let laborCost = 0;
+        if (sItem.id === "bom-pv-modules") {
+          unitCost = Math.round((solarConfig.pvModule?.powerWatts || 550) * 16);
+          laborCost = 450;
+        } else if (sItem.id === "bom-inverters") {
+          unitCost = Math.round((solarConfig.inverter?.ratedPowerKw || 10) * 9500);
+          laborCost = 3500;
+        } else if (sItem.id === "bom-battery") {
+          unitCost = Math.round((solarConfig.battery?.energyKwh || 5) * 18000);
+          laborCost = 2500;
+        } else if (sItem.id === "bom-mounting") {
+          unitCost = 1650;
+          laborCost = 400;
+        } else if (sItem.id === "bom-dc-combiner") {
+          unitCost = 9500;
+          laborCost = 1200;
+        } else if (sItem.id === "bom-dc-fuses") {
+          unitCost = 450;
+          laborCost = 60;
+        } else if (sItem.id === "bom-dc-isolator") {
+          unitCost = 2400;
+          laborCost = 350;
+        } else if (sItem.id === "bom-dc-spd") {
+          unitCost = 2800;
+          laborCost = 350;
+        } else if (sItem.id === "bom-mc4") {
+          unitCost = 120;
+          laborCost = 40;
+        } else if (sItem.id === "bom-dc-cable") {
+          unitCost = 85;
+          laborCost = 25;
+        } else if (sItem.id === "bom-ac-breakers") {
+          unitCost = 1850;
+          laborCost = 250;
+        } else if (sItem.id === "bom-solar-panel") {
+          unitCost = 6500;
+          laborCost = 1500;
+        } else if (sItem.id === "bom-ac-cable") {
+          unitCost = 160;
+          laborCost = 35;
+        } else if (sItem.id === "bom-conduits") {
+          unitCost = 3500;
+          laborCost = 1500;
+        } else if (sItem.id === "bom-grounding") {
+          unitCost = 4200;
+          laborCost = 1200;
+        } else if (sItem.id === "bom-labels") {
+          unitCost = 1500;
+          laborCost = 300;
+        }
+
+        addItem({
+          category,
+          name: sItem.itemDescription.split(" ").slice(0, 6).join(" "),
+          description: sItem.itemDescription,
+          brand: sItem.manufacturer,
+          specification: sItem.model,
+          quantity: sItem.quantity,
+          unit: sItem.unit || "pcs",
+          unitCost,
+          laborCostPerUnit: laborCost,
+          remarks: `PEC 6.90 Solar PV Interconnection`,
+          source: `Solar Design Module`
+        });
+      });
+    } catch (err) {
+      console.warn("Could not compute solar BOM in takeoff:", err);
+    }
+  }
 
   logs.push(`[${timestamp}] Rules Engine: Successfully calculated ${generatedItems.length} takeoff line items.`);
 

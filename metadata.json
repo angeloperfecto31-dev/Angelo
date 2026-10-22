@@ -1,6 +1,6 @@
 {
   "name": "PEC Load Schedule Pro",
-  "description": "Professional electrical load schedule calculator based on Philippine Electrical Code (PEC) Part 1 and 2, featuring automated wire sizing and phase balancing.",
+  "description": "Professional electrical load schedule and solar PV design calculator based on Philippine Electrical Code (PEC 2017 Part 1 & 2), featuring automated wire sizing, transformer capacity, phase balancing, and comprehensive solar system engineering.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

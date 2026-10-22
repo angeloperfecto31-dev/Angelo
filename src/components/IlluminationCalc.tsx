@@ -2545,6 +2545,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
             width: captureWidth,
             height: captureHeight,
             skipFonts: true,
+            fontEmbedCSS: "",
             style: {
               opacity: "1",
               visibility: "visible",

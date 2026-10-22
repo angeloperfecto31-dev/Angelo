@@ -97,6 +97,9 @@ export interface Circuit {
 }
 
 export interface PanelConfig {
+  id?: string;
+  name?: string;
+  client?: string;
   project: string;
   projectType?: 'Residential' | 'Commercial' | 'Industrial' | string;
   institution?: string;

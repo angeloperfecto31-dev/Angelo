@@ -20,6 +20,7 @@ import {
   RotateCcw,
   X,
   Info,
+  Sun,
 } from "lucide-react";
 import { exportToCAD } from "../utils/exportDxf";
 
@@ -37,6 +38,7 @@ interface SystemSLDProps {
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
   vdCalculations?: VoltageDropCalculation[];
+  solarConfig?: any;
 }
 
 const getPanelRows = (panelCircuits: Circuit[], panelSystem: string) => {
@@ -65,11 +67,13 @@ export default function SystemSLD({
   isPremium = true,
   onRequestUpgrade,
   vdCalculations,
+  solarConfig,
 }: SystemSLDProps) {
   const formatWireSize = (size: number | string) => size;
 
   const [isExporting, setIsExporting] = useState(false);
   const [showPrintWarning, setShowPrintWarning] = useState(false);
+  const [showSolar, setShowSolar] = useState<boolean>(true);
 
   // Panning and Zooming State for Maximize/Full-Screen Feature
   const [isMaximized, setIsMaximized] = useState(false);
@@ -484,10 +488,11 @@ export default function SystemSLD({
   }, [resolvedLayouts, widths]);
 
   const svgHeight = useMemo(() => {
+    const extraSolar = solarConfig && showSolar ? 280 : 0;
     return (
-      (yOffsets.get(maxDepth) || 0) + (depthMaxHeights.get(maxDepth) || 0) + 100
+      (yOffsets.get(maxDepth) || 0) + (depthMaxHeights.get(maxDepth) || 0) + 100 + extraSolar
     );
-  }, [maxDepth, yOffsets, depthMaxHeights]);
+  }, [maxDepth, yOffsets, depthMaxHeights, solarConfig, showSolar]);
 
   const handlePrint = () => {
     const isIframe = window.self !== window.top;
@@ -512,6 +517,8 @@ export default function SystemSLD({
         pixelRatio: 2,
         width: svgWidth,
         height: svgHeight,
+        skipFonts: true,
+        fontEmbedCSS: "",
       });
       const link = document.createElement("a");
       link.download = `${panel.project ? panel.project.replace(/[^a-zA-Z0-9_-]/g, "_") : "Project"}_System_SLD.png`;
@@ -536,6 +543,8 @@ export default function SystemSLD({
         pixelRatio: 2,
         width: svgWidth,
         height: svgHeight,
+        skipFonts: true,
+        fontEmbedCSS: "",
       });
 
       const { jsPDF } = await import("jspdf");
@@ -614,6 +623,20 @@ export default function SystemSLD({
               {isPremium ? "Export CAD Drawing" : "Export AutoCAD (Premium)"}
             </span>
           </button>
+          {solarConfig && (
+            <button
+              onClick={() => setShowSolar((prev) => !prev)}
+              className={`px-3.5 py-2 rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2 cursor-pointer border ${
+                showSolar
+                  ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-600"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700"
+              }`}
+              title="Toggle Solar PV Interconnection branch on SLD"
+            >
+              <Sun className="w-4 h-4" />
+              <span>Solar PV: {showSolar ? "Visible" : "Hidden"}</span>
+            </button>
+          )}
           <button
             onClick={handlePrint}
             disabled={isExporting}
@@ -708,6 +731,7 @@ export default function SystemSLD({
                 formatWireSize={formatWireSize}
                 isSubPanel={false}
                 iscParams={iscParams}
+                solarConfig={showSolar ? solarConfig : undefined}
                 xOffset={MdpXOffset}
                 yOffset={50}
               />
@@ -1009,6 +1033,7 @@ export default function SystemSLD({
                     formatWireSize={formatWireSize}
                     isSubPanel={false}
                     iscParams={iscParams}
+                    solarConfig={showSolar ? solarConfig : undefined}
                     xOffset={MdpXOffset}
                     yOffset={50}
                   />

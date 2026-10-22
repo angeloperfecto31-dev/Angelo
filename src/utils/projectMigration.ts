@@ -3,6 +3,7 @@ import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, Illum
 import { INITIAL_PANEL } from "../components/LoadSchedule";
 import { INITIAL_SHORT_CIRCUIT_PARAMS, INITIAL_ILLUMINATION_PARAMS } from "../constants";
 import { calculateCircuitValues, computePanelScheduleValues } from "./computeEngine";
+import { DEFAULT_SOLAR_CONFIG } from "./solarEngine";
 
 const generateSafeId = () => {
   return typeof crypto !== 'undefined' && crypto.randomUUID 
@@ -22,6 +23,8 @@ function ensureArray(val: any): any[] {
   }
   return [];
 }
+
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export function migrateProjectData(data: any): ProjectData {
   if (!data) {
@@ -143,7 +146,16 @@ export function migrateProjectData(data: any): ProjectData {
   if (data.mdps && Array.isArray(data.mdps) && data.mdps.length > 0) {
     migratedMdps = data.mdps.map((mdp: any) => {
       const panel = migratePanel(mdp.panel);
-      const mergedSubPanels = [...ensureArray(mdp.subPanels), ...ensureArray(mdp.subSubPanels)];
+      const rawMergedSubPanels = [...ensureArray(mdp.subPanels), ...ensureArray(mdp.subSubPanels)];
+      const seenSpIds = new Set<string>();
+      const mergedSubPanels = rawMergedSubPanels.filter((sp: any) => {
+        if (!sp) return false;
+        const id = sp.id || sp.panel?.id;
+        if (!id) return true;
+        if (seenSpIds.has(id)) return false;
+        seenSpIds.add(id);
+        return true;
+      });
 
       // Migrate sub-panels of the MDP first (since MDP circuits might refer to them)
       const migratedSubPanels = mergedSubPanels.map((sp: any) => {
@@ -265,13 +277,21 @@ export function migrateProjectData(data: any): ProjectData {
       ? `${legacyPanel.mainOverrides.kaic}kAIC` : `${mainFeederData.kaic}kAIC`,
   };
 
+  const seenFinalSpIds = new Set<string>();
+  const mergedFinalSubPanels = [...migratedSubPanels, ...migratedSubSubPanels].filter((sp) => {
+    if (!sp || !sp.id) return false;
+    if (seenFinalSpIds.has(sp.id)) return false;
+    seenFinalSpIds.add(sp.id);
+    return true;
+  });
+
   const finalMdps = migratedMdps.length > 0 
     ? migratedMdps 
     : [{
         id: "mdp-1",
         panel: loadedPanel,
         circuits: mainCircuits,
-        subPanels: [...migratedSubPanels, ...migratedSubSubPanels],
+        subPanels: mergedFinalSubPanels,
       }];
 
   // 4. Migrate Voltage Drop Calculations with updated metrics
@@ -346,9 +366,90 @@ export function migrateProjectData(data: any): ProjectData {
     utilityProvider: activePanel.utilityProvider || "Utility",
   };
 
+  // 9. Ensure solar PV design configuration with deep fallback and accurate MDP synchronization
+  const rawSolar = data.solarConfig || {};
+  const is3PhasePanel = activePanel.system?.includes("3PH") || false;
+  const computedMdpValues = computePanelScheduleValues(activePanel, activeCircuits, {
+    availableSubPanels: activeSubPanels,
+  });
+  const mdpCalculatedBreaker =
+    computedMdpValues?.mainFeeder?.cb ||
+    activePanel.mainBreakerAT ||
+    activePanel.mainOverrides?.breakerAT ||
+    (is3PhasePanel ? 100 : 60);
+
+  const finalServiceCapacity =
+    rawSolar.serviceCapacityAmps && rawSolar.serviceCapacityAmps !== 800
+      ? rawSolar.serviceCapacityAmps
+      : mdpCalculatedBreaker;
+
+  const isResPanel = (activePanel.projectType || "").toLowerCase().includes("res");
+  const isAutoMod =
+    !rawSolar.selectedModuleId ||
+    rawSolar.selectedModuleId === "auto" ||
+    rawSolar.autoModuleSelection === true ||
+    (isResPanel && rawSolar.selectedModuleId === "longi-himo6-635");
+
+  const isAutoInv =
+    !rawSolar.selectedInverterId ||
+    rawSolar.selectedInverterId === "auto" ||
+    rawSolar.autoInverterSelection === true ||
+    (!is3PhasePanel && rawSolar.selectedInverterId === "huawei-sun2000-100ktl-m2");
+
+  const solarConfig = {
+    ...DEFAULT_SOLAR_CONFIG,
+    utilityVoltage: activePanel.voltage || (is3PhasePanel ? 400 : 230),
+    utilityPhase: is3PhasePanel ? "3PH" : "1PH",
+    utilityFrequency: activePanel.frequency || 60,
+    selectedMdpId: rawSolar.selectedMdpId || (activePanel as any).id || activePanel.designation || "MDP",
+    ...rawSolar,
+    projectType: isResPanel ? "residential" : (rawSolar.projectType || (is3PhasePanel ? "commercial" : "residential")),
+    selectedModuleId: isAutoMod ? "auto" : rawSolar.selectedModuleId,
+    autoModuleSelection: isAutoMod,
+    selectedInverterId: isAutoInv ? "auto" : rawSolar.selectedInverterId,
+    autoInverterSelection: isAutoInv,
+    sizingMethod: rawSolar.sizingMethod || "load_demand",
+    serviceCapacityAmps: finalServiceCapacity,
+    battery: {
+      ...DEFAULT_SOLAR_CONFIG.battery,
+      ...(rawSolar.battery || {}),
+    },
+    dcProtection: {
+      ...DEFAULT_SOLAR_CONFIG.dcProtection,
+      ...(rawSolar.dcProtection || {}),
+    },
+    acProtection: {
+      ...DEFAULT_SOLAR_CONFIG.acProtection,
+      ...(rawSolar.acProtection || {}),
+    },
+    cabling: {
+      ...DEFAULT_SOLAR_CONFIG.cabling,
+      ...(rawSolar.cabling || {}),
+      dcCable: {
+        ...DEFAULT_SOLAR_CONFIG.cabling.dcCable,
+        ...(rawSolar.cabling?.dcCable || {}),
+      },
+      acCable: {
+        ...DEFAULT_SOLAR_CONFIG.cabling.acCable,
+        ...(rawSolar.cabling?.acCable || {}),
+      },
+    },
+    transformer: {
+      ...DEFAULT_SOLAR_CONFIG.transformer,
+      ...(rawSolar.transformer || {}),
+    },
+    netMetering: {
+      ...DEFAULT_SOLAR_CONFIG.netMetering,
+      ...(rawSolar.netMetering || {}),
+    },
+    overrides: rawSolar.overrides || {},
+    bomItems: Array.isArray(rawSolar.bomItems) ? rawSolar.bomItems : [],
+    quotation: rawSolar.quotation || undefined,
+  };
+
   return {
     ...data,
-    schemaVersion: 4,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     panel: activePanel,
     circuits: activeCircuits,
     subPanels: activeSubPanels,
@@ -358,6 +459,7 @@ export function migrateProjectData(data: any): ProjectData {
     vdCalculations: migratedVdCalculations,
     illumParams: migratedIllum,
     transformerConfig,
+    solarConfig,
     mainSource,
     bomItems: data.bomItems || [],
     bomSettings: data.bomSettings || null,

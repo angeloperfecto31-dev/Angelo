@@ -27,7 +27,7 @@ try {
 }
 
 
-function sanitizeStringForDxf(text: any): string {
+export function sanitizeStringForDxf(text: any): string {
   if (text === null || text === undefined) return "";
 
   let res = String(text);
@@ -83,7 +83,7 @@ function sanitizeStringForDxf(text: any): string {
 }
 
 // Custom MText entity that integrates perfectly with the dxf-writer system and uses its internal Handle system
-class MText extends DatabaseObject {
+export class MText extends DatabaseObject {
   x: number;
   y: number;
   height: number;

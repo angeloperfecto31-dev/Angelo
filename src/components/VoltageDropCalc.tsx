@@ -108,125 +108,6 @@ export default function VoltageDropCalc({
     });
   }, [subPanels, subSubPanels]);
 
-  // Auto-sync calculations with the hierarchy
-  useEffect(() => {
-    const newCalcs: VoltageDropCalculation[] = [];
-    
-    const getLength = (sourceId: string) => {
-      const existing = calculations.find(c => c.source === sourceId);
-      if (existing) return existing.length;
-
-      const companionSource = findCompanionSource(sourceId, panel, circuits, allSubPanels);
-      if (companionSource) {
-        const companionExisting = calculations.find(c => c.source === companionSource);
-        if (companionExisting) return companionExisting.length;
-      }
-
-      return 30; // default 30m
-    };
-
-    const getWireSize = (sourceId: string, defaultSize: string) => {
-      return defaultSize;
-    };
-
-    const getWireSets = (sourceId: string, defaultSets: number) => {
-      return defaultSets;
-    };
-
-    const getVoltage = (sourceId: string, defaultVolt: number) => {
-      return defaultVolt;
-    };
-
-    const getSystemType = (sourceId: string, defaultSys: "1PH" | "3PH") => {
-      return defaultSys;
-    };
-
-    if (panel && circuits) {
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(panel, circuits, { availableSubPanels: allSubPanels, vdCalculations: calculations });
-      const is3PH = panel.system.includes("3PH");
-      newCalcs.push({
-        id: calculations.find(c => c.source === "main")?.id || crypto.randomUUID(),
-        source: "main",
-        name: "Main Feeder",
-        loadA: Number(mainCurrent.designAmp.toFixed(2)),
-        length: getLength("main"),
-        wireSize: getWireSize("main", mainFeeder.wire.size.toString()),
-        wireSets: getWireSets("main", mainFeeder.wire.runs),
-        voltage: getVoltage("main", panel.voltage || 230),
-        systemType: getSystemType("main", is3PH ? "3PH" : "1PH"),
-      });
-      
-      circuits.forEach(c => {
-         if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-         newCalcs.push({
-            id: calculations.find(x => x.source === c.id)?.id || crypto.randomUUID(),
-            source: c.id,
-            name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
-            loadA: c.loadA,
-            length: getLength(c.id),
-            wireSize: getWireSize(c.id, c.wireSize),
-            wireSets: getWireSets(c.id, c.wireSets || c.calculatedWireSets || 1),
-            voltage: getVoltage(c.id, c.voltage || panel.voltage || 230),
-            systemType: getSystemType(c.id, (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH"),
-         });
-      });
-    }
-
-    allSubPanels.forEach(sp => {
-      const { mainCurrent, mainFeeder } = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: allSubPanels, vdCalculations: calculations });
-      const is3PH = sp.panel.system.includes("3PH");
-      newCalcs.push({
-        id: calculations.find(c => c.source === sp.id)?.id || crypto.randomUUID(),
-        source: sp.id,
-        name: `${sp.panel.designation || "Sub-Panel"} Feeder`,
-        loadA: Number(mainCurrent.designAmp.toFixed(2)),
-        length: getLength(sp.id),
-        wireSize: getWireSize(sp.id, mainFeeder.wire.size.toString()),
-        wireSets: getWireSets(sp.id, mainFeeder.wire.runs),
-        voltage: getVoltage(sp.id, sp.panel.voltage || panel.voltage || 230),
-        systemType: getSystemType(sp.id, is3PH ? "3PH" : "1PH"),
-      });
-
-      sp.circuits.forEach(c => {
-         if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-         newCalcs.push({
-            id: calculations.find(x => x.source === c.id)?.id || crypto.randomUUID(),
-            source: c.id,
-            name: c.description ? `Circuit ${c.circuitNo}: ${c.description}` : `Circuit ${c.circuitNo}`,
-            loadA: c.loadA,
-            length: getLength(c.id),
-            wireSize: getWireSize(c.id, c.wireSize),
-            wireSets: getWireSets(c.id, c.wireSets || c.calculatedWireSets || 1),
-            voltage: getVoltage(c.id, c.voltage || sp.panel.voltage || panel.voltage || 230),
-            systemType: getSystemType(c.id, (c.is3PhaseMarker !== undefined ? c.is3PhaseMarker : (c.phases && c.phases.length > 2)) ? "3PH" : "1PH"),
-         });
-      });
-    });
-
-    // Check for changes
-    let changed = false;
-    if (newCalcs.length !== calculations.length) {
-      changed = true;
-    } else {
-       for(let i=0; i<newCalcs.length; i++) {
-          if (newCalcs[i].source !== calculations[i].source ||
-              newCalcs[i].loadA !== calculations[i].loadA ||
-              newCalcs[i].wireSize !== calculations[i].wireSize ||
-              newCalcs[i].wireSets !== calculations[i].wireSets ||
-              newCalcs[i].voltage !== calculations[i].voltage ||
-              newCalcs[i].systemType !== calculations[i].systemType ||
-              newCalcs[i].length !== calculations[i].length ||
-              newCalcs[i].name !== calculations[i].name) {
-             changed = true; break;
-          }
-       }
-    }
-    
-    if (changed) {
-       setCalculations(newCalcs);
-    }
-  }, [panel, circuits, allSubPanels, transformerPrimaryVoltage]);
-
   const calculateVDAndCompliance = (calc: VoltageDropCalculation) => {
     const res = calculateUnifiedVD(calc, panel, allSubPanels, circuits || [], {
       mainFeederLimit: mainFeederVdLimit,
@@ -826,8 +707,10 @@ export default function VoltageDropCalc({
   // Path Tracing & Endpoints for the Automatic Feeder Cascade Diagram
   const pathEndpoints = useMemo(() => {
     const list: Array<{ id: string; name: string; type: string }> = [];
+    const seenEpIds = new Set<string>();
 
     // 1. Main Panel (MDP)
+    seenEpIds.add("main");
     list.push({
       id: "main",
       name: `${panel?.designation || "Main Distribution Panel"} (MDP) Feeder`,
@@ -839,30 +722,42 @@ export default function VoltageDropCalc({
       circuits.forEach(c => {
         if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
         if (c.linkedSubPanelId) return; // covered by subpanel option
-        list.push({
-          id: c.id,
-          name: `MDP Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
-          type: "circuit",
-        });
+        if (!seenEpIds.has(c.id)) {
+          seenEpIds.add(c.id);
+          list.push({
+            id: c.id,
+            name: `MDP Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
+            type: "circuit",
+          });
+        }
       });
     }
 
     // 3. Subpanels and their branch circuits
     allSubPanels.forEach(sp => {
-      list.push({
-        id: sp.id,
-        name: `${sp.panel.designation || "Subpanel"} Feeder`,
-        type: "panel",
-      });
-
-      sp.circuits.forEach(c => {
-        if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+      if (!sp || !sp.id) return;
+      if (!seenEpIds.has(sp.id)) {
+        seenEpIds.add(sp.id);
         list.push({
-          id: c.id,
-          name: `${sp.panel.designation || "Subpanel"} Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
-          type: "circuit",
+          id: sp.id,
+          name: `${sp.panel?.designation || "Subpanel"} Feeder`,
+          type: "panel",
         });
-      });
+      }
+
+      if (sp.circuits) {
+        sp.circuits.forEach(c => {
+          if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+          if (!seenEpIds.has(c.id)) {
+            seenEpIds.add(c.id);
+            list.push({
+              id: c.id,
+              name: `${sp.panel?.designation || "Subpanel"} Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
+              type: "circuit",
+            });
+          }
+        });
+      }
     });
 
     return list;
@@ -2306,8 +2201,8 @@ export default function VoltageDropCalc({
                   onChange={(e) => setSelectedEndpointId(e.target.value)}
                   className="w-full md:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 cursor-pointer"
                 >
-                  {pathEndpoints.map((ep) => (
-                    <option key={ep.id} value={ep.id}>
+                  {pathEndpoints.map((ep, epIdx) => (
+                    <option key={`path-ep-${ep.id}-${epIdx}`} value={ep.id}>
                       {ep.name}
                     </option>
                   ))}

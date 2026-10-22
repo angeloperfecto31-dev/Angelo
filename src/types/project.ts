@@ -1,4 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, IlluminationParams } from "../types";
+import { SolarDesignConfig } from "./solar";
 
 export interface MainSourceConfig {
   systemVoltage: number;
@@ -36,6 +37,7 @@ export interface ProjectData {
     demandFactor: number;
     loadingFactor: number;
   };
+  solarConfig?: SolarDesignConfig;
   bomItems?: any[];
   bomSettings?: {
     wasteConductors: number;
