@@ -6,10 +6,6 @@ import {
 } from "../../types/solar";
 import { PanelConfig, Circuit, VoltageDropCalculation } from "../../types";
 import {
-  computePanelScheduleValues,
-  getConductorLabel,
-} from "../../utils/computeEngine";
-import {
   Printer,
   Download,
   AlertCircle,
@@ -39,6 +35,7 @@ import { toPng, toSvg } from "html-to-image";
 import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { SolarSLDPictorial, computePictorialLayout } from "./SolarSLDPictorial";
+import { computeLinkedPanelData, solarBackfeedAmps } from "../../utils/solarLinkedPanel";
 
 interface SolarSLDProps {
   config: SolarDesignConfig;
@@ -92,118 +89,11 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   }, []);
   const modalContainerRef = useRef<HTMLDivElement>(null);
 
-  // Synchronized System SLD Panel Data Engine
-  const linkedPanelData = useMemo(() => {
-    const targetId = config.selectedMdpId;
-    let targetPanel: PanelConfig | undefined;
-    let targetCircuits: Circuit[] = circuits || [];
-
-    if (subPanels && subPanels.length > 0) {
-      const sp = subPanels.find(
-        (p) => p.id === targetId || p.panel?.designation === targetId
-      );
-      if (sp) {
-        targetPanel = sp.panel;
-        targetCircuits = sp.circuits || [];
-      }
-    }
-
-    if (!targetPanel && panels && panels.length > 0) {
-      targetPanel =
-        panels.find((p) => p.id === targetId || p.designation === targetId) ||
-        panels[0];
-      targetCircuits = circuits || [];
-    }
-
-    if (!targetPanel) {
-      targetPanel = {
-        id: "main",
-        designation: "MAIN DISTRIBUTION PANEL (MDP)",
-        system: `${config.utilityVoltage}V ${config.utilityPhase}`,
-        voltage: config.utilityVoltage || 230,
-        phase: config.utilityPhase?.includes("3PH") ? 3 : 1,
-        mainBreakerRating: config.serviceCapacityAmps || 100,
-        mainBreakerType: "MCCB",
-        mainBreakerPoles: config.utilityPhase?.includes("3PH") ? 3 : 2,
-        serviceEntranceConduitSize: "32mm",
-        insulationType: "THHN",
-        conductorMaterial: "Copper",
-        icRating: "10",
-      } as any;
-    }
-
-    const computed = computePanelScheduleValues(targetPanel, targetCircuits, {
-      vdCalculations,
-      panelId: targetPanel.id || "main",
-      availableSubPanels: subPanels,
-    });
-
-    const cb = computed.mainFeeder.cb || config.serviceCapacityAmps || 100;
-    const af = computed.mainFeeder.af || Math.max(cb, cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : cb <= 600 ? 600 : 800);
-    const poles = computed.mainFeeder.poles || (targetPanel.system.includes("3PH") ? 3 : 2);
-    const kaic = computed.mainFeeder.kaic || parseFloat(targetPanel.icRating || "10") || 10;
-    const wire = computed.mainFeeder.wire;
-    const groundSize = computed.mainFeeder.groundSize;
-    const conduitSize = computed.mainFeeder.conduitSize;
-    const conduitType = computed.mainFeeder.conduitType || "PVC";
-    const runs = wire?.runs || 1;
-    const insulation = targetPanel.insulationType || "THHN";
-    const material = targetPanel.conductorMaterial || "Copper";
-
-    const feederLabel = getConductorLabel(
-      wire?.size || 14,
-      groundSize || "8.0",
-      poles,
-      runs,
-      insulation
-    ) + (material === "Aluminum" ? " (AL)" : " (CU)");
-
-    const conduitLabel = `IN ${conduitSize.toUpperCase()}Ø ${conduitType.toUpperCase()} CONDUIT`;
-
-    const connectedKVA = (computed.totalVA / 1000).toFixed(2);
-    const demandKVA = (computed.totalDemandVA / 1000).toFixed(2);
-    const systemVoltage = targetPanel.voltage || config.utilityVoltage || 230;
-    const is3Phase = targetPanel.system?.includes("3PH") || false;
-    const demandA = (
-      computed.mainCurrent?.designAmp ||
-      (computed.totalDemandVA / (systemVoltage * (is3Phase ? 1.732 : 1))) ||
-      0
-    ).toFixed(1);
-    const phaseText = is3Phase ? "3PH 3W" : "1PH 2W";
-
-    // Active branch circuits from panel schedule
-    const activeCircuits = (targetCircuits || []).filter((c) => {
-      const load = (c.loadVA || 0) + (c.wattage || 0);
-      return load > 0 || (c.description && c.description.trim() !== "");
-    });
-
-    return {
-      panel: targetPanel,
-      circuits: targetCircuits,
-      activeCircuits,
-      computed,
-      designation: targetPanel.designation || "MAIN DISTRIBUTION PANEL (MDP)",
-      mainFeeder: {
-        cb,
-        af,
-        poles: Number(poles) || 2,
-        kaic,
-        type: targetPanel.mainOverrides?.breakerType || targetPanel.type || "MCCB",
-        wire,
-        groundSize,
-        conduitSize,
-        conduitType,
-        feederLabel,
-        conduitLabel,
-      },
-      connectedKVA,
-      demandKVA,
-      demandA,
-      systemVoltage,
-      is3Phase,
-      phaseText,
-    };
-  }, [config.selectedMdpId, config.serviceCapacityAmps, config.utilityVoltage, config.utilityPhase, panels, circuits, subPanels, vdCalculations]);
+  // Panel the solar system connects to (shared with the Solar exports so all show the same data)
+  const linkedPanelData = useMemo(
+    () => computeLinkedPanelData(config, panels, circuits, subPanels, vdCalculations),
+    [config, panels, circuits, subPanels, vdCalculations]
+  );
 
   const isHybrid = config.systemType === "hybrid";
   const isOffGrid = config.systemType === "off-grid";
@@ -254,18 +144,26 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
     return lines;
   };
 
+  // 120% busbar rule (PEC 6.90.7.2(D)). The app has no busbar field, so the main breaker frame (AF)
+  // is taken as the busbar rating; the solar side is the real back-feed device (see solarBackfeedAmps).
+  const busCheck = useMemo(() => {
+    const mainA = linkedPanelData.mainFeeder.cb;
+    const backfeedA = solarBackfeedAmps(calc);
+    const busA = linkedPanelData.mainFeeder.af || config.serviceCapacityAmps || 200;
+    const infeed = mainA + backfeedA;
+    const busMax = Math.round(busA * 1.2);
+    return { mainA, backfeedA, busA, infeed, busMax, ok: infeed <= busMax };
+  }, [linkedPanelData, calc, config.serviceCapacityAmps]);
+
   const sheetNotes = useMemo(() => {
     const eff = calc.effective;
     const utilityName = (config.netMetering?.utilityProvider || "DISTRIBUTION UTILITY").toUpperCase();
     const sysV = config.utilityVoltage || 230;
     const sysPh = isThreePhase ? "3PH 3W" : "1PH 2W";
-    const dcLimit = config.cabling?.dcMaxDropPercent ?? 2.0;
-    const acLimit = config.cabling?.acMaxDropPercent ?? 1.5;
-    const mainA = linkedPanelData.mainFeeder.cb;
-    const busA = linkedPanelData.mainFeeder.af || config.serviceCapacityAmps || 200;
-    const infeed = mainA + eff.acBreakerAtAmps;
-    const busMax = Math.round(busA * 1.2);
-    const busOk = infeed <= busMax;
+    // Same fallbacks as the calculation engine
+    const dcLimit = config.cabling?.dcMaxDropPercent || 1.5;
+    const acLimit = config.cabling?.acMaxDropPercent || 1.5;
+    const { mainA, backfeedA, infeed, busMax, ok: busOk } = busCheck;
     const columns: Array<{ title: string; items: Array<{ label: string; text: string; highlight?: boolean }> }> = [
       {
         title: "I. GENERAL DRAWING & CODE MANDATES (PEC 2017)",
@@ -286,7 +184,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
           { label: "DC WIRING", text: `2 × ${eff.dcCableSizeMm2} mm² PV1-F / EN 50618 XLPO DC TINNED CU IN ${eff.dcConduitSizeMm}mm CONDUIT. VOLTAGE DROP Vd = ${calc.dcVoltageDropPercent}% (LIMIT ≤ ${dcLimit}%).` },
           { label: "AC FEEDERS", text: `${eff.acBreakerPoles} × ${eff.acCableSizeMm2} mm² CU THHN/THWN-2 (90°C) IN ${eff.acConduitSizeMm}mm CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (LIMIT ≤ ${acLimit}%).` },
           { label: "DC PROTECTION", text: `${eff.dcIsolatorRatingAmps}A DC ${config.dcProtection?.isolatorVoltageVolts ?? 1000}V ROTARY ISOLATOR (PEC 6.90.3.1) + ${eff.dcFuseRatingAmps}A ${config.dcProtection?.fuseVoltageVolts ?? 1000}V gPV PROTECTION + TYPE 2 DC SPD (${config.dcProtection?.spdInKa ?? 20}/${config.dcProtection?.spdImaxKa ?? 40}kA).` },
-          { label: "AC PROTECTION", text: `${eff.acBreakerAtAmps}A AT (${eff.acBreakerPoles}P) BREAKER (${linkedPanelData.mainFeeder.kaic} kAIC) + AC TYPE 2 SPD RATED FOR ${sysV}V ${sysPh} AT THE MAIN BUSBAR INTERCONNECTION POINT.` },
+          { label: "AC PROTECTION", text: `${eff.acBreakerAtAmps}A AT (${eff.acBreakerPoles}P) BREAKER (${eff.acKaic} kAIC) + AC TYPE 2 SPD RATED FOR ${sysV}V ${sysPh} AT THE MAIN BUSBAR INTERCONNECTION POINT.` },
         ],
       },
       {
@@ -294,7 +192,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         items: [
           {
             label: "120% BUSBAR RULE",
-            text: `MAIN (${mainA}A) + SOLAR (${eff.acBreakerAtAmps}A) = ${infeed}A ${busOk ? "≤" : ">"} 120% BUS CAPACITY (${busMax}A). PEC 6.90.7.2(D) ${busOk ? "PASS" : "EXCEEDED - REVISE DESIGN"}.`,
+            text: `MAIN (${mainA}A) + SOLAR (${backfeedA}A) = ${infeed}A ${busOk ? "≤" : ">"} 120% BUS CAPACITY (${busMax}A). PEC 6.90.7.2(D) ${busOk ? "PASS" : "EXCEEDED - REVISE DESIGN"}.`,
             highlight: true,
           },
           { label: "RAPID SHUTDOWN", text: "PV CIRCUITS ON OR IN BUILDINGS SHALL REDUCE ARRAY BOUNDARY CONDUCTORS TO ≤ 80V WITHIN 30 SECONDS OF INITIATION (PEC 6.90.2.3)." },
@@ -317,7 +215,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
     const maxLines = Math.max(...wrapped.map((c) => c.items.reduce((n, it) => n + it.lines.length, 0)));
     const height = 30 + 26 + 12 + maxLines * NOTE_LINE_H + 6 * 7 + 12;
     return { columns: wrapped, height, busOk };
-  }, [calc, config, linkedPanelData, isThreePhase, notesCharsPerLine]);
+  }, [calc, config, linkedPanelData, isThreePhase, notesCharsPerLine, busCheck]);
 
   // Title block: long values wrap onto extra lines (rows grow) instead of being cut off
   const TB_VALUE_FS = 14;
@@ -1376,10 +1274,10 @@ II. TECHNICAL MATERIAL SPECIFICATIONS
 3. DC WIRING: 2 × ${calc.effective.dcCableSizeMm2} mm² PV1-F / EN 50618 XLPO DOUBLE-INSULATED 1500V DC TINNED COPPER RUN IN ${calc.effective.dcConduitSizeMm} CONDUIT. VOLTAGE DROP Vd = ${calc.dcVoltageDropPercent}% (PEC LIMIT ≤ 2.0%).
 4. AC FEEDERS: ${calc.effective.acBreakerPoles} × ${calc.effective.acCableSizeMm2} mm² COPPER THHN/THWN-2 (90°C) IN ${calc.effective.acConduitSizeMm} CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (STRICTLY ≤ 1.5%).
 5. DC PROTECTION: ${calc.effective.dcIsolatorRatingAmps}A DC 1000V ROTARY ISOLATOR SWITCH (PEC 6.90.3.1) + ${calc.effective.dcFuseRatingAmps}A 1000V gPV DC STRING FUSES + TYPE 2 DC SURGE PROTECTIVE DEVICE (SPD 20/40kA).
-6. AC OVERCURRENT PROTECTION: ${calc.effective.acBreakerAtAmps}A AT (${calc.effective.acBreakerPoles}P) MCCB (${linkedPanelData.mainFeeder.kaic} kAIC) + AC TYPE 2 SPD AT THE MAIN DISTRIBUTION PANEL INTERCONNECTION POINT.
+6. AC OVERCURRENT PROTECTION: ${calc.effective.acBreakerAtAmps}A AT (${calc.effective.acBreakerPoles}P) MCCB (${calc.effective.acKaic} kAIC) + AC TYPE 2 SPD AT THE MAIN DISTRIBUTION PANEL INTERCONNECTION POINT.
 
 III. INTERCONNECTION, SAFETY & COMMISSIONING
-1. 120% BUSBAR RULE (PEC 6.90.7.2.D): MAIN SERVICE BREAKER (${linkedPanelData.mainFeeder.cb}A) + SOLAR BACKFEED BREAKER (${calc.effective.acBreakerAtAmps}A) = ${linkedPanelData.mainFeeder.cb + calc.effective.acBreakerAtAmps}A ≤ 120% BUSBAR RATING (${Math.round((linkedPanelData.mainFeeder.af || config.serviceCapacityAmps || 200) * 1.2)}A). STATUS: PEC FULLY COMPLIANT (PASS).
+1. 120% BUSBAR RULE (PEC 6.90.7.2.D): MAIN SERVICE BREAKER (${linkedPanelData.mainFeeder.cb}A) + SOLAR BACKFEED BREAKER (${busCheck.backfeedA}A) = ${busCheck.infeed}A ${busCheck.ok ? "≤" : ">"} 120% BUSBAR RATING (${busCheck.busMax}A). STATUS: ${busCheck.ok ? "PEC FULLY COMPLIANT (PASS)" : "EXCEEDS 120% LIMIT - REVISE DESIGN"}.
 2. RAPID SHUTDOWN SYSTEM (PEC 6.90.2.3): SYSTEM INITIATES RAPID SHUTDOWN TO REDUCE ARRAY CONDUCTORS TO ≤ 80V WITHIN 30 SECONDS OF INITIATION TO PROTECT EMERGENCY RESPONDERS.
 3. ANTI-ISLANDING PROTECTION (IEEE 1547 / PEC 6.90.7.1): INVERTER AUTOMATICALLY CEASES EXPORT WITHIN ≤ 2.0 SECONDS UPON LOSS OF DISTRIBUTION UTILITY GRID VOLTAGE.
 4. TESTING & VERIFICATION: MANDATORY POLARITY CHECK, OPEN CIRCUIT VOLTAGE (Voc), SHORT CIRCUIT CURRENT (Isc), AND INSULATION RESISTANCE TEST (MEGGER > 1.0 MΩ @ 1000V DC).
@@ -1445,7 +1343,7 @@ III. INTERCONNECTION, SAFETY & COMMISSIONING
                         III. Interconnection &amp; Commissioning
                       </span>
                       <ul className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
-                        <li><strong>120% Bus Rule:</strong> {linkedPanelData.mainFeeder.cb}A + {calc.effective.acBreakerAtAmps}A = {linkedPanelData.mainFeeder.cb + calc.effective.acBreakerAtAmps}A ≤ {Math.round((linkedPanelData.mainFeeder.af || config.serviceCapacityAmps || 200) * 1.2)}A (PASS).</li>
+                        <li><strong>120% Bus Rule:</strong> {busCheck.mainA}A + {busCheck.backfeedA}A = {busCheck.infeed}A {busCheck.ok ? "≤" : ">"} {busCheck.busMax}A ({busCheck.ok ? "PASS" : "EXCEEDED"}).</li>
                         <li><strong>Rapid Shutdown:</strong> ≤ 80V within 30s per PEC 6.90.2.3.</li>
                         <li><strong>Anti-Islanding:</strong> Trip within ≤ 2.0s per IEEE 1547 / PEC 6.90.7.1.</li>
                         <li><strong>Pre-Commissioning:</strong> Voc, Isc, and Megger &gt; 1.0 MΩ @ 1000V DC.</li>

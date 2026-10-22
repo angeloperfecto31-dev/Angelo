@@ -7,6 +7,7 @@ import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults } from "../types/solar";
 import { sanitizeStringForDxf, MText } from "./exportDxf";
 import { captureSolarSld } from "./solarSldCapture";
+import { solarBackfeedAmps } from "./solarLinkedPanel";
 import type { PictorialOptions } from "../components/solar/SolarSLDPictorial";
 
 // Configure default text style to use TrueType Arial font, identical to System SLD
@@ -251,8 +252,8 @@ export function buildSolarDxf(
   const dcSpdInKa = config.dcProtection?.spdInKa ?? 20;
   const dcSpdImaxKa = config.dcProtection?.spdImaxKa ?? 40;
   const acSpdVolts = config.acProtection?.spdRatingVolts ?? 440;
-  const dcMaxDropPct = config.cabling?.dcMaxDropPercent ?? 2.0;
-  const acMaxDropPct = config.cabling?.acMaxDropPercent ?? 1.5;
+  const dcMaxDropPct = config.cabling?.dcMaxDropPercent || 1.5;
+  const acMaxDropPct = config.cabling?.acMaxDropPercent || 1.5;
   const utilityName = sanitizeStringForDxf(config.netMetering?.utilityProvider || "DISTRIBUTION UTILITY");
   // Drawing date in Philippine Standard Time (YYYY-MM-DD)
   const issueDate = new Intl.DateTimeFormat("en-CA", {
@@ -273,14 +274,21 @@ export function buildSolarDxf(
   const pPhase = sanitizeStringForDxf(
     panelData?.phaseText || (config.utilityPhase?.includes("3PH") ? "3PH 4W" : "1PH 2W")
   );
+  // The app has no busbar field: the main breaker frame (AF) is taken as the busbar rating
   const busRating = pAf;
   const maxBus120 = Math.round(busRating * 1.2);
-  const totalInfeed = pMain + calc.effective.acBreakerAtAmps;
+  const backfeedAmps = solarBackfeedAmps(calc);
+  const totalInfeed = pMain + backfeedAmps;
+  const multiInverter = calc.effective.inverterQuantity > 1;
+  const tMinC = config.minOperatingTempC ?? 18; // engine defaults
+  const tMaxC = config.maxOperatingTempC ?? 65;
   const is120Pass = totalInfeed <= maxBus120;
 
   // Formatted Cable Strings matching System SLD standards with mm² and mmØ
-  const dcCableStr = `2 x ${calc.effective.dcCableSizeMm2} mm² PV1-F + 1 x ${calc.effective.dcEgcSizeMm2} mm² G, ${calc.effective.dcConduitSizeMm} mmØ RSC`;
-  const acCableStr = `${calc.effective.acBreakerPoles} x ${calc.effective.acCableSizeMm2} mm² THHN + 1 x ${calc.effective.acEgcSizeMm2} mm² G, ${calc.effective.acConduitSizeMm} mmØ PVC`;
+  const egcInsulation = config.dcProtection?.egcInsulation || "TW";
+  const dcCableStr = `2 x ${calc.effective.dcCableSizeMm2} mm² ${config.cabling?.dcCable?.insulation || "PV1-F"} + 1 x ${calc.effective.dcEgcSizeMm2} mm² ${egcInsulation} (G), ${calc.effective.dcConduitSizeMm} mmØ ${config.cabling?.dcCable?.conduitType || "RSC"}`;
+  const acCableStr = `${calc.effective.acBreakerPoles} x ${calc.effective.acCableSizeMm2} mm² ${config.cabling?.acCable?.insulation || "THHN"} + 1 x ${calc.effective.acEgcSizeMm2} mm² ${egcInsulation} (G), ${calc.effective.acConduitSizeMm} mmØ ${config.cabling?.acCable?.conduitType || "PVC"}`;
+  const dropSign = (pct: number, limit: number) => (pct <= limit ? "<=" : "> LIMIT");
 
   // Standard Sheet Border & Reference Grid Generator
   const drawStandardSheet = (originX: number, sheetNum: number, sheetTitle: string) => {
@@ -683,7 +691,7 @@ export function buildSolarDxf(
   d.drawLine(calcTblX + 195, calcTblY, calcTblX + 195, calcTblY + calcTblH - 12);
 
   // Table Subheaders
-  const calcRowH = 14.5;
+  let calcRowH = 14.5;
   const calcHeadY = calcTblY + calcTblH - 22;
   drawBox("EPH-BORDER", calcTblX + 1, calcHeadY - 2, calcTblW - 2, 10);
   drawText("EPH-TITLE", calcTblX + 4, calcHeadY + 2, 1.9, "ENGINEERING PARAMETER");
@@ -717,48 +725,57 @@ export function buildSolarDxf(
       ref: "Series / Parallel Config",
     },
     {
-      param: "Array String Voc (Cold @ 18°C)",
+      param: `Array String Voc (Cold @ ${tMinC}°C)`,
       val: `${calc.stringVoc} V DC`,
       ref: "PEC 6.90.7 Temp Corrected",
     },
     {
-      param: "Array String Vmp (Hot @ 65°C)",
+      param: `Array String Vmp (Hot @ ${tMaxC}°C)`,
       val: `${calc.stringVmp} V DC`,
       ref: "Inverter MPPT Voltage Match",
     },
     {
-      param: "String Current (Imp / Isc)",
+      param: `String Current (Imp / Isc @ ${tMaxC}°C)`,
       val: `Imp=${calc.stringImp}A / Isc=${calc.stringIsc}A`,
       ref: "PEC 6.90.8 1.25x Factor",
     },
     {
-      param: "Total DC Array Current",
+      param: "Total DC Array Current (Strings x Imp)",
       val: `${calc.totalDcCurrent} A DC`,
       ref: "Combined Inverter DC Input",
     },
     {
-      param: "Inverter Max AC Output Current",
+      param: multiInverter ? "Inverter Max AC Output Current (each)" : "Inverter Max AC Output Current",
       val: `${calc.inverterMaxAcCurrent} A AC`,
-      ref: `${calc.selectedInverter.phase} ${pVolt}V 60Hz`,
+      ref: `${calc.selectedInverter.phase} ${calc.selectedInverter.acVoltage || pVolt}V ${calc.selectedInverter.frequencyHz || config.utilityFrequency || 60}Hz`,
     },
     {
-      param: "Recommended Solar AC Breaker",
+      param: multiInverter ? "Solar AC Breaker (each inverter)" : "Solar AC Breaker",
       val: `${calc.effective.acBreakerAtAmps}A AT / ${calc.effective.acBreakerAfAmps}A AF`,
       ref: "125% Inverter Continuous Duty",
     },
+    ...(multiInverter
+      ? [
+          {
+            param: "Solar Main Disconnect (all inverters)",
+            val: `${calc.acMainDisconnectAmps}A AT`,
+            ref: `125% of ${calc.totalSystemAcCurrent}A total`,
+          },
+        ]
+      : []),
     {
       param: "DC Cable & Conduit Specification",
       val: dcCableStr,
-      ref: `Vd=${calc.dcVoltageDropV}V (${calc.dcVoltageDropPercent}% <= ${dcMaxDropPct}%)`,
+      ref: `Vd=${calc.dcVoltageDropV}V (${calc.dcVoltageDropPercent}% ${dropSign(calc.dcVoltageDropPercent, dcMaxDropPct)} ${dcMaxDropPct}%)`,
     },
     {
       param: "AC Cable & Conduit Specification",
       val: acCableStr,
-      ref: `Vd=${calc.acVoltageDropV}V (${calc.acVoltageDropPercent}% <= ${acMaxDropPct}%)`,
+      ref: `Vd=${calc.acVoltageDropV}V (${calc.acVoltageDropPercent}% ${dropSign(calc.acVoltageDropPercent, acMaxDropPct)} ${acMaxDropPct}%)`,
     },
     {
       param: "Equipment Grounding Conductor",
-      val: `${calc.effective.dcEgcSizeMm2} mm² Cu (DC) / ${calc.effective.acEgcSizeMm2} mm² Cu (AC)`,
+      val: `${calc.effective.dcEgcSizeMm2} mm² ${config.dcProtection?.egcMaterial || "Cu"} (DC) / ${calc.effective.acEgcSizeMm2} mm² ${config.dcProtection?.egcMaterial || "Cu"} (AC)`,
       ref: "PEC Table 2.50.6.13",
     },
     applies120Rule
@@ -774,6 +791,8 @@ export function buildSolarDxf(
         },
   ];
 
+  // Rows share the table height (extra rows appear with several inverters)
+  calcRowH = Math.min(14.5, (calcHeadY - 2 - calcTblY) / calcSummaryData.length);
   calcSummaryData.forEach((row, idx) => {
     const ry = calcHeadY - (idx + 1) * calcRowH;
     d.setActiveLayer("EPH-BORDER");
@@ -821,29 +840,29 @@ export function buildSolarDxf(
       std: "IEC 60947-3",
     },
     {
-      eq: "DC FUSES",
-      spec: `${calc.effective.dcFuseRatingAmps}A gPV ${dcFuseVolts}V DC\n10x38mm Ceramic`,
-      std: "IEC 60269-6",
+      eq: "STRING OCPD",
+      spec: `${calc.effective.dcFuseRatingAmps}A ${dcFuseVolts}V DC, 2P\n1 per string (1.56 x Isc)`,
+      std: "PEC 6.90.9",
     },
     {
-      eq: "AC BREAKER",
-      spec: `${calc.effective.acBreakerAtAmps}A AT / ${calc.effective.acKaic} kAIC\n${calc.effective.acBreakerPoles}P @ ${pVolt}V AC`,
+      eq: multiInverter ? "AC BREAKER (EACH INV.)" : "AC BREAKER",
+      spec: `${calc.effective.acBreakerAtAmps}A AT / ${calc.effective.acKaic} kAIC\n${calc.effective.acBreakerPoles}P @ ${calc.selectedInverter.acVoltage || pVolt}V AC`,
       std: "PEC 6.90.8",
     },
     {
       eq: "SURGE SPD",
-      spec: `DC: ${calc.effective.dcSpdUcVolts}V / AC: ${acSpdVolts}V\nIn=${dcSpdInKa}kA, Imax=${dcSpdImaxKa}kA`,
+      spec: `DC Uc: ${calc.effective.dcSpdUcVolts}V / AC: ${acSpdVolts}V\nDC In=${dcSpdInKa}kA, Imax=${dcSpdImaxKa}kA`,
       std: "IEC 61643-11",
     },
     {
       eq: "GROUNDING",
-      spec: `${calc.effective.dcEgcSizeMm2} mm² EGC / 16mm GEC\nRod: 16mm x 3.0m Cu`,
+      spec: `EGC: ${calc.effective.dcEgcSizeMm2} mm² DC / ${calc.effective.acEgcSizeMm2} mm² AC\nRod: 16mm x 3.0m Cu (typ.)`,
       std: "PEC 2.50",
     },
     {
       eq: hasBattery ? "BATTERY" : "METER",
       spec: hasBattery
-        ? `${calc.batteryUsableEnergyKwh} kWh ${sanitizeStringForDxf(config.battery.chemistry || "LiFePO4")}`
+        ? `${calc.batteryUsableEnergyKwh} kWh usable${config.battery.chemistry ? ` ${sanitizeStringForDxf(config.battery.chemistry)}` : ""}`
         : hasNetMetering
           ? "Bi-Directional kWh"
           : isGridTied
@@ -899,7 +918,7 @@ export function buildSolarDxf(
     ? {
         title: "120% BUSBAR RULE COMPLIANCE (PEC 6.90.7.2.D)",
         body: [
-          `Main OCPD (${pMain}A) + Solar Interconnection Breaker (${calc.effective.acBreakerAtAmps}A) = ${totalInfeed}A total infeed.`,
+          `Main OCPD (${pMain}A) + ${multiInverter ? "Solar Main Disconnect" : "Solar Interconnection Breaker"} (${backfeedAmps}A) = ${totalInfeed}A total infeed.`,
           is120Pass
             ? `Shall not exceed 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [PASS - COMPLIANT].`
             : `EXCEEDS 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [WARNING] - REVISE DESIGN BEFORE ISSUE.`
@@ -965,8 +984,8 @@ export function buildSolarDxf(
     {
       title: "CONDUCTOR & CONDUIT SPECIFICATIONS",
       body: [
-        "DC PV wiring shall be 1000V XLPE PV1-F UV-resistant cable. AC power feeders shall be copper",
-        "THHN/THWN-2 90°C conductors installed in Rigid Steel Conduit (RSC) or thickwall PVC."
+        `DC PV wiring: ${config.cabling?.dcCable?.insulation || "PV1-F"} in ${config.cabling?.dcCable?.conduitType || "RSC"} conduit. AC feeders: ${config.cabling?.acCable?.insulation || "THHN"}`,
+        `in ${config.cabling?.acCable?.conduitType || "PVC"} conduit. EGC: ${egcInsulation}, sizes per the calculation summary (Sheet 2).`
       ]
     },
     {
@@ -1069,7 +1088,7 @@ export function buildSolarDxf(
     p1X + 4,
     p1Y + p1H - 27,
     1.25,
-    `RATED DC CURRENT: ${calc.totalDcCurrent} A DC | SHORT CIRCUIT: ${calc.stringIsc} A`,
+    `RATED DC CURRENT: ${calc.totalDcCurrent} A DC | STRING Isc: ${calc.stringIsc} A`,
     "left",
     p1W - 8
   );
@@ -1125,7 +1144,7 @@ export function buildSolarDxf(
     p2X + 4,
     p2Y + p2H - 21,
     1.25,
-    `SOLAR INVERTER OUTPUT: ${calc.totalInverterAcKw} kW AC | I_MAX: ${calc.inverterMaxAcCurrent} A`,
+    `SOLAR INVERTER OUTPUT: ${calc.totalInverterAcKw} kW AC | I_MAX: ${multiInverter ? `${calc.totalSystemAcCurrent} A TOTAL` : `${calc.inverterMaxAcCurrent} A`}`,
     "left",
     p2W - 8
   );
@@ -1134,7 +1153,9 @@ export function buildSolarDxf(
     p2X + 4,
     p2Y + p2H - 27,
     1.25,
-    `SOLAR INTERCONNECTION BREAKER: ${calc.effective.acBreakerAtAmps}A AT / ${calc.effective.acKaic} kAIC`,
+    multiInverter
+      ? `SOLAR MAIN DISCONNECT: ${backfeedAmps}A AT (${calc.effective.inverterQuantity} INVERTERS)`
+      : `SOLAR INTERCONNECTION BREAKER: ${backfeedAmps}A AT / ${calc.effective.acKaic} kAIC`,
     "left",
     p2W - 8
   );
@@ -1299,12 +1320,12 @@ export function buildSolarDxf(
       ["Nominal Voltage (per unit)", fmt(b.voltageV, " V")],
       ["Capacity (per unit)", fmt(b.capacityAh, " Ah")],
       ["Energy (per unit)", fmt(b.energyKwh, " kWh")],
-      ["Depth of Discharge", fmt(b.dodPercent, " %")],
-      ["Round-Trip Efficiency", fmt(b.efficiencyPercent, " %")],
-      ["Units (Series x Parallel)", `${fmt(eff.batteryUnits)} (${fmt(b.unitsInSeries)} S x ${fmt(b.unitsInParallel)} P)`],
-      ["Battery Bank Voltage", fmt(b.batteryBankVoltage, " V")],
-      ["Total Bank Energy", fmt(b.totalEnergyKwh, " kWh")],
+      ["Depth of Discharge (Design)", fmt(b.dodPercent || 90, " %")],
+      ["Round-Trip Efficiency (Design)", fmt(b.efficiencyPercent || 95, " %")],
+      ["Battery Units", fmt(eff.batteryUnits)],
+      ["Total Installed Energy", fmt(Number((eff.batteryUnits * (b.energyKwh || 4.8)).toFixed(1)), " kWh")],
       ["Usable Bank Energy (Design)", fmt(calc.batteryUsableEnergyKwh, " kWh")],
+      ["Backup Load (Design Basis)", fmt(b.requiredBackupLoadKw || 25, " kW")],
       ["Backup Duration (Design)", calc.batteryBackupHoursActual > 0 ? fmt(calc.batteryBackupHoursActual, " h") : "-"],
     ];
     drawSpecTable(s4OriginX + 18, moduleBottom - 6, 250, 120, "BATTERY STORAGE DATASHEET", batteryRows, 6.5);
