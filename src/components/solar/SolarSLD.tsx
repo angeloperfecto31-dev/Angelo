@@ -538,7 +538,13 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   };
 
   const handleExportCAD = () => {
-    exportSolarToDxf(config, calc, linkedPanelData);
+    // Pass the current layer toggles so the AutoCAD sheet matches what is on screen
+    exportSolarToDxf(config, calc, linkedPanelData, {
+      showSolarMeter,
+      showEpsLoad: effectiveShowEpsLoad,
+      showGrounding,
+      showConductorSpecs,
+    });
   };
 
   // Color Theme definitions for CAD drafting

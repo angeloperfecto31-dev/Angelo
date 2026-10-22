@@ -59,6 +59,8 @@ const ISO_H = 90;
 const NOTE_X = 52;
 const NOTE_FS = 13;
 const TITLE_FS = 15;
+/** Wrap width for the panel board name under the panel. */
+const PANEL_LABEL_W = 150;
 const textWidth = (text: string, fontSize: number) => text.length * fontSize * 0.56;
 /** Word-wraps text into lines that fit maxWidth at the given font size (nothing is cut off). */
 const wrapLines = (text: string, maxWidth: number, fontSize: number) => {
@@ -180,7 +182,8 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const labelsBottom = dcLabelY + 4 * 17;
   const bottom = Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150) + 20;
 
-  const width = (isOffGrid ? acIsoCx + 300 : panelX + 50) + 20;
+  // Includes the wrapped panel name, which starts at the panel board's left edge
+  const width = (isOffGrid ? acIsoCx + 158 : panelX - 42) + PANEL_LABEL_W + 20;
 
   return {
     noteLines,
@@ -300,15 +303,27 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     </text>
   );
 
-  const Wire = ({ pts, color = stroke, w = 1.4 }: { pts: Array<[number, number]>; color?: string; w?: number }) => (
-    <polyline points={pts.map((p) => p.join(",")).join(" ")} fill="none" stroke={color} strokeWidth={w} />
+  // data-cad-layer tags are read by the AutoCAD (DXF) export, which converts this drawing;
+  // a wire without its own layer takes the layer of the section it is drawn in
+  const Wire = ({
+    pts,
+    color = stroke,
+    w = 1.4,
+    layer,
+  }: {
+    pts: Array<[number, number]>;
+    color?: string;
+    w?: number;
+    layer?: string;
+  }) => (
+    <polyline data-cad-layer={layer || undefined} points={pts.map((p) => p.join(",")).join(" ")} fill="none" stroke={color} strokeWidth={w} />
   );
 
   const Dot = ({ x, y }: { x: number; y: number }) => <circle cx={x} cy={y} r={3} fill={stroke} />;
 
   const GroundSym = ({ x, y }: { x: number; y: number }) =>
     options.showGrounding ? (
-      <g stroke={ground} strokeWidth={1.4}>
+      <g data-cad-layer="EPH-GROUND" stroke={ground} strokeWidth={1.4}>
         <line x1={x} y1={y} x2={x} y2={y + 8} />
         <line x1={x - 7} y1={y + 8} x2={x + 7} y2={y + 8} />
         <line x1={x - 4.5} y1={y + 11.5} x2={x + 4.5} y2={y + 11.5} />
@@ -339,7 +354,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     const x2 = side === "left" ? x - width : x + width;
     const tx = (x + x2) / 2;
     return (
-      <g>
+      <g data-cad-layer="EPH-ANNO">
         {!onHorizontalWire && (
           <line x1={Math.min(x, x2)} y1={y} x2={Math.max(x, x2)} y2={y} stroke={stroke} strokeWidth={1.6} />
         )}
@@ -358,7 +373,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     const cw = (MODULE_W - pad * 2) / 2;
     const ch = (MODULE_H - pad * 2) / 10;
     return (
-      <g>
+      <g data-cad-layer="EPH-PV">
         <rect x={x} y={y} width={MODULE_W} height={MODULE_H} fill={theme.equipmentFill} stroke={theme.moduleBorder} strokeWidth={1.3} />
         {Array.from({ length: 2 }).map((_, c) =>
           Array.from({ length: 10 }).map((__, r) => (
@@ -385,7 +400,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     const cx = x + w / 2;
     const cy = y + ISO_H / 2 + 12;
     return (
-      <g className="cursor-pointer" onClick={onClick}>
+      <g data-cad-layer="EPH-BREAKER" className="cursor-pointer" onClick={onClick}>
         <rect x={x} y={y} width={w} height={ISO_H} rx={3} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
         <Txt x={cx} y={y + 16} size={13} anchor="middle">
           {label}
@@ -398,7 +413,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   };
 
   const Breaker2P = ({ x, y }: { x: number; y: number }) => (
-    <g>
+    <g data-cad-layer="EPH-BREAKER">
       <rect x={x} y={y} width={BREAKER_W} height={BREAKER_H} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.4} />
       {[y + 9, y + BREAKER_H - 9].map((ty, i) => (
         <g key={i}>
@@ -422,7 +437,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   );
 
   const Spd = ({ x, y }: { x: number; y: number }) => (
-    <g>
+    <g data-cad-layer="EPH-BREAKER">
       <rect x={x} y={y + 8} width={SPD_W} height={BREAKER_H - 16} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.3} />
       <rect x={x + 3} y={y + 30} width={SPD_W - 6} height={14} fill="none" stroke={stroke} strokeWidth={1} />
       <line x1={x + SPD_W / 2} y1={y + BREAKER_H - 8} x2={x + SPD_W / 2} y2={y + BREAKER_H + 2} stroke={ground} strokeWidth={1.3} />
@@ -431,7 +446,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   );
 
   const Meter = ({ cx, cy, onClick }: { cx: number; cy: number; onClick?: () => void }) => (
-    <g className={onClick ? "cursor-pointer" : undefined} onClick={onClick}>
+    <g data-cad-layer="EPH-SLD" className={onClick ? "cursor-pointer" : undefined} onClick={onClick}>
       <circle cx={cx} cy={cy} r={16} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1.6} />
       <Txt x={cx} y={cy + 5} size={16} anchor="middle">
         M
@@ -444,7 +459,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   return (
     <g id="sld-pictorial" transform={`translate(${offsetX}, 0)`} fontFamily={font}>
       {/* ===================== PV ARRAY (one row per string) ===================== */}
-      <g id="sld-pv-array" className="cursor-pointer" onClick={() => onSelect("pv_module")}>
+      <g id="sld-pv-array" data-cad-layer="EPH-DC" className="cursor-pointer" onClick={() => onSelect("pv_module")}>
         {L.rows.map((row, rowIdx) => {
           const y0 = row.y;
           const modY = y0 + 56;
@@ -531,8 +546,9 @@ export const SolarSLDPictorial: React.FC<Props> = ({
               })}
 
               {/* String home run: (+) from first module, (-) from last module */}
-              <Wire pts={[[firstX + 9, termY + 3], [firstX + 9, posLeadY], [rx, posLeadY], [rx, L.yBk]]} />
+              <Wire layer="EPH-DC" pts={[[firstX + 9, termY + 3], [firstX + 9, posLeadY], [rx, posLeadY], [rx, L.yBk]]} />
               <Wire
+                layer="EPH-DC"
                 pts={[
                   [lastX + MODULE_W - 9, termY + 3],
                   [lastX + MODULE_W - 9, negLeadY],
@@ -572,11 +588,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         const gx = L.isoX + L.isoW - 10 - k * 10;
         const routeY = L.yBk - 24 - k * 12;
         const bx = L.bkX(k) + BREAKER_W / 2;
-        return <Wire key={`iso-out-${k}`} pts={[[gx, L.yBk], [gx, routeY], [bx, routeY], [bx, L.yBk]]} />;
+        return <Wire key={`iso-out-${k}`} layer="EPH-DC" pts={[[gx, L.yBk], [gx, routeY], [bx, routeY], [bx, L.yBk]]} />;
       })}
 
       {/* ===================== DC BREAKERS + DC SPD ===================== */}
-      <g className="cursor-pointer" onClick={() => onSelect("dc_disconnect")}>
+      <g data-cad-layer="EPH-DC" className="cursor-pointer" onClick={() => onSelect("dc_disconnect")}>
         {L.strings.map((s, k) => {
           const bx = L.bkX(k);
           const sx = bx + BREAKER_W + 6;
@@ -615,7 +631,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       </g>
 
       {/* ===================== INVERTER ===================== */}
-      <g className="cursor-pointer" onClick={() => onSelect("inverter")}>
+      <g data-cad-layer="EPH-INVERTER" className="cursor-pointer" onClick={() => onSelect("inverter")}>
         <rect x={L.invX} y={L.invY} width={INV_W} height={INV_H} rx={6} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={2} />
         {[
           [L.invX + 10, L.invY + 10],
@@ -671,15 +687,15 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       {/* ===================== BATTERY (hybrid / off-grid) ===================== */}
       {L.hasBattery && (
         <g>
-          <Wire pts={[[L.batPortX, L.invBottom + 22], [L.batPortX, L.batBkY]]} />
+          <Wire layer="EPH-BATTERY" pts={[[L.batPortX, L.invBottom + 22], [L.batPortX, L.batBkY]]} />
           <g className="cursor-pointer" onClick={() => onSelect("battery_breaker")}>
             <Breaker2P x={L.batPortX - BREAKER_W / 2} y={L.batBkY} />
             <Txt x={L.batPortX + BREAKER_W / 2 + 8} y={L.batBkY + 40} size={13}>
               BATTERY OCPD
             </Txt>
           </g>
-          <Wire pts={[[L.batPortX, L.batBkY + BREAKER_H], [L.batPortX, L.batBankY]]} />
-          <g className="cursor-pointer" onClick={() => onSelect("battery_bank")}>
+          <Wire layer="EPH-BATTERY" pts={[[L.batPortX, L.batBkY + BREAKER_H], [L.batPortX, L.batBankY]]} />
+          <g data-cad-layer="EPH-BATTERY" className="cursor-pointer" onClick={() => onSelect("battery_bank")}>
             <rect x={L.batPortX - 70} y={L.batBankY} width={140} height={90} rx={4} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
             {[0, 1, 2].map((i) => (
               <g key={i}>
@@ -785,7 +801,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           </g>
 
           {/* Main service disconnect */}
-          <g className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
+          <g data-cad-layer="EPH-PANEL" className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
             <rect x={L.busX - 9} y={L.mainSvcY - 14} width={18} height={28} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1.4} />
             <path d={`M ${L.busX - 4} ${L.mainSvcY - 8} A 8 8 0 0 1 ${L.busX - 4} ${L.mainSvcY + 8}`} fill="none" stroke={stroke} strokeWidth={1.2} />
             <Txt x={L.busX + 16} y={L.mainSvcY - 6} size={12}>
@@ -810,7 +826,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           <Dot x={L.busX} y={L.panelTapY} />
 
           {/* Existing panel board */}
-          <g className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
+          <g data-cad-layer="EPH-PANEL" className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
             <Wire pts={[[L.busX, L.panelTapY], [L.panelX, L.panelTapY], [L.panelX, L.panelTapY + 60]]} />
             <rect x={L.panelX - 42} y={L.panelTapY + 60} width={84} height={120} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
             <circle cx={L.panelX} cy={L.panelTapY + 70} r={2.5} fill={stroke} />
@@ -824,7 +840,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
               BOARD
             </Txt>
             {/* Left-aligned to the panel so it never reaches back over the service bus */}
-            {wrapLines(service.panelDesignation, sheetWidth - 44 - (offsetX + L.panelX - 42), 12).map((ln, i) => (
+            {wrapLines(service.panelDesignation, PANEL_LABEL_W, 12).map((ln, i) => (
               <Txt key={i} x={L.panelX - 42} y={L.panelTapY + 214 + i * 15} size={12} muted>
                 {ln}
               </Txt>
@@ -833,19 +849,19 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           </g>
         </g>
       ) : (
-        <g className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
+        <g data-cad-layer="EPH-PANEL" className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
           {/* Off-grid: inverter output feeds the panel board directly */}
           <Wire pts={[[L.acIsoCx, L.solarTapY], [L.acIsoCx + 200, L.solarTapY], [L.acIsoCx + 200, L.solarTapY + 40]]} />
           <rect x={L.acIsoCx + 158} y={L.solarTapY + 40} width={84} height={120} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
           <Txt x={L.acIsoCx + 200} y={L.solarTapY + 98} size={12} anchor="middle">
             PANEL BOARD
           </Txt>
-          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 194} size={12} anchor="middle" muted>
-            {service.panelDesignation}
-          </Txt>
-          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 210} size={12} anchor="middle" muted>
-            STAND-ALONE - NO UTILITY CONNECTION
-          </Txt>
+          {/* Left-aligned under the panel and wrapped, so a long name never reaches back over the AC wiring */}
+          {[...wrapLines(service.panelDesignation, PANEL_LABEL_W, 12), "STAND-ALONE - NO UTILITY", "CONNECTION"].map((ln, i) => (
+            <Txt key={i} x={L.acIsoCx + 158} y={L.solarTapY + 194 + i * 15} size={12} muted>
+              {ln}
+            </Txt>
+          ))}
           <GroundSym x={L.acIsoCx + 200} y={L.solarTapY + 160} />
           <Callout
             x={L.acIsoCx + 30}
