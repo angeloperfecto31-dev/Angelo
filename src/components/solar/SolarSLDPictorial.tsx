@@ -144,7 +144,7 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
 
   // Protection row
   // Minimum keeps the solar tap (and its callout) below the service feeder callout on short drawings
-  const yBk = Math.max(arrayBottom + 95, top + 540);
+  const yBk = Math.max(arrayBottom + 95, top + 556);
   const isoX = riserBase - 22;
   const isoW = (nD - 1) * RISER_PITCH + PAIR_GAP + 44 + nD * 10 + 10;
   const bkX0 = isoX + isoW + 50;
@@ -277,8 +277,12 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   const egcInsulation = config.dcProtection?.egcInsulation || "TW";
   const al = (m?: string) => (m === "Al" ? " AL" : "");
   const multiInverter = eff.inverterQuantity > 1;
+  // Phase conductors (3 for 3PH, 2 for 1PH line-to-line, 1 for 1PH line-to-neutral), neutral, EGC
+  const acSys = calc.acSystem;
+  const acPhaseConductors = acSys ? acSys.phaseConductors : eff.acBreakerPoles;
   const acCalloutLines = [
-    `${eff.acBreakerPoles} - ${eff.acCableSizeMm2}mm²${al(config.cabling?.acCable?.material)} ${acInsulation}`,
+    `${acPhaseConductors} - ${eff.acCableSizeMm2}mm²${al(config.cabling?.acCable?.material)} ${acInsulation}`,
+    ...(acSys?.hasNeutral ? [`1 - ${eff.acCableSizeMm2}mm² (N)`] : []),
     `1 - ${eff.acEgcSizeMm2}mm² ${egcInsulation} (G)`,
     `IN ${eff.acConduitSizeMm}mm Ø ${acConduit}`,
     ...(multiInverter ? ["(EACH INVERTER OUTPUT)"] : []),
@@ -694,6 +698,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             TYP. OF {eff.inverterQuantity} INVERTERS
           </Txt>
         )}
+        {acSys?.phaseDistribution && (
+          <Txt x={L.invX + INV_W / 2} y={L.invY - (eff.inverterQuantity > 1 ? 27 : 10)} size={12} anchor="middle" muted>
+            {acSys.inverterConnectionLabel}: {acSys.phaseDistribution.filter(([, n]) => n > 0).map(([p, n]) => `${p} x${n}`).join(", ")}
+          </Txt>
+        )}
         <Txt x={L.invX - 6} y={L.invBottom + 26} size={12} anchor="end" muted>
           PV IN
         </Txt>
@@ -790,11 +799,18 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           {/* Solar interconnection to the service bus */}
           <Wire pts={[[L.acIsoCx, L.solarTapY], [L.busX, L.solarTapY]]} />
           <Dot x={L.busX} y={L.solarTapY} />
-          {multiInverter && (
-            <Txt x={L.busX - 8} y={L.solarTapY + 20} size={12} anchor="end">
-              SOLAR MAIN DISCONNECT: {calc.acMainDisconnectAmps} AT
+          {[
+            ...(multiInverter
+              ? [`SOLAR MAIN DISCONNECT: ${calc.acMainDisconnectAmps} AT, ${acSys?.mainDisconnectPoles ?? eff.acBreakerPoles}P`]
+              : []),
+            ...(config.transformer?.enabled
+              ? [`VIA ${eff.transformerKva} kVA TRANSFORMER (${inv.acVoltage}V / ${config.utilityVoltage}V)`]
+              : []),
+          ].map((t, i) => (
+            <Txt key={t} x={L.busX - 8} y={L.solarTapY + 20 + i * 16} size={12} anchor="end">
+              {t}
             </Txt>
-          )}
+          ))}
           <Callout
             x={L.acIsoCx + 30}
             y={L.solarTapY}
@@ -817,6 +833,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             <Txt x={L.busX - 428} y={L.serviceY + 5} size={15} anchor="end">
               SERVICE ENTRANCE
             </Txt>
+            {acSys && (
+              <Txt x={L.busX - 428} y={L.serviceY + 22} size={12} anchor="end" muted>
+                {acSys.serviceLabel}
+              </Txt>
+            )}
             <Wire pts={[[L.busX - 352, L.serviceY], [L.busX - 276, L.serviceY]]} />
             <Meter cx={L.busX - 260} cy={L.serviceY} onClick={() => onSelect("utility_meter")} />
             <Txt x={L.busX - 260} y={L.serviceY + 34} size={14} anchor="middle">

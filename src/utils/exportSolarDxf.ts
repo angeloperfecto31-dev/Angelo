@@ -7,7 +7,7 @@ import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults } from "../types/solar";
 import { sanitizeStringForDxf, MText } from "./exportDxf";
 import { captureSolarSld } from "./solarSldCapture";
-import { solarBackfeedAmps } from "./solarLinkedPanel";
+import { solarBackfeedAmps, backfeedLabel, acConductorParts } from "./solarLinkedPanel";
 import type { PictorialOptions } from "../components/solar/SolarSLDPictorial";
 
 // Configure default text style to use TrueType Arial font, identical to System SLD
@@ -287,7 +287,8 @@ export function buildSolarDxf(
   // Formatted Cable Strings matching System SLD standards with mm² and mmØ
   const egcInsulation = config.dcProtection?.egcInsulation || "TW";
   const dcCableStr = `2 x ${calc.effective.dcCableSizeMm2} mm² ${config.cabling?.dcCable?.insulation || "PV1-F"} + 1 x ${calc.effective.dcEgcSizeMm2} mm² ${egcInsulation} (G), ${calc.effective.dcConduitSizeMm} mmØ ${config.cabling?.dcCable?.conduitType || "RSC"}`;
-  const acCableStr = `${calc.effective.acBreakerPoles} x ${calc.effective.acCableSizeMm2} mm² ${config.cabling?.acCable?.insulation || "THHN"} + 1 x ${calc.effective.acEgcSizeMm2} mm² ${egcInsulation} (G), ${calc.effective.acConduitSizeMm} mmØ ${config.cabling?.acCable?.conduitType || "PVC"}`;
+  const acParts = acConductorParts(calc);
+  const acCableStr = `${acParts.phases} x ${calc.effective.acCableSizeMm2} mm² ${config.cabling?.acCable?.insulation || "THHN"}${acParts.neutral ? ` + 1 x ${calc.effective.acCableSizeMm2} mm² N` : ""} + 1 x ${calc.effective.acEgcSizeMm2} mm² ${egcInsulation} (G), ${calc.effective.acConduitSizeMm} mmØ ${config.cabling?.acCable?.conduitType || "PVC"}`;
   const dropSign = (pct: number, limit: number) => (pct <= limit ? "<=" : "> LIMIT");
 
   // Standard Sheet Border & Reference Grid Generator
@@ -720,6 +721,13 @@ export function buildSolarDxf(
       ref: `${calc.selectedModule.manufacturer} ${calc.selectedModule.model}`,
     },
     {
+      param: "AC System / Inverter Connection",
+      val: calc.acSystem
+        ? `${calc.acSystem.serviceLabel} / ${calc.acSystem.inverterConnectionLabel}${calc.acSystem.phaseDistribution ? ` (${calc.acSystem.phaseDistribution.filter(([, n]) => n > 0).map(([p, n]) => `${p} x${n}`).join(", ")})` : ""}`
+        : `${config.utilityVoltage}V ${config.utilityPhase}`,
+      ref: calc.validations.phaseCompatible === false ? "PHASE / VOLTAGE MISMATCH [WARNING]" : "Phase & voltage matched",
+    },
+    {
       param: "PV Array String Configuration",
       val: `${calc.effective.numberOfStrings} Strings x ${calc.effective.modulesPerString} Modules`,
       ref: "Series / Parallel Config",
@@ -758,8 +766,8 @@ export function buildSolarDxf(
       ? [
           {
             param: "Solar Main Disconnect (all inverters)",
-            val: `${calc.acMainDisconnectAmps}A AT`,
-            ref: `125% of ${calc.totalSystemAcCurrent}A total`,
+            val: `${calc.acMainDisconnectAmps}A AT, ${calc.acSystem?.mainDisconnectPoles ?? calc.effective.acBreakerPoles}P`,
+            ref: `125% of ${calc.acSystem?.interconnectionLineCurrent ?? calc.totalSystemAcCurrent}A max line current`,
           },
         ]
       : []),
@@ -918,7 +926,7 @@ export function buildSolarDxf(
     ? {
         title: "120% BUSBAR RULE COMPLIANCE (PEC 6.90.7.2.D)",
         body: [
-          `Main OCPD (${pMain}A) + ${multiInverter ? "Solar Main Disconnect" : "Solar Interconnection Breaker"} (${backfeedAmps}A) = ${totalInfeed}A total infeed.`,
+          `Main OCPD (${pMain}A) + ${backfeedLabel(calc)} (${backfeedAmps}A) = ${totalInfeed}A total infeed.`,
           is120Pass
             ? `Shall not exceed 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [PASS - COMPLIANT].`
             : `EXCEEDS 120% of panel busbar rating (${busRating}A x 1.2 = ${maxBus120}A allowable). Status: [WARNING] - REVISE DESIGN BEFORE ISSUE.`
@@ -1153,9 +1161,7 @@ export function buildSolarDxf(
     p2X + 4,
     p2Y + p2H - 27,
     1.25,
-    multiInverter
-      ? `SOLAR MAIN DISCONNECT: ${backfeedAmps}A AT (${calc.effective.inverterQuantity} INVERTERS)`
-      : `SOLAR INTERCONNECTION BREAKER: ${backfeedAmps}A AT / ${calc.effective.acKaic} kAIC`,
+    `${backfeedLabel(calc).toUpperCase()}: ${backfeedAmps}A AT${multiInverter ? ` (${calc.effective.inverterQuantity} INVERTERS)` : ` / ${calc.effective.acKaic} kAIC`}`,
     "left",
     p2W - 8
   );

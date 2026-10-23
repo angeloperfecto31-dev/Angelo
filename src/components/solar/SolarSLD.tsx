@@ -35,7 +35,7 @@ import { toPng, toSvg } from "html-to-image";
 import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { SolarSLDPictorial, computePictorialLayout } from "./SolarSLDPictorial";
-import { computeLinkedPanelData, solarBackfeedAmps } from "../../utils/solarLinkedPanel";
+import { computeLinkedPanelData, solarBackfeedAmps, acConductorParts } from "../../utils/solarLinkedPanel";
 
 interface SolarSLDProps {
   config: SolarDesignConfig;
@@ -159,7 +159,9 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
     const eff = calc.effective;
     const utilityName = (config.netMetering?.utilityProvider || "DISTRIBUTION UTILITY").toUpperCase();
     const sysV = config.utilityVoltage || 230;
-    const sysPh = isThreePhase ? "3PH 3W" : "1PH 2W";
+    const sysPh = calc.acSystem?.serviceLabel || (isThreePhase ? "3PH 3W" : "1PH 2W");
+    const acParts = acConductorParts(calc);
+    const acWires = `${acParts.phases} × ${acParts.size} mm²${acParts.neutral ? ` + 1 × ${acParts.size} mm² N` : ""}`;
     // Same fallbacks as the calculation engine
     const dcLimit = config.cabling?.dcMaxDropPercent || 1.5;
     const acLimit = config.cabling?.acMaxDropPercent || 1.5;
@@ -182,7 +184,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
           { label: "PV MODULES", text: `${calc.totalModules}x ${calc.selectedModule.manufacturer.toUpperCase()} ${calc.selectedModule.model.toUpperCase()} (${calc.selectedModule.ratedPowerWp}Wp), IEC 61215/61730, IP68 JUNCTION BOX W/ BYPASS DIODES.` },
           { label: "INVERTER", text: `${eff.inverterQuantity}x ${calc.selectedInverter.manufacturer.toUpperCase()} (${calc.totalInverterAcKw} kW AC), UL 1741, IEEE 1547, IEC 62109, MULTI-MPPT, ANTI-ISLANDING & GFDI INTEGRATED.` },
           { label: "DC WIRING", text: `2 × ${eff.dcCableSizeMm2} mm² PV1-F / EN 50618 XLPO DC TINNED CU IN ${eff.dcConduitSizeMm}mm CONDUIT. VOLTAGE DROP Vd = ${calc.dcVoltageDropPercent}% (LIMIT ≤ ${dcLimit}%).` },
-          { label: "AC FEEDERS", text: `${eff.acBreakerPoles} × ${eff.acCableSizeMm2} mm² CU THHN/THWN-2 (90°C) IN ${eff.acConduitSizeMm}mm CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (LIMIT ≤ ${acLimit}%).` },
+          { label: "AC FEEDERS", text: `${acWires} CU THHN/THWN-2 (90°C) IN ${eff.acConduitSizeMm}mm CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (LIMIT ≤ ${acLimit}%).` },
           { label: "DC PROTECTION", text: `${eff.dcIsolatorRatingAmps}A DC ${config.dcProtection?.isolatorVoltageVolts ?? 1000}V ROTARY ISOLATOR (PEC 6.90.3.1) + ${eff.dcFuseRatingAmps}A ${config.dcProtection?.fuseVoltageVolts ?? 1000}V gPV PROTECTION + TYPE 2 DC SPD (${config.dcProtection?.spdInKa ?? 20}/${config.dcProtection?.spdImaxKa ?? 40}kA).` },
           { label: "AC PROTECTION", text: `${eff.acBreakerAtAmps}A AT (${eff.acBreakerPoles}P) BREAKER (${eff.acKaic} kAIC) + AC TYPE 2 SPD RATED FOR ${sysV}V ${sysPh} AT THE MAIN BUSBAR INTERCONNECTION POINT.` },
         ],
@@ -1272,7 +1274,7 @@ II. TECHNICAL MATERIAL SPECIFICATIONS
 1. PV MODULES: ${calc.totalModules}x ${calc.selectedModule.manufacturer} ${calc.selectedModule.model} (${calc.selectedModule.ratedPowerWp}Wp MONO/BIFACIAL), CONFORMING TO IEC 61215/61730, IP68 SEALED JUNCTION BOX WITH BYPASS DIODES, 25-YEAR PERFORMANCE WARRANTY.
 2. SOLAR INVERTER: ${calc.effective.inverterQuantity}x ${calc.selectedInverter.manufacturer} ${calc.selectedInverter.model} (${calc.totalInverterAcKw} kW AC), CERTIFIED UNDER UL 1741, IEEE 1547, IEC 62109, MULTI-MPPT, INTEGRATED ANTI-ISLANDING AND GROUND FAULT PROTECTION (GFDI).
 3. DC WIRING: 2 × ${calc.effective.dcCableSizeMm2} mm² PV1-F / EN 50618 XLPO DOUBLE-INSULATED 1500V DC TINNED COPPER RUN IN ${calc.effective.dcConduitSizeMm} CONDUIT. VOLTAGE DROP Vd = ${calc.dcVoltageDropPercent}% (PEC LIMIT ≤ 2.0%).
-4. AC FEEDERS: ${calc.effective.acBreakerPoles} × ${calc.effective.acCableSizeMm2} mm² COPPER THHN/THWN-2 (90°C) IN ${calc.effective.acConduitSizeMm} CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (STRICTLY ≤ 1.5%).
+4. AC FEEDERS: ${acConductorParts(calc).phases} × ${calc.effective.acCableSizeMm2} mm²${acConductorParts(calc).neutral ? ` + 1 × ${calc.effective.acCableSizeMm2} mm² N` : ""} COPPER THHN/THWN-2 (90°C) IN ${calc.effective.acConduitSizeMm} CONDUIT TO MAIN PANEL. VOLTAGE DROP Vd = ${calc.acVoltageDropPercent}% (STRICTLY ≤ 1.5%).
 5. DC PROTECTION: ${calc.effective.dcIsolatorRatingAmps}A DC 1000V ROTARY ISOLATOR SWITCH (PEC 6.90.3.1) + ${calc.effective.dcFuseRatingAmps}A 1000V gPV DC STRING FUSES + TYPE 2 DC SURGE PROTECTIVE DEVICE (SPD 20/40kA).
 6. AC OVERCURRENT PROTECTION: ${calc.effective.acBreakerAtAmps}A AT (${calc.effective.acBreakerPoles}P) MCCB (${calc.effective.acKaic} kAIC) + AC TYPE 2 SPD AT THE MAIN DISTRIBUTION PANEL INTERCONNECTION POINT.
 
@@ -1332,7 +1334,7 @@ III. INTERCONNECTION, SAFETY & COMMISSIONING
                         <li><strong>PV Modules:</strong> {calc.totalModules}x {calc.selectedModule.manufacturer} ({calc.selectedModule.ratedPowerWp}Wp), IEC 61215/61730.</li>
                         <li><strong>Inverter:</strong> {calc.effective.inverterQuantity}x {calc.selectedInverter.manufacturer} ({calc.totalInverterAcKw} kW AC), UL 1741 &amp; IEEE 1547.</li>
                         <li><strong>DC Cable:</strong> 2 × {calc.effective.dcCableSizeMm2} mm² PV1-F in {calc.effective.dcConduitSizeMm} (Vd={calc.dcVoltageDropPercent}% ≤ 2.0%).</li>
-                        <li><strong>AC Feeder:</strong> {calc.effective.acBreakerPoles} × {calc.effective.acCableSizeMm2} mm² THHN in {calc.effective.acConduitSizeMm} (Vd={calc.acVoltageDropPercent}% ≤ 1.5%).</li>
+                        <li><strong>AC Feeder:</strong> {acConductorParts(calc).phases} × {calc.effective.acCableSizeMm2} mm²{acConductorParts(calc).neutral ? ` + 1 × ${calc.effective.acCableSizeMm2} mm² N` : ""} THHN in {calc.effective.acConduitSizeMm} (Vd={calc.acVoltageDropPercent}% ≤ 1.5%).</li>
                         <li><strong>Protection:</strong> {calc.effective.dcIsolatorRatingAmps}A DC Switch + {calc.effective.dcFuseRatingAmps}A gPV Fuses + {calc.effective.acBreakerAtAmps}A AT MCCB.</li>
                         <li><strong>Surge Arresters:</strong> Dual Type 2 SPDs on both DC &amp; AC sides.</li>
                       </ul>
