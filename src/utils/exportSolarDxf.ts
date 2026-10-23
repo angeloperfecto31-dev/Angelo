@@ -99,6 +99,8 @@ export function buildSolarDxf(
 
   // DC conductor runs: solid like the on-screen SLD, red to tell them apart from AC runs
   d.addLayer("EPH-DC", 1, "CONTINUOUS");       // Red
+  // CT / smart-meter signal cable (dashed, as on screen)
+  d.addLayer("EPH-COMM", 30, "DASHED");        // Orange
 
   // Cross-compatibility layer aliases with System SLD
   d.addLayer("BORDER", 2, "CONTINUOUS");
@@ -134,6 +136,7 @@ export function buildSolarDxf(
     "EPH-BREAKER": 35,
     "EPH-CABLE": 50,
     "EPH-DC": 50,
+    "EPH-COMM": 18,
     "EPH-GROUND": 35,
     "EPH-BATTERY": 35,
     "EPH-LEGEND": 18,

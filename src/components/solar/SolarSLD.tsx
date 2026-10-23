@@ -1080,6 +1080,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
                 {selectedElement === "utility_meter" && "Bi-Directional Net Meter"}
                 {selectedElement === "eps_panel" && "Essential Loads Panel (EPS Backup Output)"}
                 {selectedElement === "design_validation" && "Design Validation"}
+                {selectedElement === "ct_sensor" && "CT / Smart Meter (Load & Export Monitoring)"}
               </h4>
             </div>
             <button
@@ -1143,6 +1144,27 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
                   <span className={`font-bold ${epsInfo?.exceedsInverter ? "text-red-600" : "text-emerald-600"}`}>
                     {epsInfo ? (epsInfo.exceedsInverter ? `Exceeds ${epsInfo.invKw} kW AC` : `Within ${epsInfo.invKw} kW AC`) : "Verify with datasheet"}
                   </span>
+                </div>
+              </>
+            )}
+
+            {selectedElement === "ct_sensor" && (
+              <>
+                <div>
+                  <span className="text-slate-400 block">Location:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">Service conductor, after the bi-directional meter</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Purpose:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">Measures grid import / export for the inverter</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Export Control:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{(config.netMetering?.exportLimitation || "none").replace(/_/g, " ").toUpperCase()}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Cable:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">Signal / communication only (per inverter manual)</span>
                 </div>
               </>
             )}

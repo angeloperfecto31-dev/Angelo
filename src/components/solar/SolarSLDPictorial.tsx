@@ -184,8 +184,13 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   // Protection row
   // Minimum keeps the solar tap (and its callout) below the service feeder callout on short drawings
   const yBk = Math.max(arrayBottom + 95, top + 556);
-  const isoX = riserBase - 22;
-  const isoW = (nD - 1) * RISER_PITCH + PAIR_GAP + 44 + nD * 10 + 10;
+  // DC isolator sits right of the risers; each string enters it from below (nested U-loops:
+  // the rightmost riser takes the highest loop and the leftmost terminal, so no leads cross)
+  const isoX = riserX(0) + PAIR_GAP + 40;
+  const isoW = Math.max(64, 20 + nD * (PAIR_GAP + 14));
+  const isoTermX = (k: number) => isoX + 10 + k * (PAIR_GAP + 14);
+  const isoLoopY = (k: number) => yBk + ISO_H + 18 + k * 16;
+  const isoLabelY = isoLoopY(nD - 1) + 6 + 22;
   const bkX0 = isoX + isoW + 50;
   const bkX = (k: number) => bkX0 + k * PAIR_PITCH;
   const groupRight = bkX(nD - 1) + BREAKER_W + 6 + SPD_W;
@@ -199,9 +204,17 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const epsPortX = invX + INV_W / 2 + 22;
   const gridPortX = invX + INV_W - 30;
 
-  // AC side
-  const acBkX = invX + INV_W + 45;
+  // AC side. Hybrid: EPS output breaker first (nearest the inverter), then the grid breaker + AC SPD,
+  // so the EPS feed runs under the grid circuit instead of crossing it.
+  const hasEpsCircuit = config.systemType === "hybrid";
+  const epsBkX = invX + INV_W + 45;
+  const acBkX = hasEpsCircuit ? epsBkX + BREAKER_W + 72 : invX + INV_W + 45;
   const acIsoCx = acBkX + BREAKER_W + SPD_W + 110;
+  // CT comm cable enters the inverter right side through the gap before the AC breakers
+  const comX = invX + INV_W + 20;
+  const comEntryY = invBottom - 24;
+  // Grid circuit route above the EPS route when both exist
+  const gridRouteY = hasEpsCircuit ? yBk - 40 : yBk - 28;
   const acIsoY = invBottom - ISO_H + 25;
   const recCy = acIsoY - 70;
   const solarTapY = recCy - 75;
@@ -221,10 +234,23 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const batBankY = batBkY + BREAKER_H + 30;
   const dcLabelY = yUnderMax + 34;
   const labelsBottom = dcLabelY + 4 * 17;
-  const drawingBottom = Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150) + 20;
 
-  // Includes the wrapped panel name, which starts at the panel board's left edge
-  const width = (isOffGrid ? acIsoCx + 158 : panelX - 42) + PANEL_LABEL_W + 20;
+  // CT on the service conductor (load / export monitoring) wired back to the inverter: hybrid
+  // inverters, or grid-tie systems with export limitation. The cable loops round the right side.
+  const hasCt =
+    !isOffGrid &&
+    config.netMetering?.enabled !== false &&
+    (hasEpsCircuit || (config.netMetering?.exportLimitation ?? "none") !== "none");
+  const ctX = busX - 190;
+  const ctLoopTop = serviceY - 30;
+  const ctLoopX = panelX - 42 + PANEL_LABEL_W + 14;
+  const ctLoopBottom = yEps + 84;
+
+  const drawingBottom =
+    Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150, hasCt ? ctLoopBottom + 10 : 0) + 20;
+
+  // Includes the wrapped panel name, which starts at the panel board's left edge (and the CT loop)
+  const width = (isOffGrid ? acIsoCx + 158 : panelX - 42) + PANEL_LABEL_W + 20 + (hasCt ? 24 : 0);
 
   // Design validation box under the drawing (only when the design has problems)
   const issues = sldDesignIssues(config, calc);
@@ -253,6 +279,19 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
     yBk,
     isoX,
     isoW,
+    isoTermX,
+    isoLoopY,
+    isoLabelY,
+    hasEpsCircuit,
+    epsBkX,
+    comX,
+    comEntryY,
+    gridRouteY,
+    hasCt,
+    ctX,
+    ctLoopTop,
+    ctLoopX,
+    ctLoopBottom,
     bkX,
     groupRight,
     invX,
@@ -325,6 +364,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   // EPS backup output exists on hybrid inverters; off-grid AC output already feeds the panel board
   const showEps = options.showEpsLoad && isHybrid;
   const eps = epsOutputInfo(config, calc);
+  const showCt = L.hasCt;
   // A three-phase inverter on a single-phase service cannot be connected: the interconnection is drawn dashed
   const interconnectValid = calc.validations?.phaseCompatible !== false;
   const dcConduit = config.cabling?.dcCable?.conduitType || "RSC";
@@ -623,15 +663,28 @@ export const SolarSLDPictorial: React.FC<Props> = ({
                 );
               })}
 
-              {/* String home run: (+) from first module, (-) from last module */}
-              <Wire layer="EPH-DC" pts={[[firstX + 9, termY + 3], [firstX + 9, posLeadY], [rx, posLeadY], [rx, L.yBk]]} />
+              {/* String home run: (+) from first module, (-) from last module, down past the DC isolator
+                  and up into its bottom terminals ((-) takes the upper loop so the pair never crosses) */}
+              <Wire
+                layer="EPH-DC"
+                pts={[
+                  [firstX + 9, termY + 3],
+                  [firstX + 9, posLeadY],
+                  [rx, posLeadY],
+                  [rx, L.isoLoopY(rowIdx) + 6],
+                  [L.isoTermX(rowIdx) + PAIR_GAP, L.isoLoopY(rowIdx) + 6],
+                  [L.isoTermX(rowIdx) + PAIR_GAP, L.yBk + ISO_H],
+                ]}
+              />
               <Wire
                 layer="EPH-DC"
                 pts={[
                   [lastX + MODULE_W - 9, termY + 3],
                   [lastX + MODULE_W - 9, negLeadY],
                   [rx + PAIR_GAP, negLeadY],
-                  [rx + PAIR_GAP, L.yBk],
+                  [rx + PAIR_GAP, L.isoLoopY(rowIdx)],
+                  [L.isoTermX(rowIdx), L.isoLoopY(rowIdx)],
+                  [L.isoTermX(rowIdx), L.yBk + ISO_H],
                 ]}
               />
             </g>
@@ -657,11 +710,17 @@ export const SolarSLDPictorial: React.FC<Props> = ({
 
       {/* ===================== DC ISOLATOR ===================== */}
       <Isolator x={L.isoX} y={L.yBk} w={L.isoW} label="DC ISO." onClick={() => onSelect("dc_disconnect")} />
-      <Txt x={L.isoX + L.isoW / 2} y={L.yBk + ISO_H + 18} size={13} anchor="middle">
+      {/* Terminal stubs on the isolator bottom (string inputs) */}
+      {L.strings.map((_, k) =>
+        [L.isoTermX(k), L.isoTermX(k) + PAIR_GAP].map((tx) => (
+          <rect key={`isot-${k}-${tx}`} x={tx - 2.5} y={L.yBk + ISO_H} width={5} height={4} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1} />
+        ))
+      )}
+      <Txt x={L.isoX + L.isoW / 2} y={L.isoLabelY} size={13} anchor="middle">
         {eff.dcIsolatorRatingAmps}A, {config.dcProtection?.isolatorVoltageVolts ?? 1000}V DC
       </Txt>
       {eff.numberOfStrings > 1 && (
-        <Txt x={L.isoX + L.isoW / 2} y={L.yBk + ISO_H + 34} size={12} anchor="middle" muted>
+        <Txt x={L.isoX + L.isoW / 2} y={L.isoLabelY + 16} size={12} anchor="middle" muted>
           (PER STRING)
         </Txt>
       )}
@@ -754,6 +813,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         {L.hasBattery && <rect x={L.batPortX - 8} y={L.invBottom} width={16} height={22} rx={3} fill="none" stroke={stroke} strokeWidth={1.2} />}
         {showEps && <rect x={L.epsPortX - 6} y={L.invBottom} width={12} height={16} fill="none" stroke={stroke} strokeWidth={1.2} />}
         <rect x={L.gridPortX - 10} y={L.invBottom} width={20} height={14} fill="none" stroke={stroke} strokeWidth={1.2} />
+        {showCt && <rect x={L.invX + INV_W} y={L.comEntryY - 4} width={8} height={8} fill="none" stroke={stroke} strokeWidth={1.1} />}
         {eff.inverterQuantity > 1 && (
           <Txt x={L.invX + INV_W / 2} y={L.invY - 10} size={13} anchor="middle">
             TYP. OF {eff.inverterQuantity} INVERTERS
@@ -767,7 +827,8 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         <Txt x={L.invX - 6} y={L.invBottom + 26} size={12} anchor="end" muted>
           PV IN
         </Txt>
-        <Txt x={L.gridPortX + 6} y={L.invBottom + 26} size={12} muted>
+        {/* Hybrid: the grid route runs higher, so the GRID label moves left of its port */}
+        <Txt x={L.hasEpsCircuit ? L.gridPortX - 12 : L.gridPortX + 6} y={L.invBottom + 26} size={12} anchor={L.hasEpsCircuit ? "end" : "start"} muted>
           {L.isOffGrid ? "AC OUT" : "GRID"}
         </Txt>
       </g>
@@ -801,8 +862,22 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         </g>
       )}
 
+      {/* ===================== EPS OUTPUT BREAKER (hybrid) ===================== */}
+      {/* The EPS circuit is rated like the inverter output (its current cannot exceed the inverter's) */}
+      {showEps && (
+        <g className="cursor-pointer" onClick={() => onSelect("eps_panel")}>
+          <Wire pts={[[L.epsPortX, L.invBottom + 16], [L.epsPortX, L.yBk - 24], [L.epsBkX + BREAKER_W / 2, L.yBk - 24], [L.epsBkX + BREAKER_W / 2, L.yBk]]} />
+          <Breaker2P x={L.epsBkX} y={L.yBk} />
+          {[`${eff.acBreakerAtAmps} AT`, `${eff.acBreakerPoles}P, AC`, "EPS OUT"].map((t, i) => (
+            <Txt key={t} x={L.epsBkX + BREAKER_W + 8} y={L.yBk + 22 + i * 15} size={i < 2 ? 14 : 12} muted={i === 2}>
+              {t}
+            </Txt>
+          ))}
+        </g>
+      )}
+
       {/* ===================== AC BREAKER + AC SPD ===================== */}
-      <Wire pts={[[L.gridPortX, L.invBottom + 14], [L.gridPortX, L.yBk - 28], [L.acBkX + BREAKER_W / 2, L.yBk - 28], [L.acBkX + BREAKER_W / 2, L.yBk]]} />
+      <Wire pts={[[L.gridPortX, L.invBottom + 14], [L.gridPortX, L.gridRouteY], [L.acBkX + BREAKER_W / 2, L.gridRouteY], [L.acBkX + BREAKER_W / 2, L.yBk]]} />
       <g>
         <Breaker2P x={L.acBkX} y={L.yBk} />
         <Spd x={L.acBkX + BREAKER_W + 6} y={L.yBk} />
@@ -1000,7 +1075,28 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       {/* Fed only from the inverter EPS port; it has no connection to the utility side, so it cannot back-feed */}
       {showEps && (
         <g data-cad-layer="EPH-PANEL" className="cursor-pointer" onClick={() => onSelect("eps_panel")}>
-          <Wire pts={[[L.epsPortX, L.invBottom + 16], [L.epsPortX, L.yEps], [L.epsX, L.yEps], [L.epsX, L.yBk + BREAKER_H + 10]]} />
+          {/* EPS breaker -> under the grid circuit -> essential loads panel */}
+          <Wire
+            pts={[
+              [L.epsBkX + BREAKER_W / 2, L.yBk + BREAKER_H],
+              [L.epsBkX + BREAKER_W / 2, L.yEps],
+              [L.epsX, L.yEps],
+              [L.epsX, L.yBk + BREAKER_H + 10],
+            ]}
+          />
+          {/* EPS feeder: same conductors as the inverter output (text below the run) */}
+          {options.showConductorSpecs && (
+            <g data-cad-layer="EPH-ANNO">
+              <line x1={L.epsX - 24} y1={L.yEps + 5} x2={L.epsX - 16} y2={L.yEps - 5} stroke={stroke} strokeWidth={1.4} />
+              {acCalloutLines
+                .filter((t) => !t.startsWith("("))
+                .map((t, i) => (
+                  <Txt key={t} x={L.epsX - 10} y={L.yEps + 18 + i * 14} size={12} anchor="end">
+                    {t}
+                  </Txt>
+                ))}
+            </g>
+          )}
           <rect x={L.epsX - 55} y={L.yBk - 20} width={110} height={BREAKER_H + 30} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
           {/* Panel main breaker (top) */}
           <rect x={L.epsX - 9} y={L.yBk - 15} width={18} height={18} fill="none" stroke={stroke} strokeWidth={1.2} />
@@ -1029,10 +1125,41 @@ export const SolarSLDPictorial: React.FC<Props> = ({
               {ln.t}
             </Txt>
           ))}
-          <Txt x={L.epsPortX + 8} y={L.invBottom + 30} size={12} muted>
+          <Txt x={L.epsPortX + 6} y={L.invBottom + 52} size={12} muted>
             EPS
           </Txt>
           <GroundSym x={L.epsX + 40} y={L.yBk + BREAKER_H + 10} />
+        </g>
+      )}
+
+      {/* ===================== CT + COMMUNICATION CABLE (load / export monitoring) ===================== */}
+      {/* Signal cable only (dashed): it carries no power, so crossing a power conductor is not a connection */}
+      {showCt && (
+        <g data-cad-layer="EPH-COMM" className="cursor-pointer" onClick={() => onSelect("ct_sensor")}>
+          <rect x={L.ctX - 4} y={L.serviceY - 8} width={8} height={16} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1.3} />
+          <Txt x={L.ctX - 8} y={L.serviceY - 13} size={12} anchor="end">
+            CT
+          </Txt>
+          <polyline
+            points={[
+              [L.ctX, L.serviceY - 8],
+              [L.ctX, L.ctLoopTop],
+              [L.ctLoopX, L.ctLoopTop],
+              [L.ctLoopX, L.ctLoopBottom],
+              [L.comX, L.ctLoopBottom],
+              [L.comX, L.comEntryY],
+              [L.invX + INV_W + 8, L.comEntryY],
+            ]
+              .map((p) => p.join(","))
+              .join(" ")}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1}
+            strokeDasharray="7 4"
+          />
+          <Txt x={L.ctLoopX - 10} y={L.ctLoopBottom - 7} size={12} anchor="end" muted>
+            CT / SMART METER COMMUNICATION CABLE TO INVERTER
+          </Txt>
         </g>
       )}
 
