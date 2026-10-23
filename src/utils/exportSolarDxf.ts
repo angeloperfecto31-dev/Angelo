@@ -537,15 +537,8 @@ export function buildSolarDxf(
   if (placementHits(sldPlacement, sheet1TitleBlock)) sldPlacement = placeSld(sheet1TitleBlock.y2 + 2);
   const { X: sx, Y: sy, s: sldScale } = sldPlacement;
 
-  // Smallest SLD text height on an A3 sheet; step up to A2 / A1 so it plots at 1.8 mm or more
-  const minSldFont = Math.min(...sld.prims.map((p) => (p.kind === "text" ? p.size : Infinity)));
-  const a3TextMm = minSldFont * sldScale * CAP_HEIGHT;
-  const PAPER_SIZES = [
-    { name: "A3", k: 1, size: "420 x 297" },
-    { name: "A2", k: Math.SQRT2, size: "594 x 420" },
-    { name: "A1", k: 2, size: "841 x 594" },
-  ];
-  const sheet1Paper = PAPER_SIZES.find((p) => a3TextMm * p.k >= 1.8) || PAPER_SIZES[PAPER_SIZES.length - 1];
+  // The SLD sheet is always the A3 template (420 x 297 mm), like the other sheets
+  const sheet1Paper = { name: "A3", k: 1, size: "420 x 297" };
   paper.originX = 0;
   paper.k = sheet1Paper.k;
 
