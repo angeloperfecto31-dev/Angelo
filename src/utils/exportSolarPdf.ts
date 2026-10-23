@@ -1,4 +1,6 @@
 import { jsPDF } from "jspdf";
+import "./pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
+import { pdfFitText } from "./pdfLayout";
 import autoTable from "jspdf-autotable";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
 import { generateSolarBOM } from "./solarEngine";
@@ -48,14 +50,18 @@ export function exportSolarToPdf(
     doc.setTextColor(C_SLATE_DARK[0], C_SLATE_DARK[1], C_SLATE_DARK[2]);
     doc.text("ELECTRICALPH • SOLAR PV ENGINEERING DESIGN REPORT", margin, 9);
 
+    // Right-hand header fits the space left after the title
+    const titleW = doc.getTextWidth("ELECTRICALPH • SOLAR PV ENGINEERING DESIGN REPORT");
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
-    doc.text(
+    pdfFitText(
+      doc,
       `${config.projectName.toUpperCase()} | PEC 2017 ART 6.90 COMPLIANT`,
       pageWidth - margin,
       9,
-      { align: "right" }
+      pageWidth - 2 * margin - titleW - 6,
+      { align: "right", minFontSize: 5.5 }
     );
 
     // Bottom running footer

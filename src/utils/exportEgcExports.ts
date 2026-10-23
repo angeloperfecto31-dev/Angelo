@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx-js-style";
 import { Document, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, Packer } from "docx";
 import { jsPDF } from "jspdf";
+import "./pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
 import Drawing from "dxf-writer";
 
 export interface EgcTableEntry {
@@ -583,13 +584,13 @@ export function exportEgcToPdf(ocpdValue: number, material: "Copper" | "Aluminum
   doc.setFont("Helvetica", "bold");
   doc.setFontSize(14);
   doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
-  doc.text("EGC CALCULATOR REPORT", 140, 19);
+  doc.text("EGC CALCULATOR REPORT", 195, 19, { align: "right" });
 
   doc.setFont("Helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.text(`Reference: PEC 2.50.6.13`, 140, 24);
-  doc.text(`Date Executed: ${new Date().toLocaleDateString()}`, 140, 28);
+  doc.text(`Reference: PEC 2.50.6.13`, 195, 24, { align: "right" });
+  doc.text(`Date Executed: ${new Date().toLocaleDateString()}`, 195, 28, { align: "right" });
 
   // Divide line
   doc.setDrawColor(226, 232, 240);

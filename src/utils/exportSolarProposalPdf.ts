@@ -1,4 +1,6 @@
 import { jsPDF } from "jspdf";
+import "./pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
+import { pdfFitText } from "./pdfLayout";
 import autoTable from "jspdf-autotable";
 import {
   SolarDesignConfig,
@@ -51,14 +53,18 @@ export function exportSolarProposalPdf(
     doc.setTextColor(C_NAVY[0], C_NAVY[1], C_NAVY[2]);
     doc.text("ELECTRICALPH • SOLAR PV COMMERCIAL PROPOSAL & QUOTATION", margin, 9);
 
+    // Right-hand header fits the space left after the title
+    const titleW = doc.getTextWidth("ELECTRICALPH • SOLAR PV COMMERCIAL PROPOSAL & QUOTATION");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
-    doc.text(
+    pdfFitText(
+      doc,
       `${quotation.quotationNumber} | ${quotation.revision} | ${quotation.clientName.toUpperCase()}`,
       pageWidth - margin,
       9,
-      { align: "right" }
+      pageWidth - 2 * margin - titleW - 6,
+      { align: "right", minFontSize: 5.5 }
     );
 
     // Footer line

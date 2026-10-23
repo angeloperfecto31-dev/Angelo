@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { computePanelScheduleValues } from "../utils/computeEngine";
 import { jsPDF } from "jspdf";
+import "../utils/pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
+import { pdfFitText } from "../utils/pdfLayout";
 import * as XLSX from "xlsx-js-style";
 import { TransformerDiagnostics } from "./TransformerDiagnostics";
 import { TransformerTableSummary } from "./TransformerTableSummary";
@@ -668,21 +670,21 @@ export default function TransformerCalc({
       doc.text(`Project Name:`, pCol1, 61);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${panel.project || "N/A"}`, pValCol1, 61);
+      pdfFitText(doc, `${panel.project || "N/A"}`, pValCol1, 61, pCol2 - pValCol1 - 3, { minFontSize: 5.5 });
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
       doc.text(`Client Name:`, pCol1, 66);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${(panel as any).client || "N/A"}`, pValCol1, 66);
+      pdfFitText(doc, `${(panel as any).client || "N/A"}`, pValCol1, 66, pCol2 - pValCol1 - 3, { minFontSize: 5.5 });
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
       doc.text(`Location:`, pCol1, 71);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${panel.location || "N/A"}`, pValCol1, 71);
+      pdfFitText(doc, `${panel.location || "N/A"}`, pValCol1, 71, pCol2 - pValCol1 - 3, { minFontSize: 5.5 });
 
       // Right col
       doc.setFont("Helvetica", "normal");
@@ -690,21 +692,21 @@ export default function TransformerCalc({
       doc.text(`System Config:`, pCol2, 61);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${is3Phase ? "3-Phase (3-Phase, 3-Wire / 4-Wire)" : "Single Phase (1-Phase, 2-Wire)"}`, pValCol2, 61);
+      pdfFitText(doc, `${is3Phase ? "3-Phase (3-Phase, 3-Wire / 4-Wire)" : "Single Phase (1-Phase, 2-Wire)"}`, pValCol2, 61, 193 - pValCol2, { minFontSize: 5.5 });
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
       doc.text(`Secondary Volts:`, pCol2, 66);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${secondaryVoltage} V AC`, pValCol2, 66);
+      pdfFitText(doc, `${secondaryVoltage} V AC`, pValCol2, 66, 193 - pValCol2, { minFontSize: 5.5 });
 
       doc.setFont("Helvetica", "normal");
       doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
       doc.text(`Report Author:`, pCol2, 71);
       doc.setFont("Helvetica", "bold");
       doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-      doc.text(`${user?.email || "Licensed Architect / Engineer"}`, pValCol2, 71);
+      pdfFitText(doc, `${user?.email || "Licensed Architect / Engineer"}`, pValCol2, 71, 193 - pValCol2, { minFontSize: 5.5 });
 
 
       // SECTION 2: CORE DESIGN INPUTS & LOADS
