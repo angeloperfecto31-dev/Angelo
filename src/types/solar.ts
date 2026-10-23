@@ -82,6 +82,8 @@ export interface BatteryConfig {
   usableEnergyKwh: number;
   chemistry?: string;
   voltageType?: "low_voltage" | "high_voltage" | "commercial_bess";
+  /** Continuous discharge current per unit (A), from the battery datasheet */
+  maxDischargeCurrentA?: number;
 }
 
 export interface DCProtectionConfig {
@@ -332,6 +334,21 @@ export interface SolarCalculationResults {
   batteryUnitsCalculated: number;
   batteryUsableEnergyKwh: number;
   batteryBackupHoursActual: number;
+  /** Units needed for the backup energy alone */
+  batteryUnitsForEnergy: number;
+  /** Parallel strings needed so the bank delivers the inverter battery current */
+  batteryParallelForCurrent: number;
+  batteryUnitsInSeries: number;
+  batteryUnitsInParallel: number;
+  batteryBankVoltage: number;
+  batteryTotalEnergyKwh: number;
+  /** Battery-side DC current at full inverter power */
+  batteryMaxDcCurrentA: number;
+  batteryBreakerAmps: number;
+  batteryCableSizeMm2: number;
+  /** Parallel conductor runs per pole (large banks) */
+  batteryCableRuns: number;
+  batteryEgcSizeMm2: number;
 
   // Protection Recommended / Effective
   dcFuseRecommendedAmps: number;

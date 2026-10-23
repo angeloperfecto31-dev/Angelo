@@ -1058,8 +1058,8 @@ export async function exportSolarToWord(
     new TableRow({
       children: [
         createCell("Battery Energy Storage (BESS)", true),
-        createCell(hasBattery ? `${config.battery.totalEnergyKwh} kWh (${config.battery.units} Units)` : "Not Applicable – Grid-Tied System"),
-        createCell(hasBattery ? `Usable: ${config.battery.usableEnergyKwh} kWh (${calc.batteryBackupHoursActual.toFixed(1)} hrs backup)` : "Direct Net-Metering Export"),
+        createCell(hasBattery ? `${calc.batteryTotalEnergyKwh} kWh (${calc.effective.batteryUnits} Units)` : "Not Applicable – Grid-Tied System"),
+        createCell(hasBattery ? `Usable: ${calc.batteryUsableEnergyKwh} kWh (${calc.batteryBackupHoursActual.toFixed(1)} hrs backup)` : "Direct Net-Metering Export"),
       ],
     }),
     new TableRow({
@@ -1709,17 +1709,17 @@ export async function exportSolarToWord(
       new TableRow({
         children: [
           createCell("Battery Bank Configuration", true),
-          createCell(`${config.battery.units} Units (${config.battery.unitsInSeries}S / ${config.battery.unitsInParallel}P)`),
+          createCell(`${calc.effective.batteryUnits} Units (${calc.batteryUnitsInSeries}S / ${calc.batteryUnitsInParallel}P)`),
           createCell("Battery Bank Nominal Voltage", true),
-          createCell(`${config.battery.batteryBankVoltage} VDC`),
+          createCell(`${calc.batteryBankVoltage} VDC`),
         ],
       }),
       new TableRow({
         children: [
           createCell("Total Installed Energy", true),
-          createCell(`${config.battery.totalEnergyKwh} kWh Total`),
+          createCell(`${calc.batteryTotalEnergyKwh} kWh Total`),
           createCell("Usable Energy Capacity", true),
-          createCell(`${config.battery.usableEnergyKwh} kWh (${config.battery.dodPercent}% DoD)`),
+          createCell(`${calc.batteryUsableEnergyKwh} kWh (${config.battery.dodPercent}% DoD)`),
         ],
       }),
       new TableRow({

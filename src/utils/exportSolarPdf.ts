@@ -522,11 +522,11 @@ export async function exportSolarToPdf(
       "BESS Storage Chemistry",
       `${config.battery.manufacturer} ${config.battery.model} (LiFePO4)`,
       "Total Energy / Usable",
-      `${config.battery.totalEnergyKwh} kWh Total / ${config.battery.usableEnergyKwh} kWh Usable (${config.battery.dodPercent}% DoD)`,
+      `${calc.batteryTotalEnergyKwh} kWh Total / ${calc.batteryUsableEnergyKwh} kWh Usable (${config.battery.dodPercent}% DoD)`,
     ]);
     utilityRows.push([
       "Battery Bank Voltage",
-      `${config.battery.batteryBankVoltage} VDC (${config.battery.units} Units: ${config.battery.unitsInSeries}S / ${config.battery.unitsInParallel}P)`,
+      `${calc.batteryBankVoltage} VDC (${calc.effective.batteryUnits} Units: ${calc.batteryUnitsInSeries}S / ${calc.batteryUnitsInParallel}P), ${calc.batteryBreakerAmps}A DC breaker`,
       "Estimated Autonomy Backup",
       `${calc.batteryBackupHoursActual.toFixed(1)} Hours at ${config.battery.requiredBackupLoadKw} kW Critical Load`,
     ]);

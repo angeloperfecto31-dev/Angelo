@@ -274,6 +274,7 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
         efficiencyPercent: b.efficiencyPercent,
         chemistry: b.chemistry || "LiFePO4",
         voltageType: b.voltageType || (b.voltageV > 100 ? "high_voltage" : "low_voltage"),
+        maxDischargeCurrentA: b.maxDischargeCurrentA,
       },
     });
   };
@@ -1222,7 +1223,7 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
 
               <div>
                 <SolarOverrideField
-                  label="Battery Units (Parallel)"
+                  label={calc.batteryUnitsInSeries > 1 ? `Battery Units (${calc.batteryUnitsInSeries}S x ${calc.batteryUnitsInParallel}P)` : "Battery Units (Parallel)"}
                   fieldKey="batteryUnits"
                   effectiveValue={calc.effective.batteryUnits}
                   autoValue={calc.autoValues.batteryUnits}
@@ -1232,7 +1233,7 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
                   max={40}
                   step={1}
                   warning={calc.fieldWarnings.batteryUnits}
-                  hint="Calculated from backup load & autonomy duration"
+                  hint={`Auto: ${calc.batteryUnitsForEnergy} for ${calc.batteryEnergyKwhRequired} kWh backup; at least ${calc.batteryParallelForCurrent} in parallel for the ${calc.batteryMaxDcCurrentA} A inverter battery current`}
                   onValueChange={(val) => {
                     const num = Math.max(1, parseInt(val) || 1);
                     if (onSetOverride) {
@@ -1294,9 +1295,44 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
                   Bank Voltage
                 </span>
                 <span className="text-sm font-black text-slate-800 dark:text-slate-100 mt-1 block">
-                  {config.battery.voltageV} V DC
+                  {calc.batteryBankVoltage} V DC
                 </span>
               </div>
+            </div>
+
+            {/* Bank arrangement and DC protection (all automatic from the design) */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              {[
+                {
+                  label: "Bank Arrangement",
+                  value:
+                    calc.batteryUnitsInSeries > 1
+                      ? `${calc.batteryUnitsInSeries}S x ${calc.batteryUnitsInParallel}P`
+                      : `${calc.batteryUnitsInParallel} in parallel`,
+                  sub: `${calc.effective.batteryUnits} x ${config.battery.energyKwh} kWh = ${calc.batteryTotalEnergyKwh} kWh total`,
+                },
+                {
+                  label: "Battery DC Current",
+                  value: `${calc.batteryMaxDcCurrentA} A`,
+                  sub: `At ${calc.totalInverterAcKw} kW inverter power, ${calc.batteryBankVoltage} V bank`,
+                },
+                {
+                  label: "Battery DC Breaker",
+                  value: `${calc.batteryBreakerAmps} A DC, 2P`,
+                  sub: "125% of the battery DC current (PEC 6.90.8)",
+                },
+                {
+                  label: "Battery Cable",
+                  value: `${calc.batteryCableRuns > 1 ? `${calc.batteryCableRuns} x ` : ""}${calc.batteryCableSizeMm2} mm² Cu (+/-)`,
+                  sub: `EGC ${calc.batteryEgcSizeMm2} mm², rated for the ${calc.batteryBreakerAmps} A breaker`,
+                },
+              ].map((c) => (
+                <div key={c.label} className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-purple-200/80 dark:border-purple-800/50">
+                  <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300 uppercase tracking-wider block">{c.label}</span>
+                  <span className="text-sm font-black text-slate-800 dark:text-slate-100 mt-1 block">{c.value}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5">{c.sub}</span>
+                </div>
+              ))}
             </div>
           </div>
         ) : (
