@@ -4,6 +4,8 @@ import { pdfFitText } from "./pdfLayout";
 import autoTable from "jspdf-autotable";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
 import { generateSolarBOM } from "./solarEngine";
+import { captureSolarBlockDiagram } from "./solarSldCapture";
+import { drawCaptureToPdf } from "./pdfCapturedDrawing";
 
 /**
  * Generates an executive-grade, multi-page Solar PV Engineering Design & Calculation Report (PDF).
@@ -12,7 +14,9 @@ import { generateSolarBOM } from "./solarEngine";
  */
 export function exportSolarToPdf(
   config: SolarDesignConfig,
-  calc: SolarCalculationResults
+  calc: SolarCalculationResults,
+  /** Panel board the house loads are fed from (shown on the block diagram) */
+  panelDesignation?: string
 ) {
   const doc = new jsPDF({
     orientation: "portrait",
@@ -701,6 +705,28 @@ export function exportSolarToPdf(
   doc.setFontSize(6.5);
   doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
   doc.text("PRC Reg. No.: ___________  •  PTR No.: ___________", rightX, sigY + 12.5);
+
+  // -------------------------------------------------------------
+  // BLOCK DIAGRAM (own page, vector drawing - the same diagram as in Solar Design)
+  // -------------------------------------------------------------
+  doc.addPage();
+  doc.setFont("Helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(C_NAVY[0], C_NAVY[1], C_NAVY[2]);
+  doc.text("BLOCK DIAGRAM", margin, 22);
+  doc.setFont("Helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
+  doc.text("Power flow from the PV array through the inverter, protection and metering to the utility and the loads", margin, 26);
+  doc.setDrawColor(C_BORDER[0], C_BORDER[1], C_BORDER[2]);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, 31, contentWidth, 150, 2, 2, "S");
+  drawCaptureToPdf(doc, captureSolarBlockDiagram(config, calc, panelDesignation), {
+    x: margin + 4,
+    y: 35,
+    w: contentWidth - 8,
+    h: 142,
+  });
 
   // -------------------------------------------------------------
   // APPLY RUNNING HEADERS & FOOTERS TO ALL PAGES

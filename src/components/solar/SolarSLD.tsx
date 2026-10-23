@@ -36,6 +36,9 @@ import { toPng, toSvg } from "html-to-image";
 import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { SolarSLDPictorial, computePictorialLayout, sldDesignIssues, epsOutputInfo } from "./SolarSLDPictorial";
+import { SolarBlockDiagram, BLOCK_W, BLOCK_H } from "./SolarBlockDiagram";
+import { captureSolarBlockDiagram } from "../../utils/solarSldCapture";
+import { drawCaptureToPdf } from "../../utils/pdfCapturedDrawing";
 import { computeLinkedPanelData, solarBackfeedAmps, acConductorParts } from "../../utils/solarLinkedPanel";
 
 interface SolarSLDProps {
@@ -416,6 +419,22 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       const drawW = svgWidth * scale;
       const drawH = svgHeight * scale;
       pdf.addImage(dataUrl, "PNG", (PAGE_W - drawW) / 2, (PAGE_H - drawH) / 2, drawW, drawH);
+
+      // Page 2: BLOCK DIAGRAM (A3 landscape, vector)
+      pdf.addPage("a3", "landscape");
+      pdf.setDrawColor(15, 23, 42);
+      pdf.setLineWidth(0.6);
+      pdf.rect(margin, margin, PAGE_W - 2 * margin, PAGE_H - 2 * margin);
+      drawCaptureToPdf(pdf, captureSolarBlockDiagram(config, calc, linkedPanelData.designation), {
+        x: margin + 10,
+        y: margin + 8,
+        w: PAGE_W - 2 * margin - 20,
+        h: PAGE_H - 2 * margin - 22,
+      });
+      pdf.setFont("Helvetica", "bold");
+      pdf.setFontSize(9);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(`BLOCK DIAGRAM  |  ${(config.projectName || "SOLAR PV INSTALLATION").toUpperCase()}  |  SHEET E-02`, PAGE_W - margin - 4, PAGE_H - margin - 4, { align: "right" });
       pdf.save(`${config.projectName.replace(/[^a-zA-Z0-9_-]/g, "_")}_Solar_SLD.pdf`);
     } catch (err) {
       console.error("PDF Export failed:", err);
@@ -1536,6 +1555,32 @@ III. INTERCONNECTION, SAFETY & COMMISSIONING
           </div>
         </div>
       )}
+
+      {/* 5. BLOCK DIAGRAM (power flow at a glance; exported with the PDF and AutoCAD files) */}
+      <div className="mt-6">
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Block Diagram</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">Included in the PDF and AutoCAD exports</span>
+        </div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto" style={{ backgroundColor: themeColors.bg }}>
+          <svg
+            id="solar-block-diagram-sheet"
+            viewBox={`0 0 ${BLOCK_W} ${BLOCK_H}`}
+            width={BLOCK_W}
+            height={BLOCK_H}
+            className="block mx-auto w-full select-none"
+            style={{ maxWidth: BLOCK_W, minWidth: 560, height: "auto" }}
+          >
+            <SolarBlockDiagram
+              config={config}
+              calc={calc}
+              theme={themeColors}
+              panelDesignation={linkedPanelData.designation}
+              onSelect={setSelectedElement}
+            />
+          </svg>
+        </div>
+      </div>
 
       {/* Print Warning Modal for Sandboxed iFrames */}
       {showPrintWarning && (
