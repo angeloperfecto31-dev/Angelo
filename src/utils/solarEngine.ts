@@ -4638,12 +4638,45 @@ export function computeSolarDesign(
   const battEff = (batt.efficiencyPercent || 95) / 100;
   const batteryEnergyKwhRequired = Number(((backupLoadKw * backupHours) / (dod * battEff)).toFixed(1));
   const battUnitKwh = batt.energyKwh || 4.8;
-  const batteryUnitsCalculated = Math.max(1, Math.ceil(batteryEnergyKwhRequired / battUnitKwh));
+  const battUnitV = batt.voltageV || 48;
 
+  // Bank arrangement. Library batteries are complete packs at their working voltage (48-51.2 V
+  // low-voltage packs, or 160-800 V high-voltage stacks / cabinets), so additional units are
+  // connected in parallel. A low-voltage module sold for high-voltage use (e.g. 51.2 V HV
+  // modules) is stacked in series behind its BMS to reach the high-voltage battery window.
+  const battVoltageType = batt.voltageType || (battUnitV > 100 ? "high_voltage" : "low_voltage");
+  const HV_BATTERY_MIN_V = 150;
+  const batteryUnitsInSeries =
+    battVoltageType === "high_voltage" && battUnitV < HV_BATTERY_MIN_V ? Math.ceil(HV_BATTERY_MIN_V / battUnitV) : 1;
+  const batteryBankVoltage = Number((battUnitV * batteryUnitsInSeries).toFixed(1));
+
+  // Battery-side DC current when the inverters charge / discharge at full rated power (95% efficiency)
+  const batteryMaxDcCurrentA = Number(((totalInverterAcKw * 1000) / (batteryBankVoltage * 0.95)).toFixed(1));
+  // Per-unit continuous discharge current: datasheet value (or the library entry), else 1C of the pack (Ah)
+  const libraryBattery = DEFAULT_BATTERIES.find((b) => b.manufacturer === batt.manufacturer && b.model === batt.model);
+  const battUnitMaxA = batt.maxDischargeCurrentA || libraryBattery?.maxDischargeCurrentA || batt.capacityAh || 100;
+
+  // Units needed for the backup energy, and parallel strings needed to deliver the inverter current
+  const batteryUnitsForEnergy = Math.max(1, Math.ceil(batteryEnergyKwhRequired / battUnitKwh));
+  const batteryParallelForCurrent = Math.max(1, Math.ceil(batteryMaxDcCurrentA / battUnitMaxA));
+  const batteryUnitsCalculated =
+    Math.max(Math.ceil(batteryUnitsForEnergy / batteryUnitsInSeries), batteryParallelForCurrent) * batteryUnitsInSeries;
+
+  // Automatic unless the user has overridden the unit count (a stored "units" value is ignored)
   const effectiveBatteryUnits =
-    overrides.batteryUnits !== undefined && overrides.batteryUnits > 0
-      ? overrides.batteryUnits
-      : batt.units || batteryUnitsCalculated;
+    overrides.batteryUnits !== undefined && overrides.batteryUnits > 0 ? overrides.batteryUnits : batteryUnitsCalculated;
+  const batteryUnitsInParallel = Math.max(1, Math.ceil(effectiveBatteryUnits / batteryUnitsInSeries));
+
+  // Battery DC protection and cable (PEC 6.90.8: 125% of the maximum current; conductor protected by the OCPD)
+  const batteryBreakerAmps = getNextStandardBreaker(batteryMaxDcCurrentA * 1.25);
+  // Sorted by size (object key order puts whole numbers before 3.5 / 5.5)
+  const ampacitySizes = Object.entries(WIRE_AMPACITY_COPPER_90C)
+    .map(([mm2, a]) => [Number(mm2), a] as [number, number])
+    .sort((p, q) => p[0] - q[0]);
+  const largestCable = ampacitySizes[ampacitySizes.length - 1];
+  const batteryCableRuns = Math.max(1, Math.ceil(batteryBreakerAmps / largestCable[1]));
+  const batteryCableSizeMm2 = (ampacitySizes.find(([, a]) => a * batteryCableRuns >= batteryBreakerAmps) || largestCable)[0];
+  const batteryEgcSizeMm2 = getStandardEgcSize(batteryBreakerAmps);
 
   const totalBattKwh = effectiveBatteryUnits * battUnitKwh;
   const batteryUsableEnergyKwh = Number((totalBattKwh * dod * battEff).toFixed(1));
@@ -4826,6 +4859,19 @@ export function computeSolarDesign(
 
   // Check 9: Battery Capacity (if enabled)
   const batteryCapacityAdequate = !config.battery.enabled || (totalBattKwh >= batteryEnergyKwhRequired * 0.95);
+  // Check 9a: low-voltage (48 V class) banks are only used with hybrid inverters up to about 16 kW
+  if (config.battery.enabled && batteryBankVoltage < 100 && selectedInverter.ratedAcPowerKw > 16) {
+    warnings.push(
+      `WARNING: A ${batteryBankVoltage}V low-voltage battery bank is selected for a ${selectedInverter.ratedAcPowerKw} kW inverter. Inverters of this size use high-voltage batteries; select an HV battery listed as compatible by the inverter manufacturer.`
+    );
+  }
+  // Check 9b: the bank must deliver the inverter's battery current (parallel strings x per-unit current)
+  if (config.battery.enabled && batteryUnitsInParallel * battUnitMaxA < batteryMaxDcCurrentA) {
+    warnings.push(
+      `WARNING: Battery bank discharge capability (${batteryUnitsInParallel} parallel x ${battUnitMaxA}A) is below the inverter battery current (${batteryMaxDcCurrentA}A). Add battery units in parallel.`
+    );
+    fieldWarnings.batteryUnits = `Only ${batteryUnitsInParallel} in parallel: ${batteryUnitsInParallel * battUnitMaxA}A < ${batteryMaxDcCurrentA}A inverter battery current`;
+  }
   if (config.battery.enabled && !batteryCapacityAdequate) {
     const msg = `WARNING: Battery bank capacity (${totalBattKwh.toFixed(1)} kWh) is below required ${batteryEnergyKwhRequired.toFixed(1)} kWh for ${backupHours}h backup.`;
     warnings.push(msg);
@@ -4938,6 +4984,17 @@ export function computeSolarDesign(
     batteryUnitsCalculated,
     batteryUsableEnergyKwh,
     batteryBackupHoursActual,
+    batteryUnitsForEnergy,
+    batteryParallelForCurrent,
+    batteryUnitsInSeries,
+    batteryUnitsInParallel,
+    batteryBankVoltage,
+    batteryTotalEnergyKwh: Number(totalBattKwh.toFixed(1)),
+    batteryMaxDcCurrentA,
+    batteryBreakerAmps,
+    batteryCableSizeMm2,
+    batteryCableRuns,
+    batteryEgcSizeMm2,
 
     dcFuseRecommendedAmps: effectiveDcFuseRatingAmps,
     dcIsolatorRecommendedAmps: effectiveDcIsolatorRatingAmps,
@@ -5036,6 +5093,31 @@ export function generateSolarBOM(
       quantity: battUnits,
       unit: "units",
       unitCostPhp: Math.round(config.battery.energyKwh * 24000), // ~24,000 PHP per kWh LFP
+      markupPercent: 15,
+      totalCostPhp: 0,
+    });
+    // Battery DC protection and cabling, sized by the calculation engine
+    items.push({
+      id: "bom-battery-breaker",
+      category: "DC Equipment",
+      itemDescription: `Battery DC Breaker / MCCB ${calc.batteryBreakerAmps}A 2P, ${Math.max(80, Math.ceil(calc.batteryBankVoltage * 1.25 / 10) * 10)}V DC rated`,
+      manufacturer: "Tier-1 DC Protection",
+      model: `DC-MCCB-${calc.batteryBreakerAmps}A`,
+      quantity: 1,
+      unit: "units",
+      unitCostPhp: Math.round(2500 + calc.batteryBreakerAmps * 25),
+      markupPercent: 15,
+      totalCostPhp: 0,
+    });
+    items.push({
+      id: "bom-battery-cable",
+      category: "Wiring & Conduit",
+      itemDescription: `Battery DC Cable ${calc.batteryCableSizeMm2}mm² Cu (+/-)${calc.batteryCableRuns > 1 ? ` x ${calc.batteryCableRuns} runs` : ""} with lugs, EGC ${calc.batteryEgcSizeMm2}mm² (est. 5 m run - adjust to site)`,
+      manufacturer: "Phelps Dodge / Equivalent",
+      model: `${calc.batteryCableSizeMm2}mm² Flexible`,
+      quantity: 2 * calc.batteryCableRuns * 5,
+      unit: "meters",
+      unitCostPhp: Math.round(calc.batteryCableSizeMm2 * 18 + 60),
       markupPercent: 15,
       totalCostPhp: 0,
     });

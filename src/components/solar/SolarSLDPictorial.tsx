@@ -854,6 +854,9 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             <Txt x={L.batPortX + BREAKER_W / 2 + 8} y={L.batBkY + 40} size={13}>
               BATTERY OCPD
             </Txt>
+            <Txt x={L.batPortX + BREAKER_W / 2 + 8} y={L.batBkY + 56} size={12} muted>
+              {calc.batteryBreakerAmps} A DC, 2P
+            </Txt>
           </g>
           <Wire layer="EPH-BATTERY" pts={[[L.batPortX, L.batBkY + BREAKER_H], [L.batPortX, L.batBankY]]} />
           <g data-cad-layer="EPH-BATTERY" className="cursor-pointer" onClick={() => onSelect("battery_bank")}>
