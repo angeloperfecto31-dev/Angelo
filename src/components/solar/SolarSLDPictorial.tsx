@@ -59,6 +59,8 @@ const ISO_H = 90;
 const NOTE_X = 52;
 const NOTE_FS = 13;
 const TITLE_FS = 15;
+const VAL_FS = 13;
+const WARN_COLOR = "#b91c1c";
 /** Wrap width for the panel board name under the panel. */
 const PANEL_LABEL_W = 150;
 const textWidth = (text: string, fontSize: number) => text.length * fontSize * 0.56;
@@ -101,6 +103,35 @@ function drawnStrings(numberOfStrings: number): number[] {
   return [n, 2, 1];
 }
 
+const STD_BREAKERS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400];
+
+/**
+ * EPS / backup output of a hybrid inverter. The output breaker is sized from the backup load used
+ * for battery sizing (125% continuous); null when no battery (no backup load is defined).
+ */
+export function epsOutputInfo(config: SolarDesignConfig, calc: SolarCalculationResults) {
+  if (config.systemType !== "hybrid" || !config.battery?.enabled) return null;
+  const kw = config.battery.requiredBackupLoadKw || 25; // same fallback as the calculation engine
+  const inv = calc.selectedInverter;
+  const volts = inv.acVoltage || config.utilityVoltage || 230;
+  const amps = (kw * 1000) / (inv.phase === "3PH" ? Math.sqrt(3) * volts : volts);
+  const breakerA = STD_BREAKERS.find((a) => a >= amps * 1.25) ?? Math.ceil((amps * 1.25) / 50) * 50;
+  const invKw = calc.totalInverterAcKw;
+  return { kw, amps: Number(amps.toFixed(1)), breakerA, poles: calc.effective.acBreakerPoles, exceedsInverter: kw > invKw, invKw };
+}
+
+/** Design problems that the drawing must call out (engine warnings, without the DC/AC ratio notices). */
+export function sldDesignIssues(config: SolarDesignConfig, calc: SolarCalculationResults): string[] {
+  const issues = (calc.warnings || []).filter((w) => !/^NOTICE/i.test(w));
+  const eps = epsOutputInfo(config, calc);
+  if (eps?.exceedsInverter) {
+    issues.push(
+      `WARNING: Backup load (${eps.kw} kW) exceeds the inverter AC rating (${eps.invKw} kW); the EPS output cannot carry it. Reduce the essential loads or select a larger hybrid inverter.`
+    );
+  }
+  return issues;
+}
+
 export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCalculationResults, top = 110) {
   const eff = calc.effective;
   const strings = drawnStrings(eff.numberOfStrings);
@@ -113,11 +144,19 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   // Array block. The string notes sit left of the modules, so the array starts after the widest note.
   const mod = calc.selectedModule;
   const tMin = config.minOperatingTempC ?? 18; // same default as the calculation engine
+  const stringKwp = (eff.modulesPerString * mod.ratedPowerWp) / 1000;
+  // String data from the calculation engine: Voc (STC and cold), Vmp (hot), Imp and the
+  // PEC 6.90.8 maximum circuit current (1.25 x Isc) used for the string OCPD and conductors
+  // Short lines keep the note column (and so the sheet) narrow
   const noteLines = (n: number) => [
     `STRING ${n}`,
+    `${eff.modulesPerString} X ${mod.ratedPowerWp} W = ${stringKwp.toFixed(2)} kWp`,
     `${eff.modulesPerString} UNITS X ${mod.voc.toFixed(2)} V`,
     `= ${(eff.modulesPerString * mod.voc).toFixed(2)} V (Voc, STC)`,
-    `= ${calc.stringVoc} V (Voc @ ${tMin}°C)`,
+    `Voc @ ${tMin}°C = ${calc.stringVoc} V`,
+    `Vmp = ${calc.stringVmp} V`,
+    `Imp = ${calc.stringImp} A`,
+    `1.25 Isc = ${(calc.stringIsc * 1.25).toFixed(2)} A`,
   ];
   const noteWidth = Math.max(...noteLines(Math.max(1, eff.numberOfStrings)).map((t) => textWidth(t, NOTE_FS)));
   const arrayX = Math.max(175, NOTE_X + noteWidth + 34);
@@ -182,10 +221,19 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const batBankY = batBkY + BREAKER_H + 30;
   const dcLabelY = yUnderMax + 34;
   const labelsBottom = dcLabelY + 4 * 17;
-  const bottom = Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150) + 20;
+  const drawingBottom = Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150) + 20;
 
   // Includes the wrapped panel name, which starts at the panel board's left edge
   const width = (isOffGrid ? acIsoCx + 158 : panelX - 42) + PANEL_LABEL_W + 20;
+
+  // Design validation box under the drawing (only when the design has problems)
+  const issues = sldDesignIssues(config, calc);
+  const valX = NOTE_X - 10;
+  const valW = Math.min(1400, width - valX - 10);
+  const valLines = issues.flatMap((t, i) => wrapLines(`${i + 1}. ${t}`, valW - 28, VAL_FS));
+  const valY = drawingBottom + 10;
+  const valH = issues.length ? 40 + valLines.length * 17 + 8 : 0;
+  const bottom = issues.length ? valY + valH + 20 : drawingBottom;
 
   return {
     noteLines,
@@ -235,6 +283,12 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
     width,
     hasBattery,
     isOffGrid,
+    issues,
+    valX,
+    valY,
+    valW,
+    valH,
+    valLines,
   };
 }
 
@@ -270,6 +324,9 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   const hasNetMetering = isGridTied && config.netMetering?.enabled !== false;
   // EPS backup output exists on hybrid inverters; off-grid AC output already feeds the panel board
   const showEps = options.showEpsLoad && isHybrid;
+  const eps = epsOutputInfo(config, calc);
+  // A three-phase inverter on a single-phase service cannot be connected: the interconnection is drawn dashed
+  const interconnectValid = calc.validations?.phaseCompatible !== false;
   const dcConduit = config.cabling?.dcCable?.conduitType || "RSC";
   const acConduit = config.cabling?.acCable?.conduitType || "RSC";
   const dcInsulation = config.cabling?.dcCable?.insulation || "PV1-F";
@@ -306,6 +363,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     anchor?: "start" | "middle" | "end";
     weight?: string | number;
     muted?: boolean;
+    color?: string;
   }) => (
     <text
       x={p.x}
@@ -314,7 +372,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       fontFamily={font}
       fontWeight={p.weight ?? "normal"}
       textAnchor={p.anchor ?? "start"}
-      fill={p.muted ? theme.textMuted : theme.text}
+      fill={p.color ?? (p.muted ? theme.textMuted : theme.text)}
     >
       {p.children}
     </text>
@@ -498,7 +556,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
 
               {/* Left string note */}
               {L.noteLines(row.stringNo).map((t, i) => (
-                <Txt key={i} x={NOTE_X} y={modY + 26 + i * 17} size={NOTE_FS}>
+                <Txt key={i} x={NOTE_X} y={modY + 8 + i * 16} size={NOTE_FS} weight={i === 0 ? "bold" : "normal"}>
                   {t}
                 </Txt>
               ))}
@@ -525,9 +583,12 @@ export const SolarSLDPictorial: React.FC<Props> = ({
                     <Txt x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2} size={18} anchor="middle" weight="bold">
                       ...
                     </Txt>
-                    <Txt x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2 + 16} size={12} anchor="middle" muted>
-                      {eff.modulesPerString - (L.cols.length - 1)} MORE
-                    </Txt>
+                    {/* Two short lines so the count stays inside the gap column */}
+                    {[`+${eff.modulesPerString - (L.cols.length - 1)}`, "MORE"].map((t, i) => (
+                      <Txt key={t} x={modXs[c] + MODULE_W / 2} y={modY + MODULE_H / 2 + 16 + i * 13} size={11} anchor="middle" muted>
+                        {t}
+                      </Txt>
+                    ))}
                   </g>
                 )
               )}
@@ -797,8 +858,21 @@ export const SolarSLDPictorial: React.FC<Props> = ({
       {isGridTied ? (
         <g>
           {/* Solar interconnection to the service bus */}
-          <Wire pts={[[L.acIsoCx, L.solarTapY], [L.busX, L.solarTapY]]} />
-          <Dot x={L.busX} y={L.solarTapY} />
+          {interconnectValid ? (
+            <>
+              <Wire pts={[[L.acIsoCx, L.solarTapY], [L.busX, L.solarTapY]]} />
+              <Dot x={L.busX} y={L.solarTapY} />
+            </>
+          ) : (
+            <g>
+              <line x1={L.acIsoCx} y1={L.solarTapY} x2={L.busX} y2={L.solarTapY} stroke={WARN_COLOR} strokeWidth={1.6} strokeDasharray="10 6" />
+              {["NOT CONNECTABLE -", "SEE DESIGN VALIDATION"].map((t, i) => (
+                <Txt key={t} x={L.busX - 8} y={L.solarTapY + 54 + i * 15} size={12} anchor="end" weight="bold" color={WARN_COLOR}>
+                  {t}
+                </Txt>
+              ))}
+            </g>
+          )}
           {[
             ...(multiInverter
               ? [`SOLAR MAIN DISCONNECT: ${calc.acMainDisconnectAmps} AT, ${acSys?.mainDisconnectPoles ?? eff.acBreakerPoles}P`]
@@ -899,9 +973,11 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           {/* Off-grid: inverter output feeds the panel board directly */}
           <Wire pts={[[L.acIsoCx, L.solarTapY], [L.acIsoCx + 200, L.solarTapY], [L.acIsoCx + 200, L.solarTapY + 40]]} />
           <rect x={L.acIsoCx + 158} y={L.solarTapY + 40} width={84} height={120} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
-          <Txt x={L.acIsoCx + 200} y={L.solarTapY + 98} size={12} anchor="middle">
-            PANEL BOARD
-          </Txt>
+          {["PANEL", "BOARD"].map((t, i) => (
+            <Txt key={t} x={L.acIsoCx + 200} y={L.solarTapY + 92 + i * 14} size={12} anchor="middle">
+              {t}
+            </Txt>
+          ))}
           {/* Left-aligned under the panel and wrapped, so a long name never reaches back over the AC wiring */}
           {[...wrapLines(service.panelDesignation, PANEL_LABEL_W, 12), "STAND-ALONE - NO UTILITY", "CONNECTION"].map((ln, i) => (
             <Txt key={i} x={L.acIsoCx + 158} y={L.solarTapY + 194 + i * 15} size={12} muted>
@@ -920,27 +996,58 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         </g>
       )}
 
-      {/* ===================== EPS (backup loads) ===================== */}
+      {/* ===================== EPS / ESSENTIAL LOADS PANEL (hybrid backup output) ===================== */}
+      {/* Fed only from the inverter EPS port; it has no connection to the utility side, so it cannot back-feed */}
       {showEps && (
-        <g>
+        <g data-cad-layer="EPH-PANEL" className="cursor-pointer" onClick={() => onSelect("eps_panel")}>
           <Wire pts={[[L.epsPortX, L.invBottom + 16], [L.epsPortX, L.yEps], [L.epsX, L.yEps], [L.epsX, L.yBk + BREAKER_H + 10]]} />
           <rect x={L.epsX - 55} y={L.yBk - 20} width={110} height={BREAKER_H + 30} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
+          {/* Panel main breaker (top) */}
+          <rect x={L.epsX - 9} y={L.yBk - 15} width={18} height={18} fill="none" stroke={stroke} strokeWidth={1.2} />
+          <path d={`M ${L.epsX - 4} ${L.yBk - 12} A 5 5 0 0 1 ${L.epsX - 4} ${L.yBk - 2}`} fill="none" stroke={stroke} strokeWidth={1.1} />
+          {/* Branch circuit breakers */}
           {[0, 1, 2, 3].map((i) => (
             <g key={i}>
-              <circle cx={L.epsX - 38} cy={L.yBk + i * 20} r={4} fill="none" stroke={stroke} strokeWidth={1} />
-              <line x1={L.epsX - 34} y1={L.yBk + i * 20} x2={L.epsX - 8} y2={L.yBk + i * 20 - 6} stroke={stroke} strokeWidth={1.1} />
-              <circle cx={L.epsX + 38} cy={L.yBk + i * 20} r={4} fill="none" stroke={stroke} strokeWidth={1} />
-              <line x1={L.epsX + 34} y1={L.yBk + i * 20} x2={L.epsX + 8} y2={L.yBk + i * 20 - 6} stroke={stroke} strokeWidth={1.1} />
+              <circle cx={L.epsX - 38} cy={L.yBk + 18 + i * 20} r={4} fill="none" stroke={stroke} strokeWidth={1} />
+              <line x1={L.epsX - 34} y1={L.yBk + 18 + i * 20} x2={L.epsX - 8} y2={L.yBk + 12 + i * 20} stroke={stroke} strokeWidth={1.1} />
+              <circle cx={L.epsX + 38} cy={L.yBk + 18 + i * 20} r={4} fill="none" stroke={stroke} strokeWidth={1} />
+              <line x1={L.epsX + 34} y1={L.yBk + 18 + i * 20} x2={L.epsX + 8} y2={L.yBk + 12 + i * 20} stroke={stroke} strokeWidth={1.1} />
             </g>
           ))}
-          <line x1={L.epsX} y1={L.yBk - 10} x2={L.epsX} y2={L.yBk + BREAKER_H + 10} stroke={stroke} strokeWidth={1.2} />
-          <Txt x={L.epsX + 64} y={L.yBk + 30} size={14}>
+          <line x1={L.epsX} y1={L.yBk + 3} x2={L.epsX} y2={L.yBk + BREAKER_H + 10} stroke={stroke} strokeWidth={1.2} />
+          {[
+            { t: "ESSENTIAL LOADS", size: 13, muted: false },
+            { t: "PANEL (EPS)", size: 13, muted: false },
+            ...(eps
+              ? [
+                  { t: `MAIN ${eps.breakerA} AT, ${eps.poles}P`, size: 12, muted: true },
+                  { t: `${eps.kw} kW BACKUP LOAD`, size: 12, muted: true },
+                ]
+              : [{ t: "RATING PER INVERTER EPS", size: 12, muted: true }]),
+          ].map((ln, i) => (
+            <Txt key={i} x={L.epsX + 64} y={L.yBk + 6 + i * 16} size={ln.size} muted={ln.muted} color={i >= 2 && eps?.exceedsInverter ? WARN_COLOR : undefined}>
+              {ln.t}
+            </Txt>
+          ))}
+          <Txt x={L.epsPortX + 8} y={L.invBottom + 30} size={12} muted>
             EPS
           </Txt>
-          <Txt x={L.epsX + 64} y={L.yBk + 45} size={12} muted>
-            BACKUP LOADS
-          </Txt>
           <GroundSym x={L.epsX + 40} y={L.yBk + BREAKER_H + 10} />
+        </g>
+      )}
+
+      {/* ===================== DESIGN VALIDATION (only when the design has problems) ===================== */}
+      {L.issues.length > 0 && (
+        <g data-cad-layer="EPH-ANNO" className="cursor-pointer" onClick={() => onSelect("design_validation")}>
+          <rect x={L.valX} y={L.valY} width={L.valW} height={L.valH} fill="none" stroke={WARN_COLOR} strokeWidth={1.6} strokeDasharray="8 4" />
+          <Txt x={L.valX + 14} y={L.valY + 24} size={14} weight="bold" color={WARN_COLOR}>
+            DESIGN VALIDATION: {L.issues.length} {L.issues.length > 1 ? "ITEMS REQUIRE" : "ITEM REQUIRES"} ENGINEERING REVIEW - NOT FOR CONSTRUCTION UNTIL RESOLVED
+          </Txt>
+          {L.valLines.map((ln, i) => (
+            <Txt key={i} x={L.valX + 14} y={L.valY + 46 + i * 17} size={VAL_FS} color={WARN_COLOR}>
+              {ln}
+            </Txt>
+          ))}
         </g>
       )}
     </g>

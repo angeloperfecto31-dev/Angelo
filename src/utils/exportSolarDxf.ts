@@ -466,7 +466,7 @@ export function buildSolarDxf(
   // The diagram on this sheet is the same drawing as the on-screen Solar SLD: it is captured from
   // the SLD component and scaled to fit, so both always match.
   const sldOptions: PictorialOptions = {
-    showSolarMeter: sldView?.showSolarMeter ?? true,
+    showSolarMeter: sldView?.showSolarMeter ?? (config.systemType !== "off-grid" && config.netMetering?.enabled !== false),
     showEpsLoad: sldView?.showEpsLoad ?? config.systemType === "hybrid",
     showGrounding: sldView?.showGrounding ?? true,
     showConductorSpecs: sldView?.showConductorSpecs ?? true,
