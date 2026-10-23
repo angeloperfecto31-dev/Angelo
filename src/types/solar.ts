@@ -448,6 +448,9 @@ export interface SolarDesignConfig {
   // 10. Manual Overrides Engine (User customizable parameters with auto-revert)
   overrides?: SolarDesignOverrides;
 
+  // 11. Roof Plan (satellite capture, roof outlines and module layout)
+  roofPlan?: RoofPlanConfig;
+
   // 11. Metadata
   lastCalculated?: string;
   notes?: string;
@@ -545,3 +548,64 @@ export interface SolarQuotationConfig {
   }>;
 }
 
+
+// =============================================================================
+// ROOF PLAN
+// Geometry is stored in pixels of the captured image (x right, y down, origin at the top-left
+// corner of the image), so the overlay always lines up with the imagery. Real sizes come from
+// the image scale: metres per pixel = Web Mercator ground resolution x scaleFactor (calibration).
+// =============================================================================
+
+export interface RoofPlanCapture {
+  /** "satellite": Esri World Imagery capture; "manual": blank drawing grid with a set scale */
+  kind: "satellite" | "manual";
+  /** Image centre (satellite) */
+  lat?: number;
+  lng?: number;
+  /** Map zoom level of the capture (satellite) */
+  zoom?: number;
+  /** Size of the captured image in pixels */
+  widthPx: number;
+  heightPx: number;
+  /** Metres per pixel before calibration (manual mode sets it directly) */
+  baseMetersPerPx: number;
+  address?: string;
+  capturedAt?: string;
+}
+
+export interface RoofPlanFace {
+  id: string;
+  name: string;
+  /** Outline vertices in image pixels */
+  points: Array<[number, number]>;
+  /** Direction of the module rows on the drawing (degrees, 0 = east / right, clockwise) */
+  rowAngleDeg: number;
+  /** Compass direction the roof slope faces (degrees from north), for the drawings and notes */
+  facingAzimuthDeg: number;
+  tiltDeg: number;
+  /** Edge clearance kept free of modules (m) */
+  setbackM: number;
+  orientation: "portrait" | "landscape";
+  /** Gap between modules in a row (m) and between rows (m) */
+  moduleGapM: number;
+  rowGapM: number;
+}
+
+export interface RoofPlanModule {
+  id: string;
+  faceId: string;
+  /** Module centre in image pixels */
+  x: number;
+  y: number;
+  /** Rotation of the module's long side from the drawing x-axis (degrees, clockwise) */
+  rotDeg: number;
+}
+
+export interface RoofPlanConfig {
+  capture?: RoofPlanCapture;
+  /** Measured / satellite length ratio from a calibration edge (1 = satellite scale) */
+  scaleFactor: number;
+  calibration?: { faceId: string; edgeIndex: number; measuredM: number };
+  faces: RoofPlanFace[];
+  modules: RoofPlanModule[];
+}
