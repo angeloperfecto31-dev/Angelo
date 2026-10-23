@@ -6,7 +6,7 @@ import TextStyle from "dxf-writer/src/TextStyle.js";
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults } from "../types/solar";
 import { sanitizeStringForDxf, MText } from "./exportDxf";
-import { captureSolarSld } from "./solarSldCapture";
+import { captureSolarSld, captureSolarBlockDiagram, SldCapture } from "./solarSldCapture";
 import { solarBackfeedAmps, backfeedLabel, acConductorParts } from "./solarLinkedPanel";
 import type { PictorialOptions } from "../components/solar/SolarSLDPictorial";
 
@@ -29,12 +29,13 @@ try {
  * Implements disciplined automated CAD layout spacing:
  * - Prevents all text overlapping, colliding equipment annotations, or line cut-throughs
  * - Guarantees 100% border containment: zero elements bleed outside sheet margins
- * - Structured 4-Sheet Engineering Drawing Package (ISO A3):
+ * - Structured 5-Sheet Engineering Drawing Package (ISO A3):
  *   - SHEET 1 OF 4: Solar PV Single Line Diagram - the same drawing as the on-screen SLD
  *     (captured from the SLD component and scaled to fit) - with a symbols legend
  *   - SHEET 2 OF 4: Solar Design Data, Sizing Calculations & Equipment Schedule
  *   - SHEET 3 OF 4: General Notes, PEC Mandates, Safety Warning Placards & Checklist
  *   - SHEET 4 OF 4: PV Module, Inverter & Battery Datasheet Tables
+ *   - SHEET 5 OF 5: Block Diagram - the same power-flow diagram as in Solar Design
  *
  * The drawing reflects the actual design: off-grid systems omit utility interconnection,
  * the 120% busbar status follows the calculation, and commissioning tests are left blank.
@@ -265,7 +266,7 @@ export function buildSolarDxf(
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const TOTAL_SHEETS = 4;
+  const TOTAL_SHEETS = 5;
   const pName = sanitizeStringForDxf(panelData?.designation || "MAIN DISTRIBUTION PANEL (MDP)");
   const pMain = panelData?.mainFeeder?.cb || config.serviceCapacityAmps || 100;
   const pAf =
@@ -546,7 +547,9 @@ export function buildSolarDxf(
   drawStandardTitleBlock(0, 1, "SOLAR PV MASTER SLD");
 
   const useLayer = (layer: string) => ((d as any).layers?.[layer] ? layer : "EPH-SLD");
-  for (const p of sld.prims) {
+  /** Draws a captured drawing (SVG units, y down) with the given placement functions */
+  const drawCaptured = (cap: SldCapture, sx: (x: number) => number, sy: (y: number) => number, scale: number) => {
+  for (const p of cap.prims) {
     if (p.kind === "line") {
       d.setActiveLayer(useLayer(p.layer));
       d.drawLine(sx(p.x1), sy(p.y1), sx(p.x2), sy(p.y2));
@@ -560,19 +563,21 @@ export function buildSolarDxf(
         d.drawLine(sx(a[0]), sy(a[1]), sx(b[0]), sy(b[1]));
       }
     } else if (p.kind === "circle") {
-      drawCircle(useLayer(p.layer), sx(p.cx), sy(p.cy), p.r * sldScale);
+      drawCircle(useLayer(p.layer), sx(p.cx), sy(p.cy), p.r * scale);
     } else {
       // SVG text y is the baseline; drawText centres a cap-height box on y + height / 2
       drawText(
         useLayer(p.layer),
         sx(p.x),
         sy(p.y),
-        p.size * sldScale * CAP_HEIGHT,
+        p.size * scale * CAP_HEIGHT,
         p.text,
         p.anchor === "middle" ? "center" : p.anchor === "end" ? "right" : "left"
       );
     }
   }
+  };
+  drawCaptured(sld, sx, sy, sldScale);
 
   // Legend strip (bottom left), drawn with the same symbols as the SLD
   drawBox("EPH-BORDER", legendBox.x1, legendBox.y1, legendBox.x2 - legendBox.x1, legendBox.y2 - legendBox.y1);
@@ -1359,6 +1364,24 @@ export function buildSolarDxf(
     "left",
     122
   );
+
+  // ==========================================
+  // SHEET 5 OF 5: BLOCK DIAGRAM (same drawing as in Solar Design)
+  // Origin X: Sheet 4 origin + 445
+  // ==========================================
+  const s5OriginX = s4OriginX + 445;
+  drawStandardSheet(s5OriginX, 5, "BLOCK DIAGRAM");
+  drawStandardTitleBlock(s5OriginX, 5, "BLOCK DIAGRAM");
+  {
+    const block = captureSolarBlockDiagram(config, calc, panelData?.designation);
+    const b = block.bbox;
+    // Drawing area above the title block, inside the sheet border
+    const area = { x1: s5OriginX + 15, x2: s5OriginX + 405, y1: 96, y2: 282 };
+    const k = Math.min((area.x2 - area.x1) / (b.x2 - b.x1), (area.y2 - area.y1) / (b.y2 - b.y1));
+    const left = area.x1 + (area.x2 - area.x1 - (b.x2 - b.x1) * k) / 2;
+    const top = area.y2 - (area.y2 - area.y1 - (b.y2 - b.y1) * k) / 2;
+    drawCaptured(block, (x) => left + (x - b.x1) * k, (y) => top - (y - b.y1) * k, k);
+  }
 
   // Ensure all AutoCAD text styles utilize Arial TrueType font, matching System SLD
   const styleTable = (d as any).tables?.["STYLE"];

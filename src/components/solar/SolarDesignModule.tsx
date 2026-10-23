@@ -281,7 +281,9 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   };
 
   const handleExportPdf = () => {
-    exportSolarToPdf(resolvedConfigForExport, calc);
+    // Same panel name as the SLD, for the block diagram page
+    const linkedPanelData = computeLinkedPanelData(resolvedConfigForExport, panels, circuits, subPanels, vdCalculations);
+    exportSolarToPdf(resolvedConfigForExport, calc, linkedPanelData.designation);
   };
 
   const handlePrint = () => {

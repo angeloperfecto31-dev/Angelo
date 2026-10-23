@@ -9,6 +9,7 @@ import {
   PictorialServiceInfo,
   PictorialTheme,
 } from "../components/solar/SolarSLDPictorial";
+import { SolarBlockDiagram, BLOCK_W, BLOCK_H } from "../components/solar/SolarBlockDiagram";
 
 /**
  * Captures the on-screen pictorial Solar SLD as plain geometry so the AutoCAD (DXF) export can
@@ -18,11 +19,13 @@ import {
  * `data-cad-layer` attribute in the drawing.
  */
 
+/** Optional styling (stroke width, colour, bold) is used by the PDF output; the DXF uses layers instead. */
+type Style = { sw?: number; color?: string };
 export type SldPrimitive =
-  | { kind: "line"; layer: string; x1: number; y1: number; x2: number; y2: number }
-  | { kind: "poly"; layer: string; pts: Array<[number, number]>; closed: boolean }
-  | { kind: "circle"; layer: string; cx: number; cy: number; r: number }
-  | { kind: "text"; layer: string; x: number; y: number; size: number; anchor: "start" | "middle" | "end"; text: string };
+  | ({ kind: "line"; layer: string; x1: number; y1: number; x2: number; y2: number } & Style)
+  | ({ kind: "poly"; layer: string; pts: Array<[number, number]>; closed: boolean; filled?: boolean } & Style)
+  | ({ kind: "circle"; layer: string; cx: number; cy: number; r: number } & Style)
+  | ({ kind: "text"; layer: string; x: number; y: number; size: number; anchor: "start" | "middle" | "end"; text: string; bold?: boolean } & Style);
 
 export interface SldCapture {
   prims: SldPrimitive[];
@@ -79,6 +82,36 @@ export function captureSolarSld(
   service: PictorialServiceInfo
 ): SldCapture {
   const layout = computePictorialLayout(config, calc);
+  return captureSvgDrawing(
+    layout.width,
+    layout.bottom,
+    React.createElement(SolarSLDPictorial, {
+      config,
+      calc,
+      theme: CAD_WHITE_THEME,
+      options,
+      service,
+      sheetWidth: layout.width,
+      onSelect: () => {},
+    })
+  );
+}
+
+/** The BLOCK DIAGRAM as plain geometry (same drawing as on screen), for the PDF and DXF exports. */
+export function captureSolarBlockDiagram(
+  config: SolarDesignConfig,
+  calc: SolarCalculationResults,
+  panelDesignation?: string
+): SldCapture {
+  return captureSvgDrawing(
+    BLOCK_W,
+    BLOCK_H,
+    React.createElement(SolarBlockDiagram, { config, calc, theme: CAD_WHITE_THEME, panelDesignation })
+  );
+}
+
+/** Renders an SVG drawing component off-screen and converts it to primitives in SVG units. */
+function captureSvgDrawing(width: number, height: number, content: React.ReactElement): SldCapture {
   const host = document.createElement("div");
   host.style.cssText = "position:absolute;left:-100000px;top:0;width:1px;height:1px;overflow:hidden;";
   document.body.appendChild(host);
@@ -87,19 +120,7 @@ export function captureSolarSld(
   try {
     flushSync(() => {
       root.render(
-        React.createElement(
-          "svg",
-          { xmlns: "http://www.w3.org/2000/svg", width: layout.width, height: layout.bottom },
-          React.createElement(SolarSLDPictorial, {
-            config,
-            calc,
-            theme: CAD_WHITE_THEME,
-            options,
-            service,
-            sheetWidth: layout.width,
-            onSelect: () => {},
-          })
-        )
+        React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width, height }, content)
       );
     });
     const svg = host.querySelector("svg");
@@ -136,6 +157,8 @@ function walk(el: Element, tx: number, ty: number, inherited: string, out: SldPr
     const stroke = child.getAttribute("stroke");
     const lineLayer = stroke === CAD_WHITE_THEME.groundLine ? "EPH-GROUND" : layer;
     const P = (x: number, y: number): [number, number] => [x + tx, y + ty];
+    const sw = parseFloat(child.getAttribute("stroke-width") || "") || undefined;
+    const st: Style = { sw, color: stroke || undefined };
 
     if (tag === "g") {
       const [dx, dy] = parseTranslate(child.getAttribute("transform"));
@@ -143,18 +166,21 @@ function walk(el: Element, tx: number, ty: number, inherited: string, out: SldPr
     } else if (tag === "line") {
       const [x1, y1] = P(num(child, "x1"), num(child, "y1"));
       const [x2, y2] = P(num(child, "x2"), num(child, "y2"));
-      out.push({ kind: "line", layer: lineLayer, x1, y1, x2, y2 });
+      out.push({ kind: "line", layer: lineLayer, x1, y1, x2, y2, ...st });
     } else if (tag === "polyline" || tag === "polygon") {
       const vals = (child.getAttribute("points") || "").trim().split(/[\s,]+/).map(Number);
       const pts: Array<[number, number]> = [];
       for (let i = 0; i + 1 < vals.length; i += 2) pts.push(P(vals[i], vals[i + 1]));
-      if (pts.length > 1) out.push({ kind: "poly", layer: lineLayer, pts, closed: tag === "polygon" });
+      // Solid fills (arrow heads) are kept so the PDF can fill them; white "background" fills are not
+      const fill = (child.getAttribute("fill") || "none").toLowerCase();
+      const filled = tag === "polygon" && fill !== "none" && fill !== CAD_WHITE_THEME.equipmentFill;
+      if (pts.length > 1) out.push({ kind: "poly", layer: lineLayer, pts, closed: tag === "polygon", filled, ...st });
     } else if (tag === "rect") {
       const x = num(child, "x"), y = num(child, "y"), w = num(child, "width"), h = num(child, "height");
-      out.push({ kind: "poly", layer: lineLayer, pts: [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], closed: true });
+      out.push({ kind: "poly", layer: lineLayer, pts: [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], closed: true, ...st });
     } else if (tag === "circle") {
       const [cx, cy] = P(num(child, "cx"), num(child, "cy"));
-      out.push({ kind: "circle", layer: lineLayer, cx, cy, r: num(child, "r") });
+      out.push({ kind: "circle", layer: lineLayer, cx, cy, r: num(child, "r"), ...st });
     } else if (tag === "path") {
       // The SLD only uses "M x y A r r rot large sweep x y" arcs
       const m = /M\s*([-\d.]+)[\s,]+([-\d.]+)\s*A\s*([-\d.]+)[\s,]+[-\d.]+[\s,]+[-\d.]+[\s,]+([01])[\s,]+([01])[\s,]+([-\d.]+)[\s,]+([-\d.]+)/.exec(
@@ -162,7 +188,7 @@ function walk(el: Element, tx: number, ty: number, inherited: string, out: SldPr
       );
       if (m) {
         const pts = sampleArc(+m[1], +m[2], +m[3], m[4] === "1", m[5] === "1", +m[6], +m[7]).map(([x, y]) => P(x, y));
-        out.push({ kind: "poly", layer: lineLayer, pts, closed: false });
+        out.push({ kind: "poly", layer: lineLayer, pts, closed: false, ...st });
       }
     } else if (tag === "text") {
       const text = (child.textContent || "").replace(/\s+/g, " ").trim();
@@ -170,7 +196,8 @@ function walk(el: Element, tx: number, ty: number, inherited: string, out: SldPr
       const [x, y] = P(num(child, "x"), num(child, "y"));
       const anchor = (child.getAttribute("text-anchor") || "start") as "start" | "middle" | "end";
       const size = parseFloat(child.getAttribute("font-size") || "14") || 14;
-      out.push({ kind: "text", layer: layer === "EPH-ANNO" ? "EPH-ANNO" : "EPH-TEXT", x, y, size, anchor, text });
+      const bold = (child.getAttribute("font-weight") || "") === "bold";
+      out.push({ kind: "text", layer: layer === "EPH-ANNO" ? "EPH-ANNO" : "EPH-TEXT", x, y, size, anchor, text, bold, color: child.getAttribute("fill") || undefined });
     }
   }
 }
