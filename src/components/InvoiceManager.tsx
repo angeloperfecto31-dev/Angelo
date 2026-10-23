@@ -75,6 +75,8 @@ import {
   Check
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import "../utils/pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
+import { pdfFitText, pdfWrapText, pdfLineCount } from "../utils/pdfLayout";
 import * as XLSX from 'xlsx-js-style';
 
 // Strict Invoice Interface matching the schema
@@ -252,11 +254,16 @@ export const downloadSingleInvoicePDF = (item: Invoice) => {
   doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
   doc.text("INVOICE", 145, 22);
 
+  // Everything below flows: long names, references and descriptions wrap inside their column
+  // and amounts are right-aligned to the column edge, so nothing runs into its neighbour.
+  const money = (v: number) => `₱${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   doc.setFont("Helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.text(`Invoice No: ${item.invoiceNo}`, 145, 29);
-  doc.text(`Date: ${new Date(item.transactionDate).toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' })}`, 145, 34);
+  let hy = 29;
+  hy += pdfWrapText(doc, `Invoice No: ${item.invoiceNo}`, 145, hy, 50, 4.2);
+  pdfWrapText(doc, `Date: ${new Date(item.transactionDate).toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' })}`, 145, hy, 50, 4.2);
 
   // Business Address block
   doc.setFontSize(8.5);
@@ -273,60 +280,63 @@ export const downloadSingleInvoicePDF = (item: Invoice) => {
 
   doc.setFont("Helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`Name: ${item.userName}`, 115, 65);
-  doc.text(`Email: ${item.userEmail}`, 115, 69);
-  doc.text(`Reference No: ${item.paymentReference}`, 115, 73);
+  let by = 65;
+  by += pdfWrapText(doc, `Name: ${item.userName}`, 115, by, 80, 4);
+  by += pdfWrapText(doc, `Email: ${item.userEmail}`, 115, by, 80, 4);
+  by += pdfWrapText(doc, `Reference No: ${item.paymentReference}`, 115, by, 80, 4);
 
-  // Horizontal divider
+  // Horizontal divider below the taller of the two blocks
+  const dividerY = Math.max(82, by + 4);
   doc.setDrawColor(226, 232, 240); // Slate 200
   doc.setLineWidth(0.4);
-  doc.line(15, 82, 195, 82);
+  doc.line(15, dividerY, 195, dividerY);
 
-  // Payment status metadata banner
-  doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
-  doc.rect(15, 87, 180, 12, 'F');
-  
+  // Payment status banner: labels on the first line, values below (values wrap within their column)
+  const bannerY = dividerY + 5;
+  const bannerCols = [
+    { x: 18, w: 52, label: "PAYMENT STATUS:", value: "FULLY PAID", color: [16, 185, 129] },
+    { x: 75, w: 46, label: "METHOD:", value: item.paymentMethod.toUpperCase(), color: PRIMARY },
+    { x: 125, w: 67, label: "BILLING RANGE:", value: item.billingPeriod, color: PRIMARY },
+  ];
   doc.setFont("Helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("PAYMENT STATUS:", 18, 95);
-  doc.setTextColor(16, 185, 129); // Emerald 500
-  doc.text("FULLY PAID", 48, 95);
+  doc.setFontSize(8);
+  const bannerLines = Math.max(...bannerCols.map((c) => pdfLineCount(doc, c.value, c.w)));
+  const bannerH = 9 + bannerLines * 3.8;
+  doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
+  doc.rect(15, bannerY, 180, bannerH, 'F');
+  for (const c of bannerCols) {
+    doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
+    doc.text(c.label, c.x, bannerY + 5);
+    doc.setTextColor(c.color[0], c.color[1], c.color[2]);
+    pdfWrapText(doc, c.value, c.x, bannerY + 9.5, c.w, 3.8);
+  }
 
-  doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("METHOD:", 75, 95);
-  doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.text(item.paymentMethod.toUpperCase(), 92, 95);
-
-  doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
-  doc.text("BILLING RANGE:", 125, 95);
-  doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.setFontSize(7.5);
-  doc.text(item.billingPeriod, 192, 95, { align: 'right' });
-
-  // Columns Header
+  // Item table: description wraps in its column; amounts are right-aligned to the column edge
+  const tableY = bannerY + bannerH + 8;
+  const colRight = { reg: 138, disc: 165, total: 192 };
   doc.setFont("Helvetica", "bold");
   doc.setFontSize(9);
   doc.setFillColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.rect(15, 110, 180, 8, 'F');
+  doc.rect(15, tableY, 180, 8, 'F');
   doc.setTextColor(255, 255, 255);
-  doc.text("ITEM DESCRIPTION", 20, 115);
-  doc.text("REG. PRICE", 115, 115);
-  doc.text("DISCOUNT", 145, 115);
-  doc.text("TOTAL PAID", 175, 115);
+  doc.text("ITEM DESCRIPTION", 20, tableY + 5);
+  doc.text("REG. PRICE", colRight.reg, tableY + 5, { align: 'right' });
+  doc.text("DISCOUNT", colRight.disc, tableY + 5, { align: 'right' });
+  doc.text("TOTAL PAID", colRight.total, tableY + 5, { align: 'right' });
 
-  // Row Content
   doc.setFont("Helvetica", "normal");
   doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
-  doc.text(`ElectricalPH Portal Access - ${item.plan}`, 20, 127);
-  doc.text(`₱${item.regPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 115, 127);
-  doc.text(`₱${item.discounts.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 145, 127);
-  doc.text(`₱${item.amountPaid.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 175, 127);
+  const rowY = tableY + 17;
+  const descH = pdfWrapText(doc, `ElectricalPH Portal Access - ${item.plan}`, 20, rowY, 88, 4.5);
+  doc.text(money(item.regPrice), colRight.reg, rowY, { align: 'right' });
+  doc.text(money(item.discounts), colRight.disc, rowY, { align: 'right' });
+  doc.text(money(item.amountPaid), colRight.total, rowY, { align: 'right' });
 
-  doc.line(15, 133, 195, 133);
+  const rowBottom = rowY + descH + 1.5;
+  doc.line(15, rowBottom, 195, rowBottom);
 
-  // Breakdown Totals Section
-  const yStart = 145;
+  // Breakdown Totals Section (values right-aligned)
+  const yStart = rowBottom + 12;
   doc.setFontSize(8.5);
   doc.setTextColor(TEXT_MUTED[0], TEXT_MUTED[1], TEXT_MUTED[2]);
   doc.text("Subtotal (excl. Tax):", 125, yStart);
@@ -335,9 +345,9 @@ export const downloadSingleInvoicePDF = (item: Invoice) => {
 
   doc.setTextColor(PRIMARY[0], PRIMARY[1], PRIMARY[2]);
   const subtotal = item.amountPaid - item.taxes;
-  doc.text(`₱${subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 175, yStart);
-  doc.text(`₱${item.taxes.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 175, yStart + 5);
-  doc.text(`₱${item.fees.toFixed(2)}`, 175, yStart + 10);
+  doc.text(money(subtotal), colRight.total, yStart, { align: 'right' });
+  doc.text(money(item.taxes), colRight.total, yStart + 5, { align: 'right' });
+  doc.text(money(item.fees), colRight.total, yStart + 10, { align: 'right' });
 
   // Complete Total block
   doc.setFillColor(BG_LIGHT[0], BG_LIGHT[1], BG_LIGHT[2]);
@@ -346,7 +356,7 @@ export const downloadSingleInvoicePDF = (item: Invoice) => {
   doc.setFontSize(10.5);
   doc.setTextColor(SECONDARY[0], SECONDARY[1], SECONDARY[2]);
   doc.text("TOTAL AMOUNT:", 125, yStart + 21);
-  doc.text(`₱${item.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 175, yStart + 21);
+  pdfFitText(doc, money(item.totalAmount), colRight.total, yStart + 21, 34, { align: 'right', minFontSize: 8 });
 
   // Footer terms
   doc.setFont("Helvetica", "normal");

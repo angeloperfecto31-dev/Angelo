@@ -26,6 +26,8 @@ import { syncHierarchyData } from "../utils/hierarchyEngine";
 import { motion } from "motion/react";
 import { saveAs } from "file-saver";
 import { jsPDF } from "jspdf";
+import "../utils/pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
+import { pdfFitText, pdfWrapText } from "../utils/pdfLayout";
 import * as docx from "docx";
 
 interface ReportExportModuleProps {
@@ -1118,7 +1120,7 @@ export default function ReportExportModule({
 
       // Section 3.0 Protection Selectivity & Coordination Study
       if (activeReportSection === "all" || activeReportSection === "coordination") {
-        checkPageBreak(90);
+        checkPageBreak(106);
         doc.setTextColor(51, 65, 85);
         doc.setFontSize(12);
         doc.setFont("Helvetica", "bold");
@@ -1127,22 +1129,20 @@ export default function ReportExportModule({
 
         doc.setFont("Helvetica", "normal");
         doc.setFontSize(9.5);
-        doc.text(`Main protective breaker is set at ${upstreamTrip}A AT with a standard ${upstreamInstMultiplier}x instantaneous trip surge threshold.`, 15, currentY);
-        currentY += 6;
-        doc.text(`Top subpanel branch protective devices are configured at ${downstreamTrip}A AT with ${downstreamInstMultiplier}x instantaneous pickup bounds.`, 15, currentY);
-        currentY += 6;
+        currentY += pdfWrapText(doc, `Main protective breaker is set at ${upstreamTrip}A AT with a standard ${upstreamInstMultiplier}x instantaneous trip surge threshold.`, 15, currentY, 180, 4.5) + 1.5;
+        currentY += pdfWrapText(doc, `Top subpanel branch protective devices are configured at ${downstreamTrip}A AT with ${downstreamInstMultiplier}x instantaneous pickup bounds.`, 15, currentY, 180, 4.5) + 1.5;
 
         const isCoordinated = upstreamTrip > downstreamTrip;
         doc.setFont("Helvetica", "bold");
         if (isCoordinated) {
           doc.setTextColor(16, 124, 65); // green
-          doc.text("Upstream to Downstream coordination status: COORDINATED MARGIN (Optimized)", 15, currentY);
+          currentY += pdfWrapText(doc, "Upstream to Downstream coordination status: COORDINATED MARGIN (Optimized)", 15, currentY, 180, 4.5);
         } else {
           doc.setTextColor(220, 38, 38); // red
-          doc.text("Upstream to Downstream coordination status: CRITICAL OVERLAP FINDING (Non-Selective Overlap)", 15, currentY);
+          currentY += pdfWrapText(doc, "Upstream to Downstream coordination status: CRITICAL OVERLAP FINDING (Non-Selective Overlap)", 15, currentY, 180, 4.5);
         }
         doc.setTextColor(51, 65, 85);
-        currentY += 8;
+        currentY += 3.5;
 
         // Draw dynamic visual graph of TCC in PDF
         doc.setDrawColor(200, 200, 200);
@@ -1156,42 +1156,56 @@ export default function ReportExportModule({
           doc.line(gridX, currentY, gridX, currentY + 50);
         }
 
+        // Curve knees are kept inside the plot box whatever the breaker ratings are
+        const mainKneeX = Math.min(185, 80 + (upstreamTrip / 10));
+        const branchKneeX = Math.min(175, 50 + (downstreamTrip / 10));
+
         // Main Curve (Red)
         doc.setDrawColor(239, 68, 68);
         doc.setLineWidth(1.0);
-        doc.line(30, currentY + 5, 80 + (upstreamTrip / 10), currentY + 30);
-        doc.line(80 + (upstreamTrip / 10), currentY + 30, 80 + (upstreamTrip / 10), currentY + 45);
+        doc.line(30, currentY + 5, mainKneeX, currentY + 30);
+        doc.line(mainKneeX, currentY + 30, mainKneeX, currentY + 45);
 
         // Branch Curve (Blue)
         doc.setDrawColor(59, 130, 246);
         doc.setLineWidth(1.0);
-        doc.line(20, currentY + 10, 50 + (downstreamTrip / 10), currentY + 35);
-        doc.line(50 + (downstreamTrip / 10), currentY + 35, 50 + (downstreamTrip / 10), currentY + 45);
+        doc.line(20, currentY + 10, branchKneeX, currentY + 35);
+        doc.line(branchKneeX, currentY + 35, branchKneeX, currentY + 45);
 
         // Cable Limit (Green)
         doc.setDrawColor(16, 185, 129);
         doc.setLineWidth(0.8);
         doc.line(160, currentY + 5, 120, currentY + 45);
+        doc.setLineWidth(0.2);
+
+        // Axis caption and legend sit below the plot box so no curve crosses the labels
+        doc.setTextColor(100, 116, 139);
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(7);
+        doc.text("Current (Amperes) -> Log Scale", 105, currentY + 54, { align: "center" });
 
         doc.setFontSize(7.5);
         doc.setFont("Helvetica", "bold");
-        doc.setTextColor(239, 68, 68);
-        doc.text(`Main breaker curve (${upstreamTrip}A)`, 85 + (upstreamTrip / 10), currentY + 28);
-        
-        doc.setTextColor(59, 130, 246);
-        doc.text(`Branch breaker curve (${downstreamTrip}A)`, 55 + (downstreamTrip / 10), currentY + 40);
-
-        doc.setTextColor(16, 185, 129);
-        doc.text("Conductor Withstand Limit", 125, currentY + 10);
-
-        doc.setTextColor(100, 116, 139);
-        doc.setFontSize(7);
-        doc.text("Current (Amperes) -> Log Scale", 90, currentY + 48);
+        const legend: Array<{ label: string; color: [number, number, number] }> = [
+          { label: `Main breaker curve (${upstreamTrip}A)`, color: [239, 68, 68] },
+          { label: `Branch breaker curve (${downstreamTrip}A)`, color: [59, 130, 246] },
+          { label: "Conductor Withstand Limit", color: [16, 185, 129] },
+        ];
+        legend.forEach((item, i) => {
+          const lx = 15 + i * 60;
+          doc.setDrawColor(item.color[0], item.color[1], item.color[2]);
+          doc.setLineWidth(1.0);
+          doc.line(lx, currentY + 59, lx + 6, currentY + 59);
+          doc.setTextColor(item.color[0], item.color[1], item.color[2]);
+          pdfFitText(doc, item.label, lx + 8, currentY + 60, 50, { minFontSize: 6 });
+        });
+        doc.setLineWidth(0.2);
 
         doc.setTextColor(51, 65, 85);
-        currentY += 58;
+        currentY += 74;
       }
 
+      // Results tables: every cell is fitted to its column so long names never run into the next one
       // Section 4.0 Load Flow & Bus Voltage Analysis
       if (activeReportSection === "all" || activeReportSection === "loadflow") {
         checkPageBreak(55);
@@ -1206,12 +1220,12 @@ export default function ReportExportModule({
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(8);
         doc.setTextColor(15, 23, 42);
-        doc.text("Bus/Panel Designation", 17, currentY + 5);
-        doc.text("Voltage Mag (V)", 65, currentY + 5);
-        doc.text("Load Current (A)", 100, currentY + 5);
-        doc.text("Active Load (kW)", 130, currentY + 5);
-        doc.text("Volt Drop (%)", 160, currentY + 5);
-        doc.text("Status", 185, currentY + 5);
+        pdfFitText(doc, "Bus/Panel Designation", 17, currentY + 5, 43, { minFontSize: 5.5 });
+        pdfFitText(doc, "Voltage Mag (V)", 62, currentY + 5, 28, { minFontSize: 5.5 });
+        pdfFitText(doc, "Load Current (A)", 92, currentY + 5, 26, { minFontSize: 5.5 });
+        pdfFitText(doc, "Active Load (kW)", 120, currentY + 5, 24, { minFontSize: 5.5 });
+        pdfFitText(doc, "Volt Drop (%)", 146, currentY + 5, 22, { minFontSize: 5.5 });
+        pdfFitText(doc, "Status", 170, currentY + 5, 23, { minFontSize: 5.5 });
 
         currentY += 12;
         doc.setFont("Helvetica", "normal");
@@ -1220,18 +1234,18 @@ export default function ReportExportModule({
         Object.values(loadFlowResults).forEach((lfNode: any) => {
           checkPageBreak(10);
           doc.setFont("Helvetica", "bold");
-          doc.text(lfNode.name, 17, currentY);
+          pdfFitText(doc, lfNode.name, 17, currentY, 43, { minFontSize: 5.5 });
           doc.setFont("Helvetica", "normal");
-          doc.text(`${lfNode.voltageMagnitude.toFixed(1)} V`, 65, currentY);
-          doc.text(`${lfNode.currentMagnitude.toFixed(1)} A`, 100, currentY);
-          doc.text(`${lfNode.kw.toFixed(2)} kW`, 130, currentY);
-          doc.text(`${lfNode.regulation.toFixed(2)} %`, 160, currentY);
+          pdfFitText(doc, `${lfNode.voltageMagnitude.toFixed(1)} V`, 62, currentY, 28, { minFontSize: 5.5 });
+          pdfFitText(doc, `${lfNode.currentMagnitude.toFixed(1)} A`, 92, currentY, 26, { minFontSize: 5.5 });
+          pdfFitText(doc, `${lfNode.kw.toFixed(2)} kW`, 120, currentY, 24, { minFontSize: 5.5 });
+          pdfFitText(doc, `${lfNode.regulation.toFixed(2)} %`, 146, currentY, 22, { minFontSize: 5.5 });
           
           doc.setFont("Helvetica", "bold");
           if (lfNode.status === "normal") doc.setTextColor(16, 124, 65);
           else if (lfNode.status === "warning") doc.setTextColor(217, 119, 6);
           else doc.setTextColor(220, 38, 38);
-          doc.text(lfNode.status.toUpperCase(), 185, currentY);
+          pdfFitText(doc, lfNode.status.toUpperCase(), 170, currentY, 23, { minFontSize: 5.5 });
           doc.setTextColor(51, 65, 85);
           
           currentY += 6.5;
@@ -1253,12 +1267,12 @@ export default function ReportExportModule({
         doc.setFont("Helvetica", "bold");
         doc.setFontSize(8);
         doc.setTextColor(15, 23, 42);
-        doc.text("Equipment Location", 17, currentY + 5);
-        doc.text("3-PH Symmetrical", 65, currentY + 5);
-        doc.text("Peak Fault (kA)", 100, currentY + 5);
-        doc.text("Breaker kAIC", 130, currentY + 5);
-        doc.text("Fault Duty (%)", 160, currentY + 5);
-        doc.text("Safety Compliance", 185, currentY + 5);
+        pdfFitText(doc, "Equipment Location", 17, currentY + 5, 43, { minFontSize: 5.5 });
+        pdfFitText(doc, "3-PH Symmetrical", 62, currentY + 5, 28, { minFontSize: 5.5 });
+        pdfFitText(doc, "Peak Fault (kA)", 92, currentY + 5, 26, { minFontSize: 5.5 });
+        pdfFitText(doc, "Breaker kAIC", 120, currentY + 5, 24, { minFontSize: 5.5 });
+        pdfFitText(doc, "Fault Duty (%)", 146, currentY + 5, 22, { minFontSize: 5.5 });
+        pdfFitText(doc, "Safety Compliance", 170, currentY + 5, 23, { minFontSize: 5.5 });
 
         currentY += 12;
         doc.setFont("Helvetica", "normal");
@@ -1267,18 +1281,18 @@ export default function ReportExportModule({
         Object.values(faultResults).forEach((fNode: any) => {
           checkPageBreak(10);
           doc.setFont("Helvetica", "bold");
-          doc.text(fNode.name, 17, currentY);
+          pdfFitText(doc, fNode.name, 17, currentY, 43, { minFontSize: 5.5 });
           doc.setFont("Helvetica", "normal");
-          doc.text(`${fNode.iSym3PH.toFixed(2)} kA`, 65, currentY);
-          doc.text(`${fNode.peakFault.toFixed(2)} kA`, 100, currentY);
-          doc.text(fNode.breakerkAIC > 0 ? `${fNode.breakerkAIC} kA` : "N/A", 130, currentY);
-          doc.text(fNode.breakerkAIC > 0 ? `${fNode.dutyPercentage.toFixed(1)} %` : "N/A", 160, currentY);
+          pdfFitText(doc, `${fNode.iSym3PH.toFixed(2)} kA`, 62, currentY, 28, { minFontSize: 5.5 });
+          pdfFitText(doc, `${fNode.peakFault.toFixed(2)} kA`, 92, currentY, 26, { minFontSize: 5.5 });
+          pdfFitText(doc, fNode.breakerkAIC > 0 ? `${fNode.breakerkAIC} kA` : "N/A", 120, currentY, 24, { minFontSize: 5.5 });
+          pdfFitText(doc, fNode.breakerkAIC > 0 ? `${fNode.dutyPercentage.toFixed(1)} %` : "N/A", 146, currentY, 22, { minFontSize: 5.5 });
           
           doc.setFont("Helvetica", "bold");
           if (fNode.compliance === "PASSED") doc.setTextColor(16, 124, 65);
           else if (fNode.compliance === "WARNING") doc.setTextColor(217, 119, 6);
           else doc.setTextColor(220, 38, 38);
-          doc.text(fNode.compliance, 185, currentY);
+          pdfFitText(doc, fNode.compliance, 170, currentY, 23, { minFontSize: 5.5 });
           doc.setTextColor(51, 65, 85);
           
           currentY += 6.5;
