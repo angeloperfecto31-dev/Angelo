@@ -37,8 +37,6 @@ import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { SolarSLDPictorial, computePictorialLayout, sldDesignIssues, epsOutputInfo } from "./SolarSLDPictorial";
 import { SolarBlockDiagram, BLOCK_W, BLOCK_H } from "./SolarBlockDiagram";
-import { captureSolarBlockDiagram } from "../../utils/solarSldCapture";
-import { drawCaptureToPdf } from "../../utils/pdfCapturedDrawing";
 import { computeLinkedPanelData, solarBackfeedAmps, acConductorParts } from "../../utils/solarLinkedPanel";
 
 interface SolarSLDProps {
@@ -121,7 +119,14 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   // Sheet size follows the pictorial diagram (rows per string, battery) plus the notes / title block band
   const pictorialTop = 116;
   const pictorialLayout = computePictorialLayout(config, calc, pictorialTop);
-  const svgWidth = Math.max(2000, Math.ceil(pictorialLayout.width + 70));
+  // Combined template: the SLD on the left, the BLOCK DIAGRAM panel in a right-hand column above the
+  // title block. The extra width brings the sheet close to A3 proportions.
+  const BD_PANEL_W = 700;
+  const BD_COL = BD_PANEL_W + 60;
+  const svgWidth = Math.max(2000 + BD_COL, Math.ceil(pictorialLayout.width + 70 + BD_COL));
+  const bdScale = BD_PANEL_W / BLOCK_W;
+  const bdPanelH = Math.round(BLOCK_H * bdScale) + 10;
+  const bdX = svgWidth - 44 - BD_PANEL_W;
 
   // ---------- Sheet notes & title block band (wrapped monospace text; the band grows to fit) ----------
   const SHEET_FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -129,11 +134,12 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const NOTE_LINE_H = 16;
   const NOTE_CHAR_W = NOTE_FS * 0.62; // monospace advance with margin
   const notesX = 44;
-  const notesWidth = 1440;
-  const notesColW = notesWidth / 3;
-  const notesCharsPerLine = Math.floor((notesColW - 26) / NOTE_CHAR_W);
   const tbX = svgWidth - 504;
   const tbWidth = 460;
+  // Notes fill the width left of the title block
+  const notesWidth = tbX - 12 - notesX;
+  const notesColW = notesWidth / 3;
+  const notesCharsPerLine = Math.floor((notesColW - 26) / NOTE_CHAR_W);
 
   const wrapText = (text: string, maxChars: number, firstLineIndent = 0) => {
     const words = text.split(/\s+/).filter(Boolean);
@@ -420,21 +426,6 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       const drawH = svgHeight * scale;
       pdf.addImage(dataUrl, "PNG", (PAGE_W - drawW) / 2, (PAGE_H - drawH) / 2, drawW, drawH);
 
-      // Page 2: BLOCK DIAGRAM (A3 landscape, vector)
-      pdf.addPage("a3", "landscape");
-      pdf.setDrawColor(15, 23, 42);
-      pdf.setLineWidth(0.6);
-      pdf.rect(margin, margin, PAGE_W - 2 * margin, PAGE_H - 2 * margin);
-      drawCaptureToPdf(pdf, captureSolarBlockDiagram(config, calc, linkedPanelData.designation), {
-        x: margin + 10,
-        y: margin + 8,
-        w: PAGE_W - 2 * margin - 20,
-        h: PAGE_H - 2 * margin - 22,
-      });
-      pdf.setFont("Helvetica", "bold");
-      pdf.setFontSize(9);
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(`BLOCK DIAGRAM  |  ${(config.projectName || "SOLAR PV INSTALLATION").toUpperCase()}  |  SHEET E-02`, PAGE_W - margin - 4, PAGE_H - margin - 4, { align: "right" });
       pdf.save(`${config.projectName.replace(/[^a-zA-Z0-9_-]/g, "_")}_Solar_SLD.pdf`);
     } catch (err) {
       console.error("PDF Export failed:", err);
@@ -646,7 +637,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
           fill={themeColors.text}
           textAnchor="middle"
         >
-          SOLAR PHOTOVOLTAIC SINGLE LINE DIAGRAM (SLD)
+          SOLAR PHOTOVOLTAIC SINGLE LINE DIAGRAM (SLD) &amp; BLOCK DIAGRAM
         </text>
         <text
           x={svgWidth / 2}
@@ -680,10 +671,24 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
             conduitLabel: linkedPanelData.mainFeeder.conduitLabel,
             panelDesignation: linkedPanelData.designation,
           }}
-          sheetWidth={svgWidth}
+          sheetWidth={svgWidth - BD_COL}
           top={pictorialTop}
           onSelect={setSelectedElement}
         />
+
+        {/* BLOCK DIAGRAM panel (right-hand column, above the title block) */}
+        <g id="sld-block-diagram" transform={`translate(${bdX}, ${pictorialTop})`}>
+          <rect x="0" y="0" width={BD_PANEL_W} height={bdPanelH} fill={themeColors.equipmentFill} stroke={themeColors.border} strokeWidth="1.8" />
+          <g transform={`translate(0, 4) scale(${bdScale})`}>
+            <SolarBlockDiagram
+              config={config}
+              calc={calc}
+              theme={themeColors}
+              panelDesignation={linkedPanelData.designation}
+              onSelect={setSelectedElement}
+            />
+          </g>
+        </g>
 
         {/* ========================================================================= */}
         {/* 8. GENERAL NOTES & TECHNICAL SPECIFICATIONS (CAD SHEET BLOCK)             */}
@@ -1555,32 +1560,6 @@ III. INTERCONNECTION, SAFETY & COMMISSIONING
           </div>
         </div>
       )}
-
-      {/* 5. BLOCK DIAGRAM (power flow at a glance; exported with the PDF and AutoCAD files) */}
-      <div className="mt-6">
-        <div className="flex items-center gap-2 mb-2 px-1">
-          <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Block Diagram</span>
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">Included in the PDF and AutoCAD exports</span>
-        </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto" style={{ backgroundColor: themeColors.bg }}>
-          <svg
-            id="solar-block-diagram-sheet"
-            viewBox={`0 0 ${BLOCK_W} ${BLOCK_H}`}
-            width={BLOCK_W}
-            height={BLOCK_H}
-            className="block mx-auto w-full select-none"
-            style={{ maxWidth: BLOCK_W, minWidth: 560, height: "auto" }}
-          >
-            <SolarBlockDiagram
-              config={config}
-              calc={calc}
-              theme={themeColors}
-              panelDesignation={linkedPanelData.designation}
-              onSelect={setSelectedElement}
-            />
-          </svg>
-        </div>
-      </div>
 
       {/* Print Warning Modal for Sandboxed iFrames */}
       {showPrintWarning && (

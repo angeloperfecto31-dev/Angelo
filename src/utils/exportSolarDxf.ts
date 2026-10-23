@@ -29,13 +29,12 @@ try {
  * Implements disciplined automated CAD layout spacing:
  * - Prevents all text overlapping, colliding equipment annotations, or line cut-throughs
  * - Guarantees 100% border containment: zero elements bleed outside sheet margins
- * - Structured 5-Sheet Engineering Drawing Package (ISO A3):
- *   - SHEET 1 OF 4: Solar PV Single Line Diagram - the same drawing as the on-screen SLD
- *     (captured from the SLD component and scaled to fit) - with a symbols legend
+ * - Structured 4-Sheet Engineering Drawing Package (ISO A3):
+ *   - SHEET 1 OF 4: Solar PV Single Line Diagram & Block Diagram - the same combined template as the
+ *     on-screen SLD (captured from the components and scaled to fit) - with a symbols legend
  *   - SHEET 2 OF 4: Solar Design Data, Sizing Calculations & Equipment Schedule
  *   - SHEET 3 OF 4: General Notes, PEC Mandates, Safety Warning Placards & Checklist
  *   - SHEET 4 OF 4: PV Module, Inverter & Battery Datasheet Tables
- *   - SHEET 5 OF 5: Block Diagram - the same power-flow diagram as in Solar Design
  *
  * The drawing reflects the actual design: off-grid systems omit utility interconnection,
  * the 120% busbar status follows the calculation, and commissioning tests are left blank.
@@ -266,7 +265,7 @@ export function buildSolarDxf(
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const TOTAL_SHEETS = 5;
+  const TOTAL_SHEETS = 4;
   const pName = sanitizeStringForDxf(panelData?.designation || "MAIN DISTRIBUTION PANEL (MDP)");
   const pMain = panelData?.mainFeeder?.cb || config.serviceCapacityAmps || 100;
   const pAf =
@@ -488,9 +487,11 @@ export function buildSolarDxf(
   const sheet1TitleBlock = { x1: 276 - 2, y1: 14, x2: 402 + 2, y2: 88 + 2 };
   const legendBox = { x1: 14, y1: 14, x2: 272, y2: 34 };
 
-  // Fit the drawing between the header banner and zoneBottom, centred horizontally
+  // Combined template: the Block Diagram panel takes the right-hand column above the title block,
+  // so the SLD is fitted in the zone to its left (between the header banner and zoneBottom)
+  const blockPanel = { x1: 276, x2: 402, y2: 262 };
   const placeSld = (zoneBottom: number) => {
-    const zx1 = 18, zx2 = 402, zy2 = 262;
+    const zx1 = 18, zx2 = blockPanel.x1 - 6, zy2 = 262;
     const bw = sld.bbox.x2 - sld.bbox.x1;
     const bh = sld.bbox.y2 - sld.bbox.y1;
     const s = Math.min((zx2 - zx1) / bw, (zy2 - zoneBottom) / bh);
@@ -502,40 +503,8 @@ export function buildSolarDxf(
     };
   };
 
-  // Liang-Barsky test: does segment (x1,y1)-(x2,y2) touch rectangle r?
-  const segHitsRect = (x1: number, y1: number, x2: number, y2: number, r: { x1: number; y1: number; x2: number; y2: number }) => {
-    let t0 = 0, t1 = 1;
-    const dx = x2 - x1, dy = y2 - y1;
-    const clip = (p: number, q: number) => {
-      if (p === 0) return q >= 0;
-      const t = q / p;
-      if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
-      else { if (t < t0) return false; if (t < t1) t1 = t; }
-      return true;
-    };
-    return clip(-dx, x1 - r.x1) && clip(dx, r.x2 - x1) && clip(-dy, y1 - r.y1) && clip(dy, r.y2 - y1);
-  };
-  const placementHits = (pl: ReturnType<typeof placeSld>, r: typeof sheet1TitleBlock) =>
-    sld.prims.some((p) => {
-      if (p.kind === "line") return segHitsRect(pl.X(p.x1), pl.Y(p.y1), pl.X(p.x2), pl.Y(p.y2), r);
-      if (p.kind === "poly")
-        return p.pts.some((pt, i) => {
-          const q = p.pts[(i + 1) % p.pts.length];
-          return (i < p.pts.length - 1 || p.closed) && segHitsRect(pl.X(pt[0]), pl.Y(pt[1]), pl.X(q[0]), pl.Y(q[1]), r);
-        });
-      if (p.kind === "circle") {
-        const cx = pl.X(p.cx), cy = pl.Y(p.cy), rr = p.r * pl.s;
-        return cx + rr > r.x1 && cx - rr < r.x2 && cy + rr > r.y1 && cy - rr < r.y2;
-      }
-      const w = p.text.length * p.size * 0.56 * pl.s;
-      const left = pl.X(p.x) - (p.anchor === "middle" ? w / 2 : p.anchor === "end" ? w : 0);
-      const base = pl.Y(p.y);
-      return left + w > r.x1 && left < r.x2 && base + p.size * 0.8 * pl.s > r.y1 && base - p.size * 0.25 * pl.s < r.y2;
-    });
-
-  // Prefer the full sheet height (beside the title block); move above the title block if anything would touch it
-  let sldPlacement = placeSld(legendBox.y2 + 3);
-  if (placementHits(sldPlacement, sheet1TitleBlock)) sldPlacement = placeSld(sheet1TitleBlock.y2 + 2);
+  // The SLD zone ends left of the title block / block diagram column, so it uses the full height
+  const sldPlacement = placeSld(legendBox.y2 + 3);
   const { X: sx, Y: sy, s: sldScale } = sldPlacement;
 
   // The SLD sheet is always the A3 template (420 x 297 mm), like the other sheets
@@ -543,7 +512,7 @@ export function buildSolarDxf(
   paper.originX = 0;
   paper.k = sheet1Paper.k;
 
-  drawStandardSheet(0, 1, "SOLAR PV SINGLE LINE DIAGRAM (SLD)");
+  drawStandardSheet(0, 1, "SOLAR PV SINGLE LINE DIAGRAM (SLD) & BLOCK DIAGRAM");
   drawStandardTitleBlock(0, 1, "SOLAR PV MASTER SLD");
 
   const useLayer = (layer: string) => ((d as any).layers?.[layer] ? layer : "EPH-SLD");
@@ -578,6 +547,20 @@ export function buildSolarDxf(
   }
   };
   drawCaptured(sld, sx, sy, sldScale);
+
+  // BLOCK DIAGRAM panel: framed, top of the right-hand column (above the title block)
+  {
+    const block = captureSolarBlockDiagram(config, calc, panelData?.designation);
+    const b = block.bbox;
+    const pad = 3;
+    const k = (blockPanel.x2 - blockPanel.x1 - 2 * pad) / (b.x2 - b.x1);
+    const panelH = (b.y2 - b.y1) * k + 2 * pad;
+    const panelY1 = Math.max(sheet1TitleBlock.y2 + 3, blockPanel.y2 - panelH);
+    drawBox("EPH-BORDER", blockPanel.x1, panelY1, blockPanel.x2 - blockPanel.x1, blockPanel.y2 - panelY1);
+    const left = blockPanel.x1 + pad;
+    const top = blockPanel.y2 - pad;
+    drawCaptured(block, (x) => left + (x - b.x1) * k, (y) => top - (y - b.y1) * k, k);
+  }
 
   // Legend strip (bottom left), drawn with the same symbols as the SLD
   drawBox("EPH-BORDER", legendBox.x1, legendBox.y1, legendBox.x2 - legendBox.x1, legendBox.y2 - legendBox.y1);
@@ -1364,24 +1347,6 @@ export function buildSolarDxf(
     "left",
     122
   );
-
-  // ==========================================
-  // SHEET 5 OF 5: BLOCK DIAGRAM (same drawing as in Solar Design)
-  // Origin X: Sheet 4 origin + 445
-  // ==========================================
-  const s5OriginX = s4OriginX + 445;
-  drawStandardSheet(s5OriginX, 5, "BLOCK DIAGRAM");
-  drawStandardTitleBlock(s5OriginX, 5, "BLOCK DIAGRAM");
-  {
-    const block = captureSolarBlockDiagram(config, calc, panelData?.designation);
-    const b = block.bbox;
-    // Drawing area above the title block, inside the sheet border
-    const area = { x1: s5OriginX + 15, x2: s5OriginX + 405, y1: 96, y2: 282 };
-    const k = Math.min((area.x2 - area.x1) / (b.x2 - b.x1), (area.y2 - area.y1) / (b.y2 - b.y1));
-    const left = area.x1 + (area.x2 - area.x1 - (b.x2 - b.x1) * k) / 2;
-    const top = area.y2 - (area.y2 - area.y1 - (b.y2 - b.y1) * k) / 2;
-    drawCaptured(block, (x) => left + (x - b.x1) * k, (y) => top - (y - b.y1) * k, k);
-  }
 
   // Ensure all AutoCAD text styles utilize Arial TrueType font, matching System SLD
   const styleTable = (d as any).tables?.["STYLE"];
