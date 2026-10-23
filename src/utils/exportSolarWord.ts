@@ -40,6 +40,8 @@ export interface SolarWordExportOptions {
   vdCalculations?: any[];
   linkedPanelData?: any;
   sldImageBuffer?: Uint8Array;
+  /** Drawing size (any unit) of sldImageBuffer, used to keep its proportions */
+  sldImageSize?: { width: number; height: number };
 }
 
 // =============================================================================
@@ -392,9 +394,12 @@ export async function exportSolarToWord(
 
   // 3. Capture SLD Image if available from DOM
   let sldImageUint8Array: Uint8Array | null = options.sldImageBuffer || null;
+  let sldImageSize = options.sldImageSize || { width: 2000, height: 1500 };
   if (!sldImageUint8Array && typeof document !== "undefined") {
     const sldElement = document.getElementById("solar-cad-drawing-sheet");
     if (sldElement) {
+      const w = Number(sldElement.getAttribute("width")), h = Number(sldElement.getAttribute("height"));
+      if (w > 0 && h > 0) sldImageSize = { width: w, height: h };
       try {
         const dataUrl = await toPng(sldElement as HTMLElement, {
           quality: 1.0,
@@ -1789,18 +1794,21 @@ export async function exportSolarToWord(
     )
   );
 
-  // Embedded SLD Image if available
+  // Embedded SLD drawing: placed on its own A3 landscape page (section break) at its true proportions
+  const sldSplitIndex = docChildren.length;
+  const sldSectionChildren: any[] = [];
   if (sldImageUint8Array) {
-    docChildren.push(
+    // A3 landscape with 0.5" margins: about 1490 x 950 px of drawing area at 96 dpi
+    const fit = Math.min(1490 / sldImageSize.width, 950 / sldImageSize.height);
+    sldSectionChildren.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { before: 120, after: 140 },
         children: [
           new ImageRun({
             data: sldImageUint8Array,
             transformation: {
-              width: 620,
-              height: 380,
+              width: Math.round(sldImageSize.width * fit),
+              height: Math.round(sldImageSize.height * fit),
             },
             type: "png",
           }),
@@ -2396,14 +2404,19 @@ export async function exportSolarToWord(
   );
 
   // Document Shell with Header & Footer
-  const doc = new Document({
-    sections: [
-      {
-        properties: {
-          page: {
-            margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }, // 1-inch margins
-          },
-        },
+  const makeSection = (children: any[], sldSheet = false) => ({
+        properties: sldSheet
+          ? {
+              page: {
+                size: { width: 16838, height: 23811, orientation: PageOrientation.LANDSCAPE }, // A3
+                margin: { top: 720, bottom: 720, left: 720, right: 720 },
+              },
+            }
+          : {
+              page: {
+                margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }, // 1-inch margins
+              },
+            },
         headers: {
           default: new Header({
             children: [
@@ -2444,9 +2457,16 @@ export async function exportSolarToWord(
             ],
           }),
         },
-        children: docChildren,
-      },
-    ],
+        children,
+      });
+  const doc = new Document({
+    sections: sldSectionChildren.length
+      ? [
+          makeSection(docChildren.slice(0, sldSplitIndex)),
+          makeSection(sldSectionChildren, true),
+          makeSection(docChildren.slice(sldSplitIndex)),
+        ]
+      : [makeSection(docChildren)],
   });
 
   const blob = await Packer.toBlob(doc);

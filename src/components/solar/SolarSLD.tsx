@@ -30,11 +30,12 @@ import {
   MousePointer,
   HelpCircle,
   ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 import { toPng, toSvg } from "html-to-image";
 import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
-import { SolarSLDPictorial, computePictorialLayout } from "./SolarSLDPictorial";
+import { SolarSLDPictorial, computePictorialLayout, sldDesignIssues, epsOutputInfo } from "./SolarSLDPictorial";
 import { computeLinkedPanelData, solarBackfeedAmps, acConductorParts } from "../../utils/solarLinkedPanel";
 
 interface SolarSLDProps {
@@ -67,7 +68,9 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   
   // Custom View Options
-  const [showSolarMeter, setShowSolarMeter] = useState(true);
+  const netMeteringOn = config.systemType !== "off-grid" && config.netMetering?.enabled !== false;
+  const [showSolarMeter, setShowSolarMeter] = useState(netMeteringOn);
+  useEffect(() => setShowSolarMeter(netMeteringOn), [netMeteringOn]);
   const [showEpsLoad, setShowEpsLoad] = useState(true);
   const [showGrounding, setShowGrounding] = useState(true);
   const [showSheetBorder, setShowSheetBorder] = useState(true);
@@ -109,11 +112,13 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
     false;
 
   const stringsCount = Math.max(1, calc.effective.numberOfStrings || 1);
+  const designIssues = useMemo(() => sldDesignIssues(config, calc), [config, calc]);
+  const epsInfo = useMemo(() => epsOutputInfo(config, calc), [config, calc]);
 
   // Sheet size follows the pictorial diagram (rows per string, battery) plus the notes / title block band
   const pictorialTop = 116;
   const pictorialLayout = computePictorialLayout(config, calc, pictorialTop);
-  const svgWidth = 2000;
+  const svgWidth = Math.max(2000, Math.ceil(pictorialLayout.width + 70));
 
   // ---------- Sheet notes & title block band (wrapped monospace text; the band grows to fit) ----------
   const SHEET_FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -124,7 +129,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const notesWidth = 1440;
   const notesColW = notesWidth / 3;
   const notesCharsPerLine = Math.floor((notesColW - 26) / NOTE_CHAR_W);
-  const tbX = 1496;
+  const tbX = svgWidth - 504;
   const tbWidth = 460;
 
   const wrapText = (text: string, maxChars: number, firstLineIndent = 0) => {
@@ -200,7 +205,11 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
           { label: "RAPID SHUTDOWN", text: "PV CIRCUITS ON OR IN BUILDINGS SHALL REDUCE ARRAY BOUNDARY CONDUCTORS TO ≤ 80V WITHIN 30 SECONDS OF INITIATION (PEC 6.90.2.3)." },
           { label: "ANTI-ISLANDING", text: "INVERTER TRIPS WITHIN ≤ 2.0s UPON LOSS OF UTILITY GRID VOLTAGE OR ABNORMAL FREQUENCY AS PER IEEE 1547 & PEC 6.90.7.1." },
           { label: "VERIFICATION TESTS", text: "MANDATORY PRE-ENERGIZATION POLARITY CHECK, Voc, Isc, AND INSULATION RESISTANCE TEST (MEGGER > 1.0 MΩ @ 1000V DC TEST)." },
-          { label: "REVENUE METERING", text: "BI-DIRECTIONAL 4-QUADRANT SMART NET-METER AND VISIBLE-BREAK LOCKABLE AC DISCONNECT ACCESSIBLE 24/7 TO DU CREW." },
+          isOffGrid
+            ? { label: "STAND-ALONE SYSTEM", text: "NO UTILITY CONNECTION. THE OFF-GRID INVERTER OUTPUT SHALL NOT BE TIED TO ANY UTILITY-FED CIRCUIT OR PANEL." }
+            : config.netMetering?.enabled === false
+              ? { label: "METERING", text: "NO NET-METERING. EXPORT TO THE GRID SHALL BE PREVENTED (ZERO-EXPORT CONTROL) UNLESS APPROVED BY THE DISTRIBUTION UTILITY." }
+              : { label: "REVENUE METERING", text: "BI-DIRECTIONAL 4-QUADRANT SMART NET-METER AND VISIBLE-BREAK LOCKABLE AC DISCONNECT ACCESSIBLE 24/7 TO DU CREW." },
           { label: "AS-BUILT DOSSIER", text: "COMPLETE O&M MANUALS, FACTORY WARRANTIES, AND PEE SIGNED/SEALED AS-BUILT SLD MUST BE SUBMITTED TO THE OWNER." },
         ],
       },
@@ -389,19 +398,25 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       const dataUrl = await toPng(el as HTMLElement, {
         quality: 1.0,
         backgroundColor: "#ffffff",
-        pixelRatio: 2,
+        pixelRatio: 2.5,
         skipFonts: true,
         fontEmbedCSS: "",
       });
 
+      // Standard landscape drawing sheet: the smallest of A3 / A2 / A1 on which the smallest
+      // drawing text (11 units) prints at 6 pt or more; the drawing keeps its proportions
       const { jsPDF } = await import("jspdf");
-      const orientation = svgWidth > svgHeight ? "l" : "p";
-      const pdf = new jsPDF({
-        orientation,
-        unit: "px",
-        format: [svgWidth + 40, svgHeight + 40],
-      });
-      pdf.addImage(dataUrl, "PNG", 20, 20, svgWidth, svgHeight);
+      const MIN_TEXT_UNITS = 11;
+      const MM_PER_PT = 25.4 / 72;
+      const papers: Array<[string, number, number]> = [["a3", 420, 297], ["a2", 594, 420], ["a1", 841, 594]];
+      const margin = 10;
+      const fitOn = ([, w, h]: [string, number, number]) => Math.min((w - 2 * margin) / svgWidth, (h - 2 * margin) / svgHeight);
+      const paper = papers.find((p) => (MIN_TEXT_UNITS * fitOn(p)) / MM_PER_PT >= 6) || papers[papers.length - 1];
+      const scale = fitOn(paper);
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: paper[0] });
+      const drawW = svgWidth * scale;
+      const drawH = svgHeight * scale;
+      pdf.addImage(dataUrl, "PNG", (paper[1] - drawW) / 2, (paper[2] - drawH) / 2, drawW, drawH);
       pdf.save(`${config.projectName.replace(/[^a-zA-Z0-9_-]/g, "_")}_Solar_SLD.pdf`);
     } catch (err) {
       console.error("PDF Export failed:", err);
@@ -1001,6 +1016,23 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         </div>
       </div>
 
+      {designIssues.length > 0 && (
+        <div className="mb-3 p-3 rounded-xl border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300 text-xs">
+          <div className="flex items-center gap-2 font-bold mb-1">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>
+              Design validation: {designIssues.length} item{designIssues.length > 1 ? "s" : ""} need engineering review. The drawing is marked
+              NOT FOR CONSTRUCTION until they are resolved in the Solar Design inputs.
+            </span>
+          </div>
+          <ul className="list-disc pl-6 space-y-0.5">
+            {designIssues.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* 3. Interactive CAD Canvas Container */}
       <div
         ref={containerRef}
@@ -1046,6 +1078,8 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
                 {selectedElement === "consumer_panel" && "Consumer Breaker Panelboard (MDP)"}
                 {selectedElement === "solar_meter" && "Solar Generation Revenue Meter"}
                 {selectedElement === "utility_meter" && "Bi-Directional Net Meter"}
+                {selectedElement === "eps_panel" && "Essential Loads Panel (EPS Backup Output)"}
+                {selectedElement === "design_validation" && "Design Validation"}
               </h4>
             </div>
             <button
@@ -1075,7 +1109,50 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
                   <span className="text-slate-400 block">String Operating (Vmp Hot):</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">{calc.stringVmp} V DC</span>
                 </div>
+                <div>
+                  <span className="text-slate-400 block">String Current (Imp / Isc):</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{calc.stringImp} A / {calc.stringIsc} A</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Max Circuit Current (1.25 x Isc):</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{(calc.stringIsc * 1.25).toFixed(2)} A</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Configuration:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{calc.effective.numberOfStrings} strings x {calc.effective.modulesPerString} modules</span>
+                </div>
               </>
+            )}
+
+            {selectedElement === "eps_panel" && (
+              <>
+                <div>
+                  <span className="text-slate-400 block">Source:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">Inverter EPS / backup port only (no utility connection)</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Backup Load:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{epsInfo ? `${epsInfo.kw} kW (${epsInfo.amps} A)` : "Not defined - enable the battery"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">EPS Main Breaker:</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{epsInfo ? `${epsInfo.breakerA} AT, ${epsInfo.poles}P (125% of load)` : "Per inverter EPS rating"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Inverter Rating Check:</span>
+                  <span className={`font-bold ${epsInfo?.exceedsInverter ? "text-red-600" : "text-emerald-600"}`}>
+                    {epsInfo ? (epsInfo.exceedsInverter ? `Exceeds ${epsInfo.invKw} kW AC` : `Within ${epsInfo.invKw} kW AC`) : "Verify with datasheet"}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {selectedElement === "design_validation" && (
+              <ul className="col-span-2 sm:col-span-4 list-disc pl-5 space-y-1 text-red-700 dark:text-red-300">
+                {designIssues.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
             )}
 
             {selectedElement === "inverter" && (
