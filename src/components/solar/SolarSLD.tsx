@@ -405,20 +405,17 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         fontEmbedCSS: "",
       });
 
-      // Standard landscape drawing sheet: the smallest of A3 / A2 / A1 on which the smallest
-      // drawing text (11 units) prints at 6 pt or more; the drawing keeps its proportions
+      // A3 landscape drawing sheet (420 x 297 mm); the drawing is fitted inside a 10 mm margin
+      // and keeps its proportions
       const { jsPDF } = await import("jspdf");
-      const MIN_TEXT_UNITS = 11;
-      const MM_PER_PT = 25.4 / 72;
-      const papers: Array<[string, number, number]> = [["a3", 420, 297], ["a2", 594, 420], ["a1", 841, 594]];
+      const PAGE_W = 420;
+      const PAGE_H = 297;
       const margin = 10;
-      const fitOn = ([, w, h]: [string, number, number]) => Math.min((w - 2 * margin) / svgWidth, (h - 2 * margin) / svgHeight);
-      const paper = papers.find((p) => (MIN_TEXT_UNITS * fitOn(p)) / MM_PER_PT >= 6) || papers[papers.length - 1];
-      const scale = fitOn(paper);
-      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: paper[0] });
+      const scale = Math.min((PAGE_W - 2 * margin) / svgWidth, (PAGE_H - 2 * margin) / svgHeight);
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
       const drawW = svgWidth * scale;
       const drawH = svgHeight * scale;
-      pdf.addImage(dataUrl, "PNG", (paper[1] - drawW) / 2, (paper[2] - drawH) / 2, drawW, drawH);
+      pdf.addImage(dataUrl, "PNG", (PAGE_W - drawW) / 2, (PAGE_H - drawH) / 2, drawW, drawH);
       pdf.save(`${config.projectName.replace(/[^a-zA-Z0-9_-]/g, "_")}_Solar_SLD.pdf`);
     } catch (err) {
       console.error("PDF Export failed:", err);
