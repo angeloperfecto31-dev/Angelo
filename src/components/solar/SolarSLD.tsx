@@ -197,16 +197,18 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       {
         title: "III. INTERCONNECTION, SAFETY & COMMISSIONING",
         items: [
-          {
-            label: "120% BUSBAR RULE",
-            text: `MAIN (${mainA}A) + SOLAR (${backfeedA}A) = ${infeed}A ${busOk ? "≤" : ">"} 120% BUS CAPACITY (${busMax}A). PEC 6.90.7.2(D) ${busOk ? "PASS" : "EXCEEDED - REVISE DESIGN"}.`,
-            highlight: true,
-          },
+          isOffGrid
+            ? { label: "120% BUSBAR RULE", text: "NOT APPLICABLE: THE OFF-GRID INVERTER TAKES UTILITY POWER AT ITS AC INPUT ONLY AND NEVER EXPORTS (NO BACK-FEED)." }
+            : {
+                label: "120% BUSBAR RULE",
+                text: `MAIN (${mainA}A) + SOLAR (${backfeedA}A) = ${infeed}A ${busOk ? "≤" : ">"} 120% BUS CAPACITY (${busMax}A). PEC 6.90.7.2(D) ${busOk ? "PASS" : "EXCEEDED - REVISE DESIGN"}.`,
+                highlight: true,
+              },
           { label: "RAPID SHUTDOWN", text: "PV CIRCUITS ON OR IN BUILDINGS SHALL REDUCE ARRAY BOUNDARY CONDUCTORS TO ≤ 80V WITHIN 30 SECONDS OF INITIATION (PEC 6.90.2.3)." },
           { label: "ANTI-ISLANDING", text: "INVERTER TRIPS WITHIN ≤ 2.0s UPON LOSS OF UTILITY GRID VOLTAGE OR ABNORMAL FREQUENCY AS PER IEEE 1547 & PEC 6.90.7.1." },
           { label: "VERIFICATION TESTS", text: "MANDATORY PRE-ENERGIZATION POLARITY CHECK, Voc, Isc, AND INSULATION RESISTANCE TEST (MEGGER > 1.0 MΩ @ 1000V DC TEST)." },
           isOffGrid
-            ? { label: "STAND-ALONE SYSTEM", text: "NO UTILITY CONNECTION. THE OFF-GRID INVERTER OUTPUT SHALL NOT BE TIED TO ANY UTILITY-FED CIRCUIT OR PANEL." }
+            ? { label: "OFF-GRID / UTILITY INPUT", text: "UTILITY SUPPLIES THE INVERTER AC INPUT (CHARGING / BYPASS) ONLY, NO EXPORT. THE INVERTER AC OUTPUT SHALL NOT BE TIED TO ANY UTILITY-FED CIRCUIT OR PANEL." }
             : config.netMetering?.enabled === false
               ? { label: "METERING", text: "NO NET-METERING. EXPORT TO THE GRID SHALL BE PREVENTED (ZERO-EXPORT CONTROL) UNLESS APPROVED BY THE DISTRIBUTION UTILITY." }
               : { label: "REVENUE METERING", text: "BI-DIRECTIONAL 4-QUADRANT SMART NET-METER AND VISIBLE-BREAK LOCKABLE AC DISCONNECT ACCESSIBLE 24/7 TO DU CREW." },

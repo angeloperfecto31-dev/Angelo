@@ -798,7 +798,7 @@ export function buildSolarDxf(
       : {
           param: "120% Panel Busbar Verification",
           val: "NOT APPLICABLE",
-          ref: isOffGrid ? "Off-grid: no utility interconnection" : "Supply-side interconnection",
+          ref: isOffGrid ? "Off-grid: utility input only, no export" : "Supply-side interconnection",
         },
   ];
 
@@ -876,9 +876,7 @@ export function buildSolarDxf(
         ? `${calc.batteryUsableEnergyKwh} kWh usable${config.battery.chemistry ? ` ${sanitizeStringForDxf(config.battery.chemistry)}` : ""}`
         : hasNetMetering
           ? "Bi-Directional kWh"
-          : isGridTied
-            ? "Utility kWh Meter"
-            : "N/A (Off-Grid)",
+          : "Utility kWh Meter",
       std: hasBattery ? "UL 1973 / 9540" : hasNetMetering ? "ERC Resolution" : "-",
     },
   ];
@@ -937,10 +935,10 @@ export function buildSolarDxf(
       }
     : isOffGrid
       ? {
-          title: "STAND-ALONE (OFF-GRID) SYSTEM",
+          title: "OFF-GRID SYSTEM WITH UTILITY BACKUP INPUT",
           body: [
-            "This system is not interconnected with the distribution utility. The 120% busbar rule and",
-            "net-metering requirements do not apply. Any future utility connection requires a revised design."
+            "The utility feeds the inverter AC input (charging / bypass) only; the system never exports. The",
+            "120% busbar rule and net-metering do not apply. The inverter AC output shall not be tied to utility circuits."
           ]
         }
       : {
@@ -1176,7 +1174,7 @@ export function buildSolarDxf(
     applies120Rule
       ? `120% BUSBAR RULE: ${totalInfeed}A ${is120Pass ? "<=" : ">"} ${maxBus120}A (PEC 6.90.7.2.D) ${is120Pass ? "[PASS]" : "[WARNING]"}`
       : isOffGrid
-        ? "STAND-ALONE SYSTEM: NOT CONNECTED TO DISTRIBUTION UTILITY"
+        ? "OFF-GRID: UTILITY INPUT ONLY, NO EXPORT (120% RULE N/A)"
         : "SUPPLY-SIDE INTERCONNECTION: 120% BUSBAR RULE N/A",
     "left",
     p2W - 8

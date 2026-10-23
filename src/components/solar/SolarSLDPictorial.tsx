@@ -110,7 +110,7 @@ const STD_BREAKERS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 20
  * for battery sizing (125% continuous); null when no battery (no backup load is defined).
  */
 export function epsOutputInfo(config: SolarDesignConfig, calc: SolarCalculationResults) {
-  if (config.systemType !== "hybrid" || !config.battery?.enabled) return null;
+  if ((config.systemType !== "hybrid" && config.systemType !== "off-grid") || !config.battery?.enabled) return null;
   const kw = config.battery.requiredBackupLoadKw || 25; // same fallback as the calculation engine
   const inv = calc.selectedInverter;
   const volts = inv.acVoltage || config.utilityVoltage || 230;
@@ -126,7 +126,7 @@ export function sldDesignIssues(config: SolarDesignConfig, calc: SolarCalculatio
   const eps = epsOutputInfo(config, calc);
   if (eps?.exceedsInverter) {
     issues.push(
-      `WARNING: Backup load (${eps.kw} kW) exceeds the inverter AC rating (${eps.invKw} kW); the EPS output cannot carry it. Reduce the essential loads or select a larger hybrid inverter.`
+      `WARNING: Backup load (${eps.kw} kW) exceeds the inverter AC rating (${eps.invKw} kW); the inverter's backup / AC output cannot carry it. Reduce the essential loads or select a larger inverter.`
     );
   }
   return issues;
@@ -206,7 +206,9 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
 
   // AC side. Hybrid: EPS output breaker first (nearest the inverter), then the grid breaker + AC SPD,
   // so the EPS feed runs under the grid circuit instead of crossing it.
-  const hasEpsCircuit = config.systemType === "hybrid";
+  // Off-grid (utility as backup input) uses the same arrangement: the inverter AC OUTPUT takes the
+  // EPS position and feeds the loads panel, and the utility feeds the inverter AC INPUT.
+  const hasEpsCircuit = config.systemType === "hybrid" || config.systemType === "off-grid";
   const epsBkX = invX + INV_W + 45;
   const acBkX = hasEpsCircuit ? epsBkX + BREAKER_W + 72 : invX + INV_W + 45;
   const acIsoCx = acBkX + BREAKER_W + SPD_W + 110;
@@ -237,10 +239,9 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
 
   // CT on the service conductor (load / export monitoring) wired back to the inverter: hybrid
   // inverters, or grid-tie systems with export limitation. The cable loops round the right side.
-  // A hybrid inverter always needs its CT / meter (load monitoring), with or without net-metering
-  const hasCt =
-    !isOffGrid &&
-    (hasEpsCircuit || (config.netMetering?.exportLimitation ?? "none") !== "none");
+  // Grid-tie and hybrid inverters monitor import / export through the CT or smart meter
+  // (off-grid never exports, so it has none)
+  const hasCt = !isOffGrid;
   const ctX = busX - 190;
   const ctLoopTop = serviceY - 30;
   const ctLoopX = panelX - 42 + PANEL_LABEL_W + 14;
@@ -250,7 +251,7 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
     Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150, hasCt ? ctLoopBottom + 10 : 0) + 20;
 
   // Includes the wrapped panel name, which starts at the panel board's left edge (and the CT loop)
-  const width = (isOffGrid ? acIsoCx + 158 : panelX - 42) + PANEL_LABEL_W + 20 + (hasCt ? 24 : 0);
+  const width = panelX - 42 + PANEL_LABEL_W + 20 + (hasCt ? 24 : 0);
 
   // Design validation box under the drawing (only when the design has problems)
   const issues = sldDesignIssues(config, calc);
@@ -361,8 +362,9 @@ export const SolarSLDPictorial: React.FC<Props> = ({
   const isHybrid = config.systemType === "hybrid";
   const isGridTied = !L.isOffGrid;
   const hasNetMetering = isGridTied && config.netMetering?.enabled !== false;
-  // EPS backup output exists on hybrid inverters; off-grid AC output already feeds the panel board
-  const showEps = options.showEpsLoad && isHybrid;
+  // Hybrid EPS output (layer toggle), or the off-grid inverter AC output, which always feeds the loads panel
+  const showEps = L.hasEpsCircuit && (L.isOffGrid || options.showEpsLoad);
+  const outLabel = L.isOffGrid ? "AC OUT" : "EPS OUT";
   const eps = epsOutputInfo(config, calc);
   const showCt = L.hasCt;
   // A three-phase inverter on a single-phase service cannot be connected: the interconnection is drawn dashed
@@ -383,6 +385,16 @@ export const SolarSLDPictorial: React.FC<Props> = ({
     `1 - ${eff.acEgcSizeMm2}mm² ${egcInsulation} (G)`,
     `IN ${eff.acConduitSizeMm}mm Ø ${acConduit}`,
     ...(multiInverter ? ["(EACH INVERTER OUTPUT)"] : []),
+  ];
+  // Notes under the utility tap (solar main disconnect, transformer, off-grid utility input)
+  const tapNotes: string[] = [
+    ...(multiInverter
+      ? [`SOLAR MAIN DISCONNECT: ${calc.acMainDisconnectAmps} AT, ${acSys?.mainDisconnectPoles ?? eff.acBreakerPoles}P`]
+      : []),
+    ...(config.transformer?.enabled
+      ? [`VIA ${eff.transformerKva} kVA TRANSFORMER (${inv.acVoltage}V / ${config.utilityVoltage}V)`]
+      : []),
+    ...(L.isOffGrid ? ["UTILITY INPUT TO INVERTER", "(CHARGING / BYPASS) - NO EXPORT"] : []),
   ];
   const dcBreakerVolts = config.dcProtection?.fuseVoltageVolts ?? 1000;
   const acSpdVolts = config.acProtection?.spdRatingVolts ?? 440;
@@ -829,7 +841,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         </Txt>
         {/* Hybrid: the grid route runs higher, so the GRID label moves left of its port */}
         <Txt x={L.hasEpsCircuit ? L.gridPortX - 12 : L.gridPortX + 6} y={L.invBottom + 26} size={12} anchor={L.hasEpsCircuit ? "end" : "start"} muted>
-          {L.isOffGrid ? "AC OUT" : "GRID"}
+          {L.isOffGrid ? "AC IN" : "GRID"}
         </Txt>
       </g>
 
@@ -868,7 +880,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         <g className="cursor-pointer" onClick={() => onSelect("eps_panel")}>
           <Wire pts={[[L.epsPortX, L.invBottom + 16], [L.epsPortX, L.yBk - 24], [L.epsBkX + BREAKER_W / 2, L.yBk - 24], [L.epsBkX + BREAKER_W / 2, L.yBk]]} />
           <Breaker2P x={L.epsBkX} y={L.yBk} />
-          {[`${eff.acBreakerAtAmps} AT`, `${eff.acBreakerPoles}P, AC`, "EPS OUT"].map((t, i) => (
+          {[`${eff.acBreakerAtAmps} AT`, `${eff.acBreakerPoles}P, AC`, outLabel].map((t, i) => (
             <Txt key={t} x={L.epsBkX + BREAKER_W + 8} y={L.yBk + 22 + i * 15} size={i < 2 ? 14 : 12} muted={i === 2}>
               {t}
             </Txt>
@@ -930,7 +942,8 @@ export const SolarSLDPictorial: React.FC<Props> = ({
         <Wire pts={[[L.acIsoCx, L.acIsoY], [L.acIsoCx, L.solarTapY]]} />
       )}
 
-      {isGridTied ? (
+      {/* Utility side: on-grid / hybrid interconnection, or the off-grid inverter's utility input */}
+      {(
         <g>
           {/* Solar interconnection to the service bus */}
           {interconnectValid ? (
@@ -942,20 +955,13 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             <g>
               <line x1={L.acIsoCx} y1={L.solarTapY} x2={L.busX} y2={L.solarTapY} stroke={WARN_COLOR} strokeWidth={1.6} strokeDasharray="10 6" />
               {["NOT CONNECTABLE -", "SEE DESIGN VALIDATION"].map((t, i) => (
-                <Txt key={t} x={L.busX - 8} y={L.solarTapY + 54 + i * 15} size={12} anchor="end" weight="bold" color={WARN_COLOR}>
+                <Txt key={t} x={L.busX - 8} y={L.solarTapY + 38 + tapNotes.length * 16 + i * 15} size={12} anchor="end" weight="bold" color={WARN_COLOR}>
                   {t}
                 </Txt>
               ))}
             </g>
           )}
-          {[
-            ...(multiInverter
-              ? [`SOLAR MAIN DISCONNECT: ${calc.acMainDisconnectAmps} AT, ${acSys?.mainDisconnectPoles ?? eff.acBreakerPoles}P`]
-              : []),
-            ...(config.transformer?.enabled
-              ? [`VIA ${eff.transformerKva} kVA TRANSFORMER (${inv.acVoltage}V / ${config.utilityVoltage}V)`]
-              : []),
-          ].map((t, i) => (
+          {tapNotes.map((t, i) => (
             <Txt key={t} x={L.busX - 8} y={L.solarTapY + 20 + i * 16} size={12} anchor="end">
               {t}
             </Txt>
@@ -1043,32 +1049,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             <GroundSym x={L.panelX} y={L.panelTapY + 180} />
           </g>
         </g>
-      ) : (
-        <g data-cad-layer="EPH-PANEL" className="cursor-pointer" onClick={() => onSelect("consumer_panel")}>
-          {/* Off-grid: inverter output feeds the panel board directly */}
-          <Wire pts={[[L.acIsoCx, L.solarTapY], [L.acIsoCx + 200, L.solarTapY], [L.acIsoCx + 200, L.solarTapY + 40]]} />
-          <rect x={L.acIsoCx + 158} y={L.solarTapY + 40} width={84} height={120} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
-          {["PANEL", "BOARD"].map((t, i) => (
-            <Txt key={t} x={L.acIsoCx + 200} y={L.solarTapY + 92 + i * 14} size={12} anchor="middle">
-              {t}
-            </Txt>
-          ))}
-          {/* Left-aligned under the panel and wrapped, so a long name never reaches back over the AC wiring */}
-          {[...wrapLines(service.panelDesignation, PANEL_LABEL_W, 12), "STAND-ALONE - NO UTILITY", "CONNECTION"].map((ln, i) => (
-            <Txt key={i} x={L.acIsoCx + 158} y={L.solarTapY + 194 + i * 15} size={12} muted>
-              {ln}
-            </Txt>
-          ))}
-          <GroundSym x={L.acIsoCx + 200} y={L.solarTapY + 160} />
-          <Callout
-            x={L.acIsoCx + 30}
-            y={L.solarTapY}
-            side="right"
-            width={200}
-            onHorizontalWire
-            lines={acCalloutLines}
-          />
-        </g>
+
       )}
 
       {/* ===================== EPS / ESSENTIAL LOADS PANEL (hybrid backup output) ===================== */}
@@ -1112,21 +1093,21 @@ export const SolarSLDPictorial: React.FC<Props> = ({
           ))}
           <line x1={L.epsX} y1={L.yBk + 3} x2={L.epsX} y2={L.yBk + BREAKER_H + 10} stroke={stroke} strokeWidth={1.2} />
           {[
-            { t: "ESSENTIAL LOADS", size: 13, muted: false },
-            { t: "PANEL (EPS)", size: 13, muted: false },
+            { t: L.isOffGrid ? "LOADS PANEL" : "ESSENTIAL LOADS", size: 13, muted: false },
+            { t: L.isOffGrid ? "(INVERTER OUT)" : "PANEL (EPS)", size: 13, muted: false },
             ...(eps
               ? [
                   { t: `MAIN ${eps.breakerA} AT, ${eps.poles}P`, size: 12, muted: true },
                   { t: `${eps.kw} kW BACKUP LOAD`, size: 12, muted: true },
                 ]
-              : [{ t: "RATING PER INVERTER EPS", size: 12, muted: true }]),
+              : [{ t: L.isOffGrid ? "RATING PER INVERTER" : "RATING PER INVERTER EPS", size: 12, muted: true }]),
           ].map((ln, i) => (
             <Txt key={i} x={L.epsX + 64} y={L.yBk + 6 + i * 16} size={ln.size} muted={ln.muted} color={i >= 2 && eps?.exceedsInverter ? WARN_COLOR : undefined}>
               {ln.t}
             </Txt>
           ))}
           <Txt x={L.epsPortX + 6} y={L.invBottom + 52} size={12} muted>
-            EPS
+            {L.isOffGrid ? "AC OUT" : "EPS"}
           </Txt>
           <GroundSym x={L.epsX + 40} y={L.yBk + BREAKER_H + 10} />
         </g>
