@@ -237,9 +237,9 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
 
   // CT on the service conductor (load / export monitoring) wired back to the inverter: hybrid
   // inverters, or grid-tie systems with export limitation. The cable loops round the right side.
+  // A hybrid inverter always needs its CT / meter (load monitoring), with or without net-metering
   const hasCt =
     !isOffGrid &&
-    config.netMetering?.enabled !== false &&
     (hasEpsCircuit || (config.netMetering?.exportLimitation ?? "none") !== "none");
   const ctX = busX - 190;
   const ctLoopTop = serviceY - 30;
