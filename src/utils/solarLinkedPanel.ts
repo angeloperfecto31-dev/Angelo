@@ -31,6 +31,8 @@ export function computeLinkedPanelData(
     targetCircuits = circuits || [];
   }
 
+  // No Load Schedule panel: describe the service from the Solar Design settings
+  const isFallbackPanel = !targetPanel;
   if (!targetPanel) {
     targetPanel = {
       id: "main",
@@ -55,9 +57,13 @@ export function computeLinkedPanelData(
     availableSubPanels: subPanels,
   });
 
-  const cb = computed.mainFeeder.cb || config.serviceCapacityAmps || 100;
-  const af = computed.mainFeeder.af || Math.max(cb, cb <= 100 ? 100 : cb <= 225 ? 225 : cb <= 400 ? 400 : cb <= 600 ? 600 : 800);
-  const poles = computed.mainFeeder.poles || (panel.system.includes("3PH") ? 3 : 2);
+  const cb = isFallbackPanel
+    ? config.serviceCapacityAmps || computed.mainFeeder.cb || 100
+    : computed.mainFeeder.cb || config.serviceCapacityAmps || 100;
+  const frameFor = (a: number) => Math.max(a, a <= 100 ? 100 : a <= 225 ? 225 : a <= 400 ? 400 : a <= 600 ? 600 : 800);
+  const af = isFallbackPanel ? frameFor(cb) : computed.mainFeeder.af || frameFor(cb);
+  // The Load Schedule stores poles as text ("3P" / "2P")
+  const poles = parseInt(String(computed.mainFeeder.poles ?? ""), 10) || (panel.system.includes("3PH") ? 3 : 2);
   const kaic = computed.mainFeeder.kaic || parseFloat(panel.icRating || "10") || 10;
   const wire = computed.mainFeeder.wire;
   const groundSize = computed.mainFeeder.groundSize;
@@ -82,7 +88,8 @@ export function computeLinkedPanelData(
     computed.totalDemandVA / (systemVoltage * (is3Phase ? 1.732 : 1)) ||
     0
   ).toFixed(1);
-  const phaseText = is3Phase ? "3PH 3W" : "1PH 2W";
+  // 400/230V services are 4-wire wye; Philippine 230V three-phase services are 3-wire delta
+  const phaseText = is3Phase ? (systemVoltage >= 380 ? "3PH 4W" : "3PH 3W") : "1PH 2W";
 
   // Active branch circuits from panel schedule
   const activeCircuits = (targetCircuits || []).filter((c) => {
@@ -99,7 +106,7 @@ export function computeLinkedPanelData(
     mainFeeder: {
       cb,
       af,
-      poles: Number(poles) || 2,
+      poles,
       kaic,
       type: panel.mainOverrides?.breakerType || panel.type || "MCCB",
       wire,
@@ -126,5 +133,29 @@ export type LinkedPanelData = ReturnType<typeof computeLinkedPanelData>;
  * main solar disconnect (sized by the engine from the total inverter AC current).
  */
 export function solarBackfeedAmps(calc: SolarCalculationResults): number {
+  if (calc.interconnectionBackfeedAmps) return calc.interconnectionBackfeedAmps;
   return calc.effective.inverterQuantity > 1 ? calc.acMainDisconnectAmps : calc.effective.acBreakerAtAmps;
+}
+
+/** Name of the solar back-feed device at the panel (inverter breaker, main disconnect or transformer). */
+export function backfeedLabel(calc: SolarCalculationResults): string {
+  switch (calc.interconnectionBackfeedSource) {
+    case "transformer-secondary":
+      return "Transformer Secondary Breaker";
+    case "solar-main-disconnect":
+      return "Solar Main Disconnect";
+    default:
+      return calc.effective.inverterQuantity > 1 ? "Solar Main Disconnect" : "Solar Interconnection Breaker";
+  }
+}
+
+/**
+ * Conductors of one inverter AC output circuit: phase conductors, neutral (400/230V wye and
+ * single-phase line-to-neutral connections) and the EGC.
+ */
+export function acConductorParts(calc: SolarCalculationResults) {
+  const sys = calc.acSystem;
+  const phases = sys ? sys.phaseConductors : calc.effective.acBreakerPoles;
+  const neutral = sys ? sys.hasNeutral : false;
+  return { phases, neutral, size: calc.effective.acCableSizeMm2, egc: calc.effective.acEgcSizeMm2 };
 }

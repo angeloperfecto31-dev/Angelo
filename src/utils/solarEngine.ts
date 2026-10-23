@@ -10,6 +10,7 @@ import {
   SolarDesignOverrides,
   SolarEquipmentAutoValues,
   SolarEquipmentEffectiveValues,
+  SolarAcSystem,
 } from "../types/solar";
 import { PanelConfig, Circuit } from "../types";
 import { computePanelScheduleValues } from "./computeEngine";
@@ -3928,7 +3929,8 @@ export function autoSizeAcCable(
 export function autoSizeTransformer(
   totalAcKw: number,
   secV: number = 230,
-  priV: number = 400
+  priV: number = 400,
+  is3Phase: boolean = true
 ): { kva: number; primaryBreaker: number; secondaryBreaker: number } {
   const standardKvas = [15, 25, 30, 45, 50, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000];
   const requiredKva = totalAcKw / 0.85;
@@ -3942,8 +3944,10 @@ export function autoSizeTransformer(
   }
 
   // Primary & Secondary Protection (125% rating per PEC 4.50)
-  const priCurrent = (selectedKva * 1000) / (priV * Math.sqrt(3));
-  const secCurrent = (selectedKva * 1000) / (secV * Math.sqrt(3));
+  // I = S / (sqrt(3) x V) for three-phase, I = S / V for single-phase
+  const phaseFactor = is3Phase ? Math.sqrt(3) : 1;
+  const priCurrent = (selectedKva * 1000) / (priV * phaseFactor);
+  const secCurrent = (selectedKva * 1000) / (secV * phaseFactor);
   const primaryBreaker = getNextStandardBreaker(priCurrent * 1.25);
   const secondaryBreaker = getNextStandardBreaker(secCurrent * 1.25);
 
@@ -3951,6 +3955,82 @@ export function autoSizeTransformer(
     kva: selectedKva,
     primaryBreaker,
     secondaryBreaker,
+  };
+}
+
+/**
+ * Describes how the inverters connect to the utility service and the resulting line current.
+ *
+ * - 1PH service (Philippine 230V 2-wire): currents add on the one circuit.
+ * - 3PH 3W (230V delta): three-phase inverters are 3-wire; single-phase inverters connect
+ *   line-to-line and are spread A-B, B-C, C-A. With n_ab and n_ca inverters on the pairs that
+ *   share line A, I_A = I x sqrt(n_ab^2 + n_ca^2 + n_ab x n_ca) (phasors 120 deg apart).
+ * - 3PH 4W (400/230V wye): three-phase inverters are 4-wire (3 phases + neutral); single-phase
+ *   inverters connect line-to-neutral and are spread A, B, C, so a line carries its own inverters.
+ */
+export function computeAcSystem(
+  config: SolarDesignConfig,
+  inverter: SolarInverter,
+  inverterQuantity: number,
+  singleInvMaxAcCurrent: number
+): SolarAcSystem {
+  const utilityIs3Phase = !(config.utilityPhase === "1PH" || config.utilityPhase === "1-Phase");
+  const utilityV = config.utilityVoltage || 230;
+  const service: SolarAcSystem["service"] = !utilityIs3Phase ? "1PH-2W" : utilityV >= 380 ? "3PH-4W" : "3PH-3W";
+  const serviceLabel =
+    service === "1PH-2W" ? `1PH 2W ${utilityV}V` : service === "3PH-4W" ? `3PH 4W ${utilityV}/${Math.round(utilityV / Math.sqrt(3))}V` : `3PH 3W ${utilityV}V`;
+  const inverterIs3Phase = inverter.phase === "3PH";
+  const invV = inverter.acVoltage || (inverterIs3Phase ? 400 : 230);
+  const n = Math.max(1, inverterQuantity);
+
+  let inverterConnection: SolarAcSystem["inverterConnection"];
+  let phaseDistribution: Array<[string, number]> | null = null;
+  let lineCurrent: number;
+  if (inverterIs3Phase) {
+    inverterConnection = invV >= 380 ? "3PH-4W" : "3PH-3W";
+    lineCurrent = n * singleInvMaxAcCurrent;
+  } else if (service === "1PH-2W") {
+    inverterConnection = "1PH";
+    lineCurrent = n * singleInvMaxAcCurrent;
+  } else {
+    // Spread single-phase inverters evenly over the three phases (or phase pairs)
+    const counts = [0, 1, 2].map((i) => Math.floor(n / 3) + (i < n % 3 ? 1 : 0));
+    if (service === "3PH-4W") {
+      inverterConnection = "1PH-LN";
+      phaseDistribution = [["A", counts[0]], ["B", counts[1]], ["C", counts[2]]];
+      lineCurrent = Math.max(...counts) * singleInvMaxAcCurrent;
+    } else {
+      inverterConnection = "1PH-LL";
+      phaseDistribution = [["A-B", counts[0]], ["B-C", counts[1]], ["C-A", counts[2]]];
+      const [ab, bc, ca] = counts;
+      const line = (p: number, q: number) => Math.sqrt(p * p + q * q + p * q);
+      lineCurrent = Math.max(line(ab, ca), line(bc, ab), line(ca, bc)) * singleInvMaxAcCurrent;
+    }
+  }
+
+  const hasNeutral = inverterConnection === "3PH-4W" || inverterConnection === "1PH-LN";
+  const phaseConductors = inverterIs3Phase ? 3 : hasNeutral ? 1 : 2;
+  const currentCarryingConductors = phaseConductors + (hasNeutral ? 1 : 0);
+  const inverterConnectionLabel = {
+    "1PH": `1PH ${invV}V`,
+    "1PH-LN": `1PH ${invV}V L-N`,
+    "1PH-LL": `1PH ${invV}V L-L`,
+    "3PH-3W": `3PH 3W ${invV}V`,
+    "3PH-4W": `3PH 4W ${invV}V`,
+  }[inverterConnection];
+
+  return {
+    service,
+    serviceLabel,
+    inverterIs3Phase,
+    inverterConnection,
+    inverterConnectionLabel,
+    currentCarryingConductors,
+    phaseConductors,
+    hasNeutral,
+    phaseDistribution,
+    interconnectionLineCurrent: Number(lineCurrent.toFixed(1)),
+    mainDisconnectPoles: utilityIs3Phase ? 3 : 2,
   };
 }
 
@@ -4397,7 +4477,7 @@ export function computeSolarDesign(
 
   // Inverter AC output currents
   const is3PhaseInv = selectedInverter.phase === "3PH";
-  const invAcV = selectedInverter.acVoltage || 400;
+  const invAcV = selectedInverter.acVoltage || (is3PhaseInv ? 400 : 230);
   const invFactor = is3PhaseInv ? Math.sqrt(3) : 1;
   const singleInvRatedAcCurrent = (selectedInverter.ratedAcPowerKw * 1000) / (invAcV * invFactor);
   const singleInvMaxAcCurrent = selectedInverter.maxAcCurrent || singleInvRatedAcCurrent * 1.1;
@@ -4494,8 +4574,11 @@ export function computeSolarDesign(
       ? overrides.acKaic
       : autoAcKaic;
 
-  // Main Solar Disconnect at MDP (aggregating all inverters)
-  const acMainDisconnectAmps = getNextStandardBreaker(totalSystemAcCurrent * 1.25);
+  // AC system (single-phase vs three-phase) and the highest line current at the interconnection
+  const acSystem = computeAcSystem(config, selectedInverter, effectiveInverterQuantity, singleInvMaxAcCurrent);
+
+  // Main Solar Disconnect at MDP (aggregating all inverters): 125% of the highest line current
+  const acMainDisconnectAmps = getNextStandardBreaker(acSystem.interconnectionLineCurrent * 1.25);
 
   // 10. Automatic Equipment Sizing: AC Cable, Conduit & EGC
   const acLength = config.cabling.acCable.lengthM || 40;
@@ -4508,7 +4591,7 @@ export function computeSolarDesign(
       ? overrides.acCableSizeMm2
       : autoAcCableResult.conductorSizeMm2;
 
-  const autoAcConduitSizeMm = getStandardConduitSize(effectiveAcCableSizeMm2, is3PhaseInv ? 4 : 3);
+  const autoAcConduitSizeMm = getStandardConduitSize(effectiveAcCableSizeMm2, acSystem.currentCarryingConductors + 1);
   const effectiveAcConduitSizeMm =
     overrides.acConduitSizeMm !== undefined && overrides.acConduitSizeMm > 0
       ? overrides.acConduitSizeMm
@@ -4528,7 +4611,12 @@ export function computeSolarDesign(
   const acVoltageDropPercent = invAcV > 0 ? Number(((acVoltageDropV / invAcV) * 100).toFixed(2)) : 0;
 
   // 11. Automatic Equipment Sizing: Transformer (if required)
-  const autoTransformerResult = autoSizeTransformer(totalInverterAcKw, config.utilityVoltage || 230, invAcV);
+  const autoTransformerResult = autoSizeTransformer(
+    totalInverterAcKw,
+    config.utilityVoltage || 230,
+    invAcV,
+    acSystem.service !== "1PH-2W"
+  );
   const effectiveTransformerKva =
     overrides.transformerKva !== undefined && overrides.transformerKva > 0
       ? overrides.transformerKva
@@ -4758,6 +4846,36 @@ export function computeSolarDesign(
     }
   }
 
+  // Check 11: Inverter phase / voltage vs utility service
+  const utilityV = config.utilityVoltage || 230;
+  let phaseCompatible = true;
+  if (acSystem.inverterIs3Phase && acSystem.service === "1PH-2W") {
+    phaseCompatible = false;
+    warnings.push(`ERROR: Three-phase inverter (${selectedInverter.model}) cannot connect to a single-phase ${utilityV}V service. Select a single-phase inverter or change the service to three-phase.`);
+  } else if (acSystem.inverterIs3Phase && Math.abs(invAcV - utilityV) > 0.1 * utilityV && !config.transformer?.enabled) {
+    phaseCompatible = false;
+    warnings.push(`WARNING: Inverter AC voltage (${invAcV}V) does not match the ${utilityV}V three-phase service. Enable the transformer or select a ${utilityV}V inverter.`);
+  } else if (!acSystem.inverterIs3Phase && acSystem.service === "3PH-4W" && Math.abs(invAcV - utilityV / Math.sqrt(3)) > 0.1 * (utilityV / Math.sqrt(3)) && !config.transformer?.enabled) {
+    phaseCompatible = false;
+    warnings.push(`WARNING: Single-phase inverter (${invAcV}V) does not match the ${Math.round(utilityV / Math.sqrt(3))}V line-to-neutral voltage of the ${utilityV}V service.`);
+  } else if (!acSystem.inverterIs3Phase && acSystem.service !== "3PH-4W" && Math.abs(invAcV - utilityV) > 0.1 * utilityV && !config.transformer?.enabled) {
+    phaseCompatible = false;
+    warnings.push(`WARNING: Single-phase inverter (${invAcV}V) does not match the ${utilityV}V service.`);
+  }
+
+  // Solar back-feed device at the panel (120% busbar rule)
+  const interconnectionBackfeedSource: SolarCalculationResults["interconnectionBackfeedSource"] = config.transformer?.enabled
+    ? "transformer-secondary"
+    : effectiveInverterQuantity > 1
+      ? "solar-main-disconnect"
+      : "inverter-breaker";
+  const interconnectionBackfeedAmps =
+    interconnectionBackfeedSource === "transformer-secondary"
+      ? effectiveTransformerSecondaryBreaker
+      : interconnectionBackfeedSource === "solar-main-disconnect"
+        ? acMainDisconnectAmps
+        : effectiveAcBreakerAtAmps;
+
   const validations = {
     vocWithinMaxDcVoltage,
     vmpWithinMpptRange,
@@ -4771,6 +4889,7 @@ export function computeSolarDesign(
     acBreakerAdequate,
     batteryCapacityAdequate,
     conduitFillValid,
+    phaseCompatible,
   };
 
   const validationValues = Object.values(validations);
@@ -4809,6 +4928,10 @@ export function computeSolarDesign(
     inverterRatedAcCurrent: Number(singleInvRatedAcCurrent.toFixed(1)),
     inverterMaxAcCurrent: Number(singleInvMaxAcCurrent.toFixed(1)),
     totalSystemAcCurrent,
+
+    acSystem,
+    interconnectionBackfeedAmps,
+    interconnectionBackfeedSource,
 
     batteryEnergyKwhRequired,
     batteryCapacityAhRequired,
@@ -5056,7 +5179,7 @@ export function generateSolarBOM(
   });
 
   // 13. AC Main Feeder Cable
-  const acMeters = (config.cabling.acCable.lengthM || 40) * (calc.selectedInverter.phase === "3PH" ? 4 : 2);
+  const acMeters = (config.cabling.acCable.lengthM || 40) * (calc.acSystem?.currentCarryingConductors ?? (calc.selectedInverter.phase === "3PH" ? 4 : 2));
   items.push({
     id: "bom-ac-cable",
     category: "Wiring & Conduit",

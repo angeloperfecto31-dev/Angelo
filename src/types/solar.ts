@@ -262,6 +262,27 @@ export interface SolarEquipmentAutoValues {
  */
 export interface SolarEquipmentEffectiveValues extends SolarEquipmentAutoValues {}
 
+/** How the inverters connect to the utility service (single-phase vs three-phase). */
+export interface SolarAcSystem {
+  /** Utility service: 1PH 2W, 3PH 3W (230V delta) or 3PH 4W (400/230V wye) */
+  service: "1PH-2W" | "3PH-3W" | "3PH-4W";
+  serviceLabel: string;
+  inverterIs3Phase: boolean;
+  /** Inverter output: 1PH, 1PH L-N (on wye), 1PH L-L (on delta), 3PH 3W or 3PH 4W */
+  inverterConnection: "1PH" | "1PH-LN" | "1PH-LL" | "3PH-3W" | "3PH-4W";
+  inverterConnectionLabel: string;
+  /** Current-carrying conductors per inverter output circuit (phases + neutral) */
+  currentCarryingConductors: number;
+  phaseConductors: number;
+  hasNeutral: boolean;
+  /** Single-phase inverters spread over the phases of a 3PH service, e.g. [["A-B",1],["B-C",1],["C-A",1]] */
+  phaseDistribution: Array<[string, number]> | null;
+  /** Highest line current at the interconnection (A), all inverters at max AC current */
+  interconnectionLineCurrent: number;
+  /** Poles of the solar main disconnect / back-feed device at the panel */
+  mainDisconnectPoles: number;
+}
+
 export interface SolarCalculationResults {
   // Array & Module
   selectedModule: PVModule;
@@ -298,6 +319,12 @@ export interface SolarCalculationResults {
   inverterRatedAcCurrent: number;
   inverterMaxAcCurrent: number;
   totalSystemAcCurrent: number;
+
+  // AC system (single-phase vs three-phase) and interconnection
+  acSystem: SolarAcSystem;
+  /** Solar back-feed device at the panel used for the 120% busbar rule */
+  interconnectionBackfeedAmps: number;
+  interconnectionBackfeedSource: "inverter-breaker" | "solar-main-disconnect" | "transformer-secondary";
 
   // Battery (if enabled)
   batteryEnergyKwhRequired: number;
@@ -349,6 +376,7 @@ export interface SolarCalculationResults {
     acBreakerAdequate: boolean;
     batteryCapacityAdequate: boolean;
     conduitFillValid: boolean;
+    phaseCompatible: boolean;
   };
   warnings: string[];
   fieldWarnings: Partial<Record<keyof SolarDesignOverrides, string>>;

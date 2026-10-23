@@ -30,6 +30,7 @@ import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../typ
 import { PanelConfig, Circuit } from "../types";
 import { generateSolarBOM } from "./solarEngine";
 import { computePanelScheduleValues, getConductorLabel } from "./computeEngine";
+import { solarBackfeedAmps } from "./solarLinkedPanel";
 import { toPng } from "html-to-image";
 
 export interface SolarWordExportOptions {
@@ -354,7 +355,7 @@ export async function exportSolarToWord(
       (computed.totalDemandVA / (systemVoltage * (is3Phase ? 1.732 : 1))) ||
       0
     ).toFixed(1);
-    const phaseText = is3Phase ? "3PH 3W" : "1PH 2W";
+    const phaseText = is3Phase ? (systemVoltage >= 380 ? "3PH 4W" : "3PH 3W") : "1PH 2W";
 
     const activeCircuits = (targetCircuits || []).filter((c) => {
       const load = (c.loadVA || 0) + (c.wattage || 0);
@@ -1969,7 +1970,12 @@ export async function exportSolarToWord(
         createCell("Busbar Ampacity Rating", true),
         createCell(`${linkedPanel.mainFeeder.af || config.serviceCapacityAmps || 200} A Busbar`),
         createCell("PEC 120% Busbar Check", true),
-        createCell(`(Main ${linkedPanel.mainFeeder.cb}A + Solar ${calc.effective.acBreakerAtAmps}A = ${linkedPanel.mainFeeder.cb + calc.effective.acBreakerAtAmps}A) ≤ 120% Busbar [PASS]`),
+        createCell((() => {
+          const backfeed = solarBackfeedAmps(calc);
+          const infeed = linkedPanel.mainFeeder.cb + backfeed;
+          const limit = Math.round((linkedPanel.mainFeeder.af || config.serviceCapacityAmps || 200) * 1.2);
+          return `(Main ${linkedPanel.mainFeeder.cb}A + Solar ${backfeed}A = ${infeed}A) ${infeed <= limit ? "≤" : ">"} 120% Busbar (${limit}A) [${infeed <= limit ? "PASS" : "EXCEEDED"}]`;
+        })()),
       ],
     }),
   ];
