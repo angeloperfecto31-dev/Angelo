@@ -6,13 +6,14 @@ import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../typ
 import { generateSolarBOM } from "./solarEngine";
 import { captureSolarBlockDiagram } from "./solarSldCapture";
 import { drawCaptureToPdf } from "./pdfCapturedDrawing";
+import { hasRoofPlan, roofPlanLayout, roofPlanImage, roofPlanInfo, drawRoofPlanPdf, drawRoofPlanInfoPdf } from "./roofPlanExport";
 
 /**
  * Generates an executive-grade, multi-page Solar PV Engineering Design & Calculation Report (PDF).
  * Fully compliant with Philippine Electrical Code (PEC 2017 Part 1 & 2 Article 6.90),
  * Republic Act No. 9513 (Renewable Energy Act), and ERC Net-Metering Rules.
  */
-export function exportSolarToPdf(
+export async function exportSolarToPdf(
   config: SolarDesignConfig,
   calc: SolarCalculationResults,
   /** Panel board the house loads are fed from (shown on the block diagram) */
@@ -727,6 +728,31 @@ export function exportSolarToPdf(
     w: contentWidth - 8,
     h: 142,
   });
+
+  // -------------------------------------------------------------
+  // ROOF PLAN (when a roof has been captured and outlined)
+  // -------------------------------------------------------------
+  if (hasRoofPlan(config)) {
+    doc.addPage();
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(C_NAVY[0], C_NAVY[1], C_NAVY[2]);
+    doc.text("ROOF PLAN", margin, 22);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
+    doc.text("PV module layout on the captured roof, with roof edge lengths, north arrow and drawing scale", margin, 26);
+    const box = { x: margin, y: 30, w: contentWidth, h: 150 };
+    const layout = roofPlanLayout(config.roofPlan!, calc, box.w, box.h);
+    let image: string | null = null;
+    try {
+      image = await roofPlanImage(config.roofPlan!, layout.bounds);
+    } catch {
+      image = null; // the vector layout is still drawn without the photo
+    }
+    drawRoofPlanPdf(doc, config, calc, box, layout, image);
+    drawRoofPlanInfoPdf(doc, roofPlanInfo(config, calc, layout.N, "A4"), margin, box.y + box.h + 8, contentWidth);
+  }
 
   // -------------------------------------------------------------
   // APPLY RUNNING HEADERS & FOOTERS TO ALL PAGES

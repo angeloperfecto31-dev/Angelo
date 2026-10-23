@@ -37,6 +37,7 @@ import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { SolarSLDPictorial, computePictorialLayout, sldDesignIssues, epsOutputInfo } from "./SolarSLDPictorial";
 import { SolarBlockDiagram, BLOCK_W, BLOCK_H } from "./SolarBlockDiagram";
+import { hasRoofPlan, roofPlanLayout, roofPlanImage, roofPlanInfo, drawRoofPlanPdf, drawRoofPlanInfoPdf } from "../../utils/roofPlanExport";
 import { computeLinkedPanelData, solarBackfeedAmps, acConductorParts } from "../../utils/solarLinkedPanel";
 
 interface SolarSLDProps {
@@ -425,6 +426,34 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       const drawW = svgWidth * scale;
       const drawH = svgHeight * scale;
       pdf.addImage(dataUrl, "PNG", (PAGE_W - drawW) / 2, (PAGE_H - drawH) / 2, drawW, drawH);
+
+      // Page 2: ROOF PLAN (when a roof has been captured and outlined in the Roof Plan tab)
+      if (hasRoofPlan(config)) {
+        pdf.addPage("a3", "landscape");
+        pdf.setDrawColor(15, 23, 42);
+        pdf.setLineWidth(0.6);
+        pdf.rect(margin, margin, PAGE_W - 2 * margin, PAGE_H - 2 * margin);
+        pdf.setFont("Helvetica", "bold");
+        pdf.setFontSize(14);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text("ROOF PLAN", margin + 6, margin + 10);
+        pdf.setFont("Helvetica", "normal");
+        pdf.setFontSize(8);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text("PV module layout on the captured roof", margin + 6, margin + 15);
+        const box = { x: margin + 6, y: margin + 19, w: 288, h: PAGE_H - 2 * margin - 25 };
+        const layout = roofPlanLayout(config.roofPlan!, calc, box.w, box.h);
+        drawRoofPlanPdf(pdf, config, calc, box, layout, await roofPlanImage(config.roofPlan!, layout.bounds));
+        const colX = box.x + box.w + 6;
+        pdf.setDrawColor(203, 213, 225);
+        pdf.setLineWidth(0.3);
+        pdf.line(colX - 3, box.y, colX - 3, box.y + box.h);
+        drawRoofPlanInfoPdf(pdf, roofPlanInfo(config, calc, layout.N, "A3"), colX, box.y + 3, PAGE_W - margin - 4 - colX);
+        pdf.setFont("Helvetica", "bold");
+        pdf.setFontSize(9);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(`ROOF PLAN  |  ${(config.projectName || "SOLAR PV INSTALLATION").toUpperCase()}  |  SHEET E-02`, PAGE_W - margin - 4, PAGE_H - margin - 3, { align: "right" });
+      }
 
       pdf.save(`${config.projectName.replace(/[^a-zA-Z0-9_-]/g, "_")}_Solar_SLD.pdf`);
     } catch (err) {

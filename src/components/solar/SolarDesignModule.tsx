@@ -18,6 +18,7 @@ import { SolarPVTab } from "./SolarPVTab";
 import { SolarInverterTab } from "./SolarInverterTab";
 import { SolarProtectionTab } from "./SolarProtectionTab";
 import { SolarSLD } from "./SolarSLD";
+import { SolarRoofPlanTab } from "./SolarRoofPlanTab";
 import { SolarBOMTab } from "./SolarBOMTab";
 import { SolarQuotationModal } from "./SolarQuotationModal";
 import {
@@ -38,6 +39,7 @@ import {
   ShieldAlert,
   RotateCcw,
   Receipt,
+  Map as MapIcon,
 } from "lucide-react";
 
 interface SolarDesignModuleProps {
@@ -193,7 +195,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   ]);
 
   const [activeSubTab, setActiveSubTab] = useState<
-    "setup" | "pv" | "inverter" | "protection" | "sld" | "bom"
+    "setup" | "pv" | "inverter" | "protection" | "sld" | "roof" | "bom"
   >("setup");
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
 
@@ -585,6 +587,18 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab("roof")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            activeSubTab === "roof"
+              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          }`}
+        >
+          <MapIcon className="w-4 h-4" />
+          <span>6. Roof Plan</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab("bom")}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
             activeSubTab === "bom"
@@ -593,7 +607,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
-          <span>6. Bill of Materials (BOM)</span>
+          <span>7. Bill of Materials (BOM)</span>
         </button>
       </div>
 
@@ -696,6 +710,8 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
           onSetOverride={handleSetOverride}
         />
       )}
+
+      {activeSubTab === "roof" && <SolarRoofPlanTab config={currentConfig} calc={calc} onUpdateConfig={handleUpdate} />}
 
       {activeSubTab === "bom" && (
         <SolarBOMTab

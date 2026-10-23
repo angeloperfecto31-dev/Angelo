@@ -7,6 +7,8 @@ import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults } from "../types/solar";
 import { sanitizeStringForDxf, MText } from "./exportDxf";
 import { captureSolarSld, captureSolarBlockDiagram, SldCapture } from "./solarSldCapture";
+import { hasRoofPlan, roofPlanLayout, roofPlanInfo, edgeLabelOffset } from "./roofPlanExport";
+import { metersPerPx, moduleDims, moduleCorners, assignStrings, roofPlanStats } from "./roofPlan";
 import { solarBackfeedAmps, backfeedLabel, acConductorParts } from "./solarLinkedPanel";
 import type { PictorialOptions } from "../components/solar/SolarSLDPictorial";
 
@@ -35,6 +37,8 @@ try {
  *   - SHEET 2 OF 4: Solar Design Data, Sizing Calculations & Equipment Schedule
  *   - SHEET 3 OF 4: General Notes, PEC Mandates, Safety Warning Placards & Checklist
  *   - SHEET 4 OF 4: PV Module, Inverter & Battery Datasheet Tables
+ *   - SHEET 5 OF 5 (when a roof plan exists): Roof Plan - roof outlines and the module layout at a
+ *     true drawing scale (1:N); the satellite photo is not embedded (DXF links images as external files)
  *
  * The drawing reflects the actual design: off-grid systems omit utility interconnection,
  * the 120% busbar status follows the calculation, and commissioning tests are left blank.
@@ -99,6 +103,8 @@ export function buildSolarDxf(
 
   // DC conductor runs: solid like the on-screen SLD, red to tell them apart from AC runs
   d.addLayer("EPH-DC", 1, "CONTINUOUS");       // Red
+  // Roof plan outlines
+  d.addLayer("EPH-ROOF", 30, "CONTINUOUS");     // Orange
   // CT / smart-meter signal cable (dashed, as on screen)
   d.addLayer("EPH-COMM", 30, "DASHED");        // Orange
 
@@ -136,6 +142,7 @@ export function buildSolarDxf(
     "EPH-BREAKER": 35,
     "EPH-CABLE": 50,
     "EPH-DC": 50,
+    "EPH-ROOF": 50,
     "EPH-COMM": 18,
     "EPH-GROUND": 35,
     "EPH-BATTERY": 35,
@@ -265,7 +272,8 @@ export function buildSolarDxf(
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  const TOTAL_SHEETS = 4;
+  const withRoofPlan = hasRoofPlan(config);
+  const TOTAL_SHEETS = withRoofPlan ? 5 : 4;
   const pName = sanitizeStringForDxf(panelData?.designation || "MAIN DISTRIBUTION PANEL (MDP)");
   const pMain = panelData?.mainFeeder?.cb || config.serviceCapacityAmps || 100;
   const pAf =
@@ -1347,6 +1355,120 @@ export function buildSolarDxf(
     "left",
     122
   );
+
+  // ==========================================
+  // SHEET 5 OF 5: ROOF PLAN (true scale 1:N, vector geometry)
+  // Origin X: Sheet 4 origin + 445
+  // ==========================================
+  if (withRoofPlan) {
+    const o5 = s4OriginX + 445;
+    drawStandardSheet(o5, 5, "ROOF PLAN - PV MODULE LAYOUT");
+    drawStandardTitleBlock(o5, 5, "ROOF PLAN");
+    const plan = config.roofPlan!;
+    // Drawing zone left of the info column; the info column sits above the title block
+    const zone = { x1: o5 + 18, x2: o5 + 268, y1: 18, y2: 262 };
+    const lay = roofPlanLayout(plan, calc, zone.x2 - zone.x1, zone.y2 - zone.y1);
+    const { bounds: b, s: k, N } = lay;
+    const left = zone.x1 + (zone.x2 - zone.x1 - lay.drawW) / 2;
+    const top = zone.y2 - (zone.y2 - zone.y1 - lay.drawH) / 2;
+    const RX = (px: number) => left + (px - b.x1) * k;
+    const RY = (py: number) => top - (py - b.y1) * k;
+    const mpp = metersPerPx(plan);
+    const polyline = (layer: string, pts: Array<[number, number]>) => {
+      d.setActiveLayer(layer);
+      pts.forEach((p, i) => {
+        const q = pts[(i + 1) % pts.length];
+        d.drawLine(RX(p[0]), RY(p[1]), RX(q[0]), RY(q[1]));
+      });
+    };
+
+    // Modules with string labels
+    const dims = moduleDims(calc);
+    const strings = assignStrings(plan, calc);
+    const shortMm = Math.min(dims.lengthM, dims.widthM) * (1000 / N);
+    plan.modules.forEach((m) => {
+      polyline("EPH-PV", moduleCorners(m, dims, mpp));
+      const st = strings.get(m.id);
+      if (st && shortMm >= 3.2) drawText("EPH-TEXT", RX(m.x), RY(m.y), Math.min(1.8, shortMm * 0.3), st.extra ? "X" : `S${st.stringNo}-${st.pos}`, "center");
+    });
+
+    // Roof outlines, edge lengths and face names
+    plan.faces.forEach((face) => {
+      polyline("EPH-ROOF", face.points);
+      face.points.forEach((p, i) => {
+        const q = face.points[(i + 1) % face.points.length];
+        const len = Math.hypot(q[0] - p[0], q[1] - p[1]) * mpp;
+        // Outside the edge, clear of it whatever the edge direction (y is up in the DXF)
+        const label = `${len.toFixed(2)} m`;
+        const [nx, ny] = edgeLabelOffset(face.points, i, 1);
+        const off = 1.2 + Math.abs(nx) * (label.length * 1.8 * 0.62) / 2 + Math.abs(ny) * 1.4;
+        drawText("EPH-DIM", RX((p[0] + q[0]) / 2) + nx * off, RY((p[1] + q[1]) / 2) - ny * off, 1.8, label, "center");
+      });
+      const cx = face.points.reduce((a, p) => a + p[0], 0) / face.points.length;
+      const cy = face.points.reduce((a, p) => a + p[1], 0) / face.points.length;
+      drawText("EPH-ROOF", RX(cx), RY(cy), 2.2, face.name.toUpperCase(), "center");
+    });
+
+    // North arrow (top-right of the zone) and scale bar (bottom-left)
+    const nx = zone.x2 - 8, ny = zone.y2 - 6;
+    d.setActiveLayer("EPH-ANNO");
+    d.drawLine(nx, ny, nx + 2.6, ny - 8);
+    d.drawLine(nx + 2.6, ny - 8, nx, ny - 5.5);
+    d.drawLine(nx, ny - 5.5, nx - 2.6, ny - 8);
+    d.drawLine(nx - 2.6, ny - 8, nx, ny);
+    drawText("EPH-ANNO", nx, ny - 11, 2.2, "N", "center");
+    const mmPerM = 1000 / N;
+    const barM = [100, 50, 20, 10, 5, 2, 1, 0.5].find((m) => m * mmPerM <= 50) || 0.5;
+    const bx = zone.x1 + 4, by = zone.y1 + 6;
+    d.setActiveLayer("EPH-ANNO");
+    d.drawLine(bx, by, bx + barM * mmPerM, by);
+    for (let i = 0; i <= 4; i++) d.drawLine(bx + (i * barM * mmPerM) / 4, by, bx + (i * barM * mmPerM) / 4, by + (i % 4 === 0 ? 2 : 1.2));
+    drawText("EPH-ANNO", bx, by + 3.4, 1.8, "0", "center");
+    drawText("EPH-ANNO", bx + barM * mmPerM, by + 3.4, 1.8, `${barM} m`, "center");
+    drawText("EPH-ANNO", bx + barM * mmPerM + 5, by + 0.6, 2.0, `SCALE 1:${N}`, "left");
+
+    // Info column above the title block
+    const info = roofPlanInfo(config, calc, N, "A3");
+    const ix = o5 + 278, iw = 122;
+    let iy = 258;
+    const put = (t: string, h: number, layer = "EPH-TEXT") => {
+      const per = Math.max(10, Math.floor(iw / (h * 0.62)));
+      const words = t.split(/\s+/);
+      let cur = "";
+      const flush = () => {
+        if (cur) {
+          drawText(layer, ix, iy, h, cur, "left");
+          iy -= h * 1.6;
+        }
+        cur = "";
+      };
+      for (const w of words) {
+        if ((cur + " " + w).trim().length > per) flush();
+        cur = (cur + " " + w).trim();
+      }
+      flush();
+    };
+    drawText("EPH-TITLE", ix, iy, 2.4, "ROOF PLAN DATA", "left");
+    iy -= 5;
+    for (const [key, val] of info.rows) {
+      if (iy < 98) break;
+      put(`${key}: ${val}`, 1.6);
+      iy -= 0.6;
+    }
+    iy -= 1.5;
+    for (const fc of info.faces) {
+      if (iy < 104) break;
+      put(fc.title, 1.7, "EPH-ROOF");
+      put(fc.detail, 1.5);
+      put(fc.edges, 1.5);
+      iy -= 0.8;
+    }
+    if (info.issues.length && iy > 104) {
+      put("CHECKS:", 1.7, "EPH-BREAKER");
+      for (const t of info.issues) if (iy > 98) put(`- ${t.toUpperCase()}`, 1.5, "EPH-BREAKER");
+    }
+    if (iy > 98) put("NOTE: SATELLITE PHOTO NOT EMBEDDED IN DXF; ROOF OUTLINES AND MODULES ARE DRAWN TO SCALE.", 1.5);
+  }
 
   // Ensure all AutoCAD text styles utilize Arial TrueType font, matching System SLD
   const styleTable = (d as any).tables?.["STYLE"];
