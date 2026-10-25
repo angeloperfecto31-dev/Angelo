@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { isFullAccessPlan, isExpiringPlan } from "./utils/plans";
 import { isEqual } from "lodash";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
@@ -160,7 +161,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isActive, setIsActive] = useState(false);
   const [userPlan, setUserPlan] = useState<
-    "basic" | "premium" | "enterprise" | string | null
+    "basic" | "premium" | "annual" | "enterprise" | string | null
   >(null);
   const [activatedAt, setActivatedAt] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -222,7 +223,7 @@ export default function App() {
             let isExpired = false;
             const isPlanLifetime = data.is_lifetime || data.subscription_type === 'Lifetime';
             const expiresVal = data.expiresAt || data.expires_at;
-            if ((plan === "basic" || plan === "premium") && !isPlanLifetime) {
+            if (isExpiringPlan(plan) && !isPlanLifetime) {
               if (expiresVal) {
                 const expires = new Date(expiresVal);
                 if (new Date() >= expires) {
@@ -469,7 +470,7 @@ export default function App() {
 
   // Periodic expiration check
   useEffect(() => {
-    if (!isActive || (userPlan !== "basic" && userPlan !== "premium") || isLifetime) return;
+    if (!isActive || !isExpiringPlan(userPlan) || isLifetime) return;
 
     const checkExpiration = () => {
       let expired = false;
@@ -513,7 +514,7 @@ export default function App() {
     if (
       !expiresAt ||
       !isActive ||
-      (userPlan !== "basic" && userPlan !== "premium") ||
+      !isExpiringPlan(userPlan) ||
       isLifetime
     ) {
       setCountdownTime(null);
@@ -582,7 +583,7 @@ export default function App() {
     transformer: "Transformer Capacity",
     bom: "Bill of Materials (BOM)",
   };
-  const hasPremiumAccess = userPlan === "premium" || userPlan === "enterprise" || isAdmin;
+  const hasPremiumAccess = isFullAccessPlan(userPlan) || isAdmin;
   const setActiveTab = (tab: typeof activeTab) => {
     if (PREMIUM_ONLY_TABS.includes(tab) && !hasPremiumAccess) {
       alert(
@@ -2512,7 +2513,7 @@ export default function App() {
   const exportToExcel = () => {
     try {
       const isPremiumUser =
-        userPlan === "premium" || userPlan === "enterprise" || isAdmin;
+        isFullAccessPlan(userPlan) || isAdmin;
       const wb = XLSX.utils.book_new();
 
       const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(
@@ -4303,7 +4304,7 @@ export default function App() {
 
   const handleExportWord = async () => {
     const isPremiumUser =
-      userPlan === "premium" || userPlan === "enterprise" || isAdmin;
+      isFullAccessPlan(userPlan) || isAdmin;
     if (!isPremiumUser) {
       alert(
         "Word and PDF document exports are available exclusively with the Premium Plan. Upgrade your subscription to unlock professional document generation.",
@@ -4849,9 +4850,7 @@ export default function App() {
             isActive &&
             !isLifetime &&
             expiresAt &&
-            (userPlan === "basic" ||
-              userPlan === "premium" ||
-              false) && (
+            isExpiringPlan(userPlan) && (
               <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -4864,6 +4863,8 @@ export default function App() {
                     className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full border ${
                       userPlan === "premium"
                         ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
+                        : userPlan === "annual"
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                         : userPlan === "basic"
                           ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
                           : "bg-amber-500/10 text-amber-400 border-amber-500/20"
@@ -4967,9 +4968,7 @@ export default function App() {
           {!isSidebarCollapsed &&
             isActive &&
             isLifetime &&
-            (userPlan === "basic" ||
-              userPlan === "premium" ||
-              false) && (
+            isExpiringPlan(userPlan) && (
               <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3 space-y-2.5 shadow-md">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -5001,7 +5000,7 @@ export default function App() {
           {/* Action CTAs Area */}
           <div className="space-y-1.5">
             {/* Upgrade to Premium */}
-            {((userPlan !== "premium" && userPlan !== "enterprise") ||
+            {(!isFullAccessPlan(userPlan) ||
               isAdmin) && (
               <div className="relative group">
                 <button
@@ -5032,16 +5031,14 @@ export default function App() {
               },
               {
                 label:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin
                     ? "Report (Premium)"
                     : "Generate Report",
                 icon: FileText,
                 onClick: () => {
                   if (
-                    userPlan === "premium" ||
-                    userPlan === "enterprise" ||
+                    isFullAccessPlan(userPlan) ||
                     isAdmin
                   ) {
                     handleExportWord();
@@ -5054,20 +5051,17 @@ export default function App() {
                 },
                 priority: "primary",
                 title:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin
                     ? "Available on Premium Plan"
                     : "Generate Custom Word Document Summary",
                 isLocked:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin,
               },
               {
                 label:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin &&
                   activeTab !== "schedule"
                     ? "Excel Export (Premium)"
@@ -5075,8 +5069,7 @@ export default function App() {
                 icon: FileSpreadsheet,
                 onClick: async () => {
                   if (
-                    userPlan === "premium" ||
-                    userPlan === "enterprise" ||
+                    isFullAccessPlan(userPlan) ||
                     isAdmin ||
                     activeTab === "schedule"
                   ) {
@@ -5118,30 +5111,26 @@ export default function App() {
                 },
                 priority: "secondary",
                 title:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin &&
                   activeTab !== "schedule"
                     ? "Available on Premium Plan"
                     : "Export current module details to Excel",
                 isLocked:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin &&
                   activeTab !== "schedule",
               },
               {
                 label:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin
                     ? "CAD Export (Premium)"
                     : "Export AutoCAD Drawing",
                 icon: Layers,
                 onClick: () => {
                   if (
-                    userPlan === "premium" ||
-                    userPlan === "enterprise" ||
+                    isFullAccessPlan(userPlan) ||
                     isAdmin
                   ) {
                     const { updatedMdpCircuits, updatedSubPanels } =
@@ -5168,8 +5157,7 @@ export default function App() {
                 title:
                   "Complete Load Schedule and calculations directly to AutoCAD schema blocks",
                 isLocked:
-                  userPlan !== "premium" &&
-                  userPlan !== "enterprise" &&
+                  !isFullAccessPlan(userPlan) &&
                   !isAdmin,
               },
             ].map((btn, index) => {
@@ -5255,6 +5243,8 @@ export default function App() {
                               ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                               : userPlan === "enterprise"
                                 ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                                : userPlan === "annual"
+                                  ? "bg-teal-500/10 text-teal-400 border border-teal-500/20"
                                 : userPlan === "premium"
                                   ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
                                   : userPlan === "basic"
@@ -5266,6 +5256,8 @@ export default function App() {
                             ? "Admin Engine"
                             : userPlan === "enterprise"
                               ? "Enterprise (Lifetime)"
+                              : userPlan === "annual"
+                                ? "Annual Access"
                               : userPlan === "premium"
                                 ? "Premium Access"
                                 : userPlan === "basic"
@@ -5274,9 +5266,7 @@ export default function App() {
                         </span>
 
                         {/* Remaining Days indicator */}
-                        {(userPlan === "basic" ||
-                          userPlan === "premium" ||
-                          false) &&
+                        {isExpiringPlan(userPlan) &&
                           !isLifetime &&
                           expiresAt && (
                             <span
@@ -5325,9 +5315,7 @@ export default function App() {
                         {user.displayName || "User Profile"}
                       </p>
 
-                      {(userPlan === "basic" ||
-                        userPlan === "premium" ||
-                        false) &&
+                      {isExpiringPlan(userPlan) &&
                         !isLifetime &&
                         expiresAt && (
                           <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800">
@@ -5387,7 +5375,7 @@ export default function App() {
                             </div>
                           </div>
                         )}
-                      {((userPlan === "basic" || userPlan === "premium" || false) && isLifetime) && (
+                      {(isExpiringPlan(userPlan) && isLifetime) && (
                         <div className="mt-2 bg-slate-900 rounded-lg p-2 border border-slate-800 flex items-center justify-between">
                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Access</span>
                            <span className="text-[10px] font-black text-emerald-400">LIFETIME</span>
@@ -5639,7 +5627,7 @@ export default function App() {
             {/* Bottom section with Upgrade and User Profile */}
             <div className="p-4 border-t border-slate-800/60 bg-slate-950/60 space-y-3 shrink-0">
               {/* Upgrade Button */}
-              {((userPlan !== "premium" && userPlan !== "enterprise") || isAdmin) && (
+              {(!isFullAccessPlan(userPlan) || isAdmin) && (
                 <button
                   onClick={() => {
                     setShowUpgrade(true);
@@ -5666,7 +5654,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => {
-                    if (userPlan === "premium" || userPlan === "enterprise" || isAdmin) {
+                    if (isFullAccessPlan(userPlan) || isAdmin) {
                       handleExportWord();
                     } else {
                       alert("Word and PDF exports require Premium Plan.");
@@ -5751,9 +5739,7 @@ export default function App() {
           <div className="flex items-center gap-1">
             {isActive &&
               countdownTime &&
-              (userPlan === "basic" ||
-                userPlan === "premium" ||
-                false) && (
+              isExpiringPlan(userPlan) && (
                 <div
                   onClick={() => {
                     if (false) {
@@ -5823,9 +5809,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             {isActive &&
               countdownTime &&
-              (userPlan === "basic" ||
-                userPlan === "premium" ||
-                false) && (
+              isExpiringPlan(userPlan) && (
                 <div
                   onClick={() => {
                     if (false) {
@@ -5860,7 +5844,7 @@ export default function App() {
 
             {isActive &&
               isLifetime &&
-              (userPlan === "basic" || userPlan === "premium" || false) && (
+              isExpiringPlan(userPlan) && (
                 <div
                   className="flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-black font-mono border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-sm cursor-default select-none"
                   title="Lifetime Access"
@@ -5956,9 +5940,7 @@ export default function App() {
               if (
                 isActive &&
                 expiresAt &&
-                (userPlan === "basic" ||
-                  userPlan === "premium" ||
-                  false)
+                isExpiringPlan(userPlan)
               ) {
                 const daysLeft = countdownTime
                   ? countdownTime.days
@@ -7395,8 +7377,7 @@ export default function App() {
                         iscParams={iscParams}
                         vdCalculations={vdCalculations}
                         isPremium={
-                          userPlan === "premium" ||
-                          userPlan === "enterprise" ||
+                          isFullAccessPlan(userPlan) ||
                           isAdmin
                         }
                         onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7514,8 +7495,7 @@ export default function App() {
                             }}
                             iscParams={iscParams}
                             isPremium={
-                              userPlan === "premium" ||
-                              userPlan === "enterprise" ||
+                              isFullAccessPlan(userPlan) ||
                               isAdmin
                             }
                             onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7624,8 +7604,7 @@ export default function App() {
                     source={iscSource}
                     setSource={setIscSource}
                     isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
+                      isFullAccessPlan(userPlan) ||
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7662,8 +7641,7 @@ export default function App() {
                     transformerPrimaryVoltage={transformerPrimaryVoltage}
                     setTransformerPrimaryVoltage={setTransformerPrimaryVoltage}
                     isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
+                      isFullAccessPlan(userPlan) ||
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7731,8 +7709,7 @@ export default function App() {
                     subPanels={subPanels}
                     iscParams={iscParams}
                     isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
+                      isFullAccessPlan(userPlan) ||
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7768,8 +7745,7 @@ export default function App() {
                     setIscParams={setIscParams}
                     vdCalculations={vdCalculations}
                     isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
+                      isFullAccessPlan(userPlan) ||
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7838,8 +7814,7 @@ export default function App() {
                 >
                   <EgcSizingCalculator
                     isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
+                      isFullAccessPlan(userPlan) ||
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7876,8 +7851,7 @@ export default function App() {
                     loadingFactor={transformerLoadingFactor}
                     setLoadingFactor={setTransformerLoadingFactor}
                     isPremium={
-                      userPlan === "premium" ||
-                      userPlan === "enterprise" ||
+                      isFullAccessPlan(userPlan) ||
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
@@ -7962,8 +7936,7 @@ export default function App() {
                       iscParams={iscParams}
                       vdCalculations={vdCalculations}
                       isPremium={
-                        userPlan === "premium" ||
-                        userPlan === "enterprise" ||
+                        isFullAccessPlan(userPlan) ||
                         isAdmin
                       }
                       onRequestUpgrade={() => setShowUpgrade(true)}
@@ -8287,6 +8260,8 @@ export default function App() {
                             <p className="text-xs font-black text-amber-400 uppercase">
                               {userPlan === "enterprise"
                                 ? "ENTERPRISE (LIFETIME)"
+                                : userPlan === "annual"
+                                  ? "ANNUAL (12 MONTHS)"
                                 : userPlan === "premium" && isLifetime
                                   ? "PREMIUM (LIFETIME)"
                                 : userPlan === "premium"
@@ -8306,10 +8281,7 @@ export default function App() {
                             <button
                               onClick={() => {
                                 setIsAccountSettingsOpen(false);
-                                if (
-                                  userPlan === "basic" ||
-                                  userPlan === "premium"
-                                ) {
+                                if (isExpiringPlan(userPlan)) {
                                   setShowRenew(true);
                                 } else {
                                   setShowUpgrade(true);
@@ -8317,13 +8289,13 @@ export default function App() {
                               }}
                               className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all"
                             >
-                              {userPlan === "premium" || userPlan === "basic"
+                              {isExpiringPlan(userPlan)
                                 ? "Renew"
                                 : "Upgrade"}
                             </button>
                           )}
                         </div>
-                        {(userPlan === "basic" || userPlan === "premium") &&
+                        {isExpiringPlan(userPlan) &&
                           !isLifetime &&
                           expiresAt && (
                             <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
@@ -8368,7 +8340,7 @@ export default function App() {
                               </div>
                             </div>
                           )}
-                        {((userPlan === "basic" || userPlan === "premium") && isLifetime) && (
+                        {(isExpiringPlan(userPlan) && isLifetime) && (
                             <div className="flex items-center gap-3 mt-2 text-[10px] font-semibold text-slate-400">
                               <div className="bg-slate-950/50 px-2 py-1 rounded">
                                 <span className="text-slate-500 mr-1">

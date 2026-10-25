@@ -91,7 +91,7 @@ export const NotificationBell: React.FC<Props> = ({
               isAdmin ||
               u.visibility === "all" ||
               (u.visibility === "premium" &&
-                (userPlan === "premium" || userPlan === "enterprise")) ||
+                (userPlan === "premium" || userPlan === "annual" || userPlan === "enterprise")) ||
               (u.visibility === "basic" && userPlan === "basic");
 
             if (matchesVisibility) {
