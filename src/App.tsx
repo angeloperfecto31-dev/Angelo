@@ -550,7 +550,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [expiresAt, isActive, userPlan]);
 
-  const [activeTab, setActiveTab] = useState<
+  const [activeTab, setActiveTabState] = useState<
     | "dashboard"
     | "schedule"
     | "isc"
@@ -572,6 +572,31 @@ export default function App() {
     | "whats-new"
     | "update-management"
   >("dashboard");
+
+  // Premium / Enterprise modules. Basic accounts (and accounts whose plan is not loaded yet) are sent
+  // to the upgrade page instead; every route that opens a module (sidebar, mobile menu, tab bar,
+  // dashboard cards) goes through setActiveTab, so the check lives here.
+  const PREMIUM_ONLY_TABS = ["solar", "transformer", "bom"];
+  const PREMIUM_TAB_NAMES: Record<string, string> = {
+    solar: "Solar Design",
+    transformer: "Transformer Capacity",
+    bom: "Bill of Materials (BOM)",
+  };
+  const hasPremiumAccess = userPlan === "premium" || userPlan === "enterprise" || isAdmin;
+  const setActiveTab = (tab: typeof activeTab) => {
+    if (PREMIUM_ONLY_TABS.includes(tab) && !hasPremiumAccess) {
+      alert(
+        `Premium Module Required\n\nThe ${PREMIUM_TAB_NAMES[tab]} module is available exclusively in the Premium and Enterprise plans. Please upgrade your subscription to unlock this module.`,
+      );
+      setShowUpgrade(true);
+      return;
+    }
+    setActiveTabState(tab);
+  };
+  // Leave a premium module if the plan no longer allows it (e.g. downgrade or expiry while open)
+  useEffect(() => {
+    if (PREMIUM_ONLY_TABS.includes(activeTab) && !hasPremiumAccess) setActiveTabState("dashboard");
+  }, [activeTab, hasPremiumAccess]);
 
   const [showGroundingInfo, setShowGroundingInfo] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -4572,13 +4597,13 @@ export default function App() {
                     id: "transformer",
                     label: "Transformer Capacity",
                     icon: Cpu,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                   {
                     id: "solar",
                     label: "Solar Design",
                     icon: Sun,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                   {
                     id: "bom",
@@ -5484,8 +5509,8 @@ export default function App() {
                       { id: "floor-plan", label: "Floor Plan", icon: Map, requiresPremium: false },
                       { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
                       { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
-                      { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: false },
-                      { id: "solar", label: "Solar Design", icon: Sun, requiresPremium: false },
+                      { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: true },
+                      { id: "solar", label: "Solar Design", icon: Sun, requiresPremium: true },
                       { id: "bom", label: "Bill of Materials", icon: FileSpreadsheet, requiresPremium: true },
                     ]
                       .filter((item) => {
@@ -7835,7 +7860,7 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full"
                 >
-                  <TransformerCalc
+                  {hasPremiumAccess && <TransformerCalc
                     panel={panel}
                     circuits={circuits}
                     subPanels={uniqueSubPanels}
@@ -7861,7 +7886,7 @@ export default function App() {
                     setIscParams={setIscParams}
                     iscSource={iscSource}
                     setIscSource={setIscSource}
-                  />
+                  />}
                 </motion.div>
               </div>
 
@@ -7877,7 +7902,7 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full"
                 >
-                  <SolarDesignModule
+                  {hasPremiumAccess && <SolarDesignModule
                     key={currentProjectId || "default-solar"}
                     solarConfig={solarConfig}
                     onUpdateSolarConfig={(newConf) => {
@@ -7890,7 +7915,7 @@ export default function App() {
                     projectLocation={panel?.location || "Philippines"}
                     clientName={panel?.owner || "Valued Client"}
                     designerName={panel?.engineer || "Electrical Engineer"}
-                  />
+                  />}
                 </motion.div>
               </div>
 
