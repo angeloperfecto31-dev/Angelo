@@ -4599,7 +4599,7 @@ export default function PaymentScreen({
             </div>
 
             <form onSubmit={handleSavePricing} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* Basic price */}
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
@@ -4638,25 +4638,6 @@ export default function PaymentScreen({
                   </div>
                 </div>
 
-                {/* Enterprise price */}
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
-                    Enterprise Plan Default Price (₱)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-2 py-0.5 text-xs text-slate-400 font-bold">₱</span>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      value={adminEnterprisePrice || 0}
-                      onChange={(e) => setAdminEnterprisePrice(e.target.value)}
-                      placeholder="2999"
-                      className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
-                    />
-                  </div>
-                </div>
-
                 {/* Annual price */}
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
@@ -4671,6 +4652,25 @@ export default function PaymentScreen({
                       value={adminAnnualPrice || 0}
                       onChange={(e) => setAdminAnnualPrice(e.target.value)}
                       placeholder="14990"
+                      className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Enterprise price */}
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
+                    Enterprise Plan Default Price (₱)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2 py-0.5 text-xs text-slate-400 font-bold">₱</span>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={adminEnterprisePrice || 0}
+                      onChange={(e) => setAdminEnterprisePrice(e.target.value)}
+                      placeholder="2999"
                       className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
                     />
                   </div>
@@ -4697,7 +4697,7 @@ export default function PaymentScreen({
               </div>
 
               {/* Editable Plan Features Section */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pt-2">
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
                     <span>Basic Plan Features</span>
@@ -4728,20 +4728,6 @@ export default function PaymentScreen({
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
-                    <span>Enterprise Plan Features</span>
-                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={adminEnterpriseFeatures}
-                    onChange={(e) => setAdminEnterpriseFeatures(e.target.value)}
-                    placeholder={DEFAULT_ENTERPRISE_FEATURES}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-sans leading-relaxed resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
                     <span>Annual Plan Features</span>
                     <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
                   </label>
@@ -4750,6 +4736,20 @@ export default function PaymentScreen({
                     value={adminAnnualFeatures}
                     onChange={(e) => setAdminAnnualFeatures(e.target.value)}
                     placeholder={DEFAULT_ANNUAL_FEATURES}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-sans leading-relaxed resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5 flex justify-between">
+                    <span>Enterprise Plan Features</span>
+                    <span className="text-[10px] text-slate-400 font-normal">One per line. Start line with "-" for disabled.</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={adminEnterpriseFeatures}
+                    onChange={(e) => setAdminEnterpriseFeatures(e.target.value)}
+                    placeholder={DEFAULT_ENTERPRISE_FEATURES}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-sans leading-relaxed resize-none"
                   />
                 </div>
@@ -4804,7 +4804,7 @@ export default function PaymentScreen({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
                   {/* Basic discount deductions */}
                   <div>
                     <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
@@ -4841,23 +4841,6 @@ export default function PaymentScreen({
                     </div>
                   </div>
 
-                  {/* Enterprise discount deductions */}
-                  <div>
-                    <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
-                      Enterprise Plan Promo Final Price (₱)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-2 py-0.5 text-xs text-indigo-400 font-bold">₱</span>
-                      <input
-                        type="number"
-                        min="0"
-                        value={adminPromoDiscountEnterprise || 0}
-                        onChange={(e) => setAdminPromoDiscountEnterprise(e.target.value)}
-                        placeholder="0"
-                        className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
-                      />
-                    </div>
-                  </div>
                   {/* Annual discount deductions */}
                   <div>
                     <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
@@ -4870,6 +4853,23 @@ export default function PaymentScreen({
                         min="0"
                         value={adminPromoDiscountAnnual || 0}
                         onChange={(e) => setAdminPromoDiscountAnnual(e.target.value)}
+                        placeholder="0"
+                        className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
+                      />
+                    </div>
+                  </div>
+                  {/* Enterprise discount deductions */}
+                  <div>
+                    <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1.5">
+                      Enterprise Plan Promo Final Price (₱)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-2 py-0.5 text-xs text-indigo-400 font-bold">₱</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={adminPromoDiscountEnterprise || 0}
+                        onChange={(e) => setAdminPromoDiscountEnterprise(e.target.value)}
                         placeholder="0"
                         className="w-full pl-8 pr-3 py-2 border border-indigo-100 bg-white rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 transition-all font-mono"
                       />
@@ -6586,8 +6586,8 @@ export default function PaymentScreen({
                   <div className="grid grid-cols-2 gap-3 text-xxs font-bold text-slate-600">
                     <div>Basic Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminBasicPrice || "0").toFixed(2)}</span></div>
                     <div>Premium Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminPremiumPrice || "0").toFixed(2)}</span></div>
-                    <div>Enterprise Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminEnterprisePrice || "0").toFixed(2)}</span></div>
                     <div>Annual Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminAnnualPrice || "0").toFixed(2)}</span></div>
+                    <div>Enterprise Plan Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminEnterprisePrice || "0").toFixed(2)}</span></div>
                     <div>Upgrade Price: <span className="text-slate-900 font-extrabold">₱{parseFloat(adminUpgradePrice || "0").toFixed(2)}</span></div>
                     {parseFloat(adminPromoDiscountBasic || "0") > 0 && (
                       <div className="col-span-2 text-rose-600 font-extrabold">Basic Promo: -₱{parseFloat(adminPromoDiscountBasic).toFixed(2)}</div>
