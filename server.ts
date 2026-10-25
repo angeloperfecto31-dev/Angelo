@@ -4,6 +4,7 @@ import cors from "cors";
 import path from "path";
 import axios from "axios";
 import { db } from "./src/server/firebaseAdmin";
+import { isFullAccessPlan, planExpiryIso, planLabel, DEFAULT_PLAN_PRICES } from "./src/utils/plans";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 
@@ -275,7 +276,7 @@ app.post("/api/download-cad", async (req, res) => {
         const userData = userSnap.data();
         isAdmin = userData?.email?.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
+        isPremium = isFullAccessPlan(userData?.plan);
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -330,7 +331,7 @@ app.post("/api/verify-excel-export", async (req, res) => {
         userEmail = userData?.email || "";
         isAdmin = userEmail.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
+        isPremium = isFullAccessPlan(userData?.plan);
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -389,7 +390,7 @@ app.post("/api/verify-cad-export", async (req, res) => {
         userEmail = userData?.email || "";
         isAdmin = userEmail.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
+        isPremium = isFullAccessPlan(userData?.plan);
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -445,7 +446,7 @@ app.post("/api/verify-doc-export", async (req, res) => {
         userEmail = userData?.email || "";
         isAdmin = userEmail.trim().toLowerCase() === "angeloperfecto31@gmail.com";
         isActive = userData?.isActive === true;
-        isPremium = userData?.plan === "premium" || userData?.plan === "Premium" || userData?.plan === "PREMIUM";
+        isPremium = isFullAccessPlan(userData?.plan);
       }
     } catch (dbError: any) {
       if (dbError.code !== 7 && !dbError.message?.includes('PERMISSION_DENIED')) {
@@ -487,36 +488,42 @@ async function calculateExpectedPrice(plan: string, isUpgrade: boolean): Promise
         const basicPrice = typeof pricingData?.basicPrice === 'number' ? pricingData.basicPrice : 999;
         const premiumPrice = typeof pricingData?.premiumPrice === 'number' ? pricingData.premiumPrice : 1499;
         const upgradePrice = typeof pricingData?.upgradePrice === 'number' ? pricingData.upgradePrice : 500;
+        const annualPrice = typeof pricingData?.annualPrice === 'number' ? pricingData.annualPrice : DEFAULT_PLAN_PRICES.annual;
+        const enterprisePrice = typeof pricingData?.enterprisePrice === 'number' ? pricingData.enterprisePrice : DEFAULT_PLAN_PRICES.enterprise;
+        const promoDiscountAnnual = typeof pricingData?.promoDiscountAnnual === 'number' ? pricingData.promoDiscountAnnual : 0;
+        const promoDiscountEnterprise = typeof pricingData?.promoDiscountEnterprise === 'number' ? pricingData.promoDiscountEnterprise : 0;
         const promoDiscountBasic = typeof pricingData?.promoDiscountBasic === 'number' ? pricingData.promoDiscountBasic : 0;
         const promoDiscountPremium = typeof pricingData?.promoDiscountPremium === 'number' ? pricingData.promoDiscountPremium : 0;
         const offerExpiry = pricingData?.offerExpiry || "";
         const offerTitle = pricingData?.offerTitle || "";
 
-        const hasValidPromo = promoDiscountBasic > 0 || promoDiscountPremium > 0 || !!offerTitle;
+        const hasValidPromo =
+          promoDiscountBasic > 0 || promoDiscountPremium > 0 || promoDiscountAnnual > 0 || promoDiscountEnterprise > 0 || !!offerTitle;
         const isOfferActive = !!(hasValidPromo && (!offerExpiry || offerExpiry.trim() === "" || new Date(offerExpiry) > new Date()));
 
         if (isUpgrade) {
           expectedAmount = upgradePrice;
         } else if (plan === "basic") {
           expectedAmount = (isOfferActive && promoDiscountBasic > 0) ? promoDiscountBasic : basicPrice;
+        } else if (plan === "annual") {
+          expectedAmount = (isOfferActive && promoDiscountAnnual > 0) ? promoDiscountAnnual : annualPrice;
+        } else if (plan === "enterprise") {
+          expectedAmount = (isOfferActive && promoDiscountEnterprise > 0) ? promoDiscountEnterprise : enterprisePrice;
         } else {
           expectedAmount = (isOfferActive && promoDiscountPremium > 0) ? promoDiscountPremium : premiumPrice;
         }
       } else {
         if (isUpgrade) expectedAmount = 500;
-        else if (plan === "basic") expectedAmount = 999;
-        else expectedAmount = 1499;
+        else expectedAmount = DEFAULT_PLAN_PRICES[plan as keyof typeof DEFAULT_PLAN_PRICES] ?? DEFAULT_PLAN_PRICES.premium;
       }
     } catch (e) {
       console.error("Error reading pricing from DB, using fallback:", e);
       if (isUpgrade) expectedAmount = 500;
-      else if (plan === "basic") expectedAmount = 999;
-      else expectedAmount = 1499;
+      else expectedAmount = DEFAULT_PLAN_PRICES[plan as keyof typeof DEFAULT_PLAN_PRICES] ?? DEFAULT_PLAN_PRICES.premium;
     }
   } else {
     if (isUpgrade) expectedAmount = 500;
-    else if (plan === "basic") expectedAmount = 999;
-    else expectedAmount = 1499;
+    else expectedAmount = DEFAULT_PLAN_PRICES[plan as keyof typeof DEFAULT_PLAN_PRICES] ?? DEFAULT_PLAN_PRICES.premium;
   }
   return expectedAmount;
 }
@@ -537,7 +544,7 @@ app.post("/api/create-checkout", async (req, res) => {
     const price = Math.round(expectedAmount * 100); // convert to centavos
     const name = isUpgrade 
       ? "Applet Premium Upgrade" 
-      : `Applet ${plan === 'basic' ? 'Basic' : 'Premium'} Plan Activation`;
+      : `Applet ${planLabel(plan || "premium")} Plan Activation${plan === "annual" ? " (12 Months)" : ""}`;
 
     const options = {
       method: "POST",
@@ -701,9 +708,7 @@ app.post("/api/verify-checkout", async (req, res) => {
               });
 
               const activatedAt = new Date().toISOString();
-              const expiresAt = (plan === "basic" || plan === "premium")
-                ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-                : null;
+              const expiresAt = planExpiryIso(plan);
 
               await db.collection("users").doc(userId).set(
                 {
@@ -834,9 +839,7 @@ app.post("/api/paymongo-webhook", async (req, res) => {
           console.log(`Webhook received: activating user ${userId} with plan ${plan} paid ${actualAmountPaid}`);
           
           const activatedAt = new Date().toISOString();
-          const expiresAt = (plan === "basic" || plan === "premium")
-            ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-            : null;
+          const expiresAt = planExpiryIso(plan);
 
           await db.collection("users").doc(userId).set(
             {

@@ -1,3 +1,4 @@
+import { isFullAccessPlan } from "./plans";
 import {
   PanelConfig,
   Circuit,
@@ -5303,10 +5304,7 @@ export const exportToCAD = (
             "angeloperfecto31@gmail.com";
           const isActive = userData?.isActive === true;
           const isPremium =
-            userData?.plan === "premium" ||
-            userData?.plan === "Premium" ||
-            userData?.plan === "PREMIUM" ||
-            (userData?.plan || "").toLowerCase() === "enterprise";
+            isFullAccessPlan(userData?.plan);
 
           if (!isAdmin && (!isActive || !isPremium)) {
             alert(

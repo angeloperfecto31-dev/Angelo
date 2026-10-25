@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { planExpiryIso } from "../utils/plans";
 import { collection, doc, setDoc, onSnapshot, addDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { 
@@ -107,6 +108,10 @@ export default function SubscriptionManager() {
       setEditIsLifetime(true);
       setEditExpiresAt("");
       setEditStatus("Active");
+    } else if (editPlan === "annual") {
+      // Annual runs 12 months: default the expiry one year from today (the admin can still change it)
+      setEditIsLifetime(false);
+      setEditExpiresAt((current) => current || planExpiryIso("annual") || "");
     }
   }, [editPlan]);
 
@@ -115,14 +120,16 @@ export default function SubscriptionManager() {
     setSaving(true);
     setMessage("");
 
+    // An Annual plan saved without a date gets the standard 12 months (expiring plans need an expiry)
+    const expiry = editIsLifetime ? null : (editExpiresAt || (editPlan === "annual" ? planExpiryIso("annual") : null));
     const updateData: any = {
       plan: editPlan,
       plan_name: editPlan,
       subscription_type: editIsLifetime ? "Lifetime" : "Standard",
       is_lifetime: editIsLifetime,
       status: editStatus,
-      expires_at: editIsLifetime ? null : (editExpiresAt || null),
-      expiresAt: editIsLifetime ? null : (editExpiresAt || null),
+      expires_at: expiry,
+      expiresAt: expiry,
       upgraded_by_admin: true,
       last_modified_by: "Admin",
       modified_at: new Date().toISOString(),
@@ -208,6 +215,7 @@ export default function SubscriptionManager() {
             <option value="all">All Plans</option>
             <option value="basic">Basic</option>
             <option value="premium">Premium</option>
+            <option value="annual">Annual</option>
             <option value="enterprise">Enterprise</option>
           </select>
         </div>
@@ -285,6 +293,7 @@ export default function SubscriptionManager() {
                   <span className={`inline-flex px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-md ${
                     (u.plan || "").toLowerCase() === "enterprise" ? "bg-amber-100 text-amber-700 border border-amber-200" :
                     (u.plan || "").toLowerCase() === "premium" ? "bg-indigo-100 text-indigo-700 border border-indigo-200" :
+                    (u.plan || "").toLowerCase() === "annual" ? "bg-emerald-100 text-emerald-700 border border-emerald-200" :
                     "bg-slate-100 text-slate-700 border border-slate-200"
                   }`}>
                     {u.plan || u.plan_name || (u.isActive ? "premium" : "basic")}
@@ -359,6 +368,7 @@ export default function SubscriptionManager() {
                 >
                   <option value="basic">Basic</option>
                   <option value="premium">Premium</option>
+                  <option value="annual">Annual (12 Months)</option>
                   <option value="enterprise">Enterprise</option>
                 </select>
               </div>

@@ -121,11 +121,13 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
   const email = userObj.email;
   const rawPlan = (userObj.plan || userObj.pendingVerification?.plan || "basic").toLowerCase();
   const isEnterprise = rawPlan === "enterprise";
+  const isAnnual = rawPlan === "annual";
   const isPremium = rawPlan === "premium" || isEnterprise;
   
   let basicPrice = 999;
   let premiumPrice = 1499;
   let enterprisePrice = 2999;
+  let annualPrice = 14990;
   let upgradePrice = 500;
   
   try {
@@ -136,6 +138,8 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
       if (typeof data.basicPrice === 'number') basicPrice = data.basicPrice;
       if (typeof data.premiumPrice === 'number') premiumPrice = data.premiumPrice;
       if (typeof data.upgradePrice === 'number') upgradePrice = data.upgradePrice;
+      if (typeof data.enterprisePrice === 'number') enterprisePrice = data.enterprisePrice;
+      if (typeof data.annualPrice === 'number') annualPrice = data.annualPrice;
     }
   } catch (err) {
     console.warn("Could not fetch pricing settings for invoice generation, using defaults:", err);
@@ -144,10 +148,10 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
   // Resolve amount and payment details
   let amountPaid = Number(userObj.amount || userObj.paymentAmount || userObj.pendingVerification?.amount || 0);
   if (amountPaid <= 0) {
-    amountPaid = userObj.isUpgrade ? upgradePrice : (isEnterprise ? enterprisePrice : (isPremium ? premiumPrice : basicPrice));
+    amountPaid = userObj.isUpgrade ? upgradePrice : (isEnterprise ? enterprisePrice : isAnnual ? annualPrice : (isPremium ? premiumPrice : basicPrice));
   }
 
-  let regPrice = isEnterprise ? enterprisePrice : (isPremium ? premiumPrice : basicPrice);
+  let regPrice = isEnterprise ? enterprisePrice : isAnnual ? annualPrice : (isPremium ? premiumPrice : basicPrice);
   if (userObj.isUpgrade) {
     regPrice = upgradePrice;
   }
@@ -176,7 +180,7 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
     userId: uid,
     userName,
     userEmail: email,
-    plan: isEnterprise ? "Enterprise (Lifetime)" : (userObj.isUpgrade ? "Premium (Upgrade)" : (isPremium ? "Premium (Standard)" : "Basic (Standard)")),
+    plan: isEnterprise ? "Enterprise (Lifetime)" : isAnnual ? "Annual (12 Months)" : (userObj.isUpgrade ? "Premium (Upgrade)" : (isPremium ? "Premium (Standard)" : "Basic (Standard)")),
     billingPeriod,
     paymentMethod,
     amountPaid,
@@ -501,8 +505,10 @@ export default function InvoiceManager({
     if (planFilter !== "all") {
       const isPremium = item.plan.toLowerCase().includes("premium");
       const isEnterprise = item.plan.toLowerCase().includes("enterprise");
+      const isAnnualPlan = item.plan.toLowerCase().includes("annual");
       if (planFilter === "premium" && !isPremium) return false;
-      if (planFilter === "basic" && (isPremium || isEnterprise)) return false;
+      if (planFilter === "annual" && !isAnnualPlan) return false;
+      if (planFilter === "basic" && (isPremium || isEnterprise || isAnnualPlan)) return false;
       if (planFilter === "enterprise" && !isEnterprise) return false;
     }
 
@@ -887,6 +893,7 @@ export default function InvoiceManager({
               >
                 <option value="all">⚡ All License Plans</option>
                 <option value="premium">Premium Pro License</option>
+                <option value="annual">Annual 12-Month License</option>
                 <option value="basic">Basic License</option>
               </select>
             </div>
