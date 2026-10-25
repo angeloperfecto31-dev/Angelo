@@ -577,8 +577,12 @@ export default function App() {
   // Premium / Enterprise modules. Basic accounts (and accounts whose plan is not loaded yet) are sent
   // to the upgrade page instead; every route that opens a module (sidebar, mobile menu, tab bar,
   // dashboard cards) goes through setActiveTab, so the check lives here.
-  const PREMIUM_ONLY_TABS = ["solar", "transformer", "bom"];
+  const PREMIUM_ONLY_TABS = ["solar", "transformer", "bom", "isc", "vd", "floor-plan", "lighting"];
   const PREMIUM_TAB_NAMES: Record<string, string> = {
+    isc: "Short Circuit",
+    vd: "Voltage Drop",
+    "floor-plan": "Floor Plan",
+    lighting: "Illumination",
     solar: "Solar Design",
     transformer: "Transformer Capacity",
     bom: "Bill of Materials (BOM)",
@@ -587,7 +591,7 @@ export default function App() {
   const setActiveTab = (tab: typeof activeTab) => {
     if (PREMIUM_ONLY_TABS.includes(tab) && !hasPremiumAccess) {
       alert(
-        `Premium Module Required\n\nThe ${PREMIUM_TAB_NAMES[tab]} module is available exclusively in the Premium and Enterprise plans. Please upgrade your subscription to unlock this module.`,
+        `Premium Module Required\n\nThe ${PREMIUM_TAB_NAMES[tab]} module is available exclusively in the Premium, Annual and Enterprise plans. Please upgrade your subscription to unlock this module.`,
       );
       setShowUpgrade(true);
       return;
@@ -4556,19 +4560,19 @@ export default function App() {
                     id: "isc",
                     label: "Short Circuit",
                     icon: ShieldAlert,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                   {
                     id: "vd",
                     label: "Voltage Drop",
                     icon: Ruler,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                   {
                     id: "lighting",
                     label: "Illumination",
                     icon: Lightbulb,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                   {
                     id: "system-sld",
@@ -4580,7 +4584,7 @@ export default function App() {
                     id: "floor-plan",
                     label: "Floor Plan",
                     icon: Map,
-                    requiresPremium: false,
+                    requiresPremium: true,
                   },
                   {
                     id: "current-calc",
@@ -4642,7 +4646,7 @@ export default function App() {
                       }
                       if (item.id === "bom" && userPlan === "basic" && !isAdmin) {
                         alert(
-                          `Premium Module Required\n\nThe Bill of Materials (BOM) module is available exclusively in the Premium and Enterprise plans. Please upgrade your subscription to unlock this module.`,
+                          `Premium Module Required\n\nThe Bill of Materials (BOM) module is available exclusively in the Premium, Annual and Enterprise plans. Please upgrade your subscription to unlock this module.`,
                         );
                         setShowUpgrade(true);
                         return;
@@ -5490,11 +5494,11 @@ export default function App() {
                       { id: "dashboard", label: "Dashboard", icon: Gauge, requiresPremium: false },
                       { id: "schedule", label: "Load Schedule", icon: Layout, requiresPremium: false },
                       { id: "power-suite", label: "Power Analysis Suite", icon: Zap, requiresPremium: true },
-                      { id: "isc", label: "Short Circuit", icon: ShieldAlert, requiresPremium: false },
-                      { id: "vd", label: "Voltage Drop", icon: Ruler, requiresPremium: false },
-                      { id: "lighting", label: "Illumination", icon: Lightbulb, requiresPremium: false },
+                      { id: "isc", label: "Short Circuit", icon: ShieldAlert, requiresPremium: true },
+                      { id: "vd", label: "Voltage Drop", icon: Ruler, requiresPremium: true },
+                      { id: "lighting", label: "Illumination", icon: Lightbulb, requiresPremium: true },
                       { id: "system-sld", label: "System SLD", icon: Network, requiresPremium: false },
-                      { id: "floor-plan", label: "Floor Plan", icon: Map, requiresPremium: false },
+                      { id: "floor-plan", label: "Floor Plan", icon: Map, requiresPremium: true },
                       { id: "current-calc", label: "PEC Calculator", icon: Calculator, requiresPremium: false },
                       { id: "egc", label: "EGC Sizer", icon: Hammer, requiresPremium: false },
                       { id: "transformer", label: "Transformer Capacity", icon: Cpu, requiresPremium: true },
@@ -5524,7 +5528,7 @@ export default function App() {
                             return;
                           }
                           if (item.id === "bom" && userPlan === "basic" && !isAdmin) {
-                            alert(`Premium Module Required\n\nThe Bill of Materials (BOM) module is available exclusively in the Premium and Enterprise plans. Please upgrade your subscription to unlock this module.`);
+                            alert(`Premium Module Required\n\nThe Bill of Materials (BOM) module is available exclusively in the Premium, Annual and Enterprise plans. Please upgrade your subscription to unlock this module.`);
                             setShowUpgrade(true);
                             return;
                           }
@@ -7594,7 +7598,7 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
-                  <ShortCircuitCalc
+                  {hasPremiumAccess && <ShortCircuitCalc
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
@@ -7608,7 +7612,7 @@ export default function App() {
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
-                  />
+                  />}
                 </motion.div>
               </div>
 
@@ -7630,7 +7634,7 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
-                  <VoltageDropCalc
+                  {hasPremiumAccess && <VoltageDropCalc
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
@@ -7646,7 +7650,7 @@ export default function App() {
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
                     isExporting={isExporting}
-                  />
+                  />}
                 </motion.div>
               </div>
 
@@ -7668,7 +7672,7 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
-                  <IlluminationCalc
+                  {hasPremiumAccess && <IlluminationCalc
                     panel={panel}
                     circuits={circuits}
                     subPanels={subPanels}
@@ -7681,7 +7685,7 @@ export default function App() {
                     onSnapshotCapture={handleAddIllumSnapshot}
                     snapshots={illumSnapshots}
                     userId={user?.uid}
-                  />
+                  />}
                 </motion.div>
               </div>
 
@@ -7768,10 +7772,10 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                   className="w-full flex justify-center"
                 >
-                  <FloorPlanUploader
+                  {hasPremiumAccess && <FloorPlanUploader
                     images={floorPlanImages}
                     setImages={setFloorPlanImages}
-                  />
+                  />}
                 </motion.div>
               </div>
 
