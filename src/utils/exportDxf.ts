@@ -1116,6 +1116,29 @@ const getPanelTableBottomY = (
 };
 
 // Main Export function accommodating Load Schedule AND Short Circuit results on a professional drawing
+/** Cascade paths shown in the Voltage Drop "Select Feeder / Branch Cascade Path" list */
+function listVdPathEndpoints(panel: PanelConfig, circuits: Circuit[] | undefined, subPanels: { id: string; panel: PanelConfig; circuits: Circuit[] }[] | undefined) {
+  const list: Array<{ id: string; name: string; type: "panel" | "circuit" }> = [];
+  list.push({ id: "main", name: `${panel?.designation || "Main Distribution Panel"} (MDP) Feeder`, type: "panel" });
+  (circuits || []).forEach((c) => {
+    if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+    if (c.linkedSubPanelId) return; // covered by the subpanel feeder path
+    list.push({ id: c.id, name: `MDP Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`, type: "circuit" });
+  });
+  (subPanels || []).forEach((sp) => {
+    list.push({ id: sp.id, name: `${sp.panel.designation || "Subpanel"} Feeder`, type: "panel" });
+    sp.circuits.forEach((c) => {
+      if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
+      list.push({ id: c.id, name: `${sp.panel.designation || "Subpanel"} Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`, type: "circuit" });
+    });
+  });
+  return list;
+}
+
+/** Cascade path rows per Voltage Drop SLD sheet (drawn at VD_PATH_SCALE of the single-path size) */
+const VD_PATHS_PER_SHEET = 5;
+const VD_PATH_SCALE = 0.75;
+
 export const exportToCAD = (
   panel: PanelConfig,
   circuits: Circuit[],
@@ -1443,6 +1466,8 @@ export const exportToCAD = (
   }
   
   const extraVdSheets = vdPages.length > 1 ? vdPages.length - 1 : 0;
+  // Every cascade path is exported; extra sheets continue the Voltage Drop SLD when they do not fit on one
+  const vdSldSheetCount = Math.max(1, Math.ceil(listVdPathEndpoints(panel, circuits, subPanels).length / VD_PATHS_PER_SHEET));
 
   let totalSheets = 4;
   if (exportMode === "ALL") {
@@ -1451,13 +1476,13 @@ export const exportToCAD = (
     if (hasIllumination) {
       extra += 1; // plus Illumination table
     }
-    totalSheets = baseSheets + extra + extraVdSheets + 1; // +1 for the Voltage Drop SLD sheet
+    totalSheets = baseSheets + extra + extraVdSheets + vdSldSheetCount; // + Voltage Drop SLD sheet(s)
   } else if (exportMode === "LOAD_SCHEDULE") {
     totalSheets = 2 + Math.ceil(allSubPanels.length / 2);
   } else if (exportMode === "SHORT_CIRCUIT") {
     totalSheets = 4; // Calculations Summary, SLD, Dedicated SC Table, and KAIC Compliance Audit Table
   } else if (exportMode === "VOLTAGE_DROP") {
-    totalSheets = 2 + extraVdSheets + 1; // Calculations Summary, Dedicated VD Table, and +1 for the Voltage Drop SLD sheet
+    totalSheets = 2 + extraVdSheets + vdSldSheetCount; // Calculations Summary, Dedicated VD Table, and the Voltage Drop SLD sheet(s)
   }
 
   // Pre-calculate variable sheet widths and their xOffsets
@@ -4237,24 +4262,8 @@ export const exportToCAD = (
     }
   }
 
-  // === DEDICATED NEW SHEET: VOLTAGE DROP SINGLE LINE DIAGRAM ===
+  // === VOLTAGE DROP SINGLE LINE DIAGRAM: every cascade path, VD_PATHS_PER_SHEET rows per sheet ===
   if (exportMode === "ALL" || exportMode === "VOLTAGE_DROP") {
-    const vdSldSheetIndex = globalSheetCursor++;
-    drawSheetTemplate(
-      vdSldSheetIndex,
-      panel,
-      "VOLTAGE DROP SINGLE LINE DIAGRAM",
-      "CASCADE PATH VOLTAGE REGULATION DIAGRAM",
-    );
-
-    const sConfSld = sheetConfigs[vdSldSheetIndex] || { w: baseW, xOffset: vdSldSheetIndex * 900 };
-    const xOffset = sConfSld.xOffset;
-    const yLevel = 280; // Center vertically on our 594mm high sheet
-    
-    // Resolve calculations, active path, and draw using mapX, mapY
-    const previousMode = b.isSLDMode;
-    b.isSLDMode = true;
-
     const activeCalculations = (vdCalculations || []).map(c => {
       const factor = c.systemType === "3PH" ? 1.732 : 2.0;
       const cLength = c.length || 0;
@@ -4285,202 +4294,70 @@ export const exportToCAD = (
       };
     });
 
-    const pathEndpoints: Array<{ id: string; name: string; type: string }> = [];
-    pathEndpoints.push({
-      id: "main",
-      name: `${panel?.designation || "Main Distribution Panel"} (MDP) Feeder`,
-      type: "panel",
-    });
-
-    if (circuits) {
-      circuits.forEach(c => {
-        if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-        if (c.linkedSubPanelId) return; // covered by subpanel option
-        pathEndpoints.push({
-          id: c.id,
-          name: `MDP Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
-          type: "circuit",
-        });
-      });
-    }
-
-    (subPanels || []).forEach(sp => {
-      pathEndpoints.push({
-        id: sp.id,
-        name: `${sp.panel.designation || "Subpanel"} Feeder`,
-        type: "panel",
-      });
-
-      sp.circuits.forEach(c => {
-        if (c.loadType === LoadType.SPACE || c.loadType === LoadType.SPARE) return;
-        pathEndpoints.push({
-          id: c.id,
-          name: `${sp.panel.designation || "Subpanel"} Circuit ${c.circuitNo}: ${c.description || "Branch Load"}`,
-          type: "circuit",
-        });
-      });
-    });
-
-    let endpointId = selectedEndpointId;
-    if (!endpointId || !pathEndpoints.some(ep => ep.id === endpointId)) {
-      endpointId = pathEndpoints[pathEndpoints.length - 1]?.id || "main";
-    }
-
-    const pathSegments: Array<{
+    type PathSegment = {
       id: string;
       fromName: string;
       toName: string;
       calc: typeof activeCalculations[0];
       type: "feeder" | "branch";
-    }> = [];
-
+    };
     const getCalc = (sourceId: string) => activeCalculations.find(c => c.source === sourceId);
+    const mdpName = panel?.designation || "MDP";
 
-    if (endpointId === "main") {
-      const mainCalc = getCalc("main");
-      if (mainCalc) {
-        pathSegments.push({
-          id: "segment-main",
-          fromName: "SERVICE ENTRANCE",
-          toName: panel?.designation || "MDP",
-          calc: mainCalc,
-          type: "feeder",
-        });
+    /** Segments from the service entrance to one path endpoint (as in the module's cascade view) */
+    const segmentsFor = (endpointId: string): PathSegment[] => {
+      const segs: PathSegment[] = [];
+      const pushMain = () => {
+        const mainCalc = getCalc("main");
+        if (mainCalc) segs.push({ id: "segment-main", fromName: "SERVICE ENTRANCE", toName: mdpName, calc: mainCalc, type: "feeder" });
+      };
+      if (endpointId === "main") {
+        pushMain();
+        return segs;
       }
-    } else {
       const matchedSp = (subPanels || []).find(sp => sp.id === endpointId);
       if (matchedSp) {
-        const mainCalc = getCalc("main");
-        if (mainCalc) {
-          pathSegments.push({
-            id: "segment-main",
-            fromName: "SERVICE ENTRANCE",
-            toName: panel?.designation || "MDP",
-            calc: mainCalc,
-            type: "feeder",
-          });
-        }
-
+        pushMain();
         const spCalc = getCalc(matchedSp.id);
         if (spCalc) {
-          let parentName = panel?.designation || "MDP";
-          if (circuits) {
-            const linkingCircuit = circuits.find(c => c.linkedSubPanelId === matchedSp.id);
-            if (!linkingCircuit) {
-              for (const otherSp of (subPanels || [])) {
-                if (otherSp.circuits.some(c => c.linkedSubPanelId === matchedSp.id)) {
-                  parentName = otherSp.panel.designation || "Subpanel";
-                  break;
-                }
+          let parentName = mdpName;
+          if (circuits && !circuits.find(c => c.linkedSubPanelId === matchedSp.id)) {
+            for (const otherSp of (subPanels || [])) {
+              if (otherSp.circuits.some(c => c.linkedSubPanelId === matchedSp.id)) {
+                parentName = otherSp.panel.designation || "Subpanel";
+                break;
               }
             }
           }
-          pathSegments.push({
-            id: `segment-${matchedSp.id}`,
-            fromName: parentName,
-            toName: matchedSp.panel.designation || "Subpanel",
-            calc: spCalc,
-            type: "feeder",
-          });
+          segs.push({ id: `segment-${matchedSp.id}`, fromName: parentName, toName: matchedSp.panel.designation || "Subpanel", calc: spCalc, type: "feeder" });
         }
-      } else {
-        const mdpCircuit = circuits?.find(c => c.id === endpointId);
-        if (mdpCircuit) {
-          const mainCalc = getCalc("main");
-          if (mainCalc) {
-            pathSegments.push({
-              id: "segment-main",
-              fromName: "SERVICE ENTRANCE",
-              toName: panel?.designation || "MDP",
-              calc: mainCalc,
-              type: "feeder",
-          });
-          }
-
-          const circuitCalc = getCalc(mdpCircuit.id);
-          if (circuitCalc) {
-            pathSegments.push({
-              id: `segment-${mdpCircuit.id}`,
-              fromName: panel?.designation || "MDP",
-              toName: mdpCircuit.description || `Circuit ${mdpCircuit.circuitNo} Endpoint`,
-              calc: circuitCalc,
-              type: "branch",
-            });
-          }
-        } else {
-          for (const sp of (subPanels || [])) {
-            const spCircuit = sp.circuits.find(c => c.id === endpointId);
-            if (spCircuit) {
-              const mainCalc = getCalc("main");
-              if (mainCalc) {
-                pathSegments.push({
-                  id: "segment-main",
-                  fromName: "SERVICE ENTRANCE",
-                  toName: panel?.designation || "MDP",
-                  calc: mainCalc,
-                  type: "feeder",
-                });
-              }
-
-              const spCalc = getCalc(sp.id);
-              if (spCalc) {
-                let parentName = panel?.designation || "MDP";
-                pathSegments.push({
-                  id: `segment-${sp.id}`,
-                  fromName: parentName,
-                  toName: sp.panel.designation || "Subpanel",
-                  calc: spCalc,
-                  type: "feeder",
-                });
-              }
-
-              const circuitCalc = getCalc(spCircuit.id);
-              if (circuitCalc) {
-                pathSegments.push({
-                  id: `segment-${spCircuit.id}`,
-                  fromName: sp.panel.designation || "Subpanel",
-                  toName: spCircuit.description || `Circuit ${spCircuit.circuitNo} Endpoint`,
-                  calc: circuitCalc,
-                  type: "branch",
-                });
-              }
-              break;
-            }
-          }
-        }
+        return segs;
       }
-    }
-
-    const numNodes = pathSegments.length + 1;
-    const startX = 120;
-    const endX = 800;
-    const stepX = (endX - startX) / (numNodes - 1 || 1);
-    const nodePositions = Array.from({ length: numNodes }, (_, i) => startX + i * stepX);
-
-    const mapX = (svgX: number) => xOffset + 20 + svgX * 0.75;
-    const mapY = (svgY: number) => yLevel - (svgY - 150);
-
-    // Draw Node 0: SERVICE ENTRANCE
-    const x_se = mapX(nodePositions[0]);
-    b.addLine(x_se - 25 * 0.75, yLevel - 15, x_se - 25 * 0.75, yLevel + 15, "SLD_GEOMETRY");
-    b.addLine(x_se - 25 * 0.75, yLevel + 15, x_se - 5 * 0.75, yLevel, "SLD_GEOMETRY");
-    b.addLine(x_se - 5 * 0.75, yLevel, x_se - 25 * 0.75, yLevel - 15, "SLD_GEOMETRY");
-
-    b.addLine(x_se - 40 * 0.75, yLevel - 10, x_se - 25 * 0.75, yLevel - 10, "SLD_GEOMETRY");
-    b.addLine(x_se - 40 * 0.75, yLevel, x_se - 25 * 0.75, yLevel, "SLD_GEOMETRY");
-    b.addLine(x_se - 40 * 0.75, yLevel + 10, x_se - 25 * 0.75, yLevel + 10, "SLD_GEOMETRY");
-
-    b.addLine(x_se - 25 * 0.75, yLevel - 15, x_se - 25 * 0.75, yLevel - 25, "SLD_GEOMETRY");
-    b.addLine(x_se - 30 * 0.75, yLevel - 25, x_se - 20 * 0.75, yLevel - 25, "SLD_GEOMETRY");
-    b.addLine(x_se - 28 * 0.75, yLevel - 28, x_se - 22 * 0.75, yLevel - 28, "SLD_GEOMETRY");
-    b.addLine(x_se - 26 * 0.75, yLevel - 31, x_se - 24 * 0.75, yLevel - 31, "SLD_GEOMETRY");
-
-    const systemVoltage = panel?.voltage || 230;
-    const systemPhase = panel?.system?.includes("3PH") ? "3Ø" : "1Ø";
-    const serviceEntranceLabel = `${systemVoltage}V, ${systemPhase}, 60Hz`;
-
-    b.addText("SERVICE ENTRANCE", x_se, mapY(200), 2.5, 0, "TEXT_HEADER", "center");
-    b.addText(serviceEntranceLabel, x_se, mapY(215), 2.0, 0, "TEXT_DATA", "center");
+      const mdpCircuit = circuits?.find(c => c.id === endpointId);
+      if (mdpCircuit) {
+        pushMain();
+        const circuitCalc = getCalc(mdpCircuit.id);
+        if (circuitCalc) {
+          segs.push({ id: `segment-${mdpCircuit.id}`, fromName: mdpName, toName: mdpCircuit.description || `Circuit ${mdpCircuit.circuitNo} Endpoint`, calc: circuitCalc, type: "branch" });
+        }
+        return segs;
+      }
+      for (const sp of (subPanels || [])) {
+        const spCircuit = sp.circuits.find(c => c.id === endpointId);
+        if (!spCircuit) continue;
+        pushMain();
+        const spCalc = getCalc(sp.id);
+        if (spCalc) {
+          segs.push({ id: `segment-${sp.id}`, fromName: mdpName, toName: sp.panel.designation || "Subpanel", calc: spCalc, type: "feeder" });
+        }
+        const circuitCalc = getCalc(spCircuit.id);
+        if (circuitCalc) {
+          segs.push({ id: `segment-${spCircuit.id}`, fromName: sp.panel.designation || "Subpanel", toName: spCircuit.description || `Circuit ${spCircuit.circuitNo} Endpoint`, calc: circuitCalc, type: "branch" });
+        }
+        break;
+      }
+      return segs;
+    };
 
     const getCircuitDetailsForCalc = (calc: VoltageDropCalculation) => {
       let cbRating = "";
@@ -4494,7 +4371,7 @@ export const exportToCAD = (
         
         const cSize = panel.mainOverrides?.conduitSize || calcData.mainFeeder.conduitSize || "25";
         const cType = panel.mainOverrides?.conduitType || panel.mainConduitType || "PVC";
-        conduitInfo = `${cSize}mm dia. ${cType}`;
+        conduitInfo = `${String(cSize).replace(/\s*mm$/i, "")}mm dia. ${cType}`;
       } else {
         let circuit = (circuits || []).find(c => c.id === calc.source || c.linkedSubPanelId === calc.source);
         if (!circuit) {
@@ -4512,7 +4389,7 @@ export const exportToCAD = (
           
           const cSize = circuit.conduitSizeOverride || circuit.conduitSize || "20";
           const cType = circuit.conduitTypeOverride || circuit.conduitType || "PVC";
-          conduitInfo = `${cSize}mm dia. ${cType}`;
+          conduitInfo = `${String(cSize).replace(/\s*mm$/i, "")}mm dia. ${cType}`;
         } else {
           const estCB = Math.max(15, Math.ceil((calc.loadA * 1.25) / 5) * 5);
           cbRating = `${estCB}AT/50AF`;
@@ -4522,119 +4399,180 @@ export const exportToCAD = (
       return { cbRating, conduitInfo };
     };
 
-    pathSegments.forEach((segment, idx) => {
-      const x1 = nodePositions[idx];
-      const x2 = nodePositions[idx + 1];
-      const vdPct = parseFloat(segment.calc.result.vdPercentage);
-      const isSegCompliant = segment.calc.result.isCompliant;
-      
-      const strokeColorLayer = isSegCompliant ? "SLD_GEOMETRY" : "SLD_FAULT";
-      const lineType = segment.type === "branch" ? "SLD_DASHED" : "SLD_GEOMETRY";
 
-      b.addLine(mapX(x1 + 25), yLevel, mapX(x2 - 25), yLevel, lineType);
+    const systemVoltage = panel?.voltage || 230;
+    const systemPhase = panel?.system?.includes("3PH") ? "3Ø" : "1Ø";
+    const serviceEntranceLabel = `${systemVoltage}V, ${systemPhase}, 60Hz`;
 
-      const bx1 = mapX(x1 + 30);
-      const bx2 = mapX(x2 - 30);
-      const by1 = mapY(100);
-      const by2 = mapY(110);
-      const by_mid = mapY(105);
-      
-      b.addLine(bx1, by1, bx1, by2, "SLD_DASHED");
-      b.addLine(bx1, by_mid, bx2, by_mid, "SLD_DASHED");
-      b.addLine(bx2, by1, bx2, by2, "SLD_DASHED");
+    /**
+     * One cascade path as a horizontal row centred on yc, nodes spread from xL to xR. Sizes are the
+     * single-path drawing scaled by sc (k = horizontal symbol unit, sc = vertical / text unit).
+     */
+    const drawPathRow = (pathSegments: PathSegment[], xL: number, xR: number, yc: number, sc: number) => {
+      const k = 0.75 * sc;
+      const Y = (svgY: number) => yc - (svgY - 150) * sc;
+      const numNodes = pathSegments.length + 1;
+      const step = (xR - xL) / (numNodes - 1 || 1);
+      const nodeX = (i: number) => xL + i * step;
 
-      const lengthText = `${segment.calc.length.toFixed(2)} m`;
-      b.addText(lengthText, mapX((x1 + x2) / 2), mapY(95), 2.5, 0, "TEXT_DATA", "center");
+      // Node 0: service entrance
+      const x_se = nodeX(0);
+      b.addLine(x_se - 25 * k, yc - 15 * sc, x_se - 25 * k, yc + 15 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 25 * k, yc + 15 * sc, x_se - 5 * k, yc, "SLD_GEOMETRY");
+      b.addLine(x_se - 5 * k, yc, x_se - 25 * k, yc - 15 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 40 * k, yc - 10 * sc, x_se - 25 * k, yc - 10 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 40 * k, yc, x_se - 25 * k, yc, "SLD_GEOMETRY");
+      b.addLine(x_se - 40 * k, yc + 10 * sc, x_se - 25 * k, yc + 10 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 25 * k, yc - 15 * sc, x_se - 25 * k, yc - 25 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 30 * k, yc - 25 * sc, x_se - 20 * k, yc - 25 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 28 * k, yc - 28 * sc, x_se - 22 * k, yc - 28 * sc, "SLD_GEOMETRY");
+      b.addLine(x_se - 26 * k, yc - 31 * sc, x_se - 24 * k, yc - 31 * sc, "SLD_GEOMETRY");
+      b.addText("SERVICE ENTRANCE", x_se, Y(200), 2.5 * sc, 0, "TEXT_HEADER", "center");
+      b.addText(serviceEntranceLabel, x_se, Y(215), 2.0 * sc, 0, "TEXT_DATA", "center");
 
-      const cx = mapX((x1 + x2) / 2);
-      b.addRect(cx - 28, mapY(143), cx + 28, mapY(125), "SLD_DASHED");
-      
-      const vdText = `Vd = ${segment.calc.result.vd}V (${vdPct.toFixed(2)}%)`;
-      b.addText(vdText, cx, mapY(138), 2.2, 0, strokeColorLayer, "center");
-
-      const sets = segment.calc.wireSets || 1;
-      const setsStr = sets > 1 ? `${sets}x ` : "";
-      const mat = getConductorMaterialForCalculation(segment.calc);
-      const ins = getInsulationTypeForCalculation(segment.calc);
-      const cableSizeText = `${setsStr}${segment.calc.wireSize} mm² ${mat === "Copper" ? "CU" : "AL"} ${ins}`;
-      b.addText(cableSizeText, mapX((x1 + x2) / 2), mapY(175), 2.2, 0, "TEXT_DATA", "center");
-
-      const { cbRating, conduitInfo } = getCircuitDetailsForCalc(segment.calc);
-      if (cbRating) {
-        b.addText(`CB: ${cbRating}`, mapX((x1 + x2) / 2), mapY(190), 2.0, 0, "TEXT_HEADER", "center");
+      if (pathSegments.length === 0) {
+        b.addText("NO VOLTAGE DROP CALCULATION FOR THIS PATH", (xL + xR) / 2, yc, 2.5 * sc, 0, "TEXT_DATA", "center");
+        return;
       }
-      if (conduitInfo) {
-        b.addText(`Conduit: ${conduitInfo}`, mapX((x1 + x2) / 2), mapY(202), 1.8, 0, "TEXT_DATA", "center");
-      }
-    });
 
-    pathSegments.forEach((segment, idx) => {
-      const nodeX = mapX(nodePositions[idx + 1]);
-      const isLastNode = idx === pathSegments.length - 1;
-      const isLastBranch = isLastNode && segment.type === "branch";
+      pathSegments.forEach((segment, idx) => {
+        const x1 = nodeX(idx);
+        const x2 = nodeX(idx + 1);
+        const vdPct = parseFloat(segment.calc.result.vdPercentage);
+        const strokeColorLayer = segment.calc.result.isCompliant ? "SLD_GEOMETRY" : "SLD_FAULT";
+        const lineType = segment.type === "branch" ? "SLD_DASHED" : "SLD_GEOMETRY";
+        const cx = (x1 + x2) / 2;
 
-      if (isLastBranch) {
-        let circuit = (circuits || []).find(c => c.id === segment.calc.source);
-        if (!circuit) {
-          for (const sp of (subPanels || [])) {
-            circuit = sp.circuits.find(c => c.id === segment.calc.source);
-            if (circuit) break;
+        b.addLine(x1 + 25 * k, yc, x2 - 25 * k, yc, lineType);
+
+        // Length dimension
+        const bx1 = x1 + 30 * k;
+        const bx2 = x2 - 30 * k;
+        b.addLine(bx1, Y(100), bx1, Y(110), "SLD_DASHED");
+        b.addLine(bx1, Y(105), bx2, Y(105), "SLD_DASHED");
+        b.addLine(bx2, Y(100), bx2, Y(110), "SLD_DASHED");
+        b.addText(`${segment.calc.length.toFixed(2)} m`, cx, Y(95), 2.5 * sc, 0, "TEXT_DATA", "center");
+
+        b.addRect(cx - 28 * sc, Y(143), cx + 28 * sc, Y(125), "SLD_DASHED");
+        b.addText(`Vd = ${segment.calc.result.vd}V (${vdPct.toFixed(2)}%)`, cx, Y(138), 2.2 * sc, 0, strokeColorLayer, "center");
+
+        const sets = segment.calc.wireSets || 1;
+        const setsStr = sets > 1 ? `${sets}x ` : "";
+        const mat = getConductorMaterialForCalculation(segment.calc);
+        const ins = getInsulationTypeForCalculation(segment.calc);
+        b.addText(`${setsStr}${segment.calc.wireSize} mm² ${mat === "Copper" ? "CU" : "AL"} ${ins}`, cx, Y(175), 2.2 * sc, 0, "TEXT_DATA", "center");
+
+        const { cbRating, conduitInfo } = getCircuitDetailsForCalc(segment.calc);
+        if (cbRating) b.addText(`CB: ${cbRating}`, cx, Y(190), 2.0 * sc, 0, "TEXT_HEADER", "center");
+        if (conduitInfo) b.addText(`Conduit: ${conduitInfo}`, cx, Y(202), 1.8 * sc, 0, "TEXT_DATA", "center");
+      });
+
+      pathSegments.forEach((segment, idx) => {
+        const nx = nodeX(idx + 1);
+        const isLastBranch = idx === pathSegments.length - 1 && segment.type === "branch";
+        const r = 10 * sc;
+        if (isLastBranch) {
+          let circuit = (circuits || []).find(c => c.id === segment.calc.source);
+          if (!circuit) {
+            for (const sp of (subPanels || [])) {
+              circuit = sp.circuits.find(c => c.id === segment.calc.source);
+              if (circuit) break;
+            }
           }
+          const loadType = circuit ? circuit.loadType : LoadType.CONVENIENCE_OUTLET;
+          let loadTypeLabel = "FINAL LOAD ENDPOINT";
+          switch (loadType) {
+            case LoadType.LIGHTING:
+              loadTypeLabel = "LIGHT FIXTURE";
+              b.addCircle(nx, yc, r, "SLD_GEOMETRY");
+              b.addLine(nx - 7 * sc, yc - 7 * sc, nx + 7 * sc, yc + 7 * sc, "SLD_GEOMETRY");
+              b.addLine(nx - 7 * sc, yc + 7 * sc, nx + 7 * sc, yc - 7 * sc, "SLD_GEOMETRY");
+              break;
+            case LoadType.MOTOR:
+              loadTypeLabel = "MOTOR INDUCTION";
+              b.addCircle(nx, yc, r, "SLD_GEOMETRY");
+              b.addText("M", nx, yc - 2.5 * sc, 5 * sc, 0, "TEXT_DATA", "center");
+              break;
+            case LoadType.AIR_CON:
+              loadTypeLabel = "AIR CONDITIONER";
+              b.addRect(nx - r, yc - r, nx + r, yc + r, "SLD_GEOMETRY");
+              b.addText("AC", nx, yc - 2.5 * sc, 4.5 * sc, 0, "TEXT_DATA", "center");
+              break;
+            case LoadType.POWER:
+              loadTypeLabel = "POWER OUTLET / RANGE";
+              b.addCircle(nx, yc, r, "SLD_GEOMETRY");
+              b.addText("P", nx, yc - 2.5 * sc, 5 * sc, 0, "TEXT_DATA", "center");
+              break;
+            case LoadType.CONVENIENCE_OUTLET:
+            default:
+              loadTypeLabel = "CONVENIENCE RECEPTACLE";
+              b.addCircle(nx, yc, r, "SLD_GEOMETRY");
+              b.addLine(nx - 3 * sc, yc - 13.5 * sc, nx - 3 * sc, yc + 13.5 * sc, "SLD_GEOMETRY");
+              b.addLine(nx + 3 * sc, yc - 13.5 * sc, nx + 3 * sc, yc + 13.5 * sc, "SLD_GEOMETRY");
+              b.addLine(nx, yc - 10 * sc, nx, yc - 16 * sc, "SLD_GEOMETRY");
+              b.addLine(nx - 4 * sc, yc - 16 * sc, nx + 4 * sc, yc - 16 * sc, "SLD_GEOMETRY");
+              b.addLine(nx - 2.5 * sc, yc - 18 * sc, nx + 2.5 * sc, yc - 18 * sc, "SLD_GEOMETRY");
+              b.addLine(nx - 1 * sc, yc - 20 * sc, nx + 1 * sc, yc - 20 * sc, "SLD_GEOMETRY");
+              break;
+          }
+          b.addText(segment.toName, nx, Y(192), 2.5 * sc, 0, "TEXT_HEADER", "center");
+          b.addText(loadTypeLabel, nx, Y(205), 2.0 * sc, 0, "TEXT_DATA", "center");
+        } else {
+          b.addRect(nx - r, yc - 15 * sc, nx + r, yc + 15 * sc, "SLD_GEOMETRY");
+          b.addLine(nx - r, yc - 15 * sc, nx + r, yc + 15 * sc, "SLD_GEOMETRY");
+          b.addText(segment.toName, nx, Y(185), 2.5 * sc, 0, "TEXT_HEADER", "center");
+          b.addText(segment.type === "feeder" ? "DIST. BOARD" : "SUB-PANEL", nx, Y(198), 2.0 * sc, 0, "TEXT_DATA", "center");
         }
-        
-        const loadType = circuit ? circuit.loadType : LoadType.CONVENIENCE_OUTLET;
-        let loadTypeLabel = "FINAL LOAD ENDPOINT";
+      });
+    };
 
-        switch (loadType) {
-          case LoadType.LIGHTING:
-            loadTypeLabel = "LIGHT FIXTURE";
-            b.addCircle(nodeX, yLevel, 10, "SLD_GEOMETRY");
-            b.addLine(nodeX - 7, yLevel - 7, nodeX + 7, yLevel + 7, "SLD_GEOMETRY");
-            b.addLine(nodeX - 7, yLevel + 7, nodeX + 7, yLevel - 7, "SLD_GEOMETRY");
-            break;
-            
-          case LoadType.MOTOR:
-            loadTypeLabel = "MOTOR INDUCTION";
-            b.addCircle(nodeX, yLevel, 10, "SLD_GEOMETRY");
-            b.addText("M", nodeX, yLevel - 2.5, 5, 0, "TEXT_DATA", "center");
-            break;
-            
-          case LoadType.AIR_CON:
-            loadTypeLabel = "AIR CONDITIONER";
-            b.addRect(nodeX - 10, yLevel - 10, nodeX + 10, yLevel + 10, "SLD_GEOMETRY");
-            b.addText("AC", nodeX, yLevel - 2.5, 4.5, 0, "TEXT_DATA", "center");
-            break;
-            
-          case LoadType.POWER:
-            loadTypeLabel = "POWER OUTLET / RANGE";
-            b.addCircle(nodeX, yLevel, 10, "SLD_GEOMETRY");
-            b.addText("P", nodeX, yLevel - 2.5, 5, 0, "TEXT_DATA", "center");
-            break;
-            
-          case LoadType.CONVENIENCE_OUTLET:
-          default:
-            loadTypeLabel = "CONVENIENCE RECEPTACLE";
-            b.addCircle(nodeX, yLevel, 10, "SLD_GEOMETRY");
-            b.addLine(nodeX - 3, yLevel - 13.5, nodeX - 3, yLevel + 13.5, "SLD_GEOMETRY");
-            b.addLine(nodeX + 3, yLevel - 13.5, nodeX + 3, yLevel + 13.5, "SLD_GEOMETRY");
-            
-            b.addLine(nodeX, yLevel - 10, nodeX, yLevel - 16, "SLD_GEOMETRY");
-            b.addLine(nodeX - 4, yLevel - 16, nodeX + 4, yLevel - 16, "SLD_GEOMETRY");
-            b.addLine(nodeX - 2.5, yLevel - 18, nodeX + 2.5, yLevel - 18, "SLD_GEOMETRY");
-            b.addLine(nodeX - 1, yLevel - 20, nodeX + 1, yLevel - 20, "SLD_GEOMETRY");
-            break;
-        }
+    // Every cascade path, in the module's order; the selected one (if any) is still included in sequence
+    const allPaths = listVdPathEndpoints(panel, circuits, subPanels);
+    void selectedEndpointId;
+    const previousMode = b.isSLDMode;
+    b.isSLDMode = true;
 
-        b.addText(segment.toName, nodeX, mapY(192), 2.5, 0, "TEXT_HEADER", "center");
-        b.addText(loadTypeLabel, nodeX, mapY(205), 2.0, 0, "TEXT_DATA", "center");
-      } else {
-        b.addRect(nodeX - 10, yLevel - 15, nodeX + 10, yLevel + 15, "SLD_GEOMETRY");
-        b.addLine(nodeX - 10, yLevel - 15, nodeX + 10, yLevel + 15, "SLD_GEOMETRY");
+    const sheetCount = Math.max(1, Math.ceil(allPaths.length / VD_PATHS_PER_SHEET));
+    const top = 572; // below the inner border
+    const bottom = 22;
+    const rowH = (top - bottom) / VD_PATHS_PER_SHEET;
 
-        b.addText(segment.toName, nodeX, mapY(185), 2.5, 0, "TEXT_HEADER", "center");
-        b.addText(segment.type === "feeder" ? "DIST. BOARD" : "SUB-PANEL", nodeX, mapY(198), 2.0, 0, "TEXT_DATA", "center");
-      }
-    });
+    for (let sheet = 0; sheet < sheetCount; sheet++) {
+      const vdSldSheetIndex = globalSheetCursor++;
+      drawSheetTemplate(
+        vdSldSheetIndex,
+        panel,
+        sheetCount > 1 ? `VOLTAGE DROP SINGLE LINE DIAGRAM (${sheet + 1} OF ${sheetCount})` : "VOLTAGE DROP SINGLE LINE DIAGRAM",
+        "CASCADE PATH VOLTAGE REGULATION DIAGRAM",
+      );
+      const sConfSld = sheetConfigs[vdSldSheetIndex] || { w: baseW, xOffset: vdSldSheetIndex * 900 };
+      const xOffset = sConfSld.xOffset;
+      const areaL = xOffset + 22;
+      const areaR = xOffset + sConfSld.w - 140; // clear of the title block strip
+      // Room for the service entrance symbol on the left and the end labels on the right
+      const xL = areaL + 70;
+      const xR = areaR - 55;
+
+      allPaths.slice(sheet * VD_PATHS_PER_SHEET, (sheet + 1) * VD_PATHS_PER_SHEET).forEach((ep, rowIdx) => {
+        const pathNo = sheet * VD_PATHS_PER_SHEET + rowIdx + 1;
+        const rowTop = top - rowIdx * rowH;
+        const yc = rowTop - 12 - 57 * VD_PATH_SCALE; // drawing spans about +57 to -68 units around the line
+        const segs = segmentsFor(ep.id);
+
+        // Row heading: path name and total voltage drop to the endpoint
+        const totalV = segs.reduce((sum, sg) => sum + (parseFloat(sg.calc.result.vd) || 0), 0);
+        const totalPct = (totalV / systemVoltage) * 100;
+        const allOk = segs.every(sg => sg.calc.result.isCompliant);
+        b.addText(`PATH ${pathNo}: ${ep.name}`, areaL + 4, rowTop - 6, 2.4, 0, "TEXT_HEADER", "left", (areaR - areaL) * 0.62);
+        b.addText(
+          segs.length ? `TOTAL PATH VD = ${totalV.toFixed(2)} V (${totalPct.toFixed(2)}%) - ${allOk ? "PEC COMPLIANT" : "EXCEEDS PEC LIMIT"}` : "NO CALCULATION",
+          areaR - 4, rowTop - 6, 2.0, 0, allOk ? "TEXT_DATA" : "SLD_FAULT", "right"
+        );
+        if (rowIdx > 0) b.addLine(areaL, rowTop, areaR, rowTop, "TABLE_GRID");
+
+        drawPathRow(segs, xL, xR, yc, VD_PATH_SCALE);
+      });
+    }
 
     b.isSLDMode = previousMode;
   }
