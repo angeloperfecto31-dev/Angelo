@@ -217,7 +217,8 @@ export default function PaymentScreen({
   const [showSaveConfirmModal, setShowSaveConfirmModal] = useState<boolean>(false);
   const [pricingHistory, setPricingHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
-  const [isAuditTrailHidden, setIsAuditTrailHidden] = useState<boolean>(false);
+  // Pricing audit trail starts hidden; the admin opens it with the Show button
+  const [isAuditTrailHidden, setIsAuditTrailHidden] = useState<boolean>(true);
 
   // Bulk Selection, Bulk Deletion, and Pagination States
   const [selectedUserUids, setSelectedUserUids] = useState<string[]>([]);
