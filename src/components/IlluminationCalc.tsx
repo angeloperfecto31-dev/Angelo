@@ -3538,6 +3538,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       length={params.roomLength} 
                       height={mountingHeight} 
                       ceilingHeight={ceilingHeight}
+                      workingPlaneHeight={workingPlaneHeight}
                       fixtures={calculation.fixtures} 
                       lumens={params.lumensPerFixture} 
                       showFalseColor={showFalseColor}
