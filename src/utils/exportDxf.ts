@@ -1,3 +1,4 @@
+import { getRoomOutline, polygonArea, polygonBounds, vertexLabel } from "./roomGeometry";
 import { isFullAccessPlan } from "./plans";
 import {
   PanelConfig,
@@ -5266,6 +5267,92 @@ export const exportToCAD = (
 
       ty -= rowH;
     });
+
+    // === ROOM LAYOUT PLANS: each room with a known outline, drawn to a standard scale ===
+    const planRooms = illumParams.savedRooms.filter(
+      (r: any) => (Array.isArray(r.roomPolygon) && r.roomPolygon.length >= 3) || (r.roomWidth > 0 && r.roomLength > 0)
+    );
+    const areaTop = ty - 18;
+    const areaBottom = 28;
+    const areaLeft = tableLeft;
+    const areaRight = xOffset + sConf.w - 145; // clear of the title block strip
+    if (planRooms.length > 0 && areaTop - areaBottom >= 90) {
+      b.addLayer("ILLUM_WALLS", 7);
+      b.addLayer("ILLUM_DIMS", 8);
+      b.addLayer("ILLUM_LUMINAIRES", 30);
+      b.addText("ROOM LAYOUT PLANS", areaLeft, areaTop + 6, 5.0, 0, "TEXT_TITLE", "left");
+
+      const cols = Math.min(planRooms.length, 3);
+      const maxRows = Math.max(1, Math.floor((areaTop - areaBottom) / 90));
+      const rows = Math.min(maxRows, Math.ceil(planRooms.length / cols));
+      const cellW = (areaRight - areaLeft) / cols;
+      const cellH = (areaTop - areaBottom) / rows;
+      const scales = [20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
+
+      planRooms.slice(0, rows * cols).forEach((room: any, idx: number) => {
+        const cx0 = areaLeft + (idx % cols) * cellW;
+        const cyTop = areaTop - Math.floor(idx / cols) * cellH;
+        const outline = getRoomOutline(room);
+        const bb = polygonBounds(outline);
+        // Paper units are millimetres: pick the smallest standard scale that fits the cell
+        const needed = Math.max((bb.width * 1000) / (cellW - 40), (bb.length * 1000) / (cellH - 48));
+        const scale = scales.find((sc) => sc >= needed) || Math.ceil(needed / 500) * 500;
+        const k = 1000 / scale;
+        const ox = cx0 + (cellW - bb.width * k) / 2;
+        const oyTop = cyTop - 20 - (cellH - 48 - bb.length * k) / 2;
+        const P = (x: number, z: number): [number, number] => [ox + (x - bb.minX) * k, oyTop - (z - bb.minZ) * k];
+
+        b.addRect(cx0 + 2, cyTop - cellH + 4, cx0 + cellW - 2, cyTop, "TABLE_GRID");
+        b.addText(
+          `${room.roomName} - ${outline.length === 4 && !room.roomPolygon ? "RECTANGLE" : String(room.roomShape || "custom").replace("-", " ").toUpperCase()} - A = ${polygonArea(outline).toFixed(2)} m²`,
+          cx0 + 6, cyTop - 8, 3.5, 0, "TEXT_HEADER", "left", cellW - 12
+        );
+        b.addText(`SCALE 1:${scale}`, cx0 + cellW - 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "right");
+
+        // Walls, wall lengths outside each wall, corner letters
+        const pts = outline.map(([x, z]) => P(x, z));
+        pts.forEach((a, i) => {
+          const c = pts[(i + 1) % pts.length];
+          b.addLine(a[0], a[1], c[0], c[1], "ILLUM_WALLS");
+          const dx = c[0] - a[0];
+          const dy = c[1] - a[1];
+          const len = Math.hypot(dx, dy);
+          if (len < 6) return;
+          // Outline is clockwise on screen, i.e. counter-clockwise with y up: outward normal is (-dy, dx)
+          const nx = -dy / len;
+          const ny = dx / len;
+          let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+          if (deg > 90) deg -= 180;
+          if (deg <= -90) deg += 180;
+          const [ox1, oz1] = outline[i];
+          const [ox2, oz2] = outline[(i + 1) % outline.length];
+          b.addText(
+            `${Math.hypot(ox2 - ox1, oz2 - oz1).toFixed(2)} m`,
+            (a[0] + c[0]) / 2 + nx * 4, (a[1] + c[1]) / 2 + ny * 4, 2.5, deg, "ILLUM_DIMS", "center"
+          );
+        });
+        pts.forEach((p, i) => b.addText(vertexLabel(i), p[0], p[1] + 2, 2.2, 0, "ILLUM_DIMS", "center"));
+
+        // Luminaires: circle with cross, numbered
+        const fixtures: { x: number; z: number }[] = Array.isArray(room.customPositions) ? room.customPositions : [];
+        const r = Math.max(1.2, Math.min(3, k * 0.25));
+        fixtures.forEach((fx, i) => {
+          const [px, py] = P(fx.x, fx.z);
+          b.addCircle(px, py, r, "ILLUM_LUMINAIRES");
+          b.addLine(px - r * 0.7, py - r * 0.7, px + r * 0.7, py + r * 0.7, "ILLUM_LUMINAIRES");
+          b.addLine(px - r * 0.7, py + r * 0.7, px + r * 0.7, py - r * 0.7, "ILLUM_LUMINAIRES");
+          b.addText(String(i + 1), px + r + 0.8, py + r * 0.4, 1.8, 0, "ILLUM_LUMINAIRES", "left");
+        });
+        b.addText(
+          `${fixtures.length > 0 ? fixtures.length : room.fixturesCount} x ${room.fixtureLightType || "LUMINAIRE"} | N ^`,
+          cx0 + 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "left", cellW - 60
+        );
+      });
+
+      if (planRooms.length > rows * cols) {
+        b.addText(`+ ${planRooms.length - rows * cols} more room(s): see the Illumination module layout PDF`, areaLeft, areaBottom - 6, 3.0, 0, "TEXT_DATA", "left");
+      }
+    }
   }
 
   const dxfString = b.toDxfString();

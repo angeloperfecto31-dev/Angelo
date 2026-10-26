@@ -23,6 +23,8 @@ import { Document, Packer, PageOrientation,
   TableOfContents
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
+import { getRoomOutline, hasIrregularOutline, polygonArea, polygonRoomIndex } from './roomGeometry';
+import { renderRoomLayoutPng, roomGeometrySummary, roomShapeLabel } from './illuminationRoomExport';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, calculateUnifiedVD } from './computeEngine';
 
@@ -1793,11 +1795,13 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   }
 
   // Active Parameters Section detail
-  const roomArea = illumParams.inputMode === 'area' ? illumParams.userArea : (illumParams.roomWidth * illumParams.roomLength);
+  // Room outline: W × L, or the L/T/U / custom polygon (area by shoelace, RI = 2A / (hrc · P))
+  const illumOutline = getRoomOutline(illumParams);
+  const roomArea = illumParams.inputMode === 'area' ? illumParams.userArea : Number(polygonArea(illumOutline).toFixed(2));
   let cu = illumParams.coefficientOfUtilization;
   if (illumParams.inputMode === 'dimensions' && illumParams.roomWidth > 0 && illumParams.roomLength > 0) {
     const hrc = Math.max(0.1, (illumParams.ceilingHeight || 2.7) - (illumParams.workingPlaneHeight || 0.75));
-    const roomIndex = (illumParams.roomWidth * illumParams.roomLength) / (hrc * (illumParams.roomWidth + illumParams.roomLength));
+    const roomIndex = polygonRoomIndex(illumOutline, hrc);
     const riFactor = roomIndex / (roomIndex + 0.5);
     const baselineRiFactor = 2.0 / 2.5; 
     cu = Math.min(0.95, Math.max(0.1, illumParams.coefficientOfUtilization * (riFactor / baselineRiFactor)));
@@ -1810,9 +1814,19 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   const qty = Math.ceil(expectedLumens / lumensPerFix);
   const workingPlaneHeight = illumParams.workingPlaneHeight || 0.75;
 
+  const geometryParagraphs: Paragraph[] = [];
+  if (illumParams.inputMode === 'dimensions' && hasIrregularOutline(illumParams)) {
+    const geo = roomGeometrySummary(illumOutline, illumParams.ceilingHeight || 2.7, illumParams.workingPlaneHeight || 0.75);
+    geometryParagraphs.push(
+      createParagraph(`• Room Geometry: ${roomShapeLabel(illumParams.roomShape)} with ${geo.walls.length} walls, perimeter $P = ${geo.perimeter.toFixed(2)}\\text{ m}$, bounding box ${geo.width.toFixed(2)} m × ${geo.length.toFixed(2)} m, room index $RI = \\frac{2A}{h_{rc} P} = ${geo.roomIndex.toFixed(2)}$`),
+      createParagraph(`• Wall Schedule: ${geo.walls.map(w => `${w.name} ${w.length.toFixed(2)} m (${w.angle.toFixed(0)}° at ${w.endVertex})`).join('; ')}`)
+    );
+  }
+
   docChildren.push(
     createSubHeader(`D. Current Under-Process Room Analysis`),
     createParagraph(`• Floor Cavity Layout Area: $A_{\\text{floor}} = ${roomArea}\\text{ m}^2$`),
+    ...geometryParagraphs,
     createParagraph(`• Task Required Illuminance: $E_{\\text{target}} = ${targetLux}\\text{ lx}$`),
     createParagraph(`• Luminaire Rated Luminous Flux: $\\Phi_{\\text{luminaire}} = ${lumensPerFix}\\text{ lm}$`),
     createParagraph(`• Coefficient of Utilization (CU) Geometric Factor: $CU = ${cu.toFixed(2)}$`),
@@ -1898,6 +1912,29 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
         docChildren.push(createParagraph(`1. Expected Room Profile:`));
         docChildren.push(createParagraph(`   • Target Illuminance ($E_{\\text{target}}$) = ${room.targetLux} lx`));
         docChildren.push(createParagraph(`   • Floor Area ($A_{\\text{floor}}$) = ${room.area.toFixed(2)} m²`));
+        if (hasIrregularOutline(room)) {
+          const roomOutline = getRoomOutline(room);
+          const geo = roomGeometrySummary(roomOutline, room.ceilingHeight || 2.7, room.workingPlaneHeight || 0.75);
+          docChildren.push(createParagraph(`   • Room Geometry = ${roomShapeLabel(room.roomShape)}, ${geo.walls.length} walls, perimeter ${geo.perimeter.toFixed(2)} m, RI = ${geo.roomIndex.toFixed(2)}`));
+          docChildren.push(createParagraph(`   • Walls = ${geo.walls.map(w => `${w.name} ${w.length.toFixed(2)} m`).join(', ')}`));
+          const plan = renderRoomLayoutPng({
+            roomName: room.roomName,
+            shape: room.roomShape,
+            outline: roomOutline,
+            fixtures: (room.customPositions || []).map(c => ({ x: c.x, z: c.z })),
+            ceilingHeight: room.ceilingHeight || 2.7,
+            workingPlaneHeight: room.workingPlaneHeight || 0.75,
+            mountingHeight: room.mountingHeight || 1.95,
+            targetLux: room.targetLux,
+            fixtureType: room.fixtureLightType || 'LED',
+            fixtureLumens: room.fixtureLumens || 0,
+            fixtureWattage: room.fixtureWattage || 0,
+          });
+          if (plan) {
+            docChildren.push(createParagraph(`   Room layout plan (luminaires numbered, dimensions in metres):`));
+            await addImageToDoc(plan);
+          }
+        }
         docChildren.push(createParagraph(`   • Selected Fixture Type = ${room.fixtureLightType || "Custom"}`));
         if (room.fixtureLumens && room.fixtureWattage) {
           docChildren.push(createParagraph(`   • Fixture Luminous Flux ($\\Phi_{\\text{luminaire}}$) = ${room.fixtureLumens.toLocaleString()} lm`));

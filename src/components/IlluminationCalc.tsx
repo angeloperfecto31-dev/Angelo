@@ -51,6 +51,9 @@ import { toPng } from 'html-to-image';
 import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition, PanelConfig } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
+import RoomShapeEditor from './RoomShapeEditor';
+import { RoomLayoutData, exportIlluminationLayoutPdf, roomGeometrySummary, roomShapeLabel } from '../utils/illuminationRoomExport';
+import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
 
 export interface IlluminationCalcProps {
   panel?: PanelConfig;
@@ -518,7 +521,36 @@ function getPredefinedFixtureDefaults(fixtureId: string, isCustom: boolean) {
 
 import { handleFirestoreError, OperationType } from '../utils/firestoreError';
 
+/** Evenly spread positions of one fixture type inside a room outline (L/T/U or custom polygon) */
+function outlineLayoutFor(af: ActiveFixtureSelection, afIdx: number, typeCount: number, outline: RoomPoint[]): PlacedFixtureDragPosition[] {
+  return placePointsInPolygon(outline, af.quantity || 0).map(([x, z], i) => {
+    let px = x;
+    let pz = z;
+    if (typeCount > 1) {
+      // Same 15 cm stagger as the rectangular layout so several types do not stack on one spot
+      const theta = (afIdx / typeCount) * 2 * Math.PI;
+      [px, pz] = clampPointToPolygon(px + 0.15 * Math.cos(theta), pz + 0.15 * Math.sin(theta), outline, 0.05);
+    }
+    return {
+      id: `fixture-${af.fixtureId}-${afIdx}-p${i}-${Math.random().toString(36).substr(2, 4)}`,
+      fixtureId: af.fixtureId,
+      lightType: af.lightType,
+      x: Number(px.toFixed(3)),
+      z: Number(pz.toFixed(3)),
+      lumens: af.lumens,
+      wattage: af.wattage,
+      activeFixtureId: af.id
+    };
+  });
+}
+
 export default function IlluminationCalc({ panel, circuits, subPanels, vdCalculations, setCircuits, setActiveTab, activeTab, params, setParams, onSnapshotCapture, snapshots, userId }: IlluminationCalcProps) {
+  // Room outline in metres: the W × L rectangle, or the L/T/U preset / custom polygon
+  const roomOutline = useMemo(() => getRoomOutline(params), [params.roomShape, params.roomPolygon, params.roomWidth, params.roomLength]);
+  const isIrregularRoom = hasIrregularOutline(params);
+  const roomFloorArea = params.inputMode === 'area' ? params.userArea : polygonArea(roomOutline);
+  const lastOutlineKeyRef = useRef<string | null>(null);
+
   const [showWizard, setShowWizard] = useState<boolean>(true);
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
 
@@ -1039,7 +1071,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   };
 
   const handleAutoRecommend = () => {
-    const area = params.inputMode === 'area' ? params.userArea : (params.roomWidth * params.roomLength);
+    const area = roomFloorArea;
     const roomNameUpper = (params.roomName || params.targetRoomName || 'General Office').toUpperCase();
     
     // Choose fixture type from library
@@ -1070,8 +1102,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     
     // Calculate Room Index & Adjusted CU
     const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
+    // RI = 2A / (hrc · P): the same as L·W / (hrc · (L + W)) for a rectangle, and valid for L/T/U and polygon rooms
     const roomIndex = (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0)
-      ? (params.roomWidth * params.roomLength) / (hrc * (params.roomWidth + params.roomLength))
+      ? polygonRoomIndex(roomOutline, hrc)
       : 2.0;
     const riFactor = roomIndex / (roomIndex + 0.5);
     const baselineRiFactor = 2.0 / 2.5;
@@ -1093,7 +1126,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       cols = Math.max(1, Math.round(Math.sqrt(fixturesCount)));
       rows = Math.ceil(fixturesCount / cols);
     }
-    const finalCount = cols * rows;
+    // A full grid for rectangles; irregular rooms take the exact count (laid out inside the outline)
+    const finalCount = isIrregularRoom ? fixturesCount : cols * rows;
 
     // Build active fixtures payload
     const defaultsSeed = getPredefinedFixtureDefaults(selectedF.id, false);
@@ -1667,8 +1701,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       const expectedTotalQty = params.activeFixtures.reduce((sum, f) => sum + (f.quantity || 0), 0);
       const currentQty = params.customPositions ? params.customPositions.length : 0;
       
+      // Irregular rooms re-run the layout whenever the outline changes (rectangles keep manual positions and clamp)
+      const outlineKey = isIrregularRoom ? JSON.stringify(roomOutline) : 'rect';
+      const outlineChanged = lastOutlineKeyRef.current !== null && lastOutlineKeyRef.current !== outlineKey;
+      lastOutlineKeyRef.current = outlineKey;
+
       if (expectedTotalQty > 0) {
-        if (expectedTotalQty !== currentQty) {
+        if (expectedTotalQty !== currentQty || outlineChanged) {
           // Generate uniform spaced coordinates
           const list: PlacedFixtureDragPosition[] = [];
           const w = params.roomWidth || 4;
@@ -1678,6 +1717,10 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
           params.activeFixtures.forEach((af, afIdx) => {
             const q = af.quantity || 0;
             if (q <= 0) return;
+            if (isIrregularRoom) {
+              list.push(...outlineLayoutFor(af, afIdx, params.activeFixtures!.length, roomOutline));
+              return;
+            }
             
             let cols = Math.ceil(Math.sqrt(q));
             let rows = Math.ceil(q / cols);
@@ -1762,10 +1805,11 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         }
       }
     }
-  }, [params.activeFixtures, params.roomWidth, params.roomLength]);
+  }, [params.activeFixtures, params.roomWidth, params.roomLength, roomOutline]);
 
   // Keep existing coordinates within room boundary when room size is edited
   useEffect(() => {
+    if (isIrregularRoom) return;
     if (params.customPositions && params.customPositions.length > 0) {
       const w = params.roomWidth || 4;
       const l = params.roomLength || 5;
@@ -1796,7 +1840,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         }));
       }
     }
-  }, [params.roomWidth, params.roomLength]);
+  }, [params.roomWidth, params.roomLength, roomOutline]);
 
   // Advanced DIALux evo inputs managed inside the component
   const [showFalseColor, setShowFalseColor] = useState(false);
@@ -1887,6 +1931,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     // Clamp coordinates with a safe boundary buffer (5cm inside walls)
     proposedMeterX = Math.max(0.05, Math.min(w - 0.05, proposedMeterX));
     proposedMeterZ = Math.max(0.05, Math.min(l - 0.05, proposedMeterZ));
+    if (isIrregularRoom) {
+      [proposedMeterX, proposedMeterZ] = clampPointToPolygon(proposedMeterX, proposedMeterZ, roomOutline, 0.05);
+    }
 
     setParams(prev => {
       if (!prev.customPositions) return prev;
@@ -2037,12 +2084,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   // Primary calculations
   const calculation = useMemo(() => {
-    const area = params.inputMode === 'area' ? params.userArea : params.roomWidth * params.roomLength;
+    const area = roomFloorArea;
     
     // Calculate Room Index to adjust CU dynamically based on ceiling height
     const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
+    // RI = 2A / (hrc · P): the same as L·W / (hrc · (L + W)) for a rectangle, and valid for L/T/U and polygon rooms
     const roomIndex = (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0)
-      ? (params.roomWidth * params.roomLength) / (hrc * (params.roomWidth + params.roomLength))
+      ? polygonRoomIndex(roomOutline, hrc)
       : 2.0;
 
     let effectiveCU = params.coefficientOfUtilization;
@@ -2234,6 +2282,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       params.activeFixtures.forEach(af => {
         const q = af.quantity || 0;
         if (q <= 0) return;
+        if (isIrregularRoom) {
+          placePointsInPolygon(roomOutline, q).forEach(([x, z]) => fixtureCoords.push({
+            x, z, lumens: af.lumens, coefficientOfUtilization: params.coefficientOfUtilization, maintenanceFactor: params.maintenanceFactor, fixtureId: af.fixtureId, rotationDegrees: 0
+          }));
+          return;
+        }
         
         let cols = Math.ceil(Math.sqrt(q));
         let rows = Math.ceil(q / cols);
@@ -2270,7 +2324,11 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         rows = Math.ceil(fixturesCount / cols);
       }
       
-      if (fixturesCount > 0 && cols > 0 && rows > 0) {
+      if (isIrregularRoom && fixturesCount > 0) {
+        placePointsInPolygon(roomOutline, fixturesCount).forEach(([x, z]) => fixtureCoords.push({
+          x, z, lumens: activeFixture.lumens, coefficientOfUtilization: params.coefficientOfUtilization, maintenanceFactor: params.maintenanceFactor, fixtureId: activeFixture.id, rotationDegrees: 0
+        }));
+      } else if (fixturesCount > 0 && cols > 0 && rows > 0) {
         const stepZ = l / rows;
         for (let r = 0; r < rows; r++) {
           const startIdx = r * cols;
@@ -2297,16 +2355,22 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     // Constant sky background lux based on sky condition
     const skyIllum = skyCondition === 'clear' ? 40000 : skyCondition === 'partly' ? 20000 : 8000;
     
-    const grid: number[][] = [];
+    // Cells outside an irregular outline are null (not on the floor)
+    const grid: (number | null)[][] = [];
+    let sampleCount = 0;
     let minLux = 100000;
     let maxLux = 0;
     let totalLuxSum = 0;
 
     for (let rIdx = 0; rIdx < 5; rIdx++) {
-      const row: number[] = [];
+      const row: (number | null)[] = [];
       const z = l * (0.1 + rIdx * 0.2); // samples from 10% to 90%
       for (let cIdx = 0; cIdx < 5; cIdx++) {
         const x = w * (0.1 + cIdx * 0.2);
+        if (isIrregularRoom && !pointInPolygon(x, z, roomOutline)) {
+          row.push(null);
+          continue;
+        }
         
         let directLux = 0;
         fixtureCoords.forEach(fixture => {
@@ -2318,7 +2382,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         if (enableDaylight) {
           // Daylight factor decreases exponentially from Window position (placed on North edge, z = 0)
           const distToWindow = z; // distance from North Wall (z = 0)
-          const daylightFactorAtWall = 0.08 * (windowArea / (w * l)) * 100; // Peak Daylight factor
+          const daylightFactorAtWall = 0.08 * (windowArea / (polygonArea(roomOutline) || w * l)) * 100; // Peak Daylight factor
           const daylightFactorAtPoint = daylightFactorAtWall * Math.exp(-0.5 * distToWindow);
           daylightPointLux = (daylightFactorAtPoint * skyIllum) / 100;
         }
@@ -2328,12 +2392,14 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         if (pointLux < minLux) minLux = pointLux;
         if (pointLux > maxLux) maxLux = pointLux;
         totalLuxSum += pointLux;
+        sampleCount++;
         row.push(pointLux);
       }
       grid.push(row);
     }
 
-    const calculatedAvg = Math.round(totalLuxSum / 25);
+    if (sampleCount === 0) minLux = 0;
+    const calculatedAvg = Math.round(totalLuxSum / Math.max(1, sampleCount));
     const uniformityU0 = calculatedAvg > 0 ? Number((minLux / calculatedAvg).toFixed(2)) : 0;
     const uniformityU1 = maxLux > 0 ? Number((minLux / maxLux).toFixed(2)) : 0;
 
@@ -2388,6 +2454,34 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     return { value: ugrValue, assessment, labelColor, description };
   }, [params.activeFixtures, calculation.fixtures, installedQuantity, params.isManualQuantity, params.manualQuantity, activeFixture.lumens, params.roomWidth, params.roomLength, mountingHeight]);
 
+  /** Current room for the layout sheet (PDF) and the CAD / Word exports */
+  const buildRoomLayoutData = (): RoomLayoutData => {
+    const placed = params.customPositions && params.customPositions.length > 0
+      ? params.customPositions.map(cp => ({ x: cp.x, z: cp.z }))
+      : placePointsInPolygon(roomOutline, calculation.fixtures).map(([x, z]) => ({ x, z }));
+    const types = params.activeFixtures || [];
+    return {
+      roomName: params.roomName || params.targetRoomName || 'Room',
+      shape: isIrregularRoom ? params.roomShape : 'rectangle',
+      outline: roomOutline,
+      fixtures: placed,
+      ceilingHeight,
+      workingPlaneHeight,
+      mountingHeight,
+      targetLux: params.targetLux,
+      fixtureType: types.length > 1 ? `Combined design (${types.length} types)` : (types[0]?.lightType || activeFixture.lightType || 'LED'),
+      fixtureLumens: types.length === 1 ? types[0].lumens : activeFixture.lumens,
+      fixtureWattage: types.length === 1 ? types[0].wattage : activeFixture.wattage,
+      coefficientOfUtilization: Number(calculation.effectiveCU) || params.coefficientOfUtilization,
+      maintenanceFactor: params.maintenanceFactor,
+      averageLux: luxGridData.averageLux,
+      minLux: luxGridData.minLux,
+      maxLux: luxGridData.maxLux,
+      uniformityU0: luxGridData.uniformityU0,
+      luxGrid: luxGridData.grid,
+    };
+  };
+
   // Smart Daylight Integration Energy Savings
   const daylightSavings = useMemo(() => {
     if (!enableDaylight) {
@@ -2399,7 +2493,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     }
 
     const skyIllum = skyCondition === 'clear' ? 40000 : skyCondition === 'partly' ? 20000 : 8000;
-    const area = params.roomWidth * params.roomLength || 20;
+    const area = polygonArea(roomOutline) || 20;
     // Estimated average natural daylight level falling on Working Plane
     const daylightAvgLux = Math.round((skyIllum * 0.05 * windowArea) / area);
     
@@ -2413,7 +2507,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       energySavingPercent: Math.round(dimmingPercent * 0.9), // 90% efficiency of dims
       averageDaylightLux: daylightAvgLux
     };
-  }, [enableDaylight, skyCondition, windowArea, params.roomWidth, params.roomLength, params.targetLux]);
+  }, [enableDaylight, skyCondition, windowArea, params.roomWidth, params.roomLength, params.targetLux, roomOutline]);
 
   // Energy Consumption & Lighting Power Density (LPD) Audit
   const energyAudit = useMemo(() => {
@@ -2529,7 +2623,11 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       totalLumens: totalLumensVal,
       totalWattage: totalVA,
       fixtureWattage: isCombined ? Math.round(totalVA / totalQty) : activeFixture.wattage,
-      fixtureLumens: isCombined ? Math.round(totalLumensVal / totalQty) : activeFixture.lumens
+      fixtureLumens: isCombined ? Math.round(totalLumensVal / totalQty) : activeFixture.lumens,
+      roomWidth: params.roomWidth,
+      roomLength: params.roomLength,
+      ...(isIrregularRoom ? { roomShape: params.roomShape, roomPolygon: toRoomVertices(roomOutline) } : {}),
+      ...(params.customPositions && params.customPositions.length > 0 ? { customPositions: params.customPositions } : {})
     };
 
     if (onSnapshotCapture) {
@@ -2744,16 +2842,15 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
             </div>
 
             {params.inputMode === 'dimensions' ? (
-              <>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Width (m)</label>
-                  <input type="number" step="0.1" value={params.roomWidth} onChange={e => setParams({...params, roomWidth: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Length (m)</label>
-                  <input type="number" step="0.1" value={params.roomLength} onChange={e => setParams({...params, roomLength: parseFloat(e.target.value)})} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-lg text-sm transition-colors focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                </div>
-              </>
+              <RoomShapeEditor
+                shape={params.roomShape || 'rectangle'}
+                dims={params.roomShapeDims}
+                polygon={toRoomPoints(params.roomPolygon)}
+                width={params.roomWidth}
+                length={params.roomLength}
+                cavityHeight={Math.max(0.1, ceilingHeight - workingPlaneHeight)}
+                onChange={(next) => setParams(prev => ({ ...prev, ...next, roomPolygon: toRoomVertices(next.roomPolygon) }))}
+              />
              ) : (
               <div className="space-y-1.5 md:col-span-2">
                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Area (m²)</label>
@@ -3354,8 +3451,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       </button>
                       <h4 className="text-sm font-black text-slate-800 mb-1">{room.roomName || 'Unnamed Room'}</h4>
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider space-y-1">
-                        <p>Dimensions: {room.roomWidth}m × {room.roomLength}m</p>
-                        <p>Area: {(room.roomWidth * room.roomLength).toFixed(1)} m²</p>
+                        <p>Dimensions: {room.roomWidth}m × {room.roomLength}m{hasIrregularOutline(room) ? ` (${roomShapeLabel(room.roomShape)})` : ''}</p>
+                        <p>Area: {(hasIrregularOutline(room) ? polygonArea(getRoomOutline(room)) : room.roomWidth * room.roomLength).toFixed(1)} m²</p>
                         <p>Target Lux: {room.targetLux} lx</p>
                       </div>
                       <button 
@@ -3376,7 +3473,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                         ...params, 
                         id: crypto.randomUUID(),
                         roomName: params.roomName || params.targetRoomName || 'Unnamed Room',
-                        area: params.inputMode === 'area' ? params.userArea : (params.roomWidth * params.roomLength),
+                        area: roomFloorArea,
                         fixturesCount: calculation.fixtures,
                         totalLumens: calculation.fixtures * (activeFixture?.lumens || 0),
                         totalWattage: calculation.fixtures * (activeFixture?.wattage || 0)
@@ -3460,6 +3557,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       fixtureDistributionType={params.fixtureDistributionType}
                       activeFixtures={params.activeFixtures}
                       customPositions={params.customPositions}
+                      roomPolygon={isIrregularRoom ? roomOutline : undefined}
                     />
                   ) : (
                     // 2D Drag-and-drop Layout Panel
@@ -3668,6 +3766,10 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                           for (let cx = 0; cx < 64; cx++) {
                                             const rx = (cx / 63) * w;
                                             const rz = (cz / 63) * l;
+                                            if (isIrregularRoom && !pointInPolygon(rx, rz, roomOutline)) {
+                                              imgData.data[(cz * 64 + cx) * 4 + 3] = 0;
+                                              continue;
+                                            }
                                             
                                             let pointLuxVal = 0;
                                             activeFixts.forEach(cp => {
@@ -3675,7 +3777,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                             });
                                             
                                             if (enableDaylight) {
-                                              const daylightFactorAtWall = 0.08 * (windowArea / (w * l)) * 100;
+                                              const daylightFactorAtWall = 0.08 * (windowArea / (polygonArea(roomOutline) || w * l)) * 100;
                                               const daylightFactorAtPoint = daylightFactorAtWall * Math.exp(-0.5 * rz);
                                               pointLuxVal += (daylightFactorAtPoint * skyIllum) / 100;
                                             }
@@ -3713,6 +3815,37 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                   style={{ imageRendering: 'pixelated' }}
                                 />
                               )}
+
+                              {/* Irregular room: shade the area outside the outline and draw its walls with lengths */}
+                              {isIrregularRoom && (() => {
+                                const toPx = ([x, z]: RoomPoint): [number, number] => [(x / w) * pixW, (z / l) * pixL];
+                                const outlinePath = roomOutline.map((p, i) => `${i === 0 ? 'M' : 'L'}${toPx(p)[0].toFixed(1)},${toPx(p)[1].toFixed(1)}`).join(' ') + ' Z';
+                                return (
+                                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox={`0 0 ${pixW} ${pixL}`} preserveAspectRatio="none">
+                                    <path fillRule="evenodd" d={`M0,0 H${pixW} V${pixL} H0 Z ${outlinePath}`} fill="#0b1120" fillOpacity={0.94} />
+                                    <path d={outlinePath} fill="none" stroke="#94a3b8" strokeWidth={4} strokeLinejoin="round" />
+                                    {roomOutline.map((a, i) => {
+                                      const b = roomOutline[(i + 1) % roomOutline.length];
+                                      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+                                      const [ax, az] = toPx(a);
+                                      const [bx, bz] = toPx(b);
+                                      const pl = Math.hypot(bx - ax, bz - az) || 1;
+                                      if (pl < 34) return null;
+                                      // Inside the room: the inward normal of a clockwise outline
+                                      const mx = (ax + bx) / 2 - ((bz - az) / pl) * 10;
+                                      const mz = (az + bz) / 2 + ((bx - ax) / pl) * 10;
+                                      let deg = (Math.atan2(bz - az, bx - ax) * 180) / Math.PI;
+                                      if (deg > 90) deg -= 180;
+                                      if (deg < -90) deg += 180;
+                                      return (
+                                        <text key={`wl${i}`} x={mx} y={mz} transform={`rotate(${deg} ${mx} ${mz})`} textAnchor="middle" dominantBaseline="middle" fill="#7dd3fc" style={{ fontSize: 9, fontWeight: 800, fontFamily: 'ui-monospace, monospace' }}>
+                                          {len.toFixed(2)} m
+                                        </text>
+                                      );
+                                    })}
+                                  </svg>
+                                );
+                              })()}
 
                               {/* Floor Plan Objects (SVG Overlay) */}
                               <svg className="absolute inset-0 w-full h-full pointer-events-none z-15">
@@ -3895,6 +4028,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                 const sensorZPct = (0.1 + rIdx * 0.2) * 100;
                                 return row.map((luxVal, cIdx) => {
                                   const sensorXPct = (0.1 + cIdx * 0.2) * 100;
+                                  if (luxVal === null) return null;
                                   return (
                                     <div 
                                       key={`sensor-${rIdx}-${cIdx}`}
@@ -3996,7 +4130,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                         {/* Drag and Drop instructions instructions footer */}
                         <div className="absolute bottom-3 text-center w-full px-4 pointer-events-none">
                           <span className="text-[10px] font-bold text-slate-400">
-                            Hold & Drag any fixture to update illumination results in real-time. Room boundaries: {params.roomWidth}m (width) by {params.roomLength}m (length).
+                            Hold & Drag any fixture to update illumination results in real-time. {isIrregularRoom
+                              ? <>Room outline: {ROOM_SHAPES.find(r => r.id === params.roomShape)?.label}, {roomOutline.length} walls, {polygonArea(roomOutline).toFixed(2)} m² (bounding box {params.roomWidth.toFixed(2)} × {params.roomLength.toFixed(2)} m).</>
+                              : <>Room boundaries: {params.roomWidth}m (width) by {params.roomLength}m (length).</>}
                           </span>
                         </div>
                       </div>
@@ -4373,6 +4509,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                    <div className="grid grid-cols-5 gap-2 max-w-[340px] mx-auto text-center">
                      {luxGridData.grid.map((row, rIdx) => 
                        row.map((luxVal, cIdx) => {
+                         if (luxVal === null) {
+                           return <div key={`cell-${rIdx}-${cIdx}`} className="aspect-square rounded border border-dashed border-slate-200 bg-slate-50/60" title="Outside the room outline" />;
+                         }
                          // Determine custom Heat Cell color according to lux
                          let bgCell = 'bg-blue-50 text-blue-800';
                          if (luxVal < 100) bgCell = 'bg-blue-100/80 text-blue-900 border border-blue-200';
@@ -4904,7 +5043,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
             {/* TAB 6: Professional Reporting System */}
             {activeSubTab === 'reports' && (() => {
               const handleExportWord = () => {
-                const roomArea = params.roomWidth * params.roomLength;
+                const roomArea = roomFloorArea;
                 const totalFixtures = params.customPositions?.length || calculation.fixtures || 0;
                 const totalWatts = totalFixtures * activeFixture.wattage;
                 const avgLux = luxGridData.averageLux;
@@ -4969,6 +5108,20 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       `).join('')}
                     </table>
                     ` : ''}
+
+                    <h1>Room Geometry</h1>
+                    <table>
+                      <tr><th>Parameter</th><th>Value</th></tr>
+                      <tr><td>Room Shape</td><td>${roomShapeLabel(isIrregularRoom ? params.roomShape : 'rectangle')} (${roomOutline.length} walls)</td></tr>
+                      <tr><td>Floor Area (shoelace)</td><td style="font-weight: bold;">${polygonArea(roomOutline).toFixed(2)} m²</td></tr>
+                      <tr><td>Perimeter</td><td>${polygonPerimeter(roomOutline).toFixed(2)} m</td></tr>
+                      <tr><td>Bounding Box</td><td>${params.roomWidth.toFixed(2)} m × ${params.roomLength.toFixed(2)} m</td></tr>
+                      <tr><td>Room Index RI = 2A / (hrc × P)</td><td>${polygonRoomIndex(roomOutline, Math.max(0.1, ceilingHeight - workingPlaneHeight)).toFixed(2)}</td></tr>
+                    </table>
+                    <table>
+                      <tr><th>Wall</th><th>Length (m)</th><th>Interior Angle</th></tr>
+                      ${roomGeometrySummary(roomOutline, ceilingHeight, workingPlaneHeight).walls.map(wl => `<tr><td>${wl.name}</td><td>${wl.length.toFixed(2)}</td><td>${wl.angle.toFixed(1)}° at ${wl.endVertex}</td></tr>`).join('')}
+                    </table>
 
                     ${reportIncludeUniformity ? `
                     <h1>3. Uniformity & Grid Calculations</h1>
@@ -5103,6 +5256,14 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                        </button>
                        <button
                          type="button"
+                         onClick={() => exportIlluminationLayoutPdf(buildRoomLayoutData())}
+                         title="A3 sheet: scaled room outline with wall dimensions, luminaire layout, wall schedule and results"
+                         className="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                       >
+                         <FileDown className="w-3.5 h-3.5" /> Room Layout PDF (A3)
+                       </button>
+                       <button
+                         type="button"
                          onClick={() => window.print()}
                          className="bg-slate-800 hover:bg-slate-700 text-white border border-slate-750 px-3.5 py-1.5 text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
                        >
@@ -5111,7 +5272,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                        <button
                          type="button"
                          onClick={() => {
-                           const roomArea = params.roomWidth * params.roomLength;
+                           const roomArea = roomFloorArea;
                            const currentSavedRooms = [
                              {
                                id: 'room-1',
@@ -5122,7 +5283,14 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                fixturesCount: params.customPositions?.length || calculation.fixtures || 0,
                                totalLumens: (params.customPositions?.length || calculation.fixtures || 0) * (activeFixture.lumens || 3200),
                                totalWattage: (params.customPositions?.length || calculation.fixtures || 0) * (activeFixture.wattage || 36),
-                               circuitNo: 1
+                               circuitNo: 1,
+                               roomWidth: params.roomWidth,
+                               roomLength: params.roomLength,
+                               roomShape: isIrregularRoom ? params.roomShape : 'rectangle',
+                               roomPolygon: toRoomVertices(roomOutline),
+                               ceilingHeight,
+                               workingPlaneHeight,
+                               customPositions: buildRoomLayoutData().fixtures
                              }
                            ];
                            const illumData = {

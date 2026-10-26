@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useMemo, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ActiveFixtureSelection, PlacedFixtureDragPosition } from '../types';
+import { RoomPoint, placePointsInPolygon, pointInPolygon, polygonArea } from '../utils/roomGeometry';
 
 interface SceneProps {
   width: number;
@@ -27,6 +28,8 @@ interface SceneProps {
   fixtureDistributionType?: 'conical' | 'oblong' | 'omni' | 'linear';
   activeFixtures?: ActiveFixtureSelection[];
   customPositions?: PlacedFixtureDragPosition[];
+  /** Non-rectangular room outline in metres (bounding box 0..width × 0..length) */
+  roomPolygon?: RoomPoint[];
 }
 
 interface PlacedFixture {
@@ -214,7 +217,8 @@ export default function Illumination3DModel({
   fixtureBeamAngle,
   fixtureDistributionType,
   activeFixtures,
-  customPositions
+  customPositions,
+  roomPolygon
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fallbackCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -241,7 +245,8 @@ export default function Illumination3DModel({
     fixtureBeamAngle,
     fixtureDistributionType,
     activeFixtures,
-    customPositions
+    customPositions,
+    roomPolygon
   });
 
   useEffect(() => {
@@ -266,7 +271,8 @@ export default function Illumination3DModel({
         fixtureBeamAngle,
         fixtureDistributionType,
         activeFixtures,
-        customPositions
+        customPositions,
+        roomPolygon
       });
     }, 280); // 280ms provides optimal blend between live feel and high-performance typing fluidity
 
@@ -277,7 +283,7 @@ export default function Illumination3DModel({
     width, length, height, ceilingHeight, fixtures, lumens, showFalseColor, 
     enableDaylight, windowArea, skyCondition, targetLux,
     fixtureShape, fixtureWidth, fixtureLength, fixtureDiameter, fixtureThickness, fixtureBeamAngle, fixtureDistributionType,
-    activeFixtures, customPositions
+    activeFixtures, customPositions, roomPolygon
   ]);
 
   const {
@@ -300,8 +306,14 @@ export default function Illumination3DModel({
     fixtureBeamAngle: dFixtureBeamAngle,
     fixtureDistributionType: dFixtureDistributionType,
     activeFixtures: dActiveFixtures,
-    customPositions: dCustomPositions
+    customPositions: dCustomPositions,
+    roomPolygon: dRoomPolygon
   } = debouncedParams;
+
+  // Outline centred on the origin like the rest of the scene (x − W/2, z − L/2)
+  const hasOutline = !!dRoomPolygon && dRoomPolygon.length >= 3;
+  const isOnFloor = (x: number, z: number) => !hasOutline || pointInPolygon(x + dWidth / 2, z + dLength / 2, dRoomPolygon!);
+  const floorArea = hasOutline ? polygonArea(dRoomPolygon!) : dWidth * dLength;
 
   // Resolved parameters accounting for pre-configured defaults
   const resolved = useMemo(() => {
@@ -352,6 +364,13 @@ export default function Illumination3DModel({
       dActiveFixtures.forEach((af, afIdx) => {
         const q = af.quantity || 0;
         if (q <= 0) return;
+        if (hasOutline) {
+          const res = resolveFixtureParams(af.fixtureShape, af.fixtureWidth, af.fixtureLength, af.fixtureDiameter, af.fixtureThickness, af.fixtureBeamAngle, af.fixtureDistributionType);
+          placePointsInPolygon(dRoomPolygon!, q).forEach(([x, z]) => list.push({
+            x: x - dWidth / 2, z: z - dLength / 2, y: dHeight, lumens: af.lumens, wattage: af.wattage, fixtureId: af.fixtureId, lightType: af.lightType, resolved: res
+          }));
+          return;
+        }
         
         let cols = Math.ceil(Math.sqrt(q));
         let rows = Math.ceil(q / cols);
@@ -399,6 +418,10 @@ export default function Illumination3DModel({
           }
         }
       });
+    } else if (hasOutline && dFixtures > 0) {
+      placePointsInPolygon(dRoomPolygon!, dFixtures).forEach(([x, z]) => list.push({
+        x: x - dWidth / 2, z: z - dLength / 2, y: dHeight, lumens: dLumens, wattage: 0, fixtureId: dFixtureShape || 'square', lightType: 'Standard', resolved: resolved
+      }));
     } else {
       if (dFixtures > 0) {
         let cols = Math.ceil(Math.sqrt(dFixtures));
@@ -430,7 +453,7 @@ export default function Illumination3DModel({
       }
     }
     return list;
-  }, [dActiveFixtures, dCustomPositions, dWidth, dLength, dHeight, dFixtures, dLumens, dFixtureShape, resolved]);
+  }, [dActiveFixtures, dCustomPositions, dWidth, dLength, dHeight, dFixtures, dLumens, dFixtureShape, resolved, dRoomPolygon]);
 
   // Generate false color heat-map texture dynamically using a 2D canvas with proper distribution curves
   const canvasTextureElement = useMemo(() => {
@@ -448,6 +471,11 @@ export default function Illumination3DModel({
       for (let cX = 0; cX < 64; cX++) {
         const realX = -dWidth / 2 + (cX / 63) * dWidth;
         const realZ = -dLength / 2 + (cZ / 63) * dLength;
+        if (!isOnFloor(realX, realZ)) {
+          ctx.fillStyle = 'rgb(15,23,42)';
+          ctx.fillRect(cX, cZ, 1, 1);
+          continue;
+        }
 
         let totalLux = 0;
 
@@ -544,7 +572,7 @@ export default function Illumination3DModel({
         // Add natural sunlight bleed details
         if (dEnableDaylight) {
           const distFromNorth = realZ - (-dLength/2);
-          const dfAtWall = 0.08 * (dWindowArea / (dWidth * dLength)) * 100;
+          const dfAtWall = 0.08 * (dWindowArea / floorArea) * 100;
           const locDF = dfAtWall * Math.exp(-0.5 * Math.max(0, distFromNorth));
           const daylightPointLux = locDF * skyIllum / 100;
           totalLux += daylightPointLux;
@@ -584,7 +612,7 @@ export default function Illumination3DModel({
     }
 
     return canvas;
-  }, [dWidth, dLength, dHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, placedFixtures]);
+  }, [dWidth, dLength, dHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, dTargetLux, placedFixtures, dRoomPolygon]);
 
   // 2D Canvas Fallback Layout Renderer (triggered if WebGL is unavailable or fails to initialize)
   useEffect(() => {
@@ -694,7 +722,7 @@ export default function Illumination3DModel({
 
           if (dEnableDaylight) {
             const distFromNorth = realZ - (-dLength/2);
-            const dfAtWall = 0.08 * (dWindowArea / (dWidth * dLength)) * 100;
+            const dfAtWall = 0.08 * (dWindowArea / floorArea) * 100;
             const locDF = dfAtWall * Math.exp(-0.5 * Math.max(0, distFromNorth));
             const daylightPointLux = locDF * skyIllum / 100;
             totalLux += daylightPointLux;
@@ -1007,7 +1035,18 @@ export default function Illumination3DModel({
     });
 
     // Floor design plane
-    const floorGeo = new THREE.PlaneGeometry(dWidth, dLength);
+    let floorGeo: THREE.BufferGeometry = new THREE.PlaneGeometry(dWidth, dLength);
+    if (hasOutline) {
+      // Shape in the XY plane with y = −z, so rotating −90° about X lays it on the floor at +z
+      const shape = new THREE.Shape(dRoomPolygon!.map(([x, z]) => new THREE.Vector2(x - dWidth / 2, -(z - dLength / 2))));
+      floorGeo = new THREE.ShapeGeometry(shape);
+      const pos = floorGeo.getAttribute('position');
+      const uv = floorGeo.getAttribute('uv');
+      for (let i = 0; i < pos.count; i++) {
+        uv.setXY(i, (pos.getX(i) + dWidth / 2) / dWidth, (pos.getY(i) + dLength / 2) / dLength);
+      }
+      uv.needsUpdate = true;
+    }
     let floorMat;
 
     if (dShowFalseColor && canvasTextureElement) {
@@ -1050,9 +1089,31 @@ export default function Illumination3DModel({
       opacity: 0.10 
     });
 
+    if (hasOutline) {
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x94a3b8 });
+      dRoomPolygon!.forEach(([x1, z1], i) => {
+        const [x2, z2] = dRoomPolygon![(i + 1) % dRoomPolygon!.length];
+        const len = Math.hypot(x2 - x1, z2 - z1);
+        if (len < 0.01) return;
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(len, dCeilingHeight, 0.02), wallMat);
+        wall.position.set((x1 + x2) / 2 - dWidth / 2, dCeilingHeight / 2, (z1 + z2) / 2 - dLength / 2);
+        wall.rotation.y = -Math.atan2(z2 - z1, x2 - x1);
+        scene.add(wall);
+        // Floor and ceiling outline edges so the room shape reads clearly
+        for (const y of [0.005, dCeilingHeight]) {
+          const g = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(x1 - dWidth / 2, y, z1 - dLength / 2),
+            new THREE.Vector3(x2 - dWidth / 2, y, z2 - dLength / 2),
+          ]);
+          scene.add(new THREE.Line(g, edgeMat));
+        }
+      });
+    }
+
     const vWallGeoX = new THREE.BoxGeometry(dWidth, dCeilingHeight, 0.02);
     const vWallGeoZ = new THREE.BoxGeometry(0.02, dCeilingHeight, dLength);
 
+    if (!hasOutline) {
     const wallBack = new THREE.Mesh(vWallGeoX, wallMat);
     wallBack.position.set(0, dCeilingHeight / 2, -dLength / 2);
     scene.add(wallBack);
@@ -1068,6 +1129,7 @@ export default function Illumination3DModel({
     const wallRight = new THREE.Mesh(vWallGeoZ, wallMat);
     wallRight.position.set(dWidth / 2, dCeilingHeight / 2, 0);
     scene.add(wallRight);
+    }
 
     // Render loop animation frames
     let animationFrameId: number;
@@ -1109,7 +1171,7 @@ export default function Illumination3DModel({
         containerRef.current.innerHTML = '';
       }
     };
-  }, [dWidth, dLength, dHeight, dCeilingHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux, placedFixtures]);
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux, placedFixtures, dRoomPolygon]);
 
   const totalLumensVal = activeFixtures && activeFixtures.length > 0
     ? activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0)
@@ -1119,7 +1181,7 @@ export default function Illumination3DModel({
     : fixtures;
 
   // Model Luminous Adequacy Assessments
-  const estAverageLux = Math.ceil((totalLumensVal * 0.6) / (width * length || 1));
+  const estAverageLux = Math.ceil((totalLumensVal * 0.6) / ((roomPolygon && roomPolygon.length >= 3 ? polygonArea(roomPolygon) : width * length) || 1));
   
   let complianceBadge = "NO WORKPLACE FIXTURES";
   let complianceBg = "bg-slate-900/95 border-slate-700 text-slate-300";
@@ -1166,7 +1228,7 @@ export default function Illumination3DModel({
                 : "Drag mouse pointer to rotate, scroll wheel to zoom model."}
             </span>
             <div className="text-[10px] text-yellow-350 font-mono tracking-normal mt-1 border-t border-slate-800 pt-1.5 font-bold normal-case space-y-0.5">
-              <div>ROOM SIZE: {width.toFixed(2)}m (W) × {length.toFixed(2)}m (L) × {ceilingHeight.toFixed(2)}m (H)</div>
+              <div>ROOM SIZE: {width.toFixed(2)}m (W) × {length.toFixed(2)}m (L) × {ceilingHeight.toFixed(2)}m (H){roomPolygon && roomPolygon.length >= 3 ? ` · ${roomPolygon.length}-WALL OUTLINE, ${polygonArea(roomPolygon).toFixed(2)} m²` : ''}</div>
               <div className="text-cyan-400 font-bold uppercase text-[9px] tracking-wide">
                 {activeFixtures && activeFixtures.length > 1 ? (
                   <span>FIXTURES: COMBINED DESIGN ({totalQtyVal} Total units, {activeFixtures.length} Types)</span>

@@ -1,3 +1,4 @@
+import type { RoomShapeDims, RoomShapeId, RoomVertex } from "./utils/roomGeometry";
 export type Phase = 'R' | 'Y' | 'B';
 
 export enum LoadType {
@@ -271,6 +272,8 @@ export interface SavedLightingDetail {
   fixtureLumens?: number;
   activeFixtures?: ActiveFixtureSelection[];
   customPositions?: PlacedFixtureDragPosition[];
+  roomShape?: RoomShapeId;
+  roomPolygon?: RoomVertex[];
 }
 
 export interface ActiveFixtureSelection {
@@ -340,6 +343,12 @@ export interface IlluminationParams {
   customPositions?: PlacedFixtureDragPosition[];
   isManualQuantity?: boolean;
   manualQuantity?: number;
+  /** Room outline: rectangle (roomWidth × roomLength) or an L/T/U preset or custom polygon */
+  roomShape?: RoomShapeId;
+  /** Cut-out dimensions of the L/T/U presets */
+  roomShapeDims?: RoomShapeDims;
+  /** Outline in metres, bounding box at (0, 0) and equal to roomWidth × roomLength (non-rectangular shapes) */
+  roomPolygon?: RoomVertex[];
 }
 
 export interface FloorPlanImage {
