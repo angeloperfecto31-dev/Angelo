@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { isFullAccessPlan, isExpiringPlan } from "./utils/plans";
+import { getRoomOutline, polygonArea } from "./utils/roomGeometry";
 import { isEqual } from "lodash";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
@@ -6895,7 +6896,7 @@ export default function App() {
                         const illumArea =
                           illumParams.inputMode === "area"
                             ? illumParams.userArea
-                            : illumParams.roomWidth * illumParams.roomLength;
+                            : polygonArea(getRoomOutline(illumParams));
                         const calculatedLux = Math.ceil(
                           (illumParams.lumensPerFixture *
                             (illumParams.coefficientOfUtilization || 0.6) *
