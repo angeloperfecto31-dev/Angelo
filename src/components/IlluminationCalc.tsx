@@ -48,13 +48,13 @@ import { exportToCAD } from '../utils/exportDxf';
 import { auth, db } from '../firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { toPng } from 'html-to-image';
-import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition, PanelConfig } from '../types';
+import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition, PanelConfig, ImportedModelRoom, SavedLightingDetail } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
 import RoomShapeEditor from './RoomShapeEditor';
 import ImportedModelViewer, { DesignSummary } from './ImportedModelViewer';
 import { RoomLayoutData, exportIlluminationLayoutPdf, roomGeometrySummary, roomShapeLabel } from '../utils/illuminationRoomExport';
-import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
+import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, normalizePolygon, polygonBounds, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
 
 export interface IlluminationCalcProps {
   panel?: PanelConfig;
@@ -2573,6 +2573,75 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       sum + calcSinglePointLux(x, z, cp, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens), 0),
     [params.customPositions, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens]);
 
+  /**
+   * Model rooms -> Rooms & Properties. Each room is sized with the same lumen method as the design
+   * room (room index from its outline and ceiling, CU scaled for RI and reflectances), the current
+   * target lux and the first selected fixture; its fixtures are spread inside its outline.
+   */
+  const addModelRoomsToProject = (rooms: ImportedModelRoom[]) => {
+    const af = params.activeFixtures?.[0];
+    const fixLumens = af?.lumens || activeFixture.lumens || 1;
+    const fixWatts = af?.wattage || activeFixture.wattage || 0;
+    const mf = params.maintenanceFactor || 0.8;
+    const rc = params.ceilingReflectance !== undefined ? params.ceilingReflectance : 0.7;
+    const rw = params.wallReflectance !== undefined ? params.wallReflectance : 0.5;
+    const rf = params.floorReflectance !== undefined ? params.floorReflectance : 0.2;
+    const built = rooms.map((room): SavedLightingDetail => {
+      const outline = normalizePolygon(toRoomPoints(room.polygon) || []);
+      const b = polygonBounds(outline);
+      const area = polygonArea(outline);
+      const ceil = room.ceilingHeight && room.ceilingHeight > 1.8 ? room.ceilingHeight : ceilingHeight;
+      const hrc = Math.max(0.1, ceil - workingPlaneHeight);
+      const ri = polygonRoomIndex(outline, hrc);
+      const cu = Math.min(0.95, Math.max(0.1, params.coefficientOfUtilization * ((ri / (ri + 0.5)) / (2.0 / 2.5)) * ((rc * 0.3 + rw * 0.5 + rf * 0.2) / 0.5)));
+      const n = Math.max(1, Math.ceil((params.targetLux * area) / (cu * mf * fixLumens)));
+      const positions: PlacedFixtureDragPosition[] = placePointsInPolygon(outline, n).map(([x, z], i) => ({
+        id: `fixture-${af?.fixtureId || activeFixture.id}-r${i}-${Math.random().toString(36).slice(2, 6)}`,
+        fixtureId: af?.fixtureId || activeFixture.id,
+        lightType: af?.lightType || activeFixture.lightType,
+        x, z,
+        lumens: fixLumens,
+        wattage: fixWatts,
+        activeFixtureId: af?.id,
+      }));
+      return {
+        id: crypto.randomUUID(),
+        sourceModelRoomId: room.id,
+        roomName: room.name,
+        roomType: params.roomType,
+        targetLux: params.targetLux,
+        area: Number(area.toFixed(2)),
+        roomWidth: Number(b.width.toFixed(3)),
+        roomLength: Number(b.length.toFixed(3)),
+        ceilingHeight: ceil,
+        workingPlaneHeight,
+        mountingHeight,
+        coefficientOfUtilization: Number(cu.toFixed(2)),
+        maintenanceFactor: mf,
+        fixtureId: af?.fixtureId || activeFixture.id,
+        fixtureLightType: af?.lightType || activeFixture.lightType,
+        fixturesCount: n,
+        totalLumens: n * fixLumens,
+        totalWattage: n * fixWatts,
+        fixtureLumens: fixLumens,
+        fixtureWattage: fixWatts,
+        roomShape: 'custom',
+        roomPolygon: toRoomVertices(outline),
+        customPositions: positions,
+      };
+    });
+    setParams(prev => {
+      const kept = (prev.savedRooms || []).filter(r => !rooms.some(m => m.id === r.sourceModelRoomId));
+      // Rooms added again replace their earlier entry and keep its circuit link
+      const withCircuits = built.map(nr => {
+        const old = (prev.savedRooms || []).find(r => r.sourceModelRoomId === nr.sourceModelRoomId);
+        return old?.circuitNo ? { ...nr, circuitNo: old.circuitNo } : nr;
+      });
+      return { ...prev, savedRooms: [...kept, ...withCircuits] };
+    });
+    return built.length;
+  };
+
   /** Results shown next to the imported model */
   const designSummary: DesignSummary = useMemo(() => {
     const area = parseFloat(calculation.area) || 0;
@@ -3595,6 +3664,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                     luxAt={luxAtPoint}
                     summary={designSummary}
                     onSnapshot={setModelSnapshot}
+                    onAddRoomsToProject={addModelRoomsToProject}
+                    roomsInProject={(params.savedRooms || []).map(r => r.sourceModelRoomId).filter((id): id is string => !!id)}
                   />
                 ) : params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0 ? (
                   <>

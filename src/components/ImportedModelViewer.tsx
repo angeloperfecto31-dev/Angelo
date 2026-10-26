@@ -48,6 +48,10 @@ interface Props {
   summary: DesignSummary;
   /** Image of the current view for the reports */
   onSnapshot: (dataUrl: string | null) => void;
+  /** Add (or update) model rooms in Rooms & Properties, each sized by the lumen method; returns how many */
+  onAddRoomsToProject: (rooms: ImportedModelRoom[]) => number;
+  /** Model room ids already in Rooms & Properties */
+  roomsInProject: string[];
 }
 
 type Mode = 'orbit' | 'room' | 'measure' | 'place' | 'select';
@@ -87,6 +91,7 @@ function luxColor(lux: number, target: number): [number, number, number] {
 
 export default function ImportedModelViewer({
   params, setParams, ceilingHeight, workingPlaneHeight, mountingHeight, roomOutline, luxAt, summary, onSnapshot,
+  onAddRoomsToProject, roomsInProject,
 }: Props) {
   const info = params.importedModel;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -123,6 +128,10 @@ export default function ImportedModelViewer({
   const [placeTypeId, setPlaceTypeId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
+  /** Rooms ticked in the list (for adding several to Rooms & Properties at once) */
+  const [checkedRooms, setCheckedRooms] = useState<string[]>([]);
+  /** Room most recently picked or clicked, highlighted in the model */
+  const [focusRoomId, setFocusRoomId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<THREE.Vector3[]>([]);
   const [calibrateTo, setCalibrateTo] = useState('');
   const [parts, setParts] = useState<{ path: string; name: string; visible: boolean }[]>([]);
@@ -513,10 +522,37 @@ export default function ImportedModelViewer({
       ls.userData.isHelper = true;
       t.overlay.add(ls);
     }
-    // Detected rooms
+    // Picked rooms: outline and name label (design room green, last picked amber, others grey)
+    const labelSize = Math.max(0.8, Math.min(4, (modelSize ? Math.max(modelSize.x, modelSize.z) : 10) / 11));
     info.rooms.forEach(r => {
       const pts = toRoomPoints(r.polygon) || [];
-      lineAt(pts, r.floorElevation + 0.02, r.id === info.activeRoomId ? 0x22c55e : 0x94a3b8);
+      const color = r.id === info.activeRoomId ? 0x22c55e : r.id === focusRoomId ? 0xf59e0b : 0x94a3b8;
+      lineAt(pts, r.floorElevation + 0.02, color);
+      if (!pts.length) return;
+      // Label at a point inside the room (centroid, or the first vertex nudged inward)
+      let cx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
+      let cz = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+      if (!pointInPolygon(cx, cz, pts)) [cx, cz] = clampPointToPolygon(cx, cz, pts, 0.5);
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = 'rgba(15,23,42,0.82)';
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+      ctx.font = 'bold 26px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.name.slice(0, 18), 128, 22);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '20px Arial';
+      ctx.fillText(`${r.area.toFixed(1)} m²`, 128, 48);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }));
+      sprite.scale.set(labelSize * 2, labelSize * 0.5, 1);
+      sprite.position.set(cx, Math.max(r.floorElevation + 0.1, sectionView || mode === 'room' ? (info.sectionElevation + 0.05) : r.floorElevation + 0.1), cz);
+      sprite.renderOrder = 13;
+      sprite.userData.isHelper = true;
+      t.overlay.add(sprite);
     });
     // Current design outline (it may have been edited after import)
     if (activeRoom) lineAt(roomOutline.map(([x, z]) => [x + offset.x, z + offset.z] as RoomPoint), floorElev + 0.03, 0x38bdf8);
@@ -564,7 +600,7 @@ export default function ImportedModelViewer({
       mesh.userData.isHelper = true;
       t.overlay.add(mesh);
     }
-  }, [loaded, info, mode, sectionView, candidate, measure, activeRoom, roomOutline, offset.x, offset.z, floorElev, showLux, luxAt, params.targetLux, getSection]);
+  }, [loaded, info, mode, sectionView, candidate, measure, activeRoom, roomOutline, offset.x, offset.z, floorElev, showLux, luxAt, params.targetLux, getSection, focusRoomId, modelSize]);
 
   // ------------------------------------------------------------------ fixtures in the model
   const positions = params.customPositions || [];
@@ -725,6 +761,15 @@ export default function ImportedModelViewer({
     } else if (mode === 'room') {
       const p = pickModel(e) || pickPlane(e, info.sectionElevation);
       if (!p) return;
+      // A room already picked: select it instead of detecting it again
+      const existing = info.rooms.find(r => pointInPolygon(p.x, p.z, toRoomPoints(r.polygon) || []));
+      if (existing) {
+        setFocusRoomId(existing.id);
+        setCheckedRooms(c => (c.includes(existing.id) ? c : [...c, existing.id]));
+        setStatus(`${existing.name} is already picked.`);
+        setTimeout(() => setStatus(null), 1800);
+        return;
+      }
       setBusy(true);
       setStatus('Detecting the room...');
       await new Promise(r => setTimeout(r, 20));
@@ -733,13 +778,13 @@ export default function ImportedModelViewer({
         const inside = room.polygon.reduce((a, q) => [a[0] + q[0] / room.polygon.length, a[1] + q[1] / room.polygon.length], [0, 0]) as RoomPoint;
         const probe = pointInPolygon(inside[0], inside[1], room.polygon) ? inside : ([p.x, p.z] as RoomPoint);
         const h = heightsAt(placedModel.current!, probe, info.sectionElevation);
-        setCandidate({ polygon: room.polygon, area: room.area, floorElevation: h.floorY, ceilingHeight: h.ceilingHeight });
+        addPickedRoom({ polygon: room.polygon, area: room.area, floorElevation: h.floorY, ceilingHeight: h.ceilingHeight });
         setError(null);
+        setStatus(null);
       } catch (err: any) {
-        setCandidate(null);
         setError(err?.message || String(err));
+        setStatus(null);
       }
-      setStatus(null);
       setBusy(false);
     } else if (mode === 'measure') {
       const p = pickModel(e);
@@ -831,23 +876,31 @@ export default function ImportedModelViewer({
   });
 
   // ------------------------------------------------------------------ rooms
-  const acceptCandidate = () => {
-    if (!candidate || !info) return;
+  /** Next free "Room n" name */
+  const nextRoomName = (rooms: ImportedModelRoom[]) => {
+    const used = rooms.map(r => Number((/^Room (\d+)$/.exec(r.name) || [])[1] || 0));
+    return `Room ${Math.max(0, ...used) + 1}`;
+  };
+
+  /** Add a detected room to the list (picking continues); the first room becomes the design room */
+  const addPickedRoom = (c: Candidate) => {
+    if (!info) return;
     const room: ImportedModelRoom = {
       id: uid(),
-      name: `Room ${info.rooms.length + 1}`,
-      polygon: toRoomVertices(candidate.polygon)!,
-      floorElevation: Number(candidate.floorElevation.toFixed(3)),
-      ceilingHeight: candidate.ceilingHeight !== null ? Number(candidate.ceilingHeight.toFixed(2)) : null,
-      area: Number(candidate.area.toFixed(2)),
+      name: nextRoomName(info.rooms),
+      polygon: toRoomVertices(c.polygon)!,
+      floorElevation: Number(c.floorElevation.toFixed(3)),
+      ceilingHeight: c.ceilingHeight !== null ? Number(c.ceilingHeight.toFixed(2)) : null,
+      area: Number(c.area.toFixed(2)),
     };
     updateInfo({ rooms: [...info.rooms, room] });
-    setCandidate(null);
-    applyRoom(room);
+    setFocusRoomId(room.id);
+    setCheckedRooms(cr => [...cr, room.id]);
+    if (!info.activeRoomId) applyRoom(room, true);
   };
 
   /** Make a detected room the design room (outline, size and ceiling go to the Illumination design) */
-  const applyRoom = (room: ImportedModelRoom) => {
+  const applyRoom = (room: ImportedModelRoom, keepPicking = false) => {
     const world = toRoomPoints(room.polygon) || [];
     const norm = normalizePolygon(world);
     const b = polygonBounds(world);
@@ -865,14 +918,25 @@ export default function ImportedModelViewer({
         : prev.importedModel,
     }));
     setSelected([]);
-    setMode('select');
+    setFocusRoomId(room.id);
+    if (!keepPicking) setMode('select');
     // Cut the model at the section level so the ceiling does not hide the fixtures
     setSectionView(true);
   };
 
-  const removeRoom = (id: string) => {
+  const removeRooms = (ids: string[]) => {
+    if (!info || !ids.length) return;
+    updateInfo({ rooms: info.rooms.filter(r => !ids.includes(r.id)), ...(info.activeRoomId && ids.includes(info.activeRoomId) ? { activeRoomId: undefined } : {}) });
+    setCheckedRooms(c => c.filter(id => !ids.includes(id)));
+  };
+  const removeRoom = (id: string) => removeRooms([id]);
+  const addCheckedToProject = () => {
     if (!info) return;
-    updateInfo({ rooms: info.rooms.filter(r => r.id !== id), ...(info.activeRoomId === id ? { activeRoomId: undefined } : {}) });
+    const rooms = info.rooms.filter(r => checkedRooms.includes(r.id));
+    if (!rooms.length) return;
+    const n = onAddRoomsToProject(rooms);
+    setStatus(`${n} room${n === 1 ? '' : 's'} added to Rooms & Properties (sized by the lumen method).`);
+    setTimeout(() => setStatus(null), 3000);
   };
   const renameRoom = (id: string, name: string) => {
     if (!info) return;
@@ -1015,7 +1079,7 @@ export default function ImportedModelViewer({
               <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-2 pointer-events-none">
                 <span className="rounded bg-slate-900/85 px-2 py-1 text-[10px] text-slate-300">
                   {mode === 'orbit' && 'Drag to orbit, right-drag to pan, scroll to zoom.'}
-                  {mode === 'room' && 'Click inside a room (Top view is easiest). Red lines show the plan section used for detection.'}
+                  {mode === 'room' && 'Click inside each room to pick it; keep clicking to add more rooms (Top view is easiest). Red lines show the plan section used for detection.'}
                   {mode === 'measure' && (measure.length < 2 ? `Click ${measure.length === 0 ? 'the first' : 'the second'} point on the model.` : `Distance: ${fmt(measured || 0, 3)} m`)}
                   {mode === 'select' && 'Click a fixture to select (Shift for several), drag to move. Delete removes.'}
                   {mode === 'place' && 'Click on the floor of the design room to add a fixture.'}
@@ -1053,14 +1117,6 @@ export default function ImportedModelViewer({
             </div>
           )}
 
-          {/* Detected room awaiting confirmation */}
-          {candidate && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
-              <span><b>Detected room:</b> {fmt(candidate.area)} m², {candidate.polygon.length} walls, {fmt(polygonBounds(candidate.polygon).width)} × {fmt(polygonBounds(candidate.polygon).length)} m, ceiling {candidate.ceilingHeight !== null ? `${fmt(candidate.ceilingHeight)} m` : 'not found (keeps the current value)'}</span>
-              <button type="button" onClick={acceptCandidate} className={`${btn} bg-emerald-600 border-emerald-600 text-white ml-auto`}><CheckCircle2 className="w-3.5 h-3.5" /> Use for Design</button>
-              <button type="button" onClick={() => setCandidate(null)} className={btnIdle}>Discard</button>
-            </div>
-          )}
         </div>
 
         {/* Side panel */}
@@ -1110,17 +1166,45 @@ export default function ImportedModelViewer({
                 <span className="text-slate-500">Close openings up to {fmt(info.gapClose)} m (doorways)</span>
                 <input type="range" min={0} max={2} step={0.05} value={info.gapClose} onChange={e => updateInfo({ gapClose: Number(e.target.value) })} className="w-full" />
               </label>
-              <div className="space-y-1 max-h-48 overflow-y-auto">
-                {info.rooms.length === 0 && <div className="text-slate-500">No rooms yet. Choose Pick Room and click inside a room.</div>}
+              {info.rooms.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1 font-bold text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={checkedRooms.length > 0 && checkedRooms.length === info.rooms.length}
+                      onChange={e => setCheckedRooms(e.target.checked ? info.rooms.map(r => r.id) : [])}
+                    />
+                    {info.rooms.length} room{info.rooms.length === 1 ? '' : 's'} picked · {fmt(info.rooms.reduce((s, r) => s + r.area, 0), 1)} m²
+                  </label>
+                </div>
+              )}
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {info.rooms.length === 0 && <div className="text-slate-500">No rooms yet. Choose Pick Room and click inside each room you want.</div>}
                 {info.rooms.map(r => (
-                  <div key={r.id} className={`flex items-center gap-1 rounded border px-1.5 py-1 ${r.id === info.activeRoomId ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : 'border-slate-200 dark:border-slate-700'}`}>
+                  <div
+                    key={r.id}
+                    onMouseEnter={() => setFocusRoomId(r.id)}
+                    className={`flex items-center gap-1 rounded border px-1.5 py-1 ${r.id === info.activeRoomId ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : r.id === focusRoomId ? 'border-amber-300 bg-amber-50/60 dark:bg-amber-500/10' : 'border-slate-200 dark:border-slate-700'}`}
+                  >
+                    <input type="checkbox" checked={checkedRooms.includes(r.id)} onChange={e => setCheckedRooms(c => (e.target.checked ? [...c, r.id] : c.filter(id => id !== r.id)))} />
                     <input value={r.name} onChange={e => renameRoom(r.id, e.target.value)} className="flex-1 min-w-0 bg-transparent font-bold text-slate-700 dark:text-slate-200" />
-                    <span className="text-slate-500 font-mono">{fmt(r.area, 1)} m²</span>
-                    <button type="button" title="Use as the design room" onClick={() => applyRoom(r)} className="text-emerald-600 font-bold px-1">Use</button>
+                    <span className="text-slate-500 font-mono whitespace-nowrap">{fmt(r.area, 1)} m²{r.ceilingHeight ? ` · ${fmt(r.ceilingHeight, 2)} m` : ''}</span>
+                    {roomsInProject.includes(r.id) && <span title="In Rooms & Properties" className="text-indigo-500"><CheckCircle2 className="w-3 h-3" /></span>}
+                    {r.id === info.activeRoomId
+                      ? <span className="text-emerald-600 font-bold px-1">Design</span>
+                      : <button type="button" title="Use as the design room" onClick={() => applyRoom(r)} className="text-emerald-600 font-bold px-1">Use</button>}
                     <button type="button" title="Remove" onClick={() => removeRoom(r.id)} className="text-slate-400 hover:text-rose-500"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 ))}
               </div>
+              {info.rooms.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" disabled={!checkedRooms.length} onClick={addCheckedToProject} className={`${btn} bg-indigo-600 border-indigo-600 text-white`} title="Each ticked room is sized by the lumen method with the current fixture and target lux">
+                    <PlusCircle className="w-3.5 h-3.5" /> Add {checkedRooms.length || ''} to Rooms & Properties
+                  </button>
+                  <button type="button" disabled={!checkedRooms.length} onClick={() => removeRooms(checkedRooms)} className={btnIdle}><Trash2 className="w-3.5 h-3.5" /> Remove</button>
+                </div>
+              )}
             </div>
           )}
 
