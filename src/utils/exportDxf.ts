@@ -162,6 +162,9 @@ export class MText extends DatabaseObject {
 class DxfBuilder {
   drawing: Drawing;
   isSLDMode: boolean = false;
+  /** Offset added to every coordinate (used to continue a section on another sheet) */
+  originX: number = 0;
+  originY: number = 0;
 
   constructor() {
     this.drawing = new Drawing();
@@ -216,7 +219,7 @@ class DxfBuilder {
 
   addLine(x1: number, y1: number, x2: number, y2: number, layer: string = "0") {
     this.drawing.setActiveLayer(layer);
-    this.drawing.drawLine(x1, y1, x2, y2);
+    this.drawing.drawLine(x1 + this.originX, y1 + this.originY, x2 + this.originX, y2 + this.originY);
   }
 
   addRect(x1: number, y1: number, x2: number, y2: number, layer: string = "0") {
@@ -228,12 +231,12 @@ class DxfBuilder {
 
   addCircle(cx: number, cy: number, r: number, layer: string = "0") {
     this.drawing.setActiveLayer(layer);
-    this.drawing.drawCircle(cx, cy, r);
+    this.drawing.drawCircle(cx + this.originX, cy + this.originY, r);
   }
 
   addArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number, layer: string = "0") {
     this.drawing.setActiveLayer(layer);
-    this.drawing.drawArc(cx, cy, r, startAngle, endAngle);
+    this.drawing.drawArc(cx + this.originX, cy + this.originY, r, startAngle, endAngle);
   }
 
   addText(
@@ -275,7 +278,7 @@ class DxfBuilder {
 
     // Instantiate and add our custom MText entity directly to the active layer shapes list
     let vAlign = "middle";
-    const mtext = new MText(x, adjustedY, adjustedHeight, rotation, cleanedText, align, vAlign, wrapWidth);
+    const mtext = new MText(x + this.originX, adjustedY + this.originY, adjustedHeight, rotation, cleanedText, align, vAlign, wrapWidth);
     this.drawing.activeLayer!.addShape(mtext as any);
   }
 
@@ -321,6 +324,13 @@ const drawFaultStarburst = (b: DxfBuilder, x: number, y: number) => {
   b.addText("FAULT", x, y - 0.8, 1.2, 0, "SLD_FAULT", "center");
 };
 
+/** Breaker row spacing of a panel SLD, and the smallest spacing used to fit a large board */
+const PANEL_SLD_ROW_SPACING = 16;
+const PANEL_SLD_MIN_ROW_SPACING = 7;
+/** Height of a panel SLD from its base line to the bottom of the board box (55 + 18 + 8 + rows) */
+const panelSldHeight = (rowCount: number, spacing: number) => 81 + Math.max(0, rowCount - 1) * spacing;
+const panelSldRowCount = (circs: Circuit[]) => Math.ceil(Math.max(circs.reduce((m, c) => Math.max(m, c.circuitNo), 0), 2) / 2);
+
 const drawCadPanelSLD = (
   b: DxfBuilder,
   panel: PanelConfig,
@@ -332,6 +342,8 @@ const drawCadPanelSLD = (
   fedFromLabel: string = "FED FROM MDP",
   allSubPanels: any[] = [],
   iscParams?: ShortCircuitParams,
+  /** Vertical distance between breaker rows; reduced by callers so a large board fits its space */
+  rowSpacing: number = PANEL_SLD_ROW_SPACING,
 ) => {
   const previousMode = b.isSLDMode;
   b.isSLDMode = true;
@@ -569,7 +581,6 @@ const drawCadPanelSLD = (
     });
   }
   const numRows = rows.length;
-  const rowSpacing = 16;
   const boxTop = yBase - 55;
 
   // Clean dynamic container boundary layout preventing bottom collision
@@ -878,13 +889,19 @@ const drawSystemSLD = (
     const numRows = Math.ceil(Math.max(maxCircuitNo, 2) / 2);
     if (numRows > maxRows) maxRows = numRows;
   });
-  const maxPanelHeight = 81 + maxRows * 16;
+  // Fit the hierarchy between y = 25 and y = 575 (a few units sit above each panel's base line)
+  const availableH = 575 - 25 - 15;
+  const sldRowSpacing = Math.max(
+    PANEL_SLD_MIN_ROW_SPACING,
+    Math.min(PANEL_SLD_ROW_SPACING, (availableH - (maxDepth - 1) * 150 - 81) / Math.max(1, maxRows)),
+  );
+  const maxPanelHeight = 81 + maxRows * sldRowSpacing;
   const totalHeight = (maxDepth - 1) * 150 + maxPanelHeight; // use 150 vertical gap
-  const topY = 297 + totalHeight / 2;
+  const topY = Math.min(560, 297 + totalHeight / 2);
   const yBase_MDP = topY;
 
   const mdpCircuitCoords = drawCadPanelSLD(
-    b, mdpPanel, mdpCircuits, mdpCalcData.mainFeeder, xBase_MDP, yBase_MDP, false, "FED FROM MDP", subPanelsData, iscParams
+    b, mdpPanel, mdpCircuits, mdpCalcData.mainFeeder, xBase_MDP, yBase_MDP, false, "FED FROM MDP", subPanelsData, iscParams, sldRowSpacing
   );
 
   const leftRoots: SpLayout[] = [];
@@ -978,7 +995,7 @@ const drawSystemSLD = (
       const parentLabel = layout.parentId === "mdp" ? `FED FROM ${mdpPanel.designation || "MDP"}` : `FED FROM SUB-PANEL`;
       
       const coords = drawCadPanelSLD(
-        b, sp.panel, sp.circuits, spCalcData.mainFeeder, xBase, yBase, true, parentLabel
+        b, sp.panel, sp.circuits, spCalcData.mainFeeder, xBase, yBase, true, parentLabel, [], undefined, sldRowSpacing
       );
       drawnCoords.set(sp.id, coords);
       
@@ -1540,17 +1557,21 @@ export const exportToCAD = (
   const maxSideRequired = Math.max(leftRequired, rightRequired);
   const sldCustomW = Math.max(baseW, maxSideRequired * 2 + 460);
 
+  void totalSheets; // sheets are now created as they are drawn (see allocSheet)
+
+  // Sheets are laid out left to right in the order they are created, so a continuation sheet comes
+  // right after the sheet it continues; sheet numbers (E - n / N) are written once all are known.
   const sheetConfigs: { w: number; xOffset: number }[] = [];
-  let currentSheetX = 0;
-  for (let i = 0; i < totalSheets; i++) {
-    const isSLD =
-      (exportMode === "ALL" || exportMode === "LOAD_SCHEDULE") &&
-      includeSLDSheet &&
-      i === 1;
-    const w = isSLD ? sldCustomW : baseW;
-    sheetConfigs.push({ w, xOffset: currentSheetX });
-    currentSheetX += w + 60; // 60 padding between sheets
-  }
+  const allocSheet = (w: number = baseW) => {
+    const last = sheetConfigs[sheetConfigs.length - 1];
+    sheetConfigs.push({ w, xOffset: last ? last.xOffset + last.w + 60 : 0 }); // 60 padding between sheets
+    return sheetConfigs.length - 1;
+  };
+  const sheetNumberMarks: { sheetIndex: number; x: number }[] = [];
+  /** Lowest y a section may draw down to before it continues on a new sheet */
+  const PAGE_BOTTOM_Y = 20;
+  /** Where a continued section starts on its new sheet */
+  const CONTINUE_TOP_Y = 560;
 
   const drawSheetTemplate = (
     sheetIndex: number,
@@ -1564,6 +1585,11 @@ export const exportToCAD = (
     };
     const xOffset = sConf.xOffset;
     const W = sConf.w;
+    // The template is drawn in sheet coordinates even while a section is drawing with an offset
+    const savedOriginX = b.originX;
+    const savedOriginY = b.originY;
+    b.originX = 0;
+    b.originY = 0;
 
     // Outer border
     b.addRect(xOffset + 0, 0, xOffset + W, H, "BORDER");
@@ -1732,15 +1758,8 @@ export const exportToCAD = (
 
     // Sheet Numbers
     b.addText("SHEET CODE", tx, 74, 1.8, 0, "TEXT_HEADER", "left");
-    b.addText(
-      `E - ${sheetIndex + 1} / ${totalSheets}`,
-      blockCenter,
-      32,
-      10.0,
-      0,
-      "BORDER",
-      "center",
-    );
+    // "E - n / N" is written after every sheet exists (sections may add continuation sheets)
+    sheetNumberMarks.push({ sheetIndex, x: blockCenter });
 
     // Standard Electrical Notes
     b.addText("GENERAL DRAWING NOTES:", tx, 538, 2.2, 0, "TEXT_HEADER", "left");
@@ -1825,6 +1844,36 @@ export const exportToCAD = (
       "TEXT_DATA",
       "left"
     );
+    b.originX = savedOriginX;
+    b.originY = savedOriginY;
+  };
+
+  /**
+   * Continue a section on a new sheet: the template is drawn and the builder origin is shifted so the
+   * section keeps drawing with the coordinates of baseSheetIndex. Callers reset b.originX afterwards.
+   */
+  const continueOnNewSheet = (baseSheetIndex: number, currentPanel: PanelConfig, title1?: string, title2?: string) => {
+    const idx = allocSheet();
+    drawSheetTemplate(idx, currentPanel, title1, title2);
+    b.originX = sheetConfigs[idx].xOffset - sheetConfigs[baseSheetIndex].xOffset;
+    b.originY = 0;
+    return idx;
+  };
+
+  /** Column label row of a table (used again at the top of a continuation sheet); returns the new y */
+  const drawColumnLabelRow = (
+    left: number,
+    right: number,
+    cols: { name: string; w: number }[],
+    colPositions: number[],
+    top: number,
+    h: number,
+    font: number,
+  ) => {
+    b.addRect(left, top - h, right, top, "BORDER");
+    cols.forEach((col, i) => b.addText(col.name, colPositions[i] + col.w / 2, top - h / 2 - font / 2, font, 0, "TEXT_HEADER", "center", col.w - 2));
+    for (let i = 1; i < colPositions.length - 1; i++) b.addLine(colPositions[i], top - h, colPositions[i], top, "BORDER");
+    return top - h;
   };
 
   const drawPanelSchedule = (
@@ -1833,7 +1882,9 @@ export const exportToCAD = (
     currentCircuits: Circuit[],
     currentCalcData: any,
     localXOffset: number = 0,
-  ) => {
+    /** Space to keep free under the calculation block (subpanel path card) */
+    reserveBottom: number = 0,
+  ): number => {
     const sConf = sheetConfigs[sheetIndex] || {
       w: baseW,
       xOffset: sheetIndex * 900,
@@ -1918,31 +1969,6 @@ export const exportToCAD = (
     const tableWidth = cols.reduce((sum, col) => sum + col.w, 0);
     const tableRight = xOffset + 20 + tableWidth;
 
-    // Table 1: Frame Outer Header Box
-    b.addRect(xOffset + 20, ty - 22, tableRight, ty - 2, "BORDER");
-
-    // Table Main Header Texts
-    b.addText(
-      `PANELBOARD BOARD SCHEDULE — ${currentPanel.designation || "BOARD"}`,
-      xOffset + 20 + tableWidth / 2,
-      ty - 11,
-      metrics.titleFontSize,
-      0,
-      "TEXT_TITLE",
-      "center",
-    );
-    b.addText(
-      `SYSTEM RATING: ${currentPanel.system} | ENCLOSURE: ${currentPanel.enclosure} | MOUNTING: ${currentPanel.mounting} | VOLTAGE: ${currentPanel.voltage}V | PRIMARY VOLTAGE (HV): ${iscParams?.primaryVoltage || 34500}V`,
-      xOffset + 20 + tableWidth / 2,
-      ty - 18,
-      metrics.subtitleFontSize,
-      0,
-      "TEXT_DATA",
-      "center",
-    );
-
-    ty -= 22; // ty is now 552
-
     // Draw table row grids & texts
     const colPositions: number[] = [];
     let currentX = xOffset + 20;
@@ -1952,39 +1978,42 @@ export const exportToCAD = (
       currentX += col.w;
     });
     colPositions.push(tableRight); // end cap
-
-    // Draw Header Row (supporting double-header tier for Three-Phase AMPS split)
     const headerRowH = metrics.headerRowH;
-    b.addRect(xOffset + 20, ty - headerRowH, tableRight, ty, "BORDER");
+    let pageSheetIndex = sheetIndex;
+    /** Board title and column headings (again at the top of a continuation sheet) */
+    const drawTableHead = (continued: boolean) => {
+      // Table 1: Frame Outer Header Box
+      b.addRect(xOffset + 20, ty - 22, tableRight, ty - 2, "BORDER");
 
-    if (!isPanel3Phase) {
-      // Single Phase Header Layout
-      for (let i = 1; i < colPositions.length; i++) {
-        b.addLine(
-          colPositions[i],
-          ty - headerRowH,
-          colPositions[i],
-          ty,
-          "TABLE_GRID",
-        );
-      }
-      for (let i = 0; i < cols.length; i++) {
-        const cx = colPositions[i] + cols[i].w / 2;
-        b.addText(
-          cols[i].name,
-          cx,
-          ty - headerRowH / 2 - metrics.headerFontSize / 2,
-          metrics.headerFontSize,
-          0,
-          "TEXT_HEADER",
-          "center",
-          cols[i].w - 2
-        );
-      }
-    } else {
-      // 3-Phase Double Tier Header Layout
-      for (let i = 1; i < colPositions.length; i++) {
-        if (i < 7 || i > 10) {
+      // Table Main Header Texts
+      b.addText(
+        `PANELBOARD BOARD SCHEDULE — ${currentPanel.designation || "BOARD"}${continued ? " (CONTINUED)" : ""}`,
+        xOffset + 20 + tableWidth / 2,
+        ty - 11,
+        metrics.titleFontSize,
+        0,
+        "TEXT_TITLE",
+        "center",
+      );
+      b.addText(
+        `SYSTEM RATING: ${currentPanel.system} | ENCLOSURE: ${currentPanel.enclosure} | MOUNTING: ${currentPanel.mounting} | VOLTAGE: ${currentPanel.voltage}V | PRIMARY VOLTAGE (HV): ${iscParams?.primaryVoltage || 34500}V`,
+        xOffset + 20 + tableWidth / 2,
+        ty - 18,
+        metrics.subtitleFontSize,
+        0,
+        "TEXT_DATA",
+        "center",
+      );
+
+      ty -= 22; // ty is now 552
+
+
+      // Draw Header Row (supporting double-header tier for Three-Phase AMPS split)
+      b.addRect(xOffset + 20, ty - headerRowH, tableRight, ty, "BORDER");
+
+      if (!isPanel3Phase) {
+        // Single Phase Header Layout
+        for (let i = 1; i < colPositions.length; i++) {
           b.addLine(
             colPositions[i],
             ty - headerRowH,
@@ -1993,11 +2022,7 @@ export const exportToCAD = (
             "TABLE_GRID",
           );
         }
-      }
-
-      // Print standard column titles
-      for (let i = 0; i < cols.length; i++) {
-        if (i < 6 || i > 9) {
+        for (let i = 0; i < cols.length; i++) {
           const cx = colPositions[i] + cols[i].w / 2;
           b.addText(
             cols[i].name,
@@ -2010,52 +2035,90 @@ export const exportToCAD = (
             cols[i].w - 2
           );
         }
-      }
+      } else {
+        // 3-Phase Double Tier Header Layout
+        for (let i = 1; i < colPositions.length; i++) {
+          if (i < 7 || i > 10) {
+            b.addLine(
+              colPositions[i],
+              ty - headerRowH,
+              colPositions[i],
+              ty,
+              "TABLE_GRID",
+            );
+          }
+        }
 
-      // Split tier for AMPS
-      const ampsStartX = colPositions[6];
-      const ampsEndX = colPositions[10];
-      const splitTierY = ty - headerRowH / 2;
-      b.addLine(ampsStartX, splitTierY, ampsEndX, splitTierY, "TABLE_GRID");
-      b.addText(
-        "AMPS",
-        (ampsStartX + ampsEndX) / 2,
-        ty - (headerRowH / 2) / 2 - metrics.headerFontSize / 2,
-        metrics.headerFontSize,
-        0,
-        "TEXT_HEADER",
-        "center",
-      );
+        // Print standard column titles
+        for (let i = 0; i < cols.length; i++) {
+          if (i < 6 || i > 9) {
+            const cx = colPositions[i] + cols[i].w / 2;
+            b.addText(
+              cols[i].name,
+              cx,
+              ty - headerRowH / 2 - metrics.headerFontSize / 2,
+              metrics.headerFontSize,
+              0,
+              "TEXT_HEADER",
+              "center",
+              cols[i].w - 2
+            );
+          }
+        }
 
-      for (let i = 7; i <= 9; i++) {
-        b.addLine(
-          colPositions[i],
-          ty - headerRowH,
-          colPositions[i],
-          splitTierY,
-          "TABLE_GRID",
-        );
-      }
-      for (let i = 6; i <= 9; i++) {
-        const cx = colPositions[i] + cols[i].w / 2;
+        // Split tier for AMPS
+        const ampsStartX = colPositions[6];
+        const ampsEndX = colPositions[10];
+        const splitTierY = ty - headerRowH / 2;
+        b.addLine(ampsStartX, splitTierY, ampsEndX, splitTierY, "TABLE_GRID");
         b.addText(
-          cols[i].name,
-          cx,
-          splitTierY - (headerRowH / 2) / 2 - metrics.splitHeaderFontSize / 2,
-          metrics.splitHeaderFontSize,
+          "AMPS",
+          (ampsStartX + ampsEndX) / 2,
+          ty - (headerRowH / 2) / 2 - metrics.headerFontSize / 2,
+          metrics.headerFontSize,
           0,
           "TEXT_HEADER",
           "center",
-          cols[i].w - 2
         );
-      }
-    }
 
-    ty -= headerRowH;
+        for (let i = 7; i <= 9; i++) {
+          b.addLine(
+            colPositions[i],
+            ty - headerRowH,
+            colPositions[i],
+            splitTierY,
+            "TABLE_GRID",
+          );
+        }
+        for (let i = 6; i <= 9; i++) {
+          const cx = colPositions[i] + cols[i].w / 2;
+          b.addText(
+            cols[i].name,
+            cx,
+            splitTierY - (headerRowH / 2) / 2 - metrics.splitHeaderFontSize / 2,
+            metrics.splitHeaderFontSize,
+            0,
+            "TEXT_HEADER",
+            "center",
+            cols[i].w - 2
+          );
+        }
+      }
+
+      ty -= headerRowH;
+    };
+    drawTableHead(false);
+    /** Start a continuation sheet for this board and repeat its headings there */
+    const continueSchedule = () => {
+      pageSheetIndex = continueOnNewSheet(sheetIndex, currentPanel);
+      ty = 574;
+      drawTableHead(true);
+    };
 
     // Print circuit rows
     const rowH = metrics.rowH;
     currentCircuits.forEach((cir) => {
+      if (ty - rowH < PAGE_BOTTOM_Y) continueSchedule();
       // Draw bottom horizontal line
       b.addLine(xOffset + 20, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
       // Draw left outer vertical line
@@ -2357,6 +2420,9 @@ export const exportToCAD = (
 
     // DRAW TABULAR SUMMARY FOOTER (Aligned exactly with HTML table arrangement)
     const sumRowH = metrics.summaryRowH;
+    // Summary row, main feeder box and calculation block stay together; continue if they do not fit
+    const footerNeeded = sumRowH + metrics.mainFeederBoxH + 8 + metrics.calcBoxH + 16 + reserveBottom;
+    if (ty - footerNeeded < PAGE_BOTTOM_Y) continueSchedule();
     b.addRect(xOffset + 20, ty - sumRowH, tableRight, ty, "BORDER");
 
     const ySumText = ty - sumRowH / 2 - metrics.summaryFontSize / 2;
@@ -2735,19 +2801,21 @@ export const exportToCAD = (
       writeCalcLineCol2(`Status: ${pStatus}`, cy2, "TEXT_TITLE");
       cy2 -= 12;
     }
+    void pageSheetIndex;
+    // Bottom of the calculation block (the caller places the subpanel path card below it)
+    return calcY - calcBoxHeight - 16;
   };
 
   // Render main sheet template & load schedule only if not short circuit isolated mode
   if (exportMode === "ALL" || exportMode === "LOAD_SCHEDULE") {
-    drawSheetTemplate(0, panel);
-    drawPanelSchedule(0, panel, circuits, calcData);
+    const mdpSheetIndex = allocSheet();
+    drawSheetTemplate(mdpSheetIndex, panel);
+    drawPanelSchedule(mdpSheetIndex, panel, circuits, calcData);
+    b.originX = 0;
   }
 
-  let globalSheetCursor =
-    exportMode === "ALL" || exportMode === "LOAD_SCHEDULE" ? 1 : 0;
-
   if (exportMode === "ALL" || exportMode === "LOAD_SCHEDULE") {
-    const sldSheetIndex = globalSheetCursor++;
+    const sldSheetIndex = allocSheet(sldCustomW);
     drawSheetTemplate(
       sldSheetIndex,
       panel,
@@ -2777,10 +2845,12 @@ export const exportToCAD = (
     let activeSheetIndex = -1;
 
     allSubPanels.forEach((sp, i) => {
+      // A previous board may have continued on another sheet: back to sheet coordinates
+      b.originX = 0;
       // Logic for bundling 2 sub-panels side-by-side if they both fit in 1 template
       const isEven = i % 2 === 0;
       if (isEven) {
-        activeSheetIndex = globalSheetCursor++;
+        activeSheetIndex = allocSheet();
         // Draw the envelope mapping ONLY once per sheet
         drawSheetTemplate(activeSheetIndex, sp.panel);
       }
@@ -2804,21 +2874,29 @@ export const exportToCAD = (
       });
 
       // Draw corresponding table grids and row schedules with exact layout offset
-      drawPanelSchedule(
+      // Card height that shows this board's SLD at a readable breaker spacing (at most a full sheet)
+      const spRows = panelSldRowCount(sp.circuits);
+      const cardReserve = Math.min(380, Math.max(150, 25 + panelSldHeight(spRows, 9) + 30));
+      const spTableBottomY = drawPanelSchedule(
         activeSheetIndex,
         sp.panel,
         sp.circuits,
         spCalcData,
         localXOffset,
+        cardReserve, // path card with the board SLD
       );
 
       const by = 20;
 
       // Compute dynamic height for subpanel path study card to maximize space utilization
-      const spTableBottomY = getPanelTableBottomY(sp.panel, sp.circuits);
       const spBottomSectionHeight = Math.max(
         130,
-        Math.min(360, spTableBottomY - by - 15),
+        Math.min(520, spTableBottomY - by - 15),
+      );
+      // Breaker spacing that keeps the board SLD inside the card
+      const cardRowSpacing = Math.max(
+        PANEL_SLD_MIN_ROW_SPACING,
+        Math.min(PANEL_SLD_ROW_SPACING, (spBottomSectionHeight - 25 - 81 - 16) / Math.max(1, spRows - 1)),
       );
 
       // Render schematic Single Line Diagram representing connection path from Main Panel to Sub Board
@@ -2878,6 +2956,9 @@ export const exportToCAD = (
         sldStartY,
         true,
         fedFromLabel,
+        [],
+        undefined,
+        cardRowSpacing,
       );
 
       b.isSLDMode = previousMode;
@@ -2889,7 +2970,7 @@ export const exportToCAD = (
     exportMode === "VOLTAGE_DROP"
   ) {
     // === SHEET : COMBINED SYSTEM ENGINEERING CALCULATIONS ===
-    const calcSheetIndex = globalSheetCursor++;
+    const calcSheetIndex = allocSheet();
     drawSheetTemplate(
       calcSheetIndex,
       panel,
@@ -3042,7 +3123,7 @@ export const exportToCAD = (
       vdPages.forEach((pageCalcs, pageIdx) => {
         let activeSheetIdx = calcSheetIndex;
         if (pageIdx > 0) {
-          activeSheetIdx = globalSheetCursor++;
+          activeSheetIdx = allocSheet();
           drawSheetTemplate(
             activeSheetIdx,
             panel,
@@ -3194,7 +3275,7 @@ export const exportToCAD = (
 
   if (exportMode === "ALL" || exportMode === "SHORT_CIRCUIT") {
     // === SHEET 2: SHORT-CIRCUIT SINGLE-LINE IMPEDANCE DIAGRAM ===
-    const sldSheetIndex2 = globalSheetCursor++;
+    const sldSheetIndex2 = allocSheet();
     drawSheetTemplate(
       sldSheetIndex2,
       panel,
@@ -4021,7 +4102,7 @@ export const exportToCAD = (
 
   // === DEDICATED NEW SHEET: VOLTAGE DROP ANALYSIS TABLE ===
   if (exportMode === "ALL" || exportMode === "VOLTAGE_DROP") {
-    const vdSheetIndex = globalSheetCursor++;
+    const vdSheetIndex = allocSheet();
     drawSheetTemplate(
       vdSheetIndex,
       panel,
@@ -4156,8 +4237,17 @@ export const exportToCAD = (
        renderGroups.push({ panelName: "CUSTOM CIRCUITS", calcs: customCalcs });
     }
 
+    /** Continue the table on a new sheet with its column headings */
+    const continueVdTable = () => {
+      b.addLine(tableLeft, ty, tableRight, ty, "BORDER");
+      continueOnNewSheet(vdSheetIndex, panel, "VOLTAGE DROP ANALYSIS (CONTINUED)", "FEEDER VOLTAGE REGULATION REPORT");
+      ty = drawColumnLabelRow(tableLeft, tableRight, cols, colPositions, CONTINUE_TOP_Y, labelH, Math.max(1.8, headerFontSize));
+    };
+
     // Data Row rendering
     renderGroups.forEach((group) => {
+      // A group heading needs room for at least its first row
+      if (ty - rowH * 2 < PAGE_BOTTOM_Y) continueVdTable();
       // Draw Panel Group Header
       b.addRect(tableLeft, ty - rowH, tableRight, ty, "BORDER");
       
@@ -4165,6 +4255,7 @@ export const exportToCAD = (
       ty -= rowH;
 
       group.calcs.forEach((calc) => {
+        if (ty - rowH < PAGE_BOTTOM_Y) continueVdTable();
         // Draw bottom horizontal line
         b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
         // Draw left outer vertical line
@@ -4265,6 +4356,7 @@ export const exportToCAD = (
         "center"
       );
     }
+    b.originX = 0;
   }
 
   // === VOLTAGE DROP SINGLE LINE DIAGRAM: every cascade path, VD_PATHS_PER_SHEET rows per sheet ===
@@ -4543,7 +4635,7 @@ export const exportToCAD = (
     const rowH = (top - bottom) / VD_PATH_ROWS;
 
     for (let sheet = 0; sheet < sheetCount; sheet++) {
-      const vdSldSheetIndex = globalSheetCursor++;
+      const vdSldSheetIndex = allocSheet();
       drawSheetTemplate(
         vdSldSheetIndex,
         panel,
@@ -4592,7 +4684,7 @@ export const exportToCAD = (
 
   // === DEDICATED NEW SHEET: SHORT-CIRCUIT STUDY TABLE ===
   if (exportMode === "ALL" || exportMode === "SHORT_CIRCUIT") {
-    const scSheetIndex = globalSheetCursor++;
+    const scSheetIndex = allocSheet();
     drawSheetTemplate(
       scSheetIndex,
       panel,
@@ -4778,9 +4870,14 @@ export const exportToCAD = (
       { label: "Interrupting Protection Level Class", val: excelBreakingkAIC > 22 ? "35 kAIC Required" : excelBreakingkAIC > 10 ? "22 kAIC" : "10 kAIC", unit: "" }
     );
 
+    const continueScTable = () => {
+      continueOnNewSheet(scSheetIndex, panel, "SHORT CIRCUIT STUDY (CONTINUED)", "POINT-TO-POINT CALCULATION RESULTS");
+      ty = drawColumnLabelRow(tableLeft, tableRight, cols, colPositions, CONTINUE_TOP_Y, labelH, 4.5);
+    };
     scRows.forEach((row) => {
       if (row.isSection) {
         const sectH = 14.0;
+        if (ty - sectH - 10 < PAGE_BOTTOM_Y) continueScTable();
         b.addRect(tableLeft, ty - sectH, tableRight, ty, "BORDER");
         b.addText(
           row.label,
@@ -4804,6 +4901,7 @@ export const exportToCAD = (
         const maxLines = Math.max(1, lines0, lines1, lines2);
         
         const rowH = 10.0 + (maxLines - 1) * 7.0;
+        if (ty - rowH < PAGE_BOTTOM_Y) continueScTable();
 
         // Draw bottom horizontal line
         b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
@@ -4824,11 +4922,12 @@ export const exportToCAD = (
         ty -= rowH;
       }
     });
+    b.originX = 0;
   }
 
   // === DEDICATED NEW SHEET: KAIC PROTECTION COMPLIANCE AUDIT ===
   if (exportMode === "ALL" || exportMode === "SHORT_CIRCUIT") {
-    const auditSheetIndex = globalSheetCursor++;
+    const auditSheetIndex = allocSheet();
     drawSheetTemplate(
       auditSheetIndex,
       panel,
@@ -5018,6 +5117,10 @@ export const exportToCAD = (
       });
     }
 
+    const continueAudit = () => {
+      continueOnNewSheet(auditSheetIndex, panel, "KAIC COMPLIANCE AUDIT (CONTINUED)", "PEC SECTION 1.10.1.9 SAFETY EVALUATION");
+      ty = drawColumnLabelRow(tableLeft, tableRight, cols, colPositions, CONTINUE_TOP_Y, labelH, 4.5);
+    };
     // Now render the rows in AutoCAD DXF format
     auditRows.forEach((row) => {
       const valFaultStr = `${(row.faultCurrentA / 1000).toFixed(2)} kA`;
@@ -5032,6 +5135,7 @@ export const exportToCAD = (
       const maxLines = Math.max(1, lines0, lines5);
       
       const rowH = 14.0 + (maxLines - 1) * 8.0;
+      if (ty - rowH < PAGE_BOTTOM_Y) continueAudit();
 
       // Draw bottom horizontal line
       b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
@@ -5068,8 +5172,12 @@ export const exportToCAD = (
       ty -= rowH;
     });
 
-    // Add compliance stamp/note box
+    // Add compliance stamp/note box (on a new sheet when it does not fit under the table)
     const noteH = 22.0;
+    if (ty - 10 - noteH < PAGE_BOTTOM_Y) {
+      continueOnNewSheet(auditSheetIndex, panel, "KAIC COMPLIANCE AUDIT (CONTINUED)", "PEC SECTION 1.10.1.9 SAFETY EVALUATION");
+      ty = CONTINUE_TOP_Y + 10;
+    }
     const noteY = ty - 10;
     b.addRect(tableLeft, noteY - noteH, tableRight, noteY, "BORDER");
     b.addText(
@@ -5099,11 +5207,12 @@ export const exportToCAD = (
       "TEXT_DATA",
       "left"
     );
+    b.originX = 0;
   }
 
   // === DEDICATED NEW SHEET: ILLUMINATION TABLE ===
   if (exportMode === "ALL" && hasIllumination) {
-    const illSheetIndex = globalSheetCursor++;
+    const illSheetIndex = allocSheet();
     drawSheetTemplate(
       illSheetIndex,
       panel,
@@ -5188,6 +5297,10 @@ export const exportToCAD = (
       const maxLines = Math.max(1, lines0, lines3);
 
       const rowH = 14.0 + (maxLines - 1) * 6.0;
+      if (ty - rowH < PAGE_BOTTOM_Y) {
+        continueOnNewSheet(illSheetIndex, panel, "ILLUMINATION ANALYSIS (CONTINUED)", "LUMEN METHOD LIGHTING REPORT");
+        ty = drawColumnLabelRow(tableLeft, tableRight, cols, colPositions, CONTINUE_TOP_Y, 24, 4.0);
+      }
 
       // Draw bottom horizontal line
       b.addLine(tableLeft, ty - rowH, tableRight, ty - rowH, "TABLE_GRID");
@@ -5223,88 +5336,105 @@ export const exportToCAD = (
     const planRooms = illumParams.savedRooms.filter(
       (r: any) => (Array.isArray(r.roomPolygon) && r.roomPolygon.length >= 3) || (r.roomWidth > 0 && r.roomLength > 0)
     );
-    const areaTop = ty - 18;
     const areaBottom = 28;
     const areaLeft = tableLeft;
     const areaRight = xOffset + sConf.w - 145; // clear of the title block strip
-    if (planRooms.length > 0 && areaTop - areaBottom >= 90) {
+    const PLAN_CELL_MIN_H = 110;
+    if (planRooms.length > 0) {
       b.addLayer("ILLUM_WALLS", 7);
       b.addLayer("ILLUM_DIMS", 8);
       b.addLayer("ILLUM_LUMINAIRES", 30);
-      b.addText("ROOM LAYOUT PLANS", areaLeft, areaTop + 6, 5.0, 0, "TEXT_TITLE", "left");
-
-      const cols = Math.min(planRooms.length, 3);
-      const maxRows = Math.max(1, Math.floor((areaTop - areaBottom) / 90));
-      const rows = Math.min(maxRows, Math.ceil(planRooms.length / cols));
-      const cellW = (areaRight - areaLeft) / cols;
-      const cellH = (areaTop - areaBottom) / rows;
       const scales = [20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
 
-      planRooms.slice(0, rows * cols).forEach((room: any, idx: number) => {
-        const cx0 = areaLeft + (idx % cols) * cellW;
-        const cyTop = areaTop - Math.floor(idx / cols) * cellH;
-        const outline = getRoomOutline(room);
-        const bb = polygonBounds(outline);
-        // Paper units are millimetres: pick the smallest standard scale that fits the cell
-        const needed = Math.max((bb.width * 1000) / (cellW - 40), (bb.length * 1000) / (cellH - 48));
-        const scale = scales.find((sc) => sc >= needed) || Math.ceil(needed / 500) * 500;
-        const k = 1000 / scale;
-        const ox = cx0 + (cellW - bb.width * k) / 2;
-        const oyTop = cyTop - 20 - (cellH - 48 - bb.length * k) / 2;
-        const P = (x: number, z: number): [number, number] => [ox + (x - bb.minX) * k, oyTop - (z - bb.minZ) * k];
+      // Fill the space under the table first, then as many continuation sheets as the rooms need
+      let remaining = planRooms.slice();
+      let areaTop = ty - 18;
+      let page = 0;
+      while (remaining.length > 0) {
+        if (areaTop - areaBottom < PLAN_CELL_MIN_H) {
+          continueOnNewSheet(illSheetIndex, panel, "ILLUMINATION ANALYSIS (CONTINUED)", "ROOM LAYOUT PLANS");
+          areaTop = CONTINUE_TOP_Y;
+        }
+        b.addText(page === 0 ? "ROOM LAYOUT PLANS" : "ROOM LAYOUT PLANS (CONTINUED)", areaLeft, areaTop + 6, 5.0, 0, "TEXT_TITLE", "left");
+        const cols = Math.min(remaining.length, 3);
+        const maxRows = Math.max(1, Math.floor((areaTop - areaBottom) / PLAN_CELL_MIN_H));
+        const rows = Math.min(maxRows, Math.ceil(remaining.length / cols));
+        const cellW = (areaRight - areaLeft) / cols;
+        const cellH = (areaTop - areaBottom) / rows;
 
-        b.addRect(cx0 + 2, cyTop - cellH + 4, cx0 + cellW - 2, cyTop, "TABLE_GRID");
-        b.addText(
-          `${room.roomName} - ${outline.length === 4 && !room.roomPolygon ? "RECTANGLE" : String(room.roomShape || "custom").replace("-", " ").toUpperCase()} - A = ${polygonArea(outline).toFixed(2)} m²`,
-          cx0 + 6, cyTop - 8, 3.5, 0, "TEXT_HEADER", "left", cellW - 12
-        );
-        b.addText(`SCALE 1:${scale}`, cx0 + cellW - 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "right");
+        remaining.slice(0, rows * cols).forEach((room: any, idx: number) => {
+          const cx0 = areaLeft + (idx % cols) * cellW;
+          const cyTop = areaTop - Math.floor(idx / cols) * cellH;
+          const outline = getRoomOutline(room);
+          const bb = polygonBounds(outline);
+          // Paper units are millimetres: pick the smallest standard scale that fits the cell
+          const needed = Math.max((bb.width * 1000) / (cellW - 40), (bb.length * 1000) / (cellH - 48));
+          const scale = scales.find((sc) => sc >= needed) || Math.ceil(needed / 500) * 500;
+          const k = 1000 / scale;
+          const ox = cx0 + (cellW - bb.width * k) / 2;
+          const oyTop = cyTop - 20 - (cellH - 48 - bb.length * k) / 2;
+          const P = (x: number, z: number): [number, number] => [ox + (x - bb.minX) * k, oyTop - (z - bb.minZ) * k];
 
-        // Walls, wall lengths outside each wall, corner letters
-        const pts = outline.map(([x, z]) => P(x, z));
-        pts.forEach((a, i) => {
-          const c = pts[(i + 1) % pts.length];
-          b.addLine(a[0], a[1], c[0], c[1], "ILLUM_WALLS");
-          const dx = c[0] - a[0];
-          const dy = c[1] - a[1];
-          const len = Math.hypot(dx, dy);
-          if (len < 6) return;
-          // Outline is clockwise on screen, i.e. counter-clockwise with y up: outward normal is (-dy, dx)
-          const nx = -dy / len;
-          const ny = dx / len;
-          let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
-          if (deg > 90) deg -= 180;
-          if (deg <= -90) deg += 180;
-          const [ox1, oz1] = outline[i];
-          const [ox2, oz2] = outline[(i + 1) % outline.length];
+          b.addRect(cx0 + 2, cyTop - cellH + 4, cx0 + cellW - 2, cyTop, "TABLE_GRID");
           b.addText(
-            `${Math.hypot(ox2 - ox1, oz2 - oz1).toFixed(2)} m`,
-            (a[0] + c[0]) / 2 + nx * 4, (a[1] + c[1]) / 2 + ny * 4, 2.5, deg, "ILLUM_DIMS", "center"
+            `${room.roomName} - ${outline.length === 4 && !room.roomPolygon ? "RECTANGLE" : String(room.roomShape || "custom").replace("-", " ").toUpperCase()} - A = ${polygonArea(outline).toFixed(2)} m²`,
+            cx0 + 6, cyTop - 8, 3.5, 0, "TEXT_HEADER", "left", cellW - 12
+          );
+          b.addText(`SCALE 1:${scale}`, cx0 + cellW - 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "right");
+
+          // Walls, wall lengths outside each wall, corner letters
+          const pts = outline.map(([x, z]) => P(x, z));
+          pts.forEach((a, i) => {
+            const c = pts[(i + 1) % pts.length];
+            b.addLine(a[0], a[1], c[0], c[1], "ILLUM_WALLS");
+            const dx = c[0] - a[0];
+            const dy = c[1] - a[1];
+            const len = Math.hypot(dx, dy);
+            if (len < 6) return;
+            // Outline is clockwise on screen, i.e. counter-clockwise with y up: outward normal is (-dy, dx)
+            const nx = -dy / len;
+            const ny = dx / len;
+            let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+            if (deg > 90) deg -= 180;
+            if (deg <= -90) deg += 180;
+            const [ox1, oz1] = outline[i];
+            const [ox2, oz2] = outline[(i + 1) % outline.length];
+            b.addText(
+              `${Math.hypot(ox2 - ox1, oz2 - oz1).toFixed(2)} m`,
+              (a[0] + c[0]) / 2 + nx * 4, (a[1] + c[1]) / 2 + ny * 4, 2.5, deg, "ILLUM_DIMS", "center"
+            );
+          });
+          pts.forEach((p, i) => b.addText(vertexLabel(i), p[0], p[1] + 2, 2.2, 0, "ILLUM_DIMS", "center"));
+
+          // Luminaires: circle with cross, numbered
+          const fixtures: { x: number; z: number }[] = Array.isArray(room.customPositions) ? room.customPositions : [];
+          const r = Math.max(1.2, Math.min(3, k * 0.25));
+          fixtures.forEach((fx, i) => {
+            const [px, py] = P(fx.x, fx.z);
+            b.addCircle(px, py, r, "ILLUM_LUMINAIRES");
+            b.addLine(px - r * 0.7, py - r * 0.7, px + r * 0.7, py + r * 0.7, "ILLUM_LUMINAIRES");
+            b.addLine(px - r * 0.7, py + r * 0.7, px + r * 0.7, py - r * 0.7, "ILLUM_LUMINAIRES");
+            b.addText(String(i + 1), px + r + 0.8, py + r * 0.4, 1.8, 0, "ILLUM_LUMINAIRES", "left");
+          });
+          b.addText(
+            `${fixtures.length > 0 ? fixtures.length : room.fixturesCount} x ${room.fixtureLightType || "LUMINAIRE"} | N ^`,
+            cx0 + 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "left", cellW - 60
           );
         });
-        pts.forEach((p, i) => b.addText(vertexLabel(i), p[0], p[1] + 2, 2.2, 0, "ILLUM_DIMS", "center"));
 
-        // Luminaires: circle with cross, numbered
-        const fixtures: { x: number; z: number }[] = Array.isArray(room.customPositions) ? room.customPositions : [];
-        const r = Math.max(1.2, Math.min(3, k * 0.25));
-        fixtures.forEach((fx, i) => {
-          const [px, py] = P(fx.x, fx.z);
-          b.addCircle(px, py, r, "ILLUM_LUMINAIRES");
-          b.addLine(px - r * 0.7, py - r * 0.7, px + r * 0.7, py + r * 0.7, "ILLUM_LUMINAIRES");
-          b.addLine(px - r * 0.7, py + r * 0.7, px + r * 0.7, py - r * 0.7, "ILLUM_LUMINAIRES");
-          b.addText(String(i + 1), px + r + 0.8, py + r * 0.4, 1.8, 0, "ILLUM_LUMINAIRES", "left");
-        });
-        b.addText(
-          `${fixtures.length > 0 ? fixtures.length : room.fixturesCount} x ${room.fixtureLightType || "LUMINAIRE"} | N ^`,
-          cx0 + 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "left", cellW - 60
-        );
-      });
-
-      if (planRooms.length > rows * cols) {
-        b.addText(`+ ${planRooms.length - rows * cols} more room(s): see the Illumination module layout PDF`, areaLeft, areaBottom - 6, 3.0, 0, "TEXT_DATA", "left");
+        remaining = remaining.slice(rows * cols);
+        areaTop = areaBottom; // next rooms go on a new sheet
+        page++;
       }
+      b.originX = 0;
     }
   }
+
+  b.originX = 0;
+  b.originY = 0;
+  sheetNumberMarks.forEach(({ sheetIndex, x }) => {
+    b.addText(`E - ${sheetIndex + 1} / ${sheetConfigs.length}`, x, 32, 10.0, 0, "BORDER", "center");
+  });
 
   const dxfString = b.toDxfString();
   const filename =
