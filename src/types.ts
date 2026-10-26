@@ -268,6 +268,8 @@ export interface SavedLightingDetail {
   totalLumens: number;
   totalWattage: number;
   circuitNo?: number; // optionally link to circuit
+  /** Luminaires required by the lumen method (fixturesCount is what is installed) */
+  requiredFixtures?: number;
   fixtureWattage?: number;
   fixtureLumens?: number;
   activeFixtures?: ActiveFixtureSelection[];
