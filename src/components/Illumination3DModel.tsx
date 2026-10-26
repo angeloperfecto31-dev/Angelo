@@ -83,7 +83,7 @@ type FixtureStyle =
   | 'exit'
   | 'emergency';
 
-function fixtureStyleOf(lightType: string | undefined, shape: string): FixtureStyle {
+export function fixtureStyleOf(lightType: string | undefined, shape: string): FixtureStyle {
   const t = (lightType || '').toLowerCase();
   if (/exit/.test(t)) return 'exit';
   if (/emergency|twin-head/.test(t)) return 'emergency';
@@ -103,7 +103,7 @@ function fixtureStyleOf(lightType: string | undefined, shape: string): FixtureSt
 }
 
 /** Recessed and ceiling-mounted styles sit on the ceiling; the others hang at the mounting height */
-const isCeilingStyle = (style: FixtureStyle) =>
+export const isCeilingStyle = (style: FixtureStyle) =>
   style === 'panel' || style === 'downlight' || style === 'surface-round' || style === 'batten' || style === 'exit' || style === 'emergency';
 
 /** Small "EXIT" face texture */
@@ -129,7 +129,7 @@ function exitTexture() {
  * diffuser facing the floor. dropToCeiling adds suspension cords/rods up to the ceiling, and a faint
  * beam shows the light spread down to the floor (dropToFloor) at the fixture's beam angle.
  */
-function createFixture3D(
+export function createFixture3D(
   resolved: ReturnType<typeof resolveFixtureParams>,
   lightType: string | undefined,
   opts: { dropToCeiling: number; dropToFloor: number; showBeam: boolean; beamOpacity: number }

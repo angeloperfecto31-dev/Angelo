@@ -3,7 +3,7 @@ import { initializeAuth, inMemoryPersistence, browserLocalPersistence, indexedDB
 import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase Auth with explicit persistence to prevent iframe blocking errors in previews

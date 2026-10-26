@@ -52,6 +52,7 @@ import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection,
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
 import RoomShapeEditor from './RoomShapeEditor';
+import ImportedModelViewer, { DesignSummary } from './ImportedModelViewer';
 import { RoomLayoutData, exportIlluminationLayoutPdf, roomGeometrySummary, roomShapeLabel } from '../utils/illuminationRoomExport';
 import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
 
@@ -1403,7 +1404,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   };
 
   const [activeSubTab, setActiveSubTab] = useState<'rooms' | '3d' | 'grid' | 'daylight' | 'glare' | 'energy' | 'reports'>('3d');
-  const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag'>('3d');
+  const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag' | 'model'>('3d');
+  /** View of the imported model chosen for the Room Layout PDF */
+  const [modelSnapshot, setModelSnapshot] = useState<string | null>(null);
   const [draggedFixtureId, setDraggedFixtureId] = useState<string | null>(null);
   const [rotatingFixtureId, setRotatingFixtureId] = useState<string | null>(null);
   const dragContainerRef = useRef<HTMLDivElement>(null);
@@ -2479,6 +2482,17 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       maxLux: luxGridData.maxLux,
       uniformityU0: luxGridData.uniformityU0,
       luxGrid: luxGridData.grid,
+      ...(params.importedModel ? {
+        importedModel: {
+          fileName: params.importedModel.fileName,
+          format: params.importedModel.format,
+          unit: params.importedModel.unit,
+          scale: params.importedModel.scale,
+          verified: params.importedModel.verified,
+          roomName: params.importedModel.rooms.find(r => r.id === params.importedModel!.activeRoomId)?.name,
+          snapshot: modelSnapshot,
+        },
+      } : {}),
     };
   };
 
@@ -2552,6 +2566,39 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       co2SavedYearly: Math.round(co2SavedYearly)
     };
   }, [calculation.fixtures, installedQuantity, params.isManualQuantity, params.manualQuantity, calculation.area, activeFixture, lpdLimitInfo, operatingHours, operatingDays, electricityRate, daylightSavings]);
+
+  /** Estimated illuminance at a room point from the placed fixtures (simplified beam model) */
+  const luxAtPoint = React.useCallback((x: number, z: number) =>
+    (params.customPositions || []).reduce((sum, cp) =>
+      sum + calcSinglePointLux(x, z, cp, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens), 0),
+    [params.customPositions, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens]);
+
+  /** Results shown next to the imported model */
+  const designSummary: DesignSummary = useMemo(() => {
+    const area = parseFloat(calculation.area) || 0;
+    const list = params.activeFixtures || [];
+    const installedLumens = list.length > 0
+      ? (list.length === 1 ? installedQuantity * (list[0].lumens || 0) : list.reduce((s, f) => s + (f.quantity || 0) * (f.lumens || 0), 0))
+      : installedQuantity * (activeFixture.lumens || 0);
+    const uf = Number(calculation.effectiveCU) || params.coefficientOfUtilization || 0.6;
+    const mf = params.maintenanceFactor || 0.8;
+    return {
+      area,
+      roomIndex: Number(calculation.roomIndex) || 0,
+      utilizationFactor: uf,
+      maintenanceFactor: mf,
+      requiredFixtures: calculation.fixtures,
+      installedFixtures: installedQuantity,
+      requiredLumens: calculation.totalLumens,
+      installedLumens,
+      averageLux: area > 0 ? (installedLumens * uf * mf) / area : 0,
+      pointAverageLux: luxGridData.averageLux,
+      connectedLoadW: energyAudit.totalPowerW,
+      lpd: energyAudit.lpd,
+      lpdLimit: lpdLimitInfo.limit,
+      targetLux: params.targetLux,
+    };
+  }, [calculation, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, params.targetLux, installedQuantity, activeFixture.lumens, luxGridData.averageLux, energyAudit, lpdLimitInfo.limit]);
 
   const handleAddToSchedule = async () => {
     if (!setCircuits || !circuits) return;
@@ -3514,6 +3561,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                        >
                          <Grid className="w-2.5 h-2.5" /> Interactive Floor Plan
                        </button>
+                       <button
+                         type="button"
+                         onClick={() => setLayoutViewMode('model')}
+                         className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all flex items-center gap-1 ${layoutViewMode === 'model' ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                       >
+                         <Upload className="w-2.5 h-2.5" /> Imported 3D Model{params.importedModel ? ' •' : ''}
+                       </button>
                      </div>
 
                      {/* False Color Render */}
@@ -3530,7 +3584,19 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                    </div>
                 </div>
 
-                {params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0 ? (
+                {layoutViewMode === 'model' ? (
+                  <ImportedModelViewer
+                    params={params}
+                    setParams={setParams}
+                    ceilingHeight={ceilingHeight}
+                    workingPlaneHeight={workingPlaneHeight}
+                    mountingHeight={mountingHeight}
+                    roomOutline={roomOutline}
+                    luxAt={luxAtPoint}
+                    summary={designSummary}
+                    onSnapshot={setModelSnapshot}
+                  />
+                ) : params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0 ? (
                   <>
                   {layoutViewMode === '3d' ? (
                     <Illumination3DModel 

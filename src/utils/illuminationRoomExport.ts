@@ -37,6 +37,17 @@ export interface RoomLayoutData {
   uniformityU0?: number;
   /** 5 × 5 point grid at 10 %, 30 % … 90 % of the bounding box; null = outside the room */
   luxGrid?: (number | null)[][];
+  /** Imported 3D model the room was taken from */
+  importedModel?: {
+    fileName: string;
+    format: string;
+    unit: string;
+    scale: number;
+    verified: boolean;
+    roomName?: string;
+    /** PNG data URL of the chosen model view */
+    snapshot?: string | null;
+  };
 }
 
 export const roomShapeLabel = (shape?: RoomShapeId) => ROOM_SHAPES.find((s) => s.id === (shape || "rectangle"))?.label || "Rectangle";
@@ -327,6 +338,72 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   doc.setFontSize(6.5);
   doc.setTextColor(...MUTED);
   doc.text("Dimensions in metres. Luminaire positions measured from the north-west corner of the bounding box.", m + 4, tbY - 1.2);
+
+  // Page 2: the imported 3D model the room comes from
+  if (data.importedModel) {
+    const im = data.importedModel;
+    doc.addPage("a3", "landscape");
+    doc.setDrawColor(...NAVY);
+    doc.setLineWidth(0.6);
+    doc.rect(m, m, W - m * 2, H - m * 2);
+    doc.setFillColor(...NAVY);
+    doc.rect(m, m, W - m * 2, 14, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text("IMPORTED 3D MODEL REFERENCE", m + 5, m + 9.2);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    pdfFitText(doc, `${data.roomName} | ${im.fileName}`, W - m - 5, m + 9, 220, { align: "right" });
+
+    const imgX = m + 4;
+    const imgY = m + 18;
+    const imgW = 290;
+    const imgH = H - m * 2 - 22;
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.2);
+    doc.rect(imgX, imgY, imgW, imgH);
+    if (im.snapshot) {
+      try {
+        const props = doc.getImageProperties(im.snapshot);
+        const k = Math.min((imgW - 4) / props.width, (imgH - 4) / props.height);
+        const w = props.width * k;
+        const h = props.height * k;
+        doc.addImage(im.snapshot, "PNG", imgX + (imgW - w) / 2, imgY + (imgH - h) / 2, w, h);
+      } catch {
+        /* image unreadable: the frame stays empty */
+      }
+    } else {
+      doc.setFontSize(9);
+      doc.setTextColor(...MUTED);
+      doc.text("No model view captured. Use 'Report View' in the Imported 3D Model viewer to add one.", imgX + imgW / 2, imgY + imgH / 2, { align: "center" });
+    }
+
+    autoTable(doc, {
+      startY: imgY,
+      margin: { left: imgX + imgW + 6, right: m + 4 },
+      head: [["MODEL", "VALUE"]],
+      body: [
+        ["File", im.fileName],
+        ["Format", im.format.toUpperCase()],
+        ["Units", `${im.unit}${Math.abs(im.scale - ({ m: 1, cm: 0.01, mm: 0.001, in: 0.0254, ft: 0.3048 } as Record<string, number>)[im.unit]) > 1e-9 ? ` (calibrated, ${im.scale.toFixed(5)} m per unit)` : ""}`],
+        ["Design room", im.roomName || "-"],
+        ["Dimensions verified", im.verified ? "Yes, by the designer" : "NO - taken from the model, check before use"],
+      ],
+      theme: "grid",
+      headStyles: { fillColor: NAVY, textColor: 255, fontStyle: "bold" as const, fontSize: 8 },
+      bodyStyles: { fontSize: 8, cellPadding: 1.4, textColor: NAVY },
+      columnStyles: { 0: { cellWidth: 38 } },
+    });
+    let ny = (doc as any).lastAutoTable.finalY + 6;
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    [
+      "Room outline traced from a horizontal section of the model (about +/-5 cm).",
+      "Average illuminance by the lumen method; point values use a simplified beam model,",
+      "not manufacturer photometric (IES/LDT) files, and are indicative only.",
+    ].forEach((line) => { doc.text(line, imgX + imgW + 6, ny); ny += 4; });
+  }
 
   const safeName = (data.roomName || "Room").replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "");
   doc.save(`Illumination_Room_Layout_${safeName || "Room"}.pdf`);

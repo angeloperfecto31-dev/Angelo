@@ -349,6 +349,47 @@ export interface IlluminationParams {
   roomShapeDims?: RoomShapeDims;
   /** Outline in metres, bounding box at (0, 0) and equal to roomWidth × roomLength (non-rectangular shapes) */
   roomPolygon?: RoomVertex[];
+  /** Imported 3D architectural model (metadata only; the files are cached locally / in Firebase Storage) */
+  importedModel?: ImportedModelInfo;
+}
+
+/** A room detected in an imported model, in model plan coordinates (metres, x east, z south) */
+export interface ImportedModelRoom {
+  id: string;
+  name: string;
+  polygon: RoomVertex[];
+  floorElevation: number;
+  /** Floor-to-ceiling height found by a vertical ray; null when no ceiling surface was hit */
+  ceilingHeight: number | null;
+  area: number;
+}
+
+export interface ImportedModelInfo {
+  fileName: string;
+  format: "glb" | "gltf" | "obj" | "dae";
+  fileNames: string[];
+  sizeBytes: number;
+  /** SHA-256 (hex, 40 chars) of the files: key of the local cache and the cloud folder */
+  hash: string;
+  cloudPaths?: string[];
+  storageNote?: string;
+  unit: "m" | "cm" | "mm" | "in" | "ft";
+  /** Metres per model unit (unit scale x any calibration) */
+  scale: number;
+  upAxis: "y" | "z";
+  /** Plan section elevation above the lowest point of the model (m) */
+  sectionElevation: number;
+  /** Openings narrower than this are closed when detecting rooms (m) */
+  gapClose: number;
+  rooms: ImportedModelRoom[];
+  activeRoomId?: string;
+  /** Model plan position of the design room's north-west bounding-box corner (room x = 0, z = 0) */
+  roomOffset?: { x: number; z: number };
+  /** Hidden model parts (child index paths) */
+  hiddenNodes?: string[];
+  /** The user has checked the imported dimensions */
+  verified: boolean;
+  importedAt: string;
 }
 
 export interface FloorPlanImage {
