@@ -1135,9 +1135,14 @@ function listVdPathEndpoints(panel: PanelConfig, circuits: Circuit[] | undefined
   return list;
 }
 
-/** Cascade path rows per Voltage Drop SLD sheet (drawn at VD_PATH_SCALE of the single-path size) */
-const VD_PATHS_PER_SHEET = 5;
-const VD_PATH_SCALE = 0.75;
+/**
+ * Voltage Drop SLD sheet layout: cascade paths at VD_PATH_SCALE of the single-path drawing, two side by
+ * side (each half the drawing width), VD_PATH_ROWS rows per sheet.
+ */
+const VD_PATH_COLUMNS = 2;
+const VD_PATH_ROWS = 8;
+const VD_PATHS_PER_SHEET = VD_PATH_COLUMNS * VD_PATH_ROWS;
+const VD_PATH_SCALE = 0.42;
 
 export const exportToCAD = (
   panel: PanelConfig,
@@ -4535,7 +4540,7 @@ export const exportToCAD = (
     const sheetCount = Math.max(1, Math.ceil(allPaths.length / VD_PATHS_PER_SHEET));
     const top = 572; // below the inner border
     const bottom = 22;
-    const rowH = (top - bottom) / VD_PATHS_PER_SHEET;
+    const rowH = (top - bottom) / VD_PATH_ROWS;
 
     for (let sheet = 0; sheet < sheetCount; sheet++) {
       const vdSldSheetIndex = globalSheetCursor++;
@@ -4549,26 +4554,34 @@ export const exportToCAD = (
       const xOffset = sConfSld.xOffset;
       const areaL = xOffset + 22;
       const areaR = xOffset + sConfSld.w - 140; // clear of the title block strip
-      // Room for the service entrance symbol on the left and the end labels on the right
-      const xL = areaL + 70;
-      const xR = areaR - 55;
+      const colW = (areaR - areaL) / VD_PATH_COLUMNS;
+      // Column divider
+      for (let c = 1; c < VD_PATH_COLUMNS; c++) b.addLine(areaL + c * colW, bottom, areaL + c * colW, top, "TABLE_GRID");
 
-      allPaths.slice(sheet * VD_PATHS_PER_SHEET, (sheet + 1) * VD_PATHS_PER_SHEET).forEach((ep, rowIdx) => {
-        const pathNo = sheet * VD_PATHS_PER_SHEET + rowIdx + 1;
+      // Paths fill the left column top to bottom, then the right column
+      allPaths.slice(sheet * VD_PATHS_PER_SHEET, (sheet + 1) * VD_PATHS_PER_SHEET).forEach((ep, cellIdx) => {
+        const pathNo = sheet * VD_PATHS_PER_SHEET + cellIdx + 1;
+        const col = Math.floor(cellIdx / VD_PATH_ROWS);
+        const rowIdx = cellIdx % VD_PATH_ROWS;
+        const cellL = areaL + col * colW;
+        const cellR = cellL + colW;
+        // Room for the service entrance symbol on the left and the end labels on the right
+        const xL = cellL + 34;
+        const xR = cellR - 30;
         const rowTop = top - rowIdx * rowH;
-        const yc = rowTop - 12 - 57 * VD_PATH_SCALE; // drawing spans about +57 to -68 units around the line
+        const yc = rowTop - 9 - 57 * VD_PATH_SCALE; // drawing spans about +57 to -68 units around the line
         const segs = segmentsFor(ep.id);
 
         // Row heading: path name and total voltage drop to the endpoint
         const totalV = segs.reduce((sum, sg) => sum + (parseFloat(sg.calc.result.vd) || 0), 0);
         const totalPct = (totalV / systemVoltage) * 100;
         const allOk = segs.every(sg => sg.calc.result.isCompliant);
-        b.addText(`PATH ${pathNo}: ${ep.name}`, areaL + 4, rowTop - 6, 2.4, 0, "TEXT_HEADER", "left", (areaR - areaL) * 0.62);
+        b.addText(`PATH ${pathNo}: ${ep.name}`, cellL + 3, rowTop - 4.5, 1.5, 0, "TEXT_HEADER", "left", colW * 0.56);
         b.addText(
-          segs.length ? `TOTAL PATH VD = ${totalV.toFixed(2)} V (${totalPct.toFixed(2)}%) - ${allOk ? "PEC COMPLIANT" : "EXCEEDS PEC LIMIT"}` : "NO CALCULATION",
-          areaR - 4, rowTop - 6, 2.0, 0, allOk ? "TEXT_DATA" : "SLD_FAULT", "right"
+          segs.length ? `VD = ${totalV.toFixed(2)} V (${totalPct.toFixed(2)}%) - ${allOk ? "PEC COMPLIANT" : "EXCEEDS PEC LIMIT"}` : "NO CALCULATION",
+          cellR - 3, rowTop - 4.5, 1.3, 0, allOk ? "TEXT_DATA" : "SLD_FAULT", "right"
         );
-        if (rowIdx > 0) b.addLine(areaL, rowTop, areaR, rowTop, "TABLE_GRID");
+        if (rowIdx > 0) b.addLine(cellL, rowTop, cellR, rowTop, "TABLE_GRID");
 
         drawPathRow(segs, xL, xR, yc, VD_PATH_SCALE);
       });
