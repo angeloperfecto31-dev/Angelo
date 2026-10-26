@@ -7267,6 +7267,7 @@ export default function PaymentScreen({
                         <span className={`text-2xl md:text-3xl font-black tracking-tight ${selectedPlan === 'basic' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-900 dark:text-white'}`}>
                           ₱{basicFinalPrice.toLocaleString()}
                         </span>
+                        <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">/ month</span>
                         {isOfferActive && pricingSettings.promoDiscountBasic > 0 && (
                           <span className="text-xs md:text-sm text-red-500 font-bold line-through ml-2 align-middle">₱{pricingSettings.basicPrice.toLocaleString()}</span>
                         )}
@@ -7302,6 +7303,7 @@ export default function PaymentScreen({
                         <span className={`text-2xl md:text-3xl font-black tracking-tight ${selectedPlan === 'premium' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-900 dark:text-white'}`}>
                           ₱{premiumFinalPrice.toLocaleString()}
                         </span>
+                        <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">/ month</span>
                         {isOfferActive && pricingSettings.promoDiscountPremium > 0 && (
                           <span className="text-xs md:text-sm text-red-500 font-bold line-through ml-2 align-middle">₱{pricingSettings.premiumPrice.toLocaleString()}</span>
                         )}
@@ -7372,6 +7374,7 @@ export default function PaymentScreen({
                         <span className={`text-2xl md:text-3xl font-black tracking-tight ${selectedPlan === 'enterprise' ? 'text-indigo-700' : 'text-slate-900'}`}>
                           ₱{enterpriseFinalPrice.toLocaleString()}
                         </span>
+                        <span className="text-xs font-bold text-slate-500 dark:text-zinc-400">/ lifetime</span>
                         {isOfferActive && pricingSettings.promoDiscountEnterprise > 0 && (
                           <span className="text-xs md:text-sm text-red-500 font-bold line-through ml-2 align-middle">₱{pricingSettings.enterprisePrice.toLocaleString()}</span>
                         )}
