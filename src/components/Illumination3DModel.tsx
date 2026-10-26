@@ -30,6 +30,8 @@ interface SceneProps {
   customPositions?: PlacedFixtureDragPosition[];
   /** Non-rectangular room outline in metres (bounding box 0..width × 0..length) */
   roomPolygon?: RoomPoint[];
+  /** Working plane height (m); height (mounting height) is measured from it */
+  workingPlaneHeight?: number;
 }
 
 interface PlacedFixture {
@@ -66,132 +68,260 @@ export function resolveFixtureParams(
   };
 }
 
-// Dynamic 3D model generator for custom physical fixtures
-function createFixture3D(resolved: ReturnType<typeof resolveFixtureParams>) {
-  const group = new THREE.Group();
-  
-  const housingMat = new THREE.MeshStandardMaterial({
-    color: 0x334155, // Slate-700 housing frame
-    roughness: 0.5,
-    metalness: 0.5
-  });
-  
-  const emitterMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    emissive: 0xfffcf0,
-    emissiveIntensity: 2.0
-  });
+/** Fixture styles drawn in the 3D room, picked from the luminaire's name and shape */
+type FixtureStyle =
+  | 'panel'
+  | 'downlight'
+  | 'surface-round'
+  | 'batten'
+  | 'linear-profile'
+  | 'highbay'
+  | 'bulb'
+  | 'spot'
+  | 'flood'
+  | 'pendant'
+  | 'exit'
+  | 'emergency';
 
-  if (resolved.shape === 'linear') {
-    // Tube light / linear fitting
-    const housingW = resolved.length + 0.02; // length along X (horizontal)
-    const housingL = resolved.width + 0.02;  // width along Z (vertical)
-    const housingH = Math.max(0.02, resolved.thickness);
-    
-    // Housing plate / backplate
-    const housingGeo = new THREE.BoxGeometry(housingW, housingH, housingL);
-    const housingMesh = new THREE.Mesh(housingGeo, housingMat);
-    group.add(housingMesh);
-    
-    // Long illuminated tube cylinder
-    const tubeR = resolved.width / 2;
-    const tubeL = resolved.length * 0.96;
-    const tubeGeo = new THREE.CylinderGeometry(tubeR, tubeR, tubeL, 16);
-    tubeGeo.rotateZ(Math.PI / 2); // align along X-axis (room width)
-    const tubeMesh = new THREE.Mesh(tubeGeo, emitterMat);
-    tubeMesh.position.y = -housingH / 2 + 0.005;
-    group.add(tubeMesh);
-    
-    // Small chrome/metallic end-caps
-    const capGeo = new THREE.CylinderGeometry(tubeR + 0.005, tubeR + 0.005, 0.02, 16);
-    capGeo.rotateZ(Math.PI / 2); // align along X-axis
-    const cap1 = new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 }));
-    cap1.position.set(-tubeL / 2, -housingH / 2 + 0.005, 0); // place on X end caps
-    const cap2 = cap1.clone();
-    cap2.position.set(tubeL / 2, -housingH / 2 + 0.005, 0);
-    group.add(cap1);
-    group.add(cap2);
-    
-  } else if (resolved.shape === 'circular') {
-    const rad = resolved.diameter / 2;
-    const h = resolved.thickness;
-    
-    if (h > 0.15) {
-      // Pendant suspension chandelier or industrial high-bay cone
-      // Ceiling cap attachment
-      const capGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.02, 16);
-      const cap = new THREE.Mesh(capGeo, housingMat);
-      cap.position.y = 0.01;
-      group.add(cap);
-      
-      // Suspension cord
-      const cordL = h * 0.7;
-      const cordGeo = new THREE.CylinderGeometry(0.006, 0.006, cordL, 8);
-      const cord = new THREE.Mesh(cordGeo, new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 }));
-      cord.position.y = -cordL / 2;
-      group.add(cord);
-      
-      // Pendant cone body
-      const bodyH = h * 0.3;
-      const bodyGeo = new THREE.CylinderGeometry(rad * 0.3, rad, bodyH, 32, 1, false);
-      const body = new THREE.Mesh(bodyGeo, housingMat);
-      body.position.y = -cordL - bodyH / 2;
-      group.add(body);
-      
-      // Glowing sphere bulb inside bell
-      const bulbGeo = new THREE.SphereGeometry(rad * 0.45, 24, 24);
-      const bulb = new THREE.Mesh(bulbGeo, emitterMat);
-      bulb.position.y = -cordL - bodyH + 0.01;
-      group.add(bulb);
-      
-    } else {
-      // Small/flat circular downlight or ceiling dome
-      // Housing container flange
-      const ringGeo = new THREE.CylinderGeometry(rad + 0.015, rad + 0.015, h, 32);
-      const ring = new THREE.Mesh(ringGeo, housingMat);
-      group.add(ring);
-      
-      // Glowing diffuser board
-      const diskGeo = new THREE.CylinderGeometry(rad, rad, h - 0.004, 32);
-      const disk = new THREE.Mesh(diskGeo, emitterMat);
-      disk.position.y = -0.002;
-      group.add(disk);
-    }
-    
-  } else if (resolved.shape === 'square') {
-    // Square modular light ceiling panel (e.g. 2x2 grid flat)
-    const w = resolved.width;
-    const h = resolved.thickness;
-    
-    // Metallic outer framing
-    const frameGeo = new THREE.BoxGeometry(w + 0.02, h, w + 0.02);
-    const frame = new THREE.Mesh(frameGeo, housingMat);
-    group.add(frame);
-    
-    // Glowing diffuser block
-    const boardGeo = new THREE.BoxGeometry(w, h - 0.004, w);
-    const board = new THREE.Mesh(boardGeo, emitterMat);
-    board.position.y = -0.002;
-    group.add(board);
-    
-  } else {
-    // Rectangular office fixture or floodlight plate
-    // Align horizontally with X by default (makes the longer dimension go along room width/X)
-    const w = Math.max(resolved.width, resolved.length);
-    const l = Math.min(resolved.width, resolved.length);
-    const h = resolved.thickness;
-    
-    const frameGeo = new THREE.BoxGeometry(w + 0.02, h, l + 0.02);
-    const frame = new THREE.Mesh(frameGeo, housingMat);
-    group.add(frame);
-    
-    const boardGeo = new THREE.BoxGeometry(w, h - 0.004, l);
-    const board = new THREE.Mesh(boardGeo, emitterMat);
-    board.position.y = -0.002;
-    group.add(board);
+function fixtureStyleOf(lightType: string | undefined, shape: string): FixtureStyle {
+  const t = (lightType || '').toLowerCase();
+  if (/exit/.test(t)) return 'exit';
+  if (/emergency|twin-head/.test(t)) return 'emergency';
+  if (/high-bay|high bay|highbay|ufo/.test(t)) return 'highbay';
+  if (/flood|street|area|wall pack|wall-pack|canopy|tunnel|stadium|sports|shoebox/.test(t)) return 'flood';
+  if (/pendant|chandelier|drum|dome/.test(t) && !/profile|linear/.test(t)) return 'pendant';
+  if (/linear|profile|low-bay|low bay|grazer|suspended/.test(t)) return 'linear-profile';
+  if (/tube|t8|t5|batten|vapor|tri-proof|strip|cove/.test(t)) return 'batten';
+  if (/bulb|a60|filament/.test(t)) return 'bulb';
+  if (/spot|track|gu10|mr16|gimbal|pin-hole|accent|cob/.test(t)) return 'spot';
+  if (/downlight/.test(t)) return 'downlight';
+  if (/panel|troffer|clean room|hospital|examination/.test(t)) return 'panel';
+  if (/ceiling|surface|sensor|bulkhead|flush/.test(t)) return shape === 'circular' ? 'surface-round' : 'panel';
+  if (shape === 'linear') return 'batten';
+  if (shape === 'circular') return 'downlight';
+  return 'panel';
+}
+
+/** Recessed and ceiling-mounted styles sit on the ceiling; the others hang at the mounting height */
+const isCeilingStyle = (style: FixtureStyle) =>
+  style === 'panel' || style === 'downlight' || style === 'surface-round' || style === 'batten' || style === 'exit' || style === 'emergency';
+
+/** Small "EXIT" face texture */
+function exitTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = '#16a34a';
+    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 34px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('EXIT', 64, 34);
   }
-  
-  return group;
+  return new THREE.CanvasTexture(c);
+}
+
+/**
+ * 3D luminaire model. The group's origin is the mounting point; the body hangs below it with the lit
+ * diffuser facing the floor. dropToCeiling adds suspension cords/rods up to the ceiling, and a faint
+ * beam shows the light spread down to the floor (dropToFloor) at the fixture's beam angle.
+ */
+function createFixture3D(
+  resolved: ReturnType<typeof resolveFixtureParams>,
+  lightType: string | undefined,
+  opts: { dropToCeiling: number; dropToFloor: number; showBeam: boolean; beamOpacity: number }
+) {
+  const group = new THREE.Group();
+  const style = fixtureStyleOf(lightType, resolved.shape);
+
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.55, metalness: 0.15 });
+  const alumMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.35, metalness: 0.7 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x3f4654, roughness: 0.5, metalness: 0.55 });
+  const blackMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.6, metalness: 0.3 });
+  const cordMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.9 });
+  // The lit diffuser is unshaded so it always reads as glowing
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xfff8e8 });
+
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    group.add(m);
+    return m;
+  };
+  const cord = (x: number, z: number, len: number) => {
+    if (len <= 0.01) return;
+    add(new THREE.CylinderGeometry(0.004, 0.004, len, 6), cordMat, x, len / 2, z);
+    add(new THREE.CylinderGeometry(0.03, 0.03, 0.012, 16), whiteMat, x, len - 0.006, z); // ceiling rose
+  };
+
+  const W = Math.max(resolved.width, 0.05);
+  const L = Math.max(resolved.length, 0.05);
+  const D = Math.max(resolved.diameter, 0.06);
+  let bottom = 0; // lowest point of the body (negative, below the mounting point)
+  let beamTopR = 0.05;
+  let beamScaleX = 1;
+
+  switch (style) {
+    case 'panel': {
+      // Flat panel / troffer: thin aluminium frame and an opal diffuser just below it
+      const pw = resolved.shape === 'square' ? W : Math.max(W, L);
+      const pl = resolved.shape === 'square' ? W : Math.min(W, L);
+      add(new THREE.BoxGeometry(pw, 0.012, pl), whiteMat, 0, -0.006, 0);
+      add(new THREE.BoxGeometry(pw - 0.03, 0.002, pl - 0.03), glowMat, 0, -0.0135, 0);
+      bottom = -0.015;
+      beamTopR = Math.min(pw, pl) / 2;
+      beamScaleX = pw / Math.max(pl, 0.01);
+      break;
+    }
+    case 'downlight': {
+      const r = Math.min(D, 0.3) / 2;
+      add(new THREE.CylinderGeometry(r + 0.015, r + 0.015, 0.008, 32), whiteMat, 0, -0.004, 0); // trim ring
+      add(new THREE.CylinderGeometry(r * 0.82, r * 0.82, 0.002, 32), glowMat, 0, -0.0095, 0);
+      bottom = -0.011;
+      beamTopR = r * 0.8;
+      break;
+    }
+    case 'surface-round': {
+      const r = Math.max(D, Math.min(W, 0.6)) / 2;
+      add(new THREE.CylinderGeometry(r, r * 1.03, 0.06, 40), whiteMat, 0, -0.03, 0);
+      add(new THREE.CylinderGeometry(r * 0.92, r * 0.92, 0.003, 40), glowMat, 0, -0.0615, 0);
+      bottom = -0.063;
+      beamTopR = r * 0.9;
+      break;
+    }
+    case 'batten': {
+      // Batten / tube fitting along X: white body with an opal tube
+      const len = Math.max(L, W, 0.6);
+      add(new THREE.BoxGeometry(len, 0.035, 0.075), whiteMat, 0, -0.0175, 0);
+      const tube = new THREE.CylinderGeometry(0.028, 0.028, len * 0.97, 20);
+      tube.rotateZ(Math.PI / 2);
+      add(tube, glowMat, 0, -0.045, 0);
+      bottom = -0.073;
+      beamTopR = 0.04;
+      beamScaleX = (len / 2 + 0.6) / 0.6;
+      break;
+    }
+    case 'linear-profile': {
+      // Suspended aluminium profile with a lit strip underneath
+      const len = Math.max(L, W, 0.6);
+      cord(-len * 0.4, 0, opts.dropToCeiling);
+      cord(len * 0.4, 0, opts.dropToCeiling);
+      add(new THREE.BoxGeometry(len, 0.07, 0.065), alumMat, 0, -0.035, 0);
+      add(new THREE.BoxGeometry(len * 0.98, 0.003, 0.048), glowMat, 0, -0.0715, 0);
+      bottom = -0.073;
+      beamTopR = 0.04;
+      beamScaleX = (len / 2 + 0.6) / 0.6;
+      break;
+    }
+    case 'highbay': {
+      // UFO high-bay: hook, driver, finned heat sink and a lit lens
+      const r = Math.max(D, W, 0.28) / 2;
+      cord(0, 0, opts.dropToCeiling);
+      const hook = new THREE.TorusGeometry(0.025, 0.005, 8, 16);
+      add(hook, darkMat, 0, -0.025, 0);
+      add(new THREE.CylinderGeometry(r * 0.4, r * 0.4, 0.07, 24), darkMat, 0, -0.085, 0);
+      add(new THREE.CylinderGeometry(r * 0.88, r, 0.1, 36), darkMat, 0, -0.17, 0);
+      for (let i = 0; i < 12; i++) {
+        const fin = add(new THREE.BoxGeometry(0.006, 0.09, r * 0.5), darkMat, 0, -0.165, 0);
+        fin.rotation.y = (i / 12) * Math.PI;
+      }
+      add(new THREE.CylinderGeometry(r * 0.86, r * 0.86, 0.004, 36), glowMat, 0, -0.222, 0);
+      bottom = -0.224;
+      beamTopR = r * 0.8;
+      break;
+    }
+    case 'bulb': {
+      cord(0, 0, opts.dropToCeiling);
+      add(new THREE.CylinderGeometry(0.018, 0.022, 0.05, 16), blackMat, 0, -0.025, 0); // lamp holder
+      add(new THREE.SphereGeometry(0.034, 24, 16), glowMat, 0, -0.082, 0);
+      bottom = -0.116;
+      beamTopR = 0.03;
+      break;
+    }
+    case 'spot': {
+      // Track adapter, stem and spotlight can with a lit lens
+      add(new THREE.BoxGeometry(0.05, 0.02, 0.035), blackMat, 0, -0.01, 0);
+      add(new THREE.CylinderGeometry(0.006, 0.006, 0.05, 8), blackMat, 0, -0.045, 0);
+      add(new THREE.CylinderGeometry(0.038, 0.034, 0.11, 24), blackMat, 0, -0.125, 0);
+      add(new THREE.CylinderGeometry(0.03, 0.03, 0.003, 24), glowMat, 0, -0.1815, 0);
+      bottom = -0.183;
+      beamTopR = 0.03;
+      break;
+    }
+    case 'flood': {
+      // Die-cast floodlight / street-light head with a flat lit lens
+      const fw = Math.max(Math.max(W, L), 0.25);
+      const fl = Math.max(Math.min(W, L), 0.18);
+      cord(0, 0, opts.dropToCeiling);
+      add(new THREE.BoxGeometry(0.04, 0.06, 0.04), darkMat, 0, -0.03, 0);
+      add(new THREE.BoxGeometry(fw, 0.05, fl), darkMat, 0, -0.085, 0);
+      add(new THREE.BoxGeometry(fw - 0.03, 0.002, fl - 0.03), glowMat, 0, -0.111, 0);
+      bottom = -0.112;
+      beamTopR = fl / 2;
+      beamScaleX = fw / fl;
+      break;
+    }
+    case 'pendant': {
+      const r = Math.max(D, 0.3) / 2;
+      cord(0, 0, opts.dropToCeiling);
+      add(new THREE.CylinderGeometry(0.012, 0.012, 0.05, 12), blackMat, 0, -0.025, 0);
+      const shade = new THREE.CylinderGeometry(r * 0.3, r, 0.2, 32, 1, true);
+      const shadeMesh = add(shade, new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide }), 0, -0.15, 0);
+      shadeMesh.renderOrder = 1;
+      add(new THREE.SphereGeometry(r * 0.32, 24, 16), glowMat, 0, -0.2, 0);
+      add(new THREE.CylinderGeometry(r * 0.98, r * 0.98, 0.002, 32), new THREE.MeshBasicMaterial({ color: 0xfff1d6, transparent: true, opacity: 0.55 }), 0, -0.249, 0);
+      bottom = -0.25;
+      beamTopR = r * 0.95;
+      break;
+    }
+    case 'exit': {
+      // Ceiling-hung exit sign with a lit "EXIT" face on both sides
+      add(new THREE.BoxGeometry(0.02, 0.06, 0.02), whiteMat, 0, -0.03, 0);
+      add(new THREE.BoxGeometry(0.36, 0.18, 0.035), whiteMat, 0, -0.15, 0);
+      const face = new THREE.MeshBasicMaterial({ map: exitTexture() });
+      add(new THREE.PlaneGeometry(0.32, 0.15), face, 0, -0.15, 0.0185);
+      const back = add(new THREE.PlaneGeometry(0.32, 0.15), face, 0, -0.15, -0.0185);
+      back.rotation.y = Math.PI;
+      bottom = -0.24;
+      beamTopR = 0;
+      break;
+    }
+    case 'emergency': {
+      // Twin-head emergency light: battery box with two lamp heads
+      add(new THREE.BoxGeometry(0.3, 0.08, 0.1), whiteMat, 0, -0.04, 0);
+      for (const x of [-0.11, 0.11]) {
+        add(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 20), whiteMat, x, -0.105, 0);
+        add(new THREE.CylinderGeometry(0.03, 0.03, 0.003, 20), glowMat, x, -0.131, 0);
+      }
+      bottom = -0.133;
+      beamTopR = 0.12;
+      break;
+    }
+  }
+
+  // Light beam: a faint cone from the diffuser to the floor at the beam angle
+  if (opts.showBeam && beamTopR > 0) {
+    const h = Math.max(0.1, opts.dropToFloor + bottom);
+    const half = (Math.min(Math.max(resolved.beamAngle, 10), 160) * Math.PI) / 360;
+    const rBottom = Math.min(beamTopR + h * Math.tan(half), 4.5);
+    const beamGeo = new THREE.CylinderGeometry(beamTopR, rBottom, h, 40, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0xfff1cf,
+      transparent: true,
+      opacity: opts.beamOpacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const beam = add(beamGeo, beamMat, 0, bottom - h / 2, 0);
+    beam.scale.x = Math.max(1, beamScaleX * 0.6 + 0.4);
+    beam.renderOrder = 2;
+  }
+
+  return { group, style };
 }
 
 export default function Illumination3DModel({ 
@@ -218,7 +348,8 @@ export default function Illumination3DModel({
   fixtureDistributionType,
   activeFixtures,
   customPositions,
-  roomPolygon
+  roomPolygon,
+  workingPlaneHeight = 0.75
 }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fallbackCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -936,7 +1067,9 @@ export default function Illumination3DModel({
 
     // Rigging camera
     const camera = new THREE.PerspectiveCamera(45, containerWidth / containerHeight, 0.1, 1000);
-    camera.position.set(dWidth * 1.4, dCeilingHeight * 2.2, dLength * 1.4);
+    // Start just below ceiling level from a corner so the lit undersides of the fixtures are visible
+    const viewDist = Math.max(dWidth, dLength);
+    camera.position.set(dWidth * 0.5 + viewDist * 0.55, Math.min(1.6, dCeilingHeight * 0.6), dLength * 0.5 + viewDist * 0.75);
 
     let renderer: THREE.WebGLRenderer;
     try {
@@ -948,6 +1081,9 @@ export default function Illumination3DModel({
     }
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Filmic tone mapping keeps brightly lit floors from clipping to flat white
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.85;
     renderer.setSize(containerWidth, containerHeight);
     containerRef.current.appendChild(renderer.domElement);
 
@@ -956,22 +1092,46 @@ export default function Illumination3DModel({
     controls.dampingFactor = 0.05;
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minPolarAngle = 0.05;
+    controls.target.set(0, dCeilingHeight * 0.62, 0);
+    controls.update();
 
     // Ambient light
     const ambientIntensity = dShowFalseColor ? 0.04 : 0.22;
     const ambientLight = new THREE.AmbientLight(0xffffff, ambientIntensity);
     scene.add(ambientLight);
 
-    // Spawn 3D Fixture models on ceiling
+    // Fixture models: recessed / ceiling types on the ceiling, hung types at working plane + mounting height
+    const hungY = Math.min(dCeilingHeight - 0.05, Math.max(0.3, workingPlaneHeight + dHeight));
+    const mountYOf = (pos: PlacedFixture) =>
+      isCeilingStyle(fixtureStyleOf(pos.lightType, pos.resolved.shape)) ? dCeilingHeight - 0.001 : hungY;
+    const showBeams = !dShowFalseColor && placedFixtures.length <= 80;
+    // Overlapping beams add up, so each beam gets fainter as the fixture count grows
+    const beamOpacity = Math.min(0.06, 0.35 / Math.max(1, placedFixtures.length));
     placedFixtures.forEach(pos => {
-      const model = createFixture3D(pos.resolved);
-      model.position.set(pos.x, pos.y, pos.z);
-      
+      const y = mountYOf(pos);
+      const { group: model } = createFixture3D(pos.resolved, pos.lightType, {
+        dropToCeiling: dCeilingHeight - y,
+        dropToFloor: y,
+        showBeam: showBeams,
+        beamOpacity,
+      });
+      model.position.set(pos.x, y, pos.z);
+
       // Default basic orientation, and then apply custom rotation
       model.rotation.y = -(pos.rotationDegrees || 0) * Math.PI / 180;
-      
+
       scene.add(model);
     });
+
+    // Ceiling outline so recessed fixtures read as being in the ceiling
+    {
+      const ceilMat = new THREE.LineBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.6 });
+      const pts = (dRoomPolygon && dRoomPolygon.length >= 3)
+        ? dRoomPolygon.map(([x, z]) => new THREE.Vector3(x - dWidth / 2, dCeilingHeight, z - dLength / 2))
+        : [[0, 0], [dWidth, 0], [dWidth, dLength], [0, dLength]].map(([x, z]) => new THREE.Vector3(x - dWidth / 2, dCeilingHeight, z - dLength / 2));
+      pts.push(pts[0].clone());
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), ceilMat));
+    }
 
     // Spawn Three.js Spotlights matching the directionality and beam angle
     const MAX_LIGHTS = 16;
@@ -979,7 +1139,7 @@ export default function Illumination3DModel({
     if (placedFixtures.length <= MAX_LIGHTS) {
       lightsToSpawn = placedFixtures.map(f => ({
         x: f.x,
-        y: f.y,
+        y: mountYOf(f) - 0.05,
         z: f.z,
         lumens: f.lumens,
         resolved: f.resolved
@@ -991,7 +1151,7 @@ export default function Illumination3DModel({
           const f = placedFixtures[i];
           lightsToSpawn.push({
             x: f.x,
-            y: f.y,
+            y: mountYOf(f) - 0.05,
             z: f.z,
             lumens: f.lumens * step, // scale representing other lights
             resolved: f.resolved
@@ -1171,7 +1331,7 @@ export default function Illumination3DModel({
         containerRef.current.innerHTML = '';
       }
     };
-  }, [dWidth, dLength, dHeight, dCeilingHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux, placedFixtures, dRoomPolygon]);
+  }, [dWidth, dLength, dHeight, dCeilingHeight, dShowFalseColor, dEnableDaylight, dWindowArea, dSkyCondition, canvasTextureElement, dTargetLux, placedFixtures, dRoomPolygon, workingPlaneHeight]);
 
   const totalLumensVal = activeFixtures && activeFixtures.length > 0
     ? activeFixtures.reduce((total, f) => total + (f.quantity || 0) * (f.lumens || 0), 0)
@@ -1213,7 +1373,7 @@ export default function Illumination3DModel({
 
   return (
     <div className="w-full overflow-x-auto mt-8 relative pb-2 drop-shadow-md">
-      <div id="illumination-diagram" className="min-w-[950px] w-full max-w-full h-[550px] bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 mx-auto">
+      <div id="illumination-diagram" className="w-full max-w-full h-[480px] sm:h-[550px] bg-slate-950 rounded-2xl overflow-hidden relative border-2 border-slate-800 mx-auto">
         
         {/* Heads-Up Display (HUD) Controls Overlay */}
         <div className="absolute top-4 left-4 z-10 text-white font-black text-xs tracking-wider uppercase opacity-90 flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:w-[calc(100%-32px)] pointer-events-none">
