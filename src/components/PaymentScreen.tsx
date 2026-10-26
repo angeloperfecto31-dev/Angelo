@@ -62,11 +62,14 @@ import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
 import SubscriptionManager from "./SubscriptionManager";
 
+/** Bank / e-wallet account names in capital letters, single-spaced (older records may be mixed case) */
+const toUpperName = (name?: string | null) => (name || "").trim().replace(/s+/g, " ").toUpperCase();
+
 const getUserName = (u: any) => {
   if (u.name) return u.name;
   if (u.displayName) return u.displayName;
-  if (u.senderName) return u.senderName;
-  if (u.pendingVerification?.senderName) return u.pendingVerification.senderName;
+  if (u.senderName) return toUpperName(u.senderName);
+  if (u.pendingVerification?.senderName) return toUpperName(u.pendingVerification.senderName);
   
   const email = (u.email || "").trim().toLowerCase();
   if (email === "angeloperfecto.epc@gmail.com") return "Angelo Perfecto";
@@ -1431,7 +1434,7 @@ export default function PaymentScreen({
         amount: u.amount || null,
         paymentSource: u.paymentSource || null,
         paymentReference: u.paymentReference || null,
-        senderName: u.senderName || null,
+        senderName: u.senderName ? toUpperName(u.senderName) : null,
         isUpgrade: u.isUpgrade === true,
         is_lifetime: u.is_lifetime === true,
         subscription_type: u.subscription_type || (u.plan === "enterprise" ? "Lifetime" : "Standard"),
@@ -1718,7 +1721,7 @@ export default function PaymentScreen({
             amount: item.amount !== undefined ? item.amount : null,
             paymentSource: item.paymentSource || null,
             paymentReference: item.paymentReference || null,
-            senderName: item.senderName || null,
+            senderName: item.senderName ? toUpperName(item.senderName) : null,
             isUpgrade: item.isUpgrade === true,
             is_lifetime: item.is_lifetime === true || item.plan === "enterprise",
             subscription_type: item.subscription_type || (item.plan === "enterprise" ? "Lifetime" : "Standard"),
@@ -1907,7 +1910,8 @@ export default function PaymentScreen({
         paymentStatus: "pending_verification",
         pendingVerification: {
           method: paymentMethod === "maribank" ? "MariBank" : paymentMethod === "maya" ? "Maya" : "GCash",
-          senderName: manualName.trim(),
+          // Account names are stored in capital letters (e.g. JUAN DELA CRUZ)
+          senderName: toUpperName(manualName),
           referenceNo: cleanedRef,
           amount: Math.round(finalGrandTotal),
           plan: isUpgrade ? "premium" : selectedPlan,
@@ -2061,7 +2065,7 @@ export default function PaymentScreen({
       const amountVal = userToApprove?.pendingVerification?.amount || null;
       const paymentSourceVal = userToApprove?.pendingVerification?.method || "None";
       const paymentReferenceVal = userToApprove?.pendingVerification?.referenceNo || "None";
-      const senderNameVal = userToApprove?.pendingVerification?.senderName || "None";
+      const senderNameVal = toUpperName(userToApprove?.pendingVerification?.senderName) || "None";
       const isUpgradeVal = userToApprove?.pendingVerification?.isUpgrade || false;
 
       const activatedAt = new Date().toISOString();
@@ -2860,7 +2864,7 @@ export default function PaymentScreen({
         getPaymentStatusVal(u),
         getPaymentMethodVal(u),
         u.pendingVerification?.referenceNo || u.paymentReference || u.referenceNo || "None",
-        u.pendingVerification?.senderName || u.senderName || "None",
+        toUpperName(u.pendingVerification?.senderName || u.senderName) || "None",
         regDate,
         lastLogin,
         u.approvedBy || "N/A",
@@ -5868,7 +5872,7 @@ export default function PaymentScreen({
                                     <div className="flex justify-between font-bold">
                                       <span className="text-slate-400 uppercase text-[9px] tracking-wide">Method/Name:</span>
                                       <span className="text-slate-800 uppercase font-black text-right truncate max-w-[120px]">
-                                        {u.pendingVerification.method || "GCash"} ({u.pendingVerification.senderName || "Unknown"})
+                                        {u.pendingVerification.method || "GCash"} ({toUpperName(u.pendingVerification.senderName) || "Unknown"})
                                       </span>
                                     </div>
                                     <div className="flex justify-between">
@@ -6165,7 +6169,7 @@ export default function PaymentScreen({
                               <div className="grid grid-cols-2 gap-2 mt-1">
                                 <div>
                                   <span className="text-slate-400 font-bold block text-[8px] uppercase">Sender / Channel:</span>
-                                  <span className="font-black text-slate-800 uppercase line-clamp-1">{u.pendingVerification.senderName || "Unknown"} ({u.pendingVerification.method})</span>
+                                  <span className="font-black text-slate-800 uppercase line-clamp-1">{toUpperName(u.pendingVerification.senderName) || "Unknown"} ({u.pendingVerification.method})</span>
                                 </div>
                                 <div>
                                   <span className="text-slate-400 font-bold block text-[8px] uppercase">Ref ID Number:</span>
@@ -7014,7 +7018,7 @@ export default function PaymentScreen({
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">Sender Name</span>
                       <span className="text-slate-800 dark:text-white font-black uppercase text-[11px]">
-                        {userProfile.pendingVerification.senderName}
+                        {toUpperName(userProfile.pendingVerification.senderName)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
@@ -7578,7 +7582,8 @@ export default function PaymentScreen({
                     type="text"
                     required
                     value={manualName}
-                    onChange={(e) => setManualName(e.target.value)}
+                    onChange={(e) => setManualName(e.target.value.toUpperCase())}
+                    autoCapitalize="characters"
                     placeholder="e.g. JUAN DELA CRUZ"
                     className="appearance-none block w-full px-3 py-2 border border-slate-200 rounded-xl placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold uppercase tracking-wider transition-all"
                   />
@@ -7695,7 +7700,8 @@ export default function PaymentScreen({
                     type="text"
                     required
                     value={manualName}
-                    onChange={(e) => setManualName(e.target.value)}
+                    onChange={(e) => setManualName(e.target.value.toUpperCase())}
+                    autoCapitalize="characters"
                     placeholder="e.g. JUAN DELA CRUZ"
                     className="appearance-none block w-full px-3 py-2 border border-slate-200 rounded-xl placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 text-xs font-bold uppercase tracking-wider transition-all"
                   />
@@ -7831,7 +7837,8 @@ export default function PaymentScreen({
                     type="text"
                     required
                     value={manualName}
-                    onChange={(e) => setManualName(e.target.value)}
+                    onChange={(e) => setManualName(e.target.value.toUpperCase())}
+                    autoCapitalize="characters"
                     placeholder="e.g. ANGELO PERFECTO"
                     className="appearance-none block w-full px-3 py-2 border border-slate-200 rounded-xl placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0157E4] text-xs font-bold uppercase tracking-wider transition-all"
                   />

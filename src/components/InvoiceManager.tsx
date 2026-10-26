@@ -161,7 +161,9 @@ export const createOrGetInvoiceData = async (userObj: any, uid: string): Promise
   
   const paymentMethod = userObj.paymentSource || userObj.pendingVerification?.method || "Manual Verification";
   const paymentReference = userObj.paymentReference || userObj.pendingVerification?.referenceNo || "BYPASS-MGR";
-  const userName = userObj.senderName || userObj.pendingVerification?.senderName || email.split('@')[0];
+  // Account names are shown in capital letters
+  const senderName = (userObj.senderName || userObj.pendingVerification?.senderName || "").trim().replace(/s+/g, " ").toUpperCase();
+  const userName = senderName || email.split('@')[0];
   
   const transactionDate = userObj.approvedAt || userObj.activatedAt || new Date().toISOString();
   
