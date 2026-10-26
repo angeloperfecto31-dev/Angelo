@@ -762,7 +762,7 @@ export default function BomModule({
   // Export to Excel using xlsx-js-style
   const handleExportExcel = () => {
     if (!isPremium) {
-      alert("Excel export for this module is available exclusively in the Premium Plan. Upgrade your subscription to unlock full Excel export functionality.");
+      alert("Bill of Materials (BOM) Excel export is available only on the Premium, Annual and Enterprise plans. Basic subscribers can upgrade to export the BOM.");
       onRequestUpgrade();
       return;
     }

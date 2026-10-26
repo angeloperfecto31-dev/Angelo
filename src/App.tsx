@@ -4020,9 +4020,9 @@ export default function App() {
       }
 
       // -----------------------------------------------------
-      // 5. Bill of Materials (BOM)
+      // 5. Bill of Materials (BOM): Premium, Annual and Enterprise only (never in a Basic workbook)
       // -----------------------------------------------------
-      if (bomItems && bomItems.length > 0) {
+      if (isPremiumUser && bomItems && bomItems.length > 0) {
         const bomHeaders = ["Category", "Material Name", "Description", "Brand", "Specification", "Quantity", "Unit", "Unit Cost (₱)", "Total Cost (₱)", "Source / Reference"];
         
         const bomRows = bomItems.map((item: any) => [
