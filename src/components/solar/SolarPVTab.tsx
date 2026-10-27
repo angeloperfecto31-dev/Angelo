@@ -111,6 +111,8 @@ export const SolarPVTab: React.FC<SolarPVTabProps> = ({
       }
       map.get(groupName)!.push(m);
     });
+    // Smallest to largest wattage within each brand
+    map.forEach((mods) => mods.sort((a, b) => a.ratedPowerWp - b.ratedPowerWp));
     return map;
   }, [filteredModules, config.selectedModuleId, allModules]);
 
