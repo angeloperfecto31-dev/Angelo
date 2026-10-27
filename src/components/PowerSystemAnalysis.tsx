@@ -1,25 +1,17 @@
-import React, { useState, useMemo } from "react";
-import { 
-  Zap, 
-  Activity, 
-  ShieldAlert, 
-  Settings, 
-  Ruler, 
-  ChevronRight, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Cpu, 
-  Info, 
-  Download, 
-  TrendingUp, 
-  ArrowRight,
-  Database,
-  Network,
-  FileText
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Zap, Activity, ShieldAlert, Settings, AlertTriangle, CheckCircle2, Info, Download, Network, FileText, Gauge,
+  FileSpreadsheet, FileType2, XCircle,
 } from "lucide-react";
-import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { parseSystemVoltage, calculatePanelFault } from "../utils/computeEngine";
-import ReportExportModule from "./ReportExportModule";
+import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation } from "../types";
+import {
+  type BusResult, type CoordinationDevice, type Status, CLEARING_TIME_S, analysePowerSystem, checkSelectivity,
+  coordinationDevices, largestMotor,
+} from "../utils/powerAnalysis";
+import {
+  type ReportMeta, buildReportTables, buildTcc, exportPowerAnalysisDocx, exportPowerAnalysisPdf, exportPowerAnalysisXlsx,
+  renderTccPng,
+} from "../utils/powerAnalysisReport";
 
 interface PowerSystemAnalysisProps {
   panel: PanelConfig;
@@ -37,1463 +29,552 @@ interface PowerSystemAnalysisProps {
   user?: any;
 }
 
+type Tab = "overview" | "coordination" | "loadflow" | "fault" | "reports";
+
+const fx = (v: number, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : "-");
+const STATUS_TEXT: Record<Status, string> = { pass: "Pass", warning: "Warning", fail: "Fail" };
+const statusClass = (s: Status) =>
+  s === "fail" ? "bg-red-500/15 border-red-500/30 text-red-400" : s === "warning" ? "bg-amber-500/15 border-amber-500/30 text-amber-400" : "bg-emerald-500/15 border-emerald-500/30 text-emerald-400";
+const valueClass = (s: Status) => (s === "fail" ? "text-red-400" : s === "warning" ? "text-amber-400" : "text-emerald-400");
+const pctStatus = (v: number, warn: number, fail: number): Status => (v > fail ? "fail" : v > warn ? "warning" : "pass");
+
+function Badge({ s }: { s: Status }) {
+  return <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black uppercase tracking-wider ${statusClass(s)}`}>{STATUS_TEXT[s]}</span>;
+}
+
+function Metric({ label, value, sub, s }: { label: string; value: string; sub?: string; s?: Status }) {
+  return (
+    <div className="bg-slate-900/60 border border-slate-800/80 rounded-lg p-3 min-w-0">
+      <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block mb-1">{label}</span>
+      <div className={`text-lg font-mono font-bold truncate ${s ? valueClass(s) : "text-white"}`}>{value}</div>
+      {sub && <span className="text-[10px] font-mono text-slate-400 block truncate" title={sub}>{sub}</span>}
+    </div>
+  );
+}
+
 export default function PowerSystemAnalysis({
-  panel,
-  circuits,
-  subPanels,
-  iscParams,
-  setIscParams,
-  vdCalculations,
-  isPremium,
-  onRequestUpgrade,
-  transformerPrimaryVoltage,
-  transformerPowerFactor,
-  transformerDemandFactor,
-  transformerLoadingFactor,
-  user,
+  panel, circuits, subPanels, iscParams, vdCalculations, isPremium, onRequestUpgrade,
+  transformerPrimaryVoltage, transformerPowerFactor, transformerLoadingFactor, user,
 }: PowerSystemAnalysisProps) {
-  // Tabs: coordination, loadflow, fault, reports
-  const [activeAnalysisTab, setActiveAnalysisTab] = useState<"coordination" | "loadflow" | "fault" | "reports">("coordination");
+  const [tab, setTab] = useState<Tab>("overview");
+  const [basis, setBasis] = useState<"demand" | "connected">("demand");
+  const [selectedBus, setSelectedBus] = useState("mdp");
 
-  // Protection Coordination Settings (User can adjust trip settings to see TCC shift in real-time)
-  const [upstreamTrip, setUpstreamTrip] = useState<number>(225); // Ampere Trip
-  const [upstreamInstMultiplier, setUpstreamInstMultiplier] = useState<number>(10); // Inst pickup (e.g. 10x)
-  const [downstreamTrip, setDownstreamTrip] = useState<number>(50); // Downstream breaker AT
-  const [downstreamInstMultiplier, setDownstreamInstMultiplier] = useState<number>(8); // Downstream inst multiplier (e.g. 8x)
-  const [showCableDamage, setShowCableDamage] = useState<boolean>(true);
-  const [showTxDamage, setShowTxDamage] = useState<boolean>(true);
-  const [showMotorStarting, setShowMotorStarting] = useState<boolean>(true);
+  // ------------------------------------------------------------------ analysis
+  const input = useMemo(() => ({
+    panel, circuits, subPanels, vdCalculations,
+    iscParams: { ...iscParams, primaryVoltage: transformerPrimaryVoltage || iscParams.primaryVoltage },
+    powerFactor: transformerPowerFactor ?? 0.85,
+    transformerLoadingLimit: transformerLoadingFactor ?? 0.8,
+    basis,
+  }), [panel, circuits, subPanels, vdCalculations, iscParams, transformerPrimaryVoltage, transformerPowerFactor, transformerLoadingFactor, basis]);
+  const result = useMemo(() => analysePowerSystem(input), [input]);
+  const bus: BusResult = result.byId[selectedBus] || result.byId.mdp;
 
-  // Load Flow Configuration
-  const [reflectionMode, setReflectionMode] = useState<"direct-phase" | "max-demand">("direct-phase");
-  const [selectedNodeId, setSelectedNodeId] = useState<string>("mdp");
-  const [customVoltageOverride, setCustomVoltageOverride] = useState<number>(230);
-  const [useCustomVoltage, setUseCustomVoltage] = useState<boolean>(false);
+  // ------------------------------------------------------------------ coordination
+  const devices = useMemo(() => coordinationDevices(input, result), [input, result]);
+  const [downId, setDownId] = useState<string | null>(null);
+  const [upMult, setUpMult] = useState(10);
+  const [downMult, setDownMult] = useState<number | null>(null);
+  const [showCable, setShowCable] = useState(true);
+  const [showTx, setShowTx] = useState(true);
+  const [showMotor, setShowMotor] = useState(true);
+  useEffect(() => {
+    if (!downId || !devices.downstream.some((d) => d.id === downId)) setDownId(devices.downstream[0]?.id ?? null);
+  }, [devices, downId]);
+  const upDev: CoordinationDevice = { ...devices.upstream, instMultiplier: upMult };
+  const baseDown = devices.downstream.find((d) => d.id === downId) || devices.downstream[0];
+  const downDev: CoordinationDevice | undefined = baseDown ? { ...baseDown, instMultiplier: downMult ?? baseDown.instMultiplier } : undefined;
+  const pairResult = downDev ? checkSelectivity(upDev, downDev, result) : null;
+  const allPairs = useMemo(
+    () => devices.downstream.map((d) => checkSelectivity({ ...devices.upstream, instMultiplier: upMult }, d.id === downDev?.id ? downDev : d, result)),
+    [devices, upMult, downDev, result]
+  );
+  const motor = useMemo(() => largestMotor(panel, circuits), [panel, circuits]);
+  const tcc = useMemo(
+    () => (downDev ? buildTcc(result, upDev, downDev, { cable: showCable, transformer: showTx, motor: showMotor ? motor : null }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [result, upDev.at, upDev.instMultiplier, downDev?.id, downDev?.instMultiplier, showCable, showTx, showMotor, motor]
+  );
 
-  // Fault Analysis Type Configuration
-  const [faultType, setFaultType] = useState<"3PH" | "LG" | "LL" | "LLG">("3PH");
-
-  // Calculated variables and settings derived from the central configuration
-  const systemVoltage = useCustomVoltage ? customVoltageOverride : (panel.voltage || 230);
-  const isThreePhase = panel.system?.includes("3PH") ?? true;
-  const systemFrequency = 60; // Standard local frequency
-
-  // Automatically build dynamic network topology tree
-  const networkTopology = useMemo(() => {
-    // Utility and Transformer
-    const baseKVA = iscParams.transformerKVA || 500;
-    const txZ = iscParams.transformerZ || 5.0;
-    const utilityMVA = iscParams.utilityShortCircuitMVA || 500;
-    
-    // Helper to approximate demand factor based on standard load types
-    const getDemandFactor = (c: Circuit) => {
-      if (c.loadType === "L") return 0.85; // lighting
-      if (c.loadType === "S") return 0.50; // convenience receptacle
-      if (c.loadType === "AC") return 1.0; // aircon (continuous)
-      if (c.loadType === "M") return 1.0; // motor
-      return 1.0;
-    };
-
-    // Compute total VA and demand from Main panel circuits
-    let mdpConnectedVA = 0;
-    let mdpDemandVA = 0;
-    circuits.forEach(c => {
-      const va = Number(c.loadVA) || 0;
-      mdpConnectedVA += va;
-      mdpDemandVA += va * getDemandFactor(c);
-    });
-
-    const mdpNode = {
-      id: "mdp",
-      name: panel.designation || "Main Distribution Panel (MDP)",
-      type: "panel",
-      voltage: systemVoltage,
-      connectedVA: mdpConnectedVA,
-      demandVA: mdpDemandVA,
-      powerFactor: 0.85,
-      level: 1,
-      parentId: "transformer",
-      feederLength: iscParams.feederLength || 15,
-      feederSize: iscParams.feederSize || "38",
-      feederRuns: iscParams.feederRuns || 1,
-    };
-
-    const nodes = [
-      {
-        id: "utility",
-        name: "Utility Grid Source",
-        type: "source",
-        voltage: iscParams.primaryVoltage || 13800,
-        connectedVA: mdpConnectedVA,
-        demandVA: mdpDemandVA,
-        powerFactor: 0.85,
-        level: -1,
-        parentId: null,
-      },
-      {
-        id: "transformer",
-        name: `Transformer (${baseKVA} kVA)`,
-        type: "transformer",
-        voltage: systemVoltage,
-        connectedVA: mdpConnectedVA,
-        demandVA: mdpDemandVA,
-        powerFactor: 0.85,
-        level: 0,
-        parentId: "utility",
-        impedance: txZ,
-      },
-      mdpNode
-    ];
-
-    // Sub-panels
-    const seenSpIds = new Set<string>();
-    subPanels.forEach(sp => {
-      if (!sp || !sp.id || seenSpIds.has(sp.id)) return;
-      seenSpIds.add(sp.id);
-
-      let spConnectedVA = 0;
-      let spDemandVA = 0;
-      sp.circuits.forEach(c => {
-        const va = Number(c.loadVA) || 0;
-        spConnectedVA += va;
-        spDemandVA += va * getDemandFactor(c);
-      });
-
-      // Find parent and calculate true depth level
-      let parentId = "mdp";
-      let level = 2;
-      
-      const getDepth = (childId: string, currentDepth: number): number => {
-        if (currentDepth > 10) return currentDepth; // prevent infinite loops
-        for (const candidate of subPanels) {
-          if (candidate.circuits.some(c => c.linkedSubPanelId === childId)) {
-             return getDepth(candidate.id, currentDepth + 1);
-          }
-        }
-        return currentDepth; // reached MDP
-      };
-
-      for (const parentCandidate of subPanels) {
-        if (parentCandidate.circuits.some(c => c.linkedSubPanelId === sp.id)) {
-          parentId = parentCandidate.id;
-          level = getDepth(sp.id, 2); 
-          break;
-        }
-      }
-
-      // Find if there's any voltage drop calculation mapped to this subpanel
-      const vdCalc = vdCalculations.find(v => v.id === sp.id || v.name.toLowerCase().includes(sp.panel.designation?.toLowerCase() || ""));
-
-      nodes.push({
-        id: sp.id,
-        name: sp.panel.designation || `Sub-Panel Board (${sp.id})`,
-        type: parentId === "mdp" ? "subpanel" : "subsubpanel",
-        voltage: sp.panel.voltage || systemVoltage,
-        connectedVA: spConnectedVA,
-        demandVA: spDemandVA,
-        powerFactor: 0.85,
-        level: level,
-        parentId: parentId,
-        feederLength: vdCalc?.length || 20,
-        feederSize: vdCalc?.wireSize || "14",
-        feederRuns: 1,
-      });
-    });
-
-    return nodes;
-  }, [panel, circuits, subPanels, iscParams, vdCalculations, systemVoltage, useCustomVoltage, customVoltageOverride]);
-
-  // Load Flow Calculation Engine
-  const loadFlowResults = useMemo(() => {
-    const results: Record<string, {
-      id: string;
-      name: string;
-      voltageMagnitude: number;
-      voltageAngle: number;
-      currentMagnitude: number;
-      currentAngle: number;
-      kw: number;
-      kvar: number;
-      kva: number;
-      pf: number;
-      regulation: number;
-      feederCurrent: number;
-      feederAmpacity: number;
-      feederLoadingPct: number;
-      breakerUtilization: number;
-      phaseA_A: number;
-      phaseB_A: number;
-      phaseC_A: number;
-      status: "normal" | "warning" | "overloaded";
-    }> = {};
-
-    networkTopology.forEach(node => {
-      // Basic voltage drop calculation
-      let length = (node as any).feederLength || 15;
-      let wireSize = (node as any).feederSize || "38";
-      let runs = (node as any).feederRuns || 1;
-
-      // Power values
-      const connectedVA = node.connectedVA;
-      const demandVA = reflectionMode === "max-demand" ? node.demandVA : node.connectedVA;
-      const kva = demandVA / 1000;
-      const pf = node.powerFactor;
-      const kw = kva * pf;
-      const kvar = kva * Math.sin(Math.acos(pf));
-
-      // Calculate nominal current
-      let current = 0;
-      if (node.voltage > 0) {
-        current = isThreePhase 
-          ? (kva * 1000) / (Math.sqrt(3) * node.voltage)
-          : (kva * 1000) / node.voltage;
-      }
-
-      // Voltage drop logic
-      let vDrop = 0;
-      if (node.level > 0) {
-        // Feeder resistance lookup approximation
-        let r = 0.5; // Ohm/km default
-        if (wireSize === "5.5" || wireSize === "8.0") r = 2.0;
-        else if (wireSize === "14" || wireSize === "22") r = 1.0;
-        else if (wireSize === "38" || wireSize === "50") r = 0.5;
-        else if (wireSize === "80" || wireSize === "100") r = 0.25;
-        else if (wireSize === "150" || wireSize === "200") r = 0.12;
-
-        const loopImpedance = (r * (length / 1000)) / runs;
-        vDrop = isThreePhase 
-          ? Math.sqrt(3) * current * loopImpedance
-          : 2 * current * loopImpedance;
-      }
-
-      const calculatedVoltage = systemVoltage - vDrop;
-      const regulation = (vDrop / systemVoltage) * 100;
-
-      // Feeder ampacity approximation
-      let feederAmp = 100;
-      if (wireSize === "5.5") feederAmp = 35;
-      else if (wireSize === "8.0") feederAmp = 45;
-      else if (wireSize === "14") feederAmp = 65;
-      else if (wireSize === "22") feederAmp = 85;
-      else if (wireSize === "38") feederAmp = 115;
-      else if (wireSize === "50") feederAmp = 135;
-      else if (wireSize === "80") feederAmp = 185;
-      else if (wireSize === "100") feederAmp = 215;
-      else if (wireSize === "150") feederAmp = 285;
-      else if (wireSize === "200") feederAmp = 335;
-
-      const loadingPct = (current / feederAmp) * 100;
-
-      // Breaker utilization (assuming typical downstream protective device AT is roughly aligned)
-      let typicalBreakerAT = 100;
-      if (node.id === "mdp") typicalBreakerAT = upstreamTrip;
-      else if (node.type === "subpanel") typicalBreakerAT = downstreamTrip;
-      else typicalBreakerAT = 30;
-
-      const breakerUtilization = (current / typicalBreakerAT) * 100;
-
-      // Phase imbalance calculation approximation
-      const phaseA_A = current * (1.0 + 0.04 * Math.sin(node.connectedVA));
-      const phaseB_A = current * (1.0 - 0.03 * Math.cos(node.connectedVA));
-      const phaseC_A = current * (1.0 - 0.01 * Math.sin(node.connectedVA));
-
-      let status: "normal" | "warning" | "overloaded" = "normal";
-      const limit = node.id === "mdp" ? 3.0 : 5.0;
-      if (loadingPct > 100 || regulation > limit || breakerUtilization > 100) {
-        status = "overloaded";
-      } else if (loadingPct > 80 || regulation > limit * 0.9 || breakerUtilization > 80) {
-        status = "warning";
-      }
-
-      results[node.id] = {
-        id: node.id,
-        name: node.name,
-        voltageMagnitude: calculatedVoltage,
-        voltageAngle: -regulation * 0.1, // nominal load flow drop angle
-        currentMagnitude: current,
-        currentAngle: -Math.acos(pf) * (180 / Math.PI),
-        kw,
-        kvar,
-        kva,
-        pf,
-        regulation,
-        feederCurrent: current,
-        feederAmpacity: feederAmp,
-        feederLoadingPct: loadingPct,
-        breakerUtilization,
-        phaseA_A,
-        phaseB_A,
-        phaseC_A,
-        status,
-      };
-    });
-
-    return results;
-  }, [networkTopology, reflectionMode, isThreePhase, systemVoltage, upstreamTrip, downstreamTrip]);
-
-  // Symmetrical & Unsymmetrical Fault Calculation Engine
-  const faultResults = useMemo(() => {
-    const results: Record<string, {
-      id: string;
-      name: string;
-      iSym3PH: number; // kA
-      iSymLG: number;  // kA
-      iSymLL: number;  // kA
-      iSymLLG: number; // kA
-      iAvailable: number; // Current selected fault kA
-      peakFault: number;  // kA
-      momentaryFault: number; // kA
-      faultMVA: number;
-      breakerkAIC: number;
-      dutyPercentage: number;
-      thermalWithstandLimitTime: number; // sec
-      compliance: "PASSED" | "WARNING" | "CRITICAL VIOLATION";
-    }> = {};
-
-    // Base properties
-    const baseKVA = iscParams.transformerKVA || 500;
-    const baseKV = systemVoltage / 1000;
-
-    networkTopology.forEach(node => {
-      let iSym3PH = 0; // kA
-      if (node.id === "utility") {
-        const primaryVolts = iscParams.primaryVoltage || 34500;
-        const fault1Isc = ((iscParams.utilityShortCircuitMVA || 500) * 1000000) / (1.732 * primaryVolts);
-        iSym3PH = fault1Isc / 1000;
-      } else if (node.id === "transformer" || node.id === "mdp") {
-        const faultA = calculatePanelFault(panel, iscParams, undefined, undefined, undefined, 0);
-        iSym3PH = faultA / 1000;
-      } else {
-        // This is a subpanel or subsubpanel
-        const sp = subPanels.find(x => x.id === node.id);
-        if (sp) {
-          let feederLen = (node as any).feederLength || iscParams.feederLength || 15;
-          let feederSize = (node as any).feederSize || iscParams.feederSize || "38";
-          let feederRuns = (node as any).feederRuns || iscParams.feederRuns || 1;
-          
-          let motorVA = sp.circuits.reduce((acc, curr) => 
-            (curr.loadType as any === LoadType.MOTOR || curr.loadType as any === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
-          );
-          
-          const faultA = calculatePanelFault(
-            sp.panel,
-            iscParams,
-            feederLen,
-            feederSize.toString(),
-            feederRuns,
-            motorVA
-          );
-          iSym3PH = faultA / 1000;
-        } else {
-          iSym3PH = 10.0; // fallback
-        }
-      }
-
-      // Unsymmetrical Faults
-      // LG Fault typically uses zero-sequence impedance. Approximated relative to 3PH:
-      const iSymLG = iSym3PH * 0.85; 
-      // LL Fault: I_LL = sqrt(3)/2 * I_3PH = 0.866 * I_3PH
-      const iSymLL = iSym3PH * 0.866;
-      // LLG Fault: typically slightly lower than LL
-      const iSymLLG = iSym3PH * 0.92;
-
-      // Select active fault current based on selection
-      let iAvailable = iSym3PH;
-      if (faultType === "LG") iAvailable = iSymLG;
-      else if (faultType === "LL") iAvailable = iSymLL;
-      else if (faultType === "LLG") iAvailable = iSymLLG;
-
-      // Peak Fault current (using standard asymmetry factor of 1.6)
-      const peakFault = iAvailable * 1.6;
-      // Momentary Fault current (1.2 to 1.4 multiplier for short-circuit duty)
-      const momentaryFault = iAvailable * 1.3;
-      
-      // Base currents
-      const currentBaseKV = node.id === "utility" ? (iscParams.primaryVoltage || 13800) / 1000 : baseKV;
-      // Fault MVA
-      const faultMVA = Math.sqrt(3) * currentBaseKV * iAvailable;
-
-      // Match Breaker kAIC Rating
-      let breakerkAIC = 10; // MCB default
-      if (node.id === "mdp") {
-        breakerkAIC = parseFloat(panel.icRating) || 10;
-      } else if (node.type === "subpanel" || node.type === "subsubpanel" || node.id !== "utility" && node.id !== "transformer") {
-        const sp = subPanels.find(x => x.id === node.id);
-        if (sp) {
-          breakerkAIC = parseFloat(sp.panel.icRating) || 10;
-        } else {
-          breakerkAIC = 10; // default fallback
-        }
-      }
-
-      let dutyPercentage = (iAvailable / breakerkAIC) * 100;
-      if (node.id === "utility" || node.id === "transformer") {
-        breakerkAIC = 0; // Not applicable
-        dutyPercentage = 0;
-      }
-
-      // Conductor thermal withstand: standard formula t = (K * A / I)^2
-      // A is mm², I is Fault Current, K is constant for copper (115)
-      let wireSize = (node as any).feederSize || "38";
-      const mm2Val = Number(wireSize) || 38;
-      const K = 115;
-      const thermalWithstandLimitTime = Math.pow((K * mm2Val) / (iAvailable * 1000), 2);
-
-      let compliance: "PASSED" | "WARNING" | "CRITICAL VIOLATION" = "PASSED";
-      if (node.id !== "utility" && node.id !== "transformer") {
-        if (dutyPercentage > 100) {
-          compliance = "CRITICAL VIOLATION";
-        } else if (dutyPercentage > 85) {
-          compliance = "WARNING";
-        }
-      }
-
-      results[node.id] = {
-        id: node.id,
-        name: node.name,
-        iSym3PH,
-        iSymLG,
-        iSymLL,
-        iSymLLG,
-        iAvailable,
-        peakFault,
-        momentaryFault,
-        faultMVA,
-        breakerkAIC,
-        dutyPercentage,
-        thermalWithstandLimitTime,
-        compliance,
-      };
-    });
-
-    return results;
-  }, [networkTopology, faultType, systemVoltage, iscParams, panel, subPanels]);
-
-  // Coordinate TCC Plot Points
-  const tccPlotData = useMemo(() => {
-    // We generate a list of SVG drawing paths or line configurations on a log-log scale.
-    // X scale: Current (A) from 1 to 10,000
-    // Y scale: Time (s) from 0.01 to 1,000
-    // Graph bounds
-    const width = 600;
-    const height = 450;
-    const padding = 50;
-
-    const toX = (val: number) => {
-      const minVal = 1;
-      const maxVal = 10000;
-      const fraction = (Math.log10(val) - Math.log10(minVal)) / (Math.log10(maxVal) - Math.log10(minVal));
-      return padding + fraction * (width - 2 * padding);
-    };
-
-    const toY = (val: number) => {
-      const minVal = 0.01;
-      const maxVal = 1000;
-      const fraction = (Math.log10(val) - Math.log10(minVal)) / (Math.log10(maxVal) - Math.log10(minVal));
-      // Invert Y for screen coordinates
-      return height - padding - fraction * (height - 2 * padding);
-    };
-
-    // Upstream Breaker TCC Curve (Adjustable)
-    // Thermal portion: t = (upstreamTrip * 2)^2 * 10 / I^2 (simple log curve)
-    // Instantaneous pickup: vertical line at Inst Pickup Amps (upstreamTrip * upstreamInstMultiplier)
-    const getBreakerCurvePoints = (trip: number, instMult: number) => {
-      const pts: { x: number; y: number }[] = [];
-      const instCurrent = trip * instMult;
-      
-      // Plot thermal portion
-      for (let amp = trip * 1.1; amp <= instCurrent; amp += (instCurrent - trip) / 40) {
-        // time = (3 * trip)^2 / (amp - trip)^2
-        const t = Math.max(0.1, Math.min(1000, Math.pow(3 * trip, 1.8) / Math.pow(amp - trip, 1.8)));
-        pts.push({ x: toX(amp), y: toY(t) });
-      }
-
-      // Add instantaneous transition vertical line
-      pts.push({ x: toX(instCurrent), y: toY(100) }); // start high inst
-      pts.push({ x: toX(instCurrent), y: toY(0.01) }); // drop down
-
-      return pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-    };
-
-    // Cable Damage Curve
-    const getCableCurve = (size: number) => {
-      const pts: { x: number; y: number }[] = [];
-      // I = K * A / sqrt(t) => t = (K * A / I)^2
-      const K = 115;
-      const term = K * size;
-      for (let t = 0.01; t <= 1000; t *= 2) {
-        const I = term / Math.sqrt(t);
-        if (I >= 1 && I <= 10000) {
-          pts.push({ x: toX(I), y: toY(t) });
-        }
-      }
-      return pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-    };
-
-    // Transformer damage curve points
-    const getTxCurve = () => {
-      const baseKVA = iscParams.transformerKVA || 500;
-      const ratedI = baseKVA * 1000 / (1.732 * systemVoltage);
-      // Typical ANSI C37 transformer thermal/mechanical curves
-      const pts = [
-        { I: ratedI * 2, t: 1000 },
-        { I: ratedI * 4, t: 100 },
-        { I: ratedI * 10, t: 10 },
-        { I: ratedI * 20, t: 2 },
-      ];
-      return pts.map(p => `${toX(p.I).toFixed(1)},${toY(p.t).toFixed(1)}`).join(" ");
-    };
-
-    // Motor start curve points
-    const getMotorCurve = () => {
-      const pts: { x: number; y: number }[] = [];
-      // locked rotor current roughly 6x regular FLC (approx. 100A for illustration) for 5 seconds
-      const startI = 150;
-      const runI = 25;
-      pts.push({ x: toX(startI), y: toY(5) });
-      pts.push({ x: toX(startI), y: toY(0.1) });
-      pts.push({ x: toX(runI), y: toY(0.1) });
-      pts.push({ x: toX(runI), y: toY(100) });
-      return pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-    };
-
-    return {
-      toX,
-      toY,
-      width,
-      height,
-      padding,
-      upstreamPath: getBreakerCurvePoints(upstreamTrip, upstreamInstMultiplier),
-      downstreamPath: getBreakerCurvePoints(downstreamTrip, downstreamInstMultiplier),
-      cablePath: getCableCurve(50), // copper 50 mm2 approximation
-      txPath: getTxCurve(),
-      motorPath: getMotorCurve(),
-    };
-  }, [upstreamTrip, upstreamInstMultiplier, downstreamTrip, downstreamInstMultiplier, systemVoltage, iscParams]);
-
-  // Is coordinated checking?
-  const selectivityAnalysis = useMemo(() => {
-    const upstreamInstCurrent = upstreamTrip * upstreamInstMultiplier;
-    const downstreamInstCurrent = downstreamTrip * downstreamInstMultiplier;
-
-    if (downstreamInstCurrent >= upstreamInstCurrent) {
-      return {
-        status: "Miscoordinated / Overlapping Curves",
-        variant: "critical",
-        desc: "Downstream breaker instantaneous pickup overlaps with upstream breaker! Under short circuit faults, downstream faults may trip the upstream main breaker, causing complete system blackout instead of isolated clearing."
-      };
-    } else if (downstreamInstCurrent * 1.5 >= upstreamInstCurrent) {
-      return {
-        status: "Warning - Insufficient Margin",
-        variant: "warning",
-        desc: "Upstream and downstream curves are coordinated, but the margin between instantaneous pickup is narrow (< 50%). Transient inrushes may trigger selective miscoordination."
-      };
-    } else {
-      return {
-        status: "Selective Coordination Verified",
-        variant: "passed",
-        desc: "The protective curves are properly staggered. Short-circuit faults at downstream panels are guaranteed to be cleared strictly by the local circuit breaker, ensuring 100% service continuity to the rest of the facility."
-      };
-    }
-  }, [upstreamTrip, upstreamInstMultiplier, downstreamTrip, downstreamInstMultiplier]);
-
-  // Smart Engineering Recommendations
-  const smartRecommendations = useMemo(() => {
-    const recs: string[] = [];
-
-    // Protection Coordination recs
-    if (selectivityAnalysis.variant === "critical") {
-      recs.push(`Decrease downstream magnetic trip multiplier to 5x or upsize the Upstream Main trip rating/multiplier (e.g. adjust Upstream Inst to ${upstreamInstMultiplier + 2}x) to establish clear separation margins.`);
-    }
-
-    // Load Flow recs
-    Object.values(loadFlowResults).forEach(res => {
-      const limit = res.id === "mdp" ? 3.0 : 5.0;
-      if (res.regulation > limit) {
-        recs.push(`Node '${res.name}' exceeds the ${limit.toFixed(1)}% standard voltage drop regulation limit (currently ${res.regulation.toFixed(2)}%). Consider increasing feeder wire size to lower loop resistance.`);
-      }
-      if (res.breakerUtilization > 100) {
-        recs.push(`Protective device at '${res.name}' is overloaded (at ${res.breakerUtilization.toFixed(1)}% of AT). Consider upsizing trip setting or re-balancing the connected branch circuits.`);
-      }
-    });
-
-    // Short circuit duty recs
-    Object.values(faultResults).forEach(res => {
-      if (res.compliance === "CRITICAL VIOLATION") {
-        recs.push(`The calculated available fault current at '${res.name}' (${res.iAvailable.toFixed(2)} kA) exceeds the installed device kAIC interrupting capacity of ${res.breakerkAIC} kA. Secure high-interrupting MCCBs (minimum 35 kAIC) immediately or integrate current-limiting fuses.`);
-      }
-    });
-
-    if (recs.length === 0) {
-      recs.push("System parameters are within standard operating limits. Continue routine monitoring.");
-    }
-
-    return recs;
-  }, [selectivityAnalysis, loadFlowResults, faultResults, upstreamInstMultiplier]);
-
-  // Handlers for exporting summaries (Premium gated)
-  const handleExportCSV = () => {
+  // ------------------------------------------------------------------ report
+  const [meta, setMeta] = useState<ReportMeta>(() => ({
+    title: "Electrical Power System Analysis Report",
+    project: panel.project || "Electrical Project",
+    client: (panel as any).owner || "",
+    projectNo: "",
+    location: panel.location || "",
+    preparedBy: (panel as any).engineer || user?.displayName || "",
+    date: new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" }),
+  }));
+  const tables = useMemo(() => buildReportTables(meta, result, allPairs), [meta, result, allPairs]);
+  const fileBase = `${(meta.project || "Project").replace(/[^a-z0-9]+/gi, "_")}_Power_Analysis_${panel.designation || "MDP"}`;
+  const [exporting, setExporting] = useState<string | null>(null);
+  const runExport = async (kind: "pdf" | "docx" | "xlsx") => {
     if (!isPremium) {
       onRequestUpgrade();
       return;
     }
-    // Generate simple CSV content
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Power System Analysis Report\r\n\r\n";
-    csvContent += "=== LOAD FLOW ANALYSIS ===\r\n";
-    csvContent += "Bus/Panel Designation,Voltage (V),Current (A),Real Power (kW),Reactive Power (kVAR),PF,Regulation (%),Status\r\n";
-    Object.values(loadFlowResults).forEach(r => {
-      csvContent += `"${r.name}",${r.voltageMagnitude.toFixed(1)},${r.currentMagnitude.toFixed(2)},${r.kw.toFixed(2)},${r.kvar.toFixed(2)},${r.pf.toFixed(2)},${r.regulation.toFixed(2)}%,${r.status}\r\n`;
-    });
-    
-    csvContent += "\r\n=== SHORT CIRCUIT FAULT ANALYSIS ===\r\n";
-    csvContent += "Equipment Location,3-PH Symmetrical,Peak Fault (kA),Breaker kAIC,Fault Duty (%),Safety Compliance\r\n";
-    Object.values(faultResults).forEach(r => {
-      const breakerStr = r.breakerkAIC > 0 ? r.breakerkAIC.toString() : "N/A";
-      const dutyStr = r.breakerkAIC > 0 ? `${r.dutyPercentage.toFixed(1)}%` : "N/A";
-      csvContent += `"${r.name}",${r.iSym3PH.toFixed(2)},${r.peakFault.toFixed(2)},${breakerStr},${dutyStr},${r.compliance}\r\n`;
-    });
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Power_System_Analysis_Report_${panel.designation || "MDP"}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleExportExcel = () => {
-    if (!isPremium) {
-      onRequestUpgrade();
-      return;
+    setExporting(kind);
+    try {
+      const png = kind !== "xlsx" && tcc ? renderTccPng(tcc) : null;
+      if (kind === "pdf") exportPowerAnalysisPdf(meta, tables, png, fileBase);
+      else if (kind === "docx") await exportPowerAnalysisDocx(meta, tables, png, fileBase);
+      else exportPowerAnalysisXlsx(meta, tables, fileBase);
+    } finally {
+      setExporting(null);
     }
-    // Simple window alert is prohibited, we trigger CSV download or custom modal.
-    handleExportCSV();
   };
+
+  const overall: Status = result.counts.fail ? "fail" : result.counts.warning ? "warning" : "pass";
+  const src = result.source;
+  const mdp = result.byId.mdp;
+
+  // ------------------------------------------------------------------ TCC plot geometry
+  const plot = useMemo(() => {
+    if (!tcc) return null;
+    const w = 640, h = 470, pl = 56, pr = 16, pt = 16, pb = 44;
+    const x = (i: number) => pl + ((Math.log10(Math.max(i, tcc.iMin)) - Math.log10(tcc.iMin)) / (Math.log10(tcc.iMax) - Math.log10(tcc.iMin))) * (w - pl - pr);
+    const y = (t: number) => h - pb - ((Math.log10(Math.min(Math.max(t, tcc.tMin), tcc.tMax)) - Math.log10(tcc.tMin)) / (Math.log10(tcc.tMax) - Math.log10(tcc.tMin))) * (h - pt - pb);
+    const decadesI: number[] = [];
+    for (let d = Math.log10(tcc.iMin); d <= Math.log10(tcc.iMax); d++) decadesI.push(Math.pow(10, d));
+    return { w, h, pl, pr, pt, pb, x, y, decadesI, decadesT: [0.01, 0.1, 1, 10, 100, 1000] };
+  }, [tcc]);
 
   return (
-    <div className="w-full bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-6 text-slate-100 flex flex-col gap-6" id="power-system-analysis-suite">
-      {/* Header section with branding and status */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
-              <Zap className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                Advanced Power System Analysis Suite
-                <span className="text-xxs uppercase tracking-widest px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black">
-                  IEEE/IEC Engine
-                </span>
-              </h1>
-              <p className="text-slate-400 text-xs">
-                Active Project Source of Truth: <strong className="text-slate-200">{panel.designation || "Main Distribution Panel"}</strong> ({systemVoltage}V {isThreePhase ? "3-Phase" : "1-Phase"} system)
-              </p>
-            </div>
+    <div className="w-full bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-4 sm:p-6 text-slate-100 flex flex-col gap-5" id="power-system-analysis-suite">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20"><Zap className="w-5 h-5" /></div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-white">Power System Analysis Suite</h1>
+            <p className="text-slate-400 text-xs">
+              {panel.designation || "MDP"} · {src.secondaryV} V {src.is3Phase ? "3-phase" : "1-phase"} · {result.buses.length} panel{result.buses.length === 1 ? "" : "s"} · Transformer {src.kva} kVA
+            </p>
           </div>
         </div>
-
-        {/* Action controls */}
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition border border-slate-700"
-            title="Download CSV report representing current load flow and fault duty stats"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </button>
-          <button 
-            onClick={handleExportExcel}
-            className="flex items-center gap-2 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-md shadow-emerald-950/20"
-            title="Download full engineering Excel worksheet including TCC coordinates"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Generate Full Report {!isPremium && "(Premium)"}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`px-2.5 py-1 rounded border text-[10px] font-black uppercase tracking-wider ${statusClass(overall)}`}>
+            {overall === "pass" ? "All checks pass" : `${result.counts.fail} fail · ${result.counts.warning} warning`}
+          </span>
+          <select value={basis} onChange={(e) => setBasis(e.target.value as any)} className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] font-bold text-emerald-300" title="Load used for loading and voltage drop">
+            <option value="demand">Demand load</option>
+            <option value="connected">Connected load</option>
+          </select>
+          <button onClick={() => runExport("pdf")} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold">
+            <Download className="w-3.5 h-3.5" /> PDF{!isPremium && " (Premium)"}
           </button>
         </div>
       </div>
 
-      {/* Main Analysis Module Navigation Tabs */}
-      <div className="flex border-b border-slate-800/80 gap-1 overflow-x-auto no-scrollbar">
-        {[
-          { id: "coordination", label: "Protection Coordination & TCC Curves", icon: Activity },
-          { id: "loadflow", label: "Load Flow Analysis & Phase Balancing", icon: Network },
-          { id: "fault", label: "Short-Circuit Fault Duty Analysis", icon: ShieldAlert },
-          { id: "reports", label: "Professional Report & Export", icon: FileText },
-        ].map((tab) => {
-          const isActive = activeAnalysisTab === tab.id;
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveAnalysisTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-black tracking-wider uppercase border-b-2 transition-all shrink-0 ${
-                isActive 
-                  ? "border-emerald-500 text-emerald-400 bg-emerald-500/5" 
-                  : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/20"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* Tabs */}
+      <div className="flex border-b border-slate-800/80 gap-1 overflow-x-auto">
+        {([
+          { id: "overview", label: "Overview", icon: Gauge },
+          { id: "coordination", label: "Protection Coordination", icon: Activity },
+          { id: "loadflow", label: "Load Flow & Voltage Drop", icon: Network },
+          { id: "fault", label: "Short Circuit", icon: ShieldAlert },
+          { id: "reports", label: "Report & Export", icon: FileText },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-3 text-xs font-black tracking-wider uppercase border-b-2 shrink-0 ${tab === t.id ? "border-emerald-500 text-emerald-400 bg-emerald-500/5" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+          >
+            <t.icon className="w-4 h-4" /> {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Premium Banner Overlay inside Preview Mode */}
       {!isPremium && (
-        <div className="w-full bg-slate-950/80 backdrop-blur-sm border border-amber-500/20 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20 shrink-0">
-              <Settings className="w-5 h-5 animate-spin" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Premium Engineering Analysis Suite Preview Mode</h3>
-              <p className="text-slate-400 text-xs mt-0.5">
-                Calculations shown are interactive simulation models representing high-fidelity IEEE & IEC calculations. Upgrade to the Premium Plan to unlock active live integration with your current project variables and download PDF/CAD/Excel summaries.
-              </p>
-            </div>
-          </div>
-          <button 
-            onClick={onRequestUpgrade}
-            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 text-xs font-black tracking-wider uppercase rounded shadow-lg transition-all"
-          >
-            Unlock Suite
-          </button>
+        <div className="w-full bg-slate-950/80 border border-amber-500/20 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-3">
+          <p className="text-slate-300 text-xs">Preview mode: results use your project data. Upgrade to the Premium Plan to download the PDF, Word and Excel reports.</p>
+          <button onClick={onRequestUpgrade} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black uppercase rounded">Unlock Suite</button>
         </div>
       )}
 
-      {/* Grid Content based on active analysis tab */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* TAB 1: PROTECTION COORDINATION & TIME CURRENT COORDINATION CURVES */}
-        {activeAnalysisTab === "coordination" && (
-          <>
-            {/* TCC Curves Plot Control Column */}
-            <div className="lg:col-span-4 flex flex-col gap-4">
-              <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-4">
-                <h2 className="text-sm font-bold uppercase tracking-wider text-white mb-3 flex items-center gap-1.5">
-                  <Settings className="w-4 h-4 text-emerald-400" />
-                  Trip Settings Adjustment
-                </h2>
+      {/* ================================================================ OVERVIEW */}
+      {tab === "overview" && (
+        <div className="flex flex-col gap-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Metric label="Transformer loading" value={`${fx(src.loadingPct, 1)}%`} sub={`${fx(mdp.kva)} kVA of ${src.kva} kVA (limit ${fx(src.loadingLimitPct, 0)}%)`} s={src.loadingStatus} />
+            <Metric label="Main bus fault" value={`${fx(mdp.iSym)} kA`} sub={`peak ${fx(mdp.iPeak)} kA · X/R ${fx(mdp.xr, 1)}`} s={mdp.faultStatus} />
+            <Metric label="Highest duty" value={`${fx(Math.max(...result.buses.map((b) => b.adjustedDutyPct)), 0)}%`} sub="of the lowest-rated device (X/R adjusted)" s={worstOf(result.buses.map((b) => b.faultStatus))} />
+            <Metric label="Highest voltage drop" value={`${fx(Math.max(...result.buses.map((b) => b.vdCumulativePct)))}%`} sub="cumulative feeders (limit 5% incl. branch)" s={pctStatus(Math.max(...result.buses.map((b) => b.vdCumulativePct)), 3, 5)} />
+          </div>
 
-                <div className="space-y-4">
-                  {/* Upstream Main Breaker Settings */}
-                  <div className="border-b border-slate-800 pb-3">
-                    <span className="text-xxs font-black tracking-wider uppercase text-emerald-400 block mb-1">
-                      Upstream Main Breaker (MCCB)
-                    </span>
-                    <label className="text-xs text-slate-300 block mb-1">
-                      Trip Rating (AT): <strong className="text-white">{upstreamTrip}A</strong>
-                    </label>
-                    <input 
-                      type="range" 
-                      min="100" 
-                      max="400" 
-                      step="25"
-                      value={upstreamTrip} 
-                      onChange={(e) => setUpstreamTrip(Number(e.target.value))}
-                      className="w-full accent-emerald-500 cursor-pointer"
-                    />
+          <div className="bg-slate-950/50 border border-slate-800 rounded-lg overflow-x-auto">
+            <table className="w-full text-[11px] min-w-[860px]">
+              <thead>
+                <tr className="text-slate-400 uppercase tracking-wider text-[10px] border-b border-slate-800">
+                  <th className="text-left p-2.5">Panel</th>
+                  <th className="p-2.5 text-right">Demand kVA</th>
+                  <th className="p-2.5 text-right">Current A</th>
+                  <th className="p-2.5 text-right">Breaker load</th>
+                  <th className="p-2.5 text-right">VD cumulative</th>
+                  <th className="p-2.5 text-right">Unbalance</th>
+                  <th className="p-2.5 text-right">Fault kA</th>
+                  <th className="p-2.5 text-right">Duty</th>
+                  <th className="p-2.5 text-center">Load flow</th>
+                  <th className="p-2.5 text-center">Short circuit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {result.buses.map((b) => (
+                  <tr key={b.id} className="hover:bg-slate-900/40 cursor-pointer" onClick={() => { setSelectedBus(b.id); setTab("loadflow"); }}>
+                    <td className="p-2.5 font-bold text-white" style={{ paddingLeft: 10 + (b.level - 1) * 16 }}>{b.name}</td>
+                    <td className="p-2.5 text-right font-mono">{fx(b.demandVA / 1000)}</td>
+                    <td className="p-2.5 text-right font-mono">{fx(b.current, 1)}</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.breakerLoadingPct, 80, 100))}`}>{b.feeder.breakerAT ? `${fx(b.breakerLoadingPct, 0)}%` : "-"}</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.vdCumulativePct, 3, 5))}`}>{fx(b.vdCumulativePct)}%</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(b.is3Phase ? pctStatus(b.unbalancePct, 10, 20) : "pass")}`}>{b.is3Phase ? `${fx(b.unbalancePct, 1)}%` : "1Φ"}</td>
+                    <td className="p-2.5 text-right font-mono text-yellow-300">{fx(b.iSym)}</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(b.faultStatus)}`}>{fx(b.adjustedDutyPct, 0)}%</td>
+                    <td className="p-2.5 text-center"><Badge s={b.loadStatus} /></td>
+                    <td className="p-2.5 text-center"><Badge s={worstOf([b.faultStatus, b.withstand.status])} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-                    <label className="text-xs text-slate-300 block mt-2 mb-1">
-                      Inst. Trip Multiplier: <strong className="text-white">{upstreamInstMultiplier}x</strong> ({upstreamTrip * upstreamInstMultiplier}A)
-                    </label>
-                    <input 
-                      type="range" 
-                      min="5" 
-                      max="15" 
-                      step="1"
-                      value={upstreamInstMultiplier} 
-                      onChange={(e) => setUpstreamInstMultiplier(Number(e.target.value))}
-                      className="w-full accent-emerald-500 cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Downstream Sub-Breaker Settings */}
-                  <div className="border-b border-slate-800 pb-3">
-                    <span className="text-xxs font-black tracking-wider uppercase text-indigo-400 block mb-1">
-                      Downstream Sub-Breaker (MCCB)
-                    </span>
-                    <label className="text-xs text-slate-300 block mb-1">
-                      Trip Rating (AT): <strong className="text-white">{downstreamTrip}A</strong>
-                    </label>
-                    <input 
-                      type="range" 
-                      min="20" 
-                      max="150" 
-                      step="10"
-                      value={downstreamTrip} 
-                      onChange={(e) => setDownstreamTrip(Number(e.target.value))}
-                      className="w-full accent-indigo-500 cursor-pointer"
-                    />
-
-                    <label className="text-xs text-slate-300 block mt-2 mb-1">
-                      Inst. Trip Multiplier: <strong className="text-white">{downstreamInstMultiplier}x</strong> ({downstreamTrip * downstreamInstMultiplier}A)
-                    </label>
-                    <input 
-                      type="range" 
-                      min="3" 
-                      max="12" 
-                      step="1"
-                      value={downstreamInstMultiplier} 
-                      onChange={(e) => setDownstreamInstMultiplier(Number(e.target.value))}
-                      className="w-full accent-indigo-500 cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Damage & Inrush Overlays */}
-                  <div>
-                    <span className="text-xxs font-black tracking-wider uppercase text-slate-400 block mb-2">
-                      Plot Overlays
-                    </span>
-                    <div className="space-y-1.5">
-                      <label className="flex items-center gap-2 text-xs text-slate-300 hover:text-white cursor-pointer select-none">
-                        <input 
-                          type="checkbox" 
-                          checked={showCableDamage} 
-                          onChange={(e) => setShowCableDamage(e.target.checked)}
-                          className="rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/30 cursor-pointer"
-                        />
-                        Cable Thermal Withstand Curve (50 mm²)
-                      </label>
-                      <label className="flex items-center gap-2 text-xs text-slate-300 hover:text-white cursor-pointer select-none">
-                        <input 
-                          type="checkbox" 
-                          checked={showTxDamage} 
-                          onChange={(e) => setShowTxDamage(e.target.checked)}
-                          className="rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/30 cursor-pointer"
-                        />
-                        Transformer Inrush & Damage Curve
-                      </label>
-                      <label className="flex items-center gap-2 text-xs text-slate-300 hover:text-white cursor-pointer select-none">
-                        <input 
-                          type="checkbox" 
-                          checked={showMotorStarting} 
-                          onChange={(e) => setShowMotorStarting(e.target.checked)}
-                          className="rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/30 cursor-pointer"
-                        />
-                        Motor Locked-Rotor Starting Profile
-                      </label>
+          <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-4">
+            <h3 className="text-xs font-black uppercase tracking-wider text-white mb-3 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4 text-amber-400" /> Findings and recommendations ({result.findings.length})</h3>
+            {result.findings.length === 0 ? (
+              <p className="text-xs text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> All checked values are within limits.</p>
+            ) : (
+              <ul className="space-y-2">
+                {result.findings.map((f, i) => (
+                  <li key={i} className="flex gap-2.5 text-xs">
+                    {f.status === "fail" ? <XCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}
+                    <div>
+                      <span className="font-bold text-white">{f.location}: {f.title}.</span> <span className="text-slate-300">{f.detail}</span>
+                      {f.action && <span className="block text-slate-400 mt-0.5">Action: {f.action}</span>}
                     </div>
-                  </div>
-                </div>
-              </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <Assumptions items={result.assumptions} />
+        </div>
+      )}
 
-              {/* Live Selectivity Verdict */}
-              <div className={`p-4 rounded-lg border flex gap-3 ${
-                selectivityAnalysis.variant === "passed" 
-                  ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-400" 
-                  : "bg-red-500/5 border-red-500/20 text-red-400"
-              }`}>
-                <div className="shrink-0 mt-0.5">
-                  {selectivityAnalysis.variant === "passed" ? (
-                    <CheckCircle2 className="w-5 h-5" />
-                  ) : (
-                    <AlertTriangle className="w-5 h-5" />
-                  )}
+      {/* ================================================================ COORDINATION */}
+      {tab === "coordination" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div className="lg:col-span-4 flex flex-col gap-4">
+            <div className="bg-slate-950/50 border border-slate-800 rounded-lg p-4 space-y-4">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-1.5"><Settings className="w-4 h-4 text-emerald-400" /> Devices</h2>
+              <div className="border-b border-slate-800 pb-3">
+                <span className="text-[10px] font-black uppercase text-emerald-400 block mb-1">Upstream: {upDev.label}</span>
+                <p className="text-[11px] text-slate-400 mb-2">{upDev.at} AT{upDev.af ? ` / ${upDev.af} AF` : ""} from the Load Schedule</p>
+                <label className="text-xs text-slate-300 block mb-1">Instantaneous pickup: <strong className="text-white">{upMult}×</strong> ({(upDev.at * upMult).toFixed(0)} A)</label>
+                <input type="range" min={5} max={15} step={1} value={upMult} onChange={(e) => setUpMult(Number(e.target.value))} className="w-full accent-emerald-500" />
+              </div>
+              {downDev ? (
+                <div className="border-b border-slate-800 pb-3">
+                  <span className="text-[10px] font-black uppercase text-indigo-400 block mb-1">Downstream device</span>
+                  <select value={downDev.id} onChange={(e) => { setDownId(e.target.value); setDownMult(null); }} className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white mb-2">
+                    {devices.downstream.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                  <label className="text-xs text-slate-300 block mb-1">Instantaneous pickup: <strong className="text-white">{downDev.instMultiplier}×</strong> ({(downDev.at * downDev.instMultiplier).toFixed(0)} A)</label>
+                  <input type="range" min={3} max={15} step={1} value={downDev.instMultiplier} onChange={(e) => setDownMult(Number(e.target.value))} className="w-full accent-indigo-500" />
                 </div>
+              ) : (
+                <p className="text-xs text-slate-400">The main panel has no outgoing breakers to coordinate with.</p>
+              )}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">Overlays</span>
+                {[
+                  [showCable, setShowCable, `Cable damage (${(downDev?.loadBusId ? result.byId[downDev.loadBusId]?.feeder.label : mdp.feeder.label) || "feeder"})`],
+                  [showTx, setShowTx, `Transformer damage, ANSI C57.109 (${src.kva} kVA)`],
+                  [showMotor, setShowMotor, motor ? `Motor starting: ${motor.name} (${fx(motor.fla, 1)} A FLA)` : "Motor starting (no motor on the MDP)"],
+                ].map(([v, set, label], i) => (
+                  <label key={i} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={v as boolean} onChange={(e) => (set as any)(e.target.checked)} /> {label as string}
+                  </label>
+                ))}
+              </div>
+            </div>
+            {pairResult && (
+              <div className={`p-4 rounded-lg border flex gap-3 ${statusClass(pairResult.status)}`}>
+                {pairResult.status === "pass" ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
                 <div>
-                  <h4 className="text-xs font-black uppercase tracking-wider text-white">
-                    Selectivity: {selectivityAnalysis.status}
-                  </h4>
-                  <p className="text-slate-400 text-xxs mt-1 leading-relaxed">
-                    {selectivityAnalysis.desc}
-                  </p>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-white">{pairResult.verdict}</h4>
+                  <p className="text-slate-300 text-[11px] mt-1 leading-relaxed">{pairResult.detail}</p>
                 </div>
               </div>
-            </div>
-
-            {/* SVG Plot Column */}
-            <div className="lg:col-span-8 bg-slate-950 border border-slate-800 rounded-lg p-4 flex flex-col items-center">
-              <span className="text-xxs font-black tracking-widest uppercase text-slate-400 mb-2">
-                Time-Current Coordination Curves (Log-Log Scale)
-              </span>
-
-              <div className="relative w-full max-w-[600px] aspect-[4/3] bg-slate-950 border border-slate-900 rounded shadow-inner">
-                <svg viewBox={`0 0 ${tccPlotData.width} ${tccPlotData.height}`} className="w-full h-full">
-                  {/* Logarithmic Grid Lines & Labels */}
-                  {/* Vertical (Current in Amps) */}
-                  {[1, 10, 100, 1000, 10000].map((amp) => {
-                    const x = tccPlotData.toX(amp);
-                    return (
-                      <g key={amp}>
-                        <line 
-                          x1={x} 
-                          y1={tccPlotData.padding} 
-                          x2={x} 
-                          y2={tccPlotData.height - tccPlotData.padding} 
-                          className="stroke-slate-800" 
-                          strokeWidth="1.5"
-                        />
-                        <text 
-                          x={x} 
-                          y={tccPlotData.height - tccPlotData.padding + 14} 
-                          className="fill-slate-500 font-mono text-[9px]" 
-                          textAnchor="middle"
-                        >
-                          {amp}A
-                        </text>
-                      </g>
-                    );
-                  })}
-                  {/* Subdivisions of vertical log curves for authenticity */}
-                  {[2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                    [1, 10, 100, 1000].map(base => {
-                      const x = tccPlotData.toX(base * n);
-                      return (
-                        <line 
-                          key={`${base}-${n}`}
-                          x1={x} 
-                          y1={tccPlotData.padding} 
-                          x2={x} 
-                          y2={tccPlotData.height - tccPlotData.padding} 
-                          className="stroke-slate-900/60" 
-                          strokeWidth="0.5"
-                        />
-                      );
-                    })
+            )}
+          </div>
+          <div className="lg:col-span-8 flex flex-col gap-4">
+            <div className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+              <span className="text-[10px] font-black tracking-widest uppercase text-slate-400 block mb-2 text-center">Time-current coordination curves (log-log, current at {src.secondaryV} V)</span>
+              {tcc && plot ? (
+                <svg viewBox={`0 0 ${plot.w} ${plot.h}`} className="w-full h-auto">
+                  {plot.decadesI.map((d) => [1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => d * k <= tcc.iMax && (
+                    <line key={`i${d}-${k}`} x1={plot.x(d * k)} x2={plot.x(d * k)} y1={plot.pt} y2={plot.h - plot.pb} stroke={k === 1 ? "#334155" : "#1e293b"} strokeWidth={k === 1 ? 1 : 0.5} />
+                  )))}
+                  {plot.decadesI.map((d) => <text key={`il${d}`} x={plot.x(d)} y={plot.h - plot.pb + 14} textAnchor="middle" className="fill-slate-500" fontSize="9">{d >= 1000 ? `${d / 1000}k` : d}A</text>)}
+                  {plot.decadesT.map((t) => [1, 2, 3, 4, 5, 6, 7, 8, 9].map((k) => t * k <= tcc.tMax && (
+                    <line key={`t${t}-${k}`} x1={plot.pl} x2={plot.w - plot.pr} y1={plot.y(t * k)} y2={plot.y(t * k)} stroke={k === 1 ? "#334155" : "#1e293b"} strokeWidth={k === 1 ? 1 : 0.5} />
+                  )))}
+                  {plot.decadesT.map((t) => <text key={`tl${t}`} x={plot.pl - 6} y={plot.y(t) + 3} textAnchor="end" className="fill-slate-500" fontSize="9">{t}s</text>)}
+                  {tcc.series.map((s, i) => (
+                    <polyline key={i} fill="none" stroke={s.color} strokeWidth={s.width || 2} strokeDasharray={s.dash?.join(",")} points={s.points.map(([a, t]) => `${plot.x(Math.min(a, tcc.iMax)).toFixed(1)},${plot.y(t).toFixed(1)}`).join(" ")} />
                   ))}
-
-                  {/* Horizontal (Time in Seconds) */}
-                  {[0.01, 0.1, 1, 10, 100, 1000].map((sec) => {
-                    const y = tccPlotData.toY(sec);
-                    return (
-                      <g key={sec}>
-                        <line 
-                          x1={tccPlotData.padding} 
-                          y1={y} 
-                          x2={tccPlotData.width - tccPlotData.padding} 
-                          y2={y} 
-                          className="stroke-slate-800" 
-                          strokeWidth="1.5"
-                        />
-                        <text 
-                          x={tccPlotData.padding - 8} 
-                          y={y + 3} 
-                          className="fill-slate-500 font-mono text-[9px]" 
-                          textAnchor="end"
-                        >
-                          {sec === 0.01 ? "0.01s" : sec === 0.1 ? "0.1s" : `${sec}s`}
-                        </text>
-                      </g>
-                    );
-                  })}
-                  {/* Subdivisions of horizontal log curves */}
-                  {[2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                    [0.01, 0.1, 1, 10, 100].map(base => {
-                      const y = tccPlotData.toY(base * n);
-                      return (
-                        <line 
-                          key={`${base}-${n}`}
-                          x1={tccPlotData.padding} 
-                          y1={y} 
-                          x2={tccPlotData.width - tccPlotData.padding} 
-                          y2={y} 
-                          className="stroke-slate-900/60" 
-                          strokeWidth="0.5"
-                        />
-                      );
-                    })
+                  {tcc.markers.map((m, i) => m.amps <= tcc.iMax && (
+                    <line key={`m${i}`} x1={plot.x(m.amps)} x2={plot.x(m.amps)} y1={plot.pt} y2={plot.h - plot.pb} stroke={m.color} strokeDasharray="5,4" strokeWidth={1.4} />
                   ))}
-
-                  {/* Upstream Breaker TCC Line */}
-                  <polyline 
-                    points={tccPlotData.upstreamPath} 
-                    fill="none" 
-                    className="stroke-emerald-400" 
-                    strokeWidth="3.5"
-                  />
-                  <text x={tccPlotData.toX(upstreamTrip * 1.5)} y={tccPlotData.toY(100)} className="fill-emerald-400 text-[9px] font-black uppercase tracking-wider">
-                    Upstream {upstreamTrip}A
-                  </text>
-
-                  {/* Downstream Breaker TCC Line */}
-                  <polyline 
-                    points={tccPlotData.downstreamPath} 
-                    fill="none" 
-                    className="stroke-indigo-400" 
-                    strokeWidth="3"
-                  />
-                  <text x={tccPlotData.toX(downstreamTrip * 1.1)} y={tccPlotData.toY(0.2)} className="fill-indigo-400 text-[9px] font-black uppercase tracking-wider">
-                    Downstream {downstreamTrip}A
-                  </text>
-
-                  {/* Cable damage overlay curve */}
-                  {showCableDamage && (
-                    <polyline 
-                      points={tccPlotData.cablePath} 
-                      fill="none" 
-                      className="stroke-red-500/80" 
-                      strokeWidth="2" 
-                      strokeDasharray="4,4"
-                    />
-                  )}
-
-                  {/* Transformer ANSI Damage Point Overlay */}
-                  {showTxDamage && (
-                    <polyline 
-                      points={tccPlotData.txPath} 
-                      fill="none" 
-                      className="stroke-blue-400/80" 
-                      strokeWidth="2.5" 
-                      strokeDasharray="2,2"
-                    />
-                  )}
-
-                  {/* Motor locked rotor profile overlay */}
-                  {showMotorStarting && (
-                    <polyline 
-                      points={tccPlotData.motorPath} 
-                      fill="none" 
-                      className="stroke-amber-400/80" 
-                      strokeWidth="2"
-                    />
-                  )}
                 </svg>
-
-                {/* Plot legend */}
-                <div className="absolute top-4 right-4 bg-slate-950/90 border border-slate-800 p-2.5 rounded text-[10px] space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-0.5 bg-emerald-400"></div>
-                    <span className="text-slate-300 font-bold">Main Main Breaker TCC Curve</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-0.5 bg-indigo-400"></div>
-                    <span className="text-slate-300 font-bold">Branch Panel Breaker TCC Curve</span>
-                  </div>
-                  {showCableDamage && (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-0.5 bg-red-500/80 border-dashed border-red-500/80 border"></div>
-                      <span className="text-slate-400">Cable Damage limit (I²t)</span>
-                    </div>
-                  )}
-                  {showTxDamage && (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-0.5 bg-blue-400/80 border-dashed border-blue-400/80 border"></div>
-                      <span className="text-slate-400">Transformer Damage limit Curve</span>
-                    </div>
-                  )}
-                  {showMotorStarting && (
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-0.5 bg-amber-400/80"></div>
-                      <span className="text-slate-400">Motor Inrush starting curve</span>
-                    </div>
-                  )}
+              ) : (
+                <p className="text-xs text-slate-400 p-6 text-center">No downstream device.</p>
+              )}
+              {tcc && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[10px] text-slate-300 justify-center">
+                  {[...tcc.series.map((s) => ({ label: s.label, color: s.color, dash: !!s.dash })), ...tcc.markers.map((m) => ({ label: m.label, color: m.color, dash: true }))].map((it, i) => (
+                    <span key={i} className="flex items-center gap-1.5"><span className="inline-block w-4 border-t-2" style={{ borderColor: it.color, borderStyle: it.dash ? "dashed" : "solid" }} />{it.label}</span>
+                  ))}
                 </div>
-              </div>
+              )}
+              <p className="text-[10px] text-slate-500 mt-2 text-center">Representative thermal-magnetic characteristics; the manufacturer's curves and selectivity tables govern.</p>
             </div>
-          </>
-        )}
+            <div className="bg-slate-950/50 border border-slate-800 rounded-lg overflow-x-auto">
+              <table className="w-full text-[11px] min-w-[640px]">
+                <thead><tr className="text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                  <th className="text-left p-2">Downstream device</th><th className="p-2 text-right">Ratio</th><th className="p-2 text-right">Selective to</th><th className="p-2 text-right">Fault at device</th><th className="p-2 text-left">Assessment</th><th className="p-2 text-center">Status</th>
+                </tr></thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {allPairs.map((p) => (
+                    <tr key={p.downstream.id} className={`cursor-pointer ${p.downstream.id === downDev?.id ? "bg-slate-800/40" : "hover:bg-slate-900/40"}`} onClick={() => { setDownId(p.downstream.id); setDownMult(null); }}>
+                      <td className="p-2 text-white font-bold">{p.downstream.label}</td>
+                      <td className="p-2 text-right font-mono">{fx(p.overloadRatio)}</td>
+                      <td className="p-2 text-right font-mono">{fx(p.selectiveUpToKA)} kA</td>
+                      <td className="p-2 text-right font-mono">{fx(p.faultAtDeviceKA)} kA</td>
+                      <td className="p-2 text-slate-300">{p.verdict}</td>
+                      <td className="p-2 text-center"><Badge s={p.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
-        {/* TAB 2: LOAD FLOW ANALYSIS & TOPOLOGICAL MODELLING */}
-        {activeAnalysisTab === "loadflow" && (
-          <>
-            {/* System topology map sidebar */}
-            <div className="lg:col-span-4 bg-slate-950/50 border border-slate-800 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                  <Database className="w-4 h-4 text-emerald-400" />
-                  Network Topology tree
-                </h3>
-
-                {/* Reflection Switcher */}
-                <select 
-                  value={reflectionMode} 
-                  onChange={(e) => setReflectionMode(e.target.value as any)}
-                  className="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xxs font-black tracking-wider text-emerald-400 uppercase"
-                >
-                  <option value="direct-phase">Reflect Phase Loads</option>
-                  <option value="max-demand">Reflect Max Demand</option>
-                </select>
+      {/* ================================================================ LOAD FLOW */}
+      {tab === "loadflow" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div className="lg:col-span-4 bg-slate-950/50 border border-slate-800 rounded-lg p-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-white mb-3">Panels</h3>
+            <div className="space-y-1.5">
+              <div className="w-full p-2.5 rounded-lg border border-slate-800/80 bg-slate-900/40 text-xs text-slate-300 flex justify-between">
+                <span className="font-bold">Transformer {src.kva} kVA</span>
+                <span className={`font-mono ${valueClass(src.loadingStatus)}`}>{fx(src.loadingPct, 1)}%</span>
               </div>
-
-              {/* Simple tree flow diagram */}
-              <div className="space-y-2 mt-2">
-                {networkTopology.map((node, nIdx) => {
-                  const results = loadFlowResults[node.id];
-                  const isSelected = selectedNodeId === node.id;
-                  
-                  return (
-                    <button
-                      key={`topology-node-${node.id}-${nIdx}`}
-                      onClick={() => setSelectedNodeId(node.id)}
-                      className={`w-full text-left p-2.5 rounded-lg border transition flex items-center justify-between ${
-                        isSelected 
-                          ? "bg-slate-800 border-emerald-500 text-white shadow-md shadow-emerald-950/10" 
-                          : "bg-slate-900/40 border-slate-800/80 text-slate-300 hover:bg-slate-800/50"
-                      }`}
-                      style={{ paddingLeft: `${Math.max(10, node.level * 20)}px` }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full ${
-                          results?.status === "overloaded" 
-                            ? "bg-red-500" 
-                            : results?.status === "warning" 
-                              ? "bg-amber-500" 
-                              : "bg-emerald-500"
-                        }`} />
-                        <span className="text-xs font-bold truncate max-w-[150px]">
-                          {node.name}
-                        </span>
-                      </div>
-                      
-                      {results && (
-                        <div className="flex items-center gap-1">
-                          <span className="text-xxs font-mono text-slate-400">
-                            {results.voltageMagnitude.toFixed(0)}V ({results.feederCurrent.toFixed(1)}A)
-                          </span>
-                          <ChevronRight className="w-3 h-3 text-slate-500" />
+              {result.buses.map((b) => (
+                <button key={b.id} onClick={() => setSelectedBus(b.id)}
+                  className={`w-full text-left p-2.5 rounded-lg border flex items-center justify-between text-xs ${b.id === bus.id ? "bg-slate-800 border-emerald-500 text-white" : "bg-slate-900/40 border-slate-800/80 text-slate-300 hover:bg-slate-800/50"}`}
+                  style={{ paddingLeft: 10 + b.level * 12 }}>
+                  <span className="flex items-center gap-2 min-w-0"><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${b.loadStatus === "fail" ? "bg-red-500" : b.loadStatus === "warning" ? "bg-amber-500" : "bg-emerald-500"}`} /><span className="font-bold truncate">{b.name}</span></span>
+                  <span className="font-mono text-[10px] text-slate-400 shrink-0">{fx(b.busVoltage, 1)} V · {fx(b.current, 1)} A</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="lg:col-span-8 bg-slate-950/60 border border-slate-800 rounded-lg p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white uppercase tracking-wider">{bus.name}</h3>
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest">{bus.nominalV} V {bus.is3Phase ? "3-phase" : "1-phase"} · {basis === "demand" ? "demand" : "connected"} load · PF {result.powerFactor.toFixed(2)}</p>
+              </div>
+              <Badge s={bus.loadStatus} />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Metric label="Bus voltage" value={`${fx(bus.busVoltage, 1)} V`} sub={`cumulative drop ${fx(bus.vdCumulativePct)}%`} s={pctStatus(bus.vdCumulativePct, 3, 5)} />
+              <Metric label="Current" value={`${fx(bus.current, 1)} A`} sub={`Load Schedule design ${fx(bus.demandCurrent, 1)} A`} />
+              <Metric label="Power" value={`${fx(bus.kva)} kVA`} sub={`${fx(bus.kw)} kW · ${fx(bus.kvar)} kVAR`} />
+              <Metric label="Connected" value={`${fx(bus.connectedVA / 1000)} kVA`} sub={`demand ${fx(bus.demandVA / 1000)} kVA`} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-3 text-xs space-y-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">Feeder</span>
+                <Row k="Conductor" v={bus.feeder.label} />
+                <Row k="Length" v={`${bus.feeder.lengthM} m${bus.feeder.lengthAssumed ? " (assumed: set it in Voltage Drop)" : ""}`} warn={bus.feeder.lengthAssumed} />
+                <Row k="Ampacity / loading" v={`${fx(bus.feeder.ampacityA, 0)} A · ${fx(bus.feederLoadingPct, 1)}%`} s={pctStatus(bus.feederLoadingPct, 80, 100)} />
+                <Row k="Breaker / loading" v={bus.feeder.breakerAT ? `${bus.feeder.breakerAT} AT · ${fx(bus.breakerLoadingPct, 1)}%` : "-"} s={pctStatus(bus.breakerLoadingPct, 80, 100)} />
+                <Row k="Voltage drop" v={`${fx(bus.vdFeederV)} V · ${fx(bus.vdFeederPct)}% (limit 3%)`} s={pctStatus(bus.vdFeederPct, 2.5, 3)} />
+                <p className="text-[10px] text-slate-500 pt-1">{bus.feeder.source}</p>
+              </div>
+              <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-3 text-xs">
+                <span className="text-[10px] font-black uppercase text-slate-400 block mb-2">Phase currents (connected, phasor sum)</span>
+                {bus.is3Phase ? (
+                  <div className="space-y-2">
+                    {([["R", "bg-red-500"], ["Y", "bg-amber-400"], ["B", "bg-blue-400"]] as const).map(([p, c]) => {
+                      const v = bus.phaseCurrents[p];
+                      const max = Math.max(bus.phaseCurrents.R, bus.phaseCurrents.Y, bus.phaseCurrents.B, 1);
+                      return (
+                        <div key={p}>
+                          <div className="flex justify-between text-[11px] mb-0.5"><span className="font-bold">Phase {p}</span><span className="font-mono">{fx(v, 1)} A</span></div>
+                          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full ${c}`} style={{ width: `${(v / max) * 100}%` }} /></div>
                         </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Voltage custom overrides */}
-              <div className="mt-4 pt-3 border-t border-slate-800">
-                <label className="flex items-center gap-2 text-xxs font-black tracking-wider uppercase text-slate-400 cursor-pointer mb-2">
-                  <input 
-                    type="checkbox" 
-                    checked={useCustomVoltage}
-                    onChange={(e) => setUseCustomVoltage(e.target.checked)}
-                    className="rounded border-slate-700 bg-slate-800 text-emerald-500 cursor-pointer"
-                  />
-                  Use Custom System Voltage
-                </label>
-                {useCustomVoltage && (
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="number" 
-                      value={customVoltageOverride}
-                      onChange={(e) => setCustomVoltageOverride(Number(e.target.value))}
-                      className="bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs font-mono text-white w-full"
-                    />
-                    <span className="text-xs font-bold text-slate-400">Volts</span>
+                      );
+                    })}
+                    <Row k="Neutral" v={`${fx(bus.neutralCurrent, 1)} A`} />
+                    <Row k="Unbalance" v={`${fx(bus.unbalancePct, 1)}% (target ≤ 10%)`} s={pctStatus(bus.unbalancePct, 10, 20)} />
                   </div>
+                ) : (
+                  <p className="text-slate-300">Single-phase panel: {fx(bus.phaseCurrents.R, 1)} A line current.</p>
                 )}
               </div>
             </div>
-
-            {/* Selected Node Detailed Load Flow Stats Column */}
-            <div className="lg:col-span-8 flex flex-col gap-4">
-              {(() => {
-                const results = loadFlowResults[selectedNodeId];
-                if (!results) return null;
-
-                return (
-                  <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-5">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-                      <div>
-                        <h3 className="text-md font-bold text-white uppercase tracking-wider">{results.name}</h3>
-                        <p className="text-xxs text-slate-400 uppercase tracking-widest mt-0.5">
-                          Load Flow Calculation Profile
-                        </p>
-                      </div>
-
-                      <div className={`px-2.5 py-1 rounded text-xxs font-black tracking-wider uppercase border ${
-                        results.status === "overloaded" 
-                          ? "bg-red-500/15 border-red-500/30 text-red-400" 
-                          : results.status === "warning" 
-                            ? "bg-amber-500/15 border-amber-500/30 text-amber-400" 
-                            : "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
-                      }`}>
-                        Status: {results.status}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      {/* Voltages */}
-                      <div className="bg-slate-900/60 border border-slate-800/80 rounded p-3">
-                        <span className="text-xxs text-slate-400 uppercase font-black tracking-wider block mb-1">
-                          Terminal Voltage
-                        </span>
-                        <div className="text-lg font-mono font-bold text-white">
-                          {results.voltageMagnitude.toFixed(1)}V
-                        </div>
-                        <span className="text-xxs font-mono text-slate-400 block">
-                          Angle: {results.voltageAngle.toFixed(2)}°
-                        </span>
-                      </div>
-
-                      {/* Currents */}
-                      <div className="bg-slate-900/60 border border-slate-800/80 rounded p-3">
-                        <span className="text-xxs text-slate-400 uppercase font-black tracking-wider block mb-1">
-                          Nominal Line Current
-                        </span>
-                        <div className="text-lg font-mono font-bold text-white">
-                          {results.currentMagnitude.toFixed(2)}A
-                        </div>
-                        <span className="text-xxs font-mono text-slate-400 block">
-                          Angle: {results.currentAngle.toFixed(1)}°
-                        </span>
-                      </div>
-
-                      {/* Power */}
-                      <div className="bg-slate-900/60 border border-slate-800/80 rounded p-3">
-                        <span className="text-xxs text-slate-400 uppercase font-black tracking-wider block mb-1">
-                          Apparent Power
-                        </span>
-                        <div className="text-lg font-mono font-bold text-white">
-                          {results.kva.toFixed(2)} kVA
-                        </div>
-                        <span className="text-xxs font-mono text-slate-400 block">
-                          {results.kw.toFixed(2)} kW / {results.kvar.toFixed(2)} kVAR
-                        </span>
-                      </div>
-
-                      {/* Loading performance */}
-                      <div className="bg-slate-900/60 border border-slate-800/80 rounded p-3">
-                        <span className="text-xxs text-slate-400 uppercase font-black tracking-wider block mb-1">
-                          Feeder Thermal Load
-                        </span>
-                        <div className={`text-lg font-mono font-bold ${
-                          results.feederLoadingPct > 100 ? "text-red-400" : results.feederLoadingPct > 80 ? "text-amber-400" : "text-emerald-400"
-                        }`}>
-                          {results.feederLoadingPct.toFixed(1)}%
-                        </div>
-                        <span className="text-xxs text-slate-400 block">
-                          Limit: {results.feederAmpacity}A
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Phase-by-phase balance section */}
-                    <div className="mt-5 pt-4 border-t border-slate-800">
-                      <span className="text-xxs font-black tracking-wider uppercase text-slate-400 block mb-3">
-                        Three-Phase Imbalance Profile
-                      </span>
-                      
-                      <div className="space-y-3">
-                        {[
-                          { phase: "Phase A Current (AN)", val: results.phaseA_A, color: "bg-red-500" },
-                          { phase: "Phase B Current (BN)", val: results.phaseB_A, color: "bg-amber-400" },
-                          { phase: "Phase C Current (CN)", val: results.phaseC_A, color: "bg-blue-400" },
-                        ].map(ph => {
-                          const percentage = results.currentMagnitude > 0 ? (ph.val / results.currentMagnitude) * 100 : 33.3;
-                          return (
-                            <div key={ph.phase}>
-                              <div className="flex justify-between text-xxs mb-1 text-slate-300">
-                                <span className="font-bold flex items-center gap-1.5">
-                                  <div className={`w-1.5 h-1.5 rounded-full ${ph.color}`} />
-                                  {ph.phase}
-                                </span>
-                                <span className="font-mono text-white">{ph.val.toFixed(2)} A ({percentage.toFixed(0)}%)</span>
-                              </div>
-                              <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
-                                <div 
-                                  className={`h-full ${ph.color}`} 
-                                  style={{ width: `${Math.min(100, percentage)}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Loading Performance Gauge Card */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5 pt-4 border-t border-slate-800">
-                      <div className="bg-slate-900/40 p-3 rounded border border-slate-800/80">
-                        <span className="text-xxs text-slate-400 uppercase font-black block">Voltage Regulation Profiler</span>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`text-md font-mono font-bold ${results.regulation > 5 ? "text-red-400" : "text-emerald-400"}`}>
-                            {results.regulation.toFixed(2)}%
-                          </span>
-                          <span className="text-xxs text-slate-500">
-                            (Max permitted standard: 5.0%)
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="bg-slate-900/40 p-3 rounded border border-slate-800/80">
-                        <span className="text-xxs text-slate-400 uppercase font-black block">Protective Device Load Coefficient</span>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className={`text-md font-mono font-bold ${results.breakerUtilization > 100 ? "text-red-400" : "text-emerald-400"}`}>
-                            {results.breakerUtilization.toFixed(1)}%
-                          </span>
-                          <span className="text-xxs text-slate-500">
-                            (Continuous duty target: &lt;80%)
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </>
-        )}
-
-        {/* TAB 3: SHORT-CIRCUIT FAULT DUTY ANALYSIS */}
-        {activeAnalysisTab === "fault" && (
-          <>
-            {/* Fault Configuration controls */}
-            <div className="lg:col-span-4 bg-slate-950/50 border border-slate-800 rounded-lg p-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-white mb-3 flex items-center gap-1.5">
-                <Settings className="w-4 h-4 text-emerald-400" />
-                Fault Setup Parameters
-              </h3>
-
-              <div className="space-y-4">
-                {/* Fault types selector */}
-                <div>
-                  <span className="text-xxs font-black tracking-wider uppercase text-slate-400 block mb-2">
-                    Fault Characterization
-                  </span>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      { id: "3PH", label: "3Ø Symmetrical" },
-                      { id: "LG", label: "Line-to-Ground" },
-                      { id: "LL", label: "Line-to-Line" },
-                      { id: "LLG", label: "Double L-to-G" },
-                    ].map(f => (
-                      <button
-                        key={f.id}
-                        onClick={() => setFaultType(f.id as any)}
-                        className={`px-2.5 py-1.5 rounded text-xxs font-black tracking-wider uppercase transition border ${
-                          faultType === f.id 
-                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" 
-                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-white"
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Transformer impedance configuration details */}
-                <div className="pt-3 border-t border-slate-800">
-                  <span className="text-xxs font-black tracking-wider uppercase text-slate-400 block mb-2">
-                    Source Imp. Details
-                  </span>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xxs">
-                      <span className="text-slate-400">Utility Capacity MVAsc:</span>
-                      <strong className="text-white font-mono">{iscParams.utilityShortCircuitMVA || 500} MVA</strong>
-                    </div>
-                    <div className="flex justify-between text-xxs">
-                      <span className="text-slate-400">Transformer Secondary Z%:</span>
-                      <strong className="text-white font-mono">{iscParams.transformerZ || 5.0} %</strong>
-                    </div>
-                    <div className="flex justify-between text-xxs">
-                      <span className="text-slate-400">Transformer Capacity:</span>
-                      <strong className="text-white font-mono">{iscParams.transformerKVA || 500} kVA</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Fault Duty Analysis Table results */}
-            <div className="lg:col-span-8 flex flex-col gap-4">
-              <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-4 overflow-x-auto">
-                <span className="text-xxs font-black tracking-widest uppercase text-slate-400 block mb-3">
-                  Fault Level Evaluation Table ({faultType} Fault)
-                </span>
-
-                <table className="w-full text-left text-xxs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider">
-                      <th className="py-2">Bus Designation</th>
-                      <th className="py-2 text-center">Fault Level (kA)</th>
-                      <th className="py-2 text-center">Fault Capacity (MVA)</th>
-                      <th className="py-2 text-center">kAIC Rating</th>
-                      <th className="py-2 text-center">Duty Ratio (%)</th>
-                      <th className="py-2 text-center">Withstand Limit</th>
-                      <th className="py-2 text-right">Verdict</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {Object.values(faultResults).map((res, rIdx) => (
-                      <tr key={`fault-result-${res.id}-${rIdx}`} className="hover:bg-slate-900/30">
-                        <td className="py-2.5 font-bold text-white">{res.name}</td>
-                        <td className="py-2.5 text-center font-mono font-bold text-yellow-400">
-                          {res.iAvailable.toFixed(2)} kA
-                        </td>
-                        <td className="py-2.5 text-center font-mono text-slate-300">
-                          {res.faultMVA.toFixed(1)} MVA
-                        </td>
-                        <td className="py-2.5 text-center font-mono text-slate-300">
-                          {res.breakerkAIC > 0 ? `${res.breakerkAIC} kA` : "N/A"}
-                        </td>
-                        <td className={`py-2.5 text-center font-mono font-bold ${
-                          res.dutyPercentage > 100 ? "text-red-400" : res.dutyPercentage > 80 ? "text-amber-400" : "text-emerald-400"
-                        }`}>
-                          {res.breakerkAIC > 0 ? `${res.dutyPercentage.toFixed(1)}%` : "N/A"}
-                        </td>
-                        <td className="py-2.5 text-center font-mono text-slate-400">
-                          {res.thermalWithstandLimitTime > 100 ? "Safe" : `${res.thermalWithstandLimitTime.toFixed(2)}s`}
-                        </td>
-                        <td className="py-2.5 text-right">
-                          <span className={`px-1.5 py-0.5 rounded uppercase tracking-wider font-bold text-[9px] ${
-                            res.compliance === "CRITICAL VIOLATION" 
-                              ? "bg-red-500/20 text-red-400 border border-red-500/30" 
-                              : res.compliance === "WARNING" 
-                                ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" 
-                                : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                          }`}>
-                            {res.compliance}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* TAB 4: PROFESSIONAL REPORTS & EXPORTS */}
-        {activeAnalysisTab === "reports" && (
-          <div className="lg:col-span-12">
-            <ReportExportModule
-              panel={panel}
-              circuits={circuits}
-              subPanels={subPanels}
-              iscParams={iscParams}
-              vdCalculations={vdCalculations}
-              loadFlowResults={loadFlowResults}
-              faultResults={faultResults}
-              isPremium={isPremium}
-              onRequestUpgrade={onRequestUpgrade}
-              upstreamTrip={upstreamTrip}
-              upstreamInstMultiplier={upstreamInstMultiplier}
-              downstreamTrip={downstreamTrip}
-              downstreamInstMultiplier={downstreamInstMultiplier}
-              transformerPrimaryVoltage={transformerPrimaryVoltage}
-              transformerPowerFactor={transformerPowerFactor}
-              transformerDemandFactor={transformerDemandFactor}
-              transformerLoadingFactor={transformerLoadingFactor}
-              user={user}
-            />
+            {bus.loadNotes.length > 0 && <p className="text-[11px] text-amber-300 flex gap-1.5"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />{bus.loadNotes.join(" ")}</p>}
+            <p className="text-[10px] text-slate-500">VD = k·I·L·(R cosφ + X sinφ) / sets with R, X from PEC 2017 Ch. 9 Table 9; limits per PEC 2.15.2 FPN No. 2 (feeder 3%, feeder + branch 5%). Breaker continuous loading ≤ 80% (PEC 2.10.2).</p>
           </div>
-        )}
-
-      </div>
-
-      {/* Engineering Recommendations & Compliance Panel */}
-      <div className="bg-slate-950/40 border border-slate-800 rounded-lg p-5 mt-4">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-          <Info className="w-4 h-4 text-emerald-400" />
-          Intelligent Recommendations & Compliance Verifier (NEC Sec 110.9, PEC Part 1)
-        </h3>
-        
-        <div className="space-y-2">
-          {smartRecommendations.map((rec, idx) => (
-            <div key={idx} className="flex gap-2.5 text-xs text-slate-300">
-              <span className="text-emerald-400 font-bold shrink-0">→</span>
-              <p className="leading-relaxed">{rec}</p>
-            </div>
-          ))}
         </div>
-      </div>
+      )}
+
+      {/* ================================================================ SHORT CIRCUIT */}
+      {tab === "fault" && (
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Metric label="Utility" value={`${src.utilityMVA} MVA`} sub={`X/R ${src.utilityXr} · ${src.primaryV} V`} />
+            <Metric label="Transformer" value={`${src.kva} kVA`} sub={`Z ${src.zPct}% · X/R ${fx(src.txXr, 1)}`} />
+            <Metric label="Secondary terminals" value={`${fx(src.terminalFaultKA)} kA`} sub={`X/R ${fx(src.terminalXr, 1)}`} />
+            <Metric label="Rated secondary" value={`${fx(src.ratedSecondaryA, 0)} A`} sub={`primary ${fx(src.ratedPrimaryA, 1)} A`} />
+          </div>
+          <div className="bg-slate-950/60 border border-slate-800 rounded-lg overflow-x-auto">
+            <table className="w-full text-[11px] min-w-[980px]">
+              <thead><tr className="text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                <th className="text-left p-2">Panel</th><th className="p-2 text-right">3Φ kA</th><th className="p-2 text-right">L-L kA</th><th className="p-2 text-right">L-G kA</th>
+                <th className="p-2 text-right">Motor kA</th><th className="p-2 text-right">Available kA</th><th className="p-2 text-right">X/R</th><th className="p-2 text-right">Peak kA</th>
+                <th className="p-2 text-right">Asym kA</th><th className="p-2 text-left">Lowest device</th><th className="p-2 text-right">Duty</th><th className="p-2 text-center">Status</th>
+              </tr></thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {result.buses.map((b) => (
+                  <tr key={b.id} className="hover:bg-slate-900/40">
+                    <td className="p-2 font-bold text-white" style={{ paddingLeft: 8 + (b.level - 1) * 14 }}>{b.name}</td>
+                    <td className="p-2 text-right font-mono">{b.is3Phase ? fx(b.i3ph) : "-"}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.iLL)}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.iLG)}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.motorKA)}</td>
+                    <td className="p-2 text-right font-mono font-bold text-yellow-300">{fx(b.iSym)}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.xr, 1)}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.iPeak)}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.iAsym)}</td>
+                    <td className="p-2 text-slate-300">{b.lowestDevice}</td>
+                    <td className={`p-2 text-right font-mono font-bold ${valueClass(b.faultStatus)}`} title={`Symmetrical ${fx(b.dutyPct, 0)}% × X/R factor ${fx(b.xrMultiplier)}`}>{fx(b.adjustedDutyPct, 0)}%</td>
+                    <td className="p-2 text-center"><Badge s={b.faultStatus} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="bg-slate-950/60 border border-slate-800 rounded-lg overflow-x-auto">
+            <span className="text-[10px] font-black uppercase text-slate-400 block px-3 pt-3">Feeder conductor short-time withstand (fault at the supply end, clearing {(CLEARING_TIME_S * 1000).toFixed(0)} ms)</span>
+            <table className="w-full text-[11px] min-w-[640px]">
+              <thead><tr className="text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                <th className="text-left p-2">Panel fed</th><th className="text-left p-2">Feeder</th><th className="p-2 text-right">k</th><th className="p-2 text-right">S mm²</th><th className="p-2 text-right">Fault kA</th><th className="p-2 text-right">Withstand</th><th className="p-2 text-center">Status</th>
+              </tr></thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {result.buses.map((b) => (
+                  <tr key={b.id}>
+                    <td className="p-2 font-bold text-white">{b.name}</td>
+                    <td className="p-2 text-slate-300">{b.feeder.label}</td>
+                    <td className="p-2 text-right font-mono">{b.withstand.k}</td>
+                    <td className="p-2 text-right font-mono">{b.withstand.areaMm2}</td>
+                    <td className="p-2 text-right font-mono">{fx(b.withstand.faultKA)}</td>
+                    <td className="p-2 text-right font-mono">{b.withstand.maxTimeS > 100 ? "> 100 s" : b.withstand.maxTimeS >= 1 ? `${fx(b.withstand.maxTimeS, 1)} s` : `${fx(b.withstand.maxTimeS * 1000, 0)} ms`}</td>
+                    <td className="p-2 text-center"><Badge s={b.withstand.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-slate-500">
+            Complex impedances from the utility to each panel (feeder R at 20 °C). L-G uses Z0 = Z_T (Dyn) plus phase and return conductor. Peak per IEC 60909, κ = 1.02 + 0.98·e^(−3R/X); asymmetrical = half-cycle RMS. Duty is the available current (with 4 × motor FLA) against the lowest-rated device in the panel, multiplied where X/R exceeds the device test X/R (UL 489 / IEC 60947-2).
+          </p>
+        </div>
+      )}
+
+      {/* ================================================================ REPORTS */}
+      {tab === "reports" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <div className="lg:col-span-4 bg-slate-950/50 border border-slate-800 rounded-lg p-4 space-y-3">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-white">Report details</h3>
+            {([
+              ["title", "Report title"], ["project", "Project"], ["client", "Client"], ["projectNo", "Project No."],
+              ["location", "Location"], ["preparedBy", "Prepared by"], ["date", "Date"],
+            ] as const).map(([k, label]) => (
+              <label key={k} className="block">
+                <span className="text-[10px] font-black uppercase text-slate-400">{label}</span>
+                <input value={meta[k]} onChange={(e) => setMeta((m) => ({ ...m, [k]: e.target.value }))} className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white mt-0.5" />
+              </label>
+            ))}
+            <div className="grid grid-cols-1 gap-2 pt-2">
+              <button disabled={!!exporting} onClick={() => runExport("pdf")} className="flex items-center justify-center gap-2 px-3 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold disabled:opacity-50"><FileType2 className="w-4 h-4" /> {exporting === "pdf" ? "Preparing…" : "Download PDF"}</button>
+              <button disabled={!!exporting} onClick={() => runExport("docx")} className="flex items-center justify-center gap-2 px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold disabled:opacity-50"><FileText className="w-4 h-4" /> {exporting === "docx" ? "Preparing…" : "Download Word (.docx)"}</button>
+              <button disabled={!!exporting} onClick={() => runExport("xlsx")} className="flex items-center justify-center gap-2 px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50"><FileSpreadsheet className="w-4 h-4" /> {exporting === "xlsx" ? "Preparing…" : "Download Excel (.xlsx)"}</button>
+            </div>
+            <p className="text-[10px] text-slate-500">All three files contain the same sections and values shown here. The coordination chart uses the device pair selected in Protection Coordination.</p>
+          </div>
+          <div className="lg:col-span-8 bg-white text-slate-900 rounded-lg p-5 max-h-[78vh] overflow-y-auto space-y-5">
+            <div className="border-b-2 border-slate-900 pb-2">
+              <h2 className="text-lg font-black">{meta.title}</h2>
+              <p className="text-xs text-slate-600">{meta.project}{meta.projectNo ? ` · ${meta.projectNo}` : ""} · {meta.date}</p>
+            </div>
+            {tables.map((t) => (
+              <section key={t.key}>
+                <h3 className="text-sm font-black text-slate-900 mb-1">{t.title}</h3>
+                {t.note && <p className="text-[10px] text-slate-500 mb-1.5">{t.note}</p>}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px] border border-slate-300">
+                    {!t.kv && <thead><tr className="bg-slate-900 text-white">{t.head.map((h) => <th key={h} className="p-1.5 text-left font-bold">{h}</th>)}</tr></thead>}
+                    <tbody>
+                      {t.rows.map((r, i) => (
+                        <tr key={i} className="border-t border-slate-200 align-top">
+                          {r.map((v, ci) => {
+                            const st = t.statusCol === ci ? String(v).split(":")[0] : "";
+                            return (
+                              <td key={ci} className={`p-1.5 ${t.kv && ci === 0 ? "font-bold w-56" : ""} ${typeof v === "number" ? "text-right font-mono" : ""} ${st === "FAIL" ? "text-red-600 font-bold" : st === "WARNING" ? "text-amber-600 font-bold" : st === "PASS" ? "text-green-700 font-bold" : ""}`}>{String(v)}</td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function worstOf(list: Status[]): Status {
+  return list.includes("fail") ? "fail" : list.includes("warning") ? "warning" : "pass";
+}
+
+function Row({ k, v, s, warn }: { k: string; v: string; s?: Status; warn?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-slate-400">{k}</span>
+      <span className={`font-mono text-right ${s ? valueClass(s) : warn ? "text-amber-300" : "text-slate-100"}`}>{v}</span>
+    </div>
+  );
+}
+
+function Assumptions({ items }: { items: string[] }) {
+  return (
+    <div className="bg-slate-950/40 border border-slate-800 rounded-lg p-4">
+      <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5"><Info className="w-3.5 h-3.5" /> Basis and assumptions</h3>
+      <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-400">
+        {items.map((a, i) => <li key={i}>{a}</li>)}
+        <li>Standards: PEC 2017; IEEE Std 141, 242, 399; IEC 60909-0; IEC 60947-2 / UL 489; IEEE C57.109; NEMA MG 1.</li>
+      </ul>
     </div>
   );
 }
