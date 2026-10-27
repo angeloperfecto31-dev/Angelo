@@ -11,6 +11,9 @@ import {
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, getBreakerFrameSize, calculateUnifiedVD } from "./computeEngine";
+import { serviceFaultStudy } from "./serviceFault";
+import { analysePowerSystem } from "./powerAnalysis";
+import { buildImpedanceSld, drawSldOnDrawing, sldOptionsFor, type SldOptions } from "./impedanceSld";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -1355,96 +1358,16 @@ export const exportToCAD = (
     ? (scParams.phaseTypeOverride || "3PH")
     : (panel?.system ? (panel.system.toLowerCase().includes("3ph") || panel.system.toLowerCase().includes("3ø") || panel.system.toLowerCase().includes("three-phase") || panel.system.toLowerCase().includes("three phase") ? "3PH" : "1PH") : "1PH");
   const isSC3Phase = selectedPhaseType === "3PH";
-  const scFactor = isSC3Phase ? 1.732 : 2.0;
-
-  let connectionMultiplier = 1.0;
-  let groundFaultFactor = 1.0;
-
-  if (scParams.transformerConnection?.includes("Open") || false) {
-    connectionMultiplier = 0.866;
-  }
-
-  if (
-    scParams.transformerConnection === "Wye (Star) Connection" ||
-    scParams.transformerConnection === "Delta-Wye (D-Y)" ||
-    scParams.transformerConnection === "Wye-Wye (Y-Y)" ||
-    scParams.transformerConnection === "Open Wye-Open Delta"
-  ) {
-    groundFaultFactor = 1.25;
-  }
-
+  // Service fault study shared with the Short Circuit page (utils/serviceFault.ts): the same values on screen and in CAD
+  const scStudy = serviceFaultStudy(scParams as ShortCircuitParams, isSC3Phase, circuits, subPanels, panel?.voltage);
   const baseKVA = scParams.transformerKVA;
-  const baseKV = scParams.transformerVoltage / 1000;
-  const zUtilitypu = baseKVA / (scParams.utilityShortCircuitMVA * 1000);
-  
-  let zTranspu = scParams.transformerZ / 100 / connectionMultiplier;
-  let totalTransformerKVA = baseKVA;
-  const ptCount = scParams.parallelTransformersCount || 1;
-  const ptZMatch = scParams.parallelTransformersZMatch !== false;
-  const ptkVAMatch = scParams.parallelTransformerskVAMatch !== false;
-
-  if (ptCount > 1) {
-    if (ptZMatch && ptkVAMatch) {
-      zTranspu = zTranspu / ptCount;
-      totalTransformerKVA = baseKVA * ptCount;
-    } else {
-      const z1pu = zTranspu;
-      const t2Rating = scParams.parallelTransformersRating || 100;
-      const t2Z = scParams.parallelTransformersZ || 5;
-      const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
-      
-      const y1 = 1 / z1pu;
-      const y2 = (ptCount - 1) / z2pu;
-      zTranspu = 1 / (y1 + y2);
-      totalTransformerKVA = baseKVA + (ptCount - 1) * t2Rating;
-    }
-  }
-
-  const feederRuns = scParams.feederRuns || 1;
-  const condType = scParams.conductorType || "Copper";
-  const connType = scParams.connectionType || "Series";
-
-  const eqFeeder = calculateEquivalentFeederImpedance(
-    scParams.feederLength || 10,
-    scParams.feederSize || "3.5",
-    feederRuns,
-    condType as "Copper" | "Aluminum",
-    connType as "Series" | "Parallel",
-    scParams.parallelFeedersSizeMatch !== false,
-    scParams.parallelFeedersLengthMatch !== false,
-    scParams.parallelFeedersMaterialMatch !== false,
-    scParams.parallelFeedersCustomSizes,
-    scParams.parallelFeedersCustomLengths,
-    scParams.parallelFeedersCustomMaterials,
-  );
-
-  const feederR = eqFeeder.r;
-  const feederX = eqFeeder.x;
-  const feederZ = eqFeeder.z;
-  const zFeederpu = (feederZ * (baseKVA / 1000)) / (baseKV * baseKV);
-
-  const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = totalTransformerKVA / (scFactor * baseKV);
-  const iFullLoadBase = baseKVA / (scFactor * baseKV);
-
-  const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
-  const iscFaultPoint = iFullLoadBase / totalZpu;
-
-  const motorLoadVA = circuits
-    .filter(
-      (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
-    )
-    .reduce((sum, c) => sum + c.loadVA, 0);
-  const motorContribution =
-    motorLoadVA > 0
-      ? (motorLoadVA / (scFactor * scParams.transformerVoltage)) * 4
-      : 0;
-
-  const fault1Isc =
-    (scParams.utilityShortCircuitMVA * 1000000) /
-    (1.732 * scParams.primaryVoltage);
+  const totalTransformerKVA = scStudy.src.kva;
+  const feederR = scStudy.eqFeeder.r;
+  const feederX = scStudy.eqFeeder.x;
+  const feederZ = Math.hypot(scStudy.zFeederOhm.r, scStudy.zFeederOhm.x);
+  const { zUtilitypu, zTranspu, zFeederpu, totalZpu, iFullLoad, iscMainBreaker, iscFaultPoint, motorContribution, fault1Isc } = scStudy;
   const fault2Isc = iscMainBreaker;
-  const fault3Isc = iscFaultPoint + motorContribution;
+  const fault3Isc = scStudy.iscTotal;
 
   // Drawing Frame Dimensions: 841mm x 594mm (Standard ISO-A1 Blueprint Sheet Size)
   const baseW = 841;
@@ -3062,53 +2985,53 @@ export const exportToCAD = (
 
     // Short circuit formulations
     if (exportMode === "ALL" || exportMode === "SHORT_CIRCUIT") {
+      const zr = (z: { r: number; x: number }) => `${(z.r * 1000).toFixed(3)} + j${(z.x * 1000).toFixed(3)} \\text{ m}\\Omega`;
+      const kVsec = scStudy.vSec / 1000;
       writeEqSC([
         "\\textbf{1. Base System Parameters Definition}",
-        `S_{base} = \\text{Transformer Capacity} = ${baseKVA} \\text{ kVA}`,
-        `V_{base, HV} = ${scParams.primaryVoltage} \\text{ V}_{3\\phi}`,
-        `V_{base, LV} = ${scParams.transformerVoltage} \\text{ V (}${selectedPhaseType}\\text{)}`,
-        isSC3Phase 
-          ? `I_{FLA} = \\frac{S_{base} \\times 1000}{\\sqrt{3} \\times V_{base, LV}} = ${iFullLoad.toFixed(2)} \\text{ A}`
-          : `I_{FLA} = \\frac{S_{base} \\times 1000}{2 \\times V_{base, LV}} = ${iFullLoad.toFixed(2)} \\text{ A}`,
+        `S_{base} = \\text{Transformer Capacity} = ${totalTransformerKVA} \\text{ kVA}`,
+        `V_{HV} = ${scParams.primaryVoltage} \\text{ V}_{3\\phi}, \\ V_{LV} = ${scStudy.vSec} \\text{ V (}${selectedPhaseType}\\text{)}`,
+        isSC3Phase
+          ? `I_{FLA} = \\frac{S_{base} \\times 1000}{\\sqrt{3} \\times V_{LV}} = ${iFullLoad.toFixed(2)} \\text{ A}, \\ Z_{base} = \\frac{kV^2}{MVA} = ${(scStudy.src.zBase * 1000).toFixed(3)} \\text{ m}\\Omega`
+          : `I_{FLA} = \\frac{S_{base} \\times 1000}{V_{LV}} = ${iFullLoad.toFixed(2)} \\text{ A}, \\ Z_{base} = \\frac{kV^2}{MVA} = ${(scStudy.src.zBase * 1000).toFixed(3)} \\text{ m}\\Omega`,
       ]);
 
       writeEqSC([
-        "\\textbf{2. Utility Interface Impedance (Z_{u, pu})}",
-        `Z_{u, pu} = \\frac{S_{base}}{MVA_{SC} \\times 1000} = \\frac{${baseKVA}}{${scParams.utilityShortCircuitMVA} \\times 1000} = ${zUtilitypu.toFixed(6)} \\text{ pu}`,
+        "\\textbf{2. Utility Source Impedance (X/R = 10, assumed)}",
+        `|Z_{u}| = \\frac{kV_{LV}^2}{MVA_{SC}} = \\frac{${kVsec.toFixed(3)}^2}{${scParams.utilityShortCircuitMVA}}, \\ Z_{u} = ${zr(scStudy.src.zUtility)} (${zUtilitypu.toFixed(6)} \\text{ pu})`,
       ]);
 
       writeEqSC([
-        "\\textbf{3. Transformer Equivalent Impedance (Z_{tx, pu})}",
-        `\\text{Multiplier for Connection } C_{mult} = ${connectionMultiplier.toFixed(3)}`,
-        `Z_{tx, pu} = \\frac{\\%Z}{100 \\times C_{mult}} = \\frac{${scParams.transformerZ}}{100 \\times ${connectionMultiplier.toFixed(3)}} = ${zTranspu.toFixed(6)} \\text{ pu}`,
+        `\\textbf{3. Transformer Impedance (X/R = ${scStudy.src.txXr.toFixed(1)}, IEEE 141 typical)}`,
+        `|Z_{t}| = \\frac{\\%Z}{100} \\times \\frac{kV^2 \\times 1000}{kVA}${scParams.transformerConnection?.includes("Open") ? " / 0.866 (open bank)" : ""}, \\ Z_{t} = ${zr(scStudy.src.zTransformer)} (${zTranspu.toFixed(6)} \\text{ pu})`,
       ]);
 
       writeEqSC([
-        "\\textbf{4. Feeder Conductor Impedance (Z_{feeder, pu})}",
-        `\\text{Length } L = ${scParams.feederLength} \\text{ m, Runs } n = ${scParams.feederRuns}\\text{, Size = } ${scParams.feederSize} \\text{ mm}^2`,
-        `R_{total} = R_{km} \\times \\frac{L}{1000} / n = ${feederR.toFixed(5)} \\ \\Omega`,
-        `X_{total} = X_{km} \\times \\frac{L}{1000} / n = ${feederX.toFixed(5)} \\ \\Omega`,
-        `Z_{\\Omega} = \\sqrt{R_{total}^2 + X_{total}^2} = ${feederZ.toFixed(5)} \\ \\Omega`,
-        `Z_{feeder, pu} = \\frac{Z_{\\Omega} \\times S_{base} / 1000}{KV_{base}^2} = ${zFeederpu.toFixed(6)} \\text{ pu}`,
+        "\\textbf{4. Service Feeder Impedance (PEC 2017 Ch. 9 Table 9)}",
+        `\\text{Length } L = ${scParams.feederLength} \\text{ m, Runs } n = ${scParams.feederRuns}\\text{, Size = } ${scParams.feederSize} \\text{ mm}^2 \\text{ } ${scParams.conductorType}`,
+        `R_{75C} = ${feederR.toFixed(5)} \\ \\Omega, \\ X = ${feederX.toFixed(5)} \\ \\Omega \\ \\text{(R corrected to 20 deg C for maximum fault)}`,
+        `Z_{f} = ${zr(scStudy.zFeederOhm)} \\ (${zFeederpu.toFixed(6)} \\text{ pu}${isSC3Phase ? "" : ", 2-wire loop"})`,
       ]);
 
       writeEqSC([
-        "\\textbf{5. Total System Per-Unit Impedance Evaluated (Z_{total})}",
-        `Z_{total} = Z_{u, pu} + Z_{tx, pu} + Z_{feeder, pu} = ${totalZpu.toFixed(6)} \\text{ pu}`,
+        "\\textbf{5. Total Impedance (complex sum, not magnitudes)}",
+        `Z_{1} = Z_{u} + Z_{t} + Z_{f} = ${zr(scStudy.atPoint.z1)} \\ (${totalZpu.toFixed(6)} \\text{ pu, X/R } ${scStudy.atPoint.xr.toFixed(2)})`,
       ]);
 
       writeEqSC([
-        "\\textbf{6. Derived Symmetrical Short Circuit Currents (I_{sym})}",
-        `\\text{Fault 1 (HV Primary): } I_{SC1} = \\frac{MVA_{SC} \\times 10^6}{\\sqrt{3} \\times V_{base, HV}} = ${fault1Isc.toFixed(0)} \\text{ A}`,
-        `\\text{Fault 2 (LV Secondary): } I_{SC2} = \\frac{I_{FLA}}{Z_{u, pu} + Z_{tx, pu}} = ${fault2Isc.toFixed(0)} \\text{ A}`,
-        `\\text{Fault 3 (End of Line): } I_{SC3} = \\frac{I_{FLA}}{Z_{total}} + I_{motor} = ${fault3Isc.toFixed(0)} \\text{ A}`,
+        "\\textbf{6. Symmetrical Short Circuit Currents}",
+        `\\text{Fault 1 (HV Primary): } I_{SC1} = \\frac{MVA_{SC} \\times 10^6}{\\sqrt{3} \\times V_{HV}} = ${fault1Isc.toFixed(0)} \\text{ A}`,
+        `\\text{Fault 2 (LV Secondary): } I_{SC2} = \\frac{E}{|Z_{u} + Z_{t}|} = ${fault2Isc.toFixed(0)} \\text{ A}`,
+        `\\text{Fault 3 (Feeder End): } I_{SC3} = \\frac{E}{|Z_{1}|} + 4 \\times I_{motor} = ${iscFaultPoint.toFixed(0)} + ${motorContribution.toFixed(0)} = ${fault3Isc.toFixed(0)} \\text{ A}`,
+        ...(isSC3Phase
+          ? [`I_{LL} = 0.866 \\times I_{3\\phi} = ${scStudy.atPoint.iLL.toFixed(0)} \\text{ A}, \\ I_{LG} = \\frac{3E}{|2Z_{1} + Z_{0}|} = ${Number.isFinite(scStudy.atPoint.iLG) ? scStudy.atPoint.iLG.toFixed(0) : "n/a"} \\text{ A}`]
+          : []),
       ]);
 
       writeEqSC([
-        "\\textbf{7. Asymmetrical Factor Adjustment & Interrupting Capacity (kAIC)}",
-        `I_{asym} = I_{SC3} \\times 1.25 \\text (Asymmetry factor) = ${(fault3Isc * 1.25).toFixed(0)} \\text{ A}`,
-        `\\text{Recommended Breaker Safety Class Min Protection: } \\ge ${Math.ceil((fault3Isc * 1.25) / 1000)} \\text{ kAIC}`,
-        `\\text{Status: VERIFIED COMPLIANT WITH PHILIPPINE ELECTRICAL CODE.}`,
+        "\\textbf{7. Peak Current and Interrupting Duty}",
+        `i_{p} = kappa \\times \\sqrt{2} \\times I_{SC3}, \\ kappa = 1.02 + 0.98 e^{-3/(X/R)}, \\ i_{p} = ${scStudy.iscPeak.toFixed(0)} \\text{ A (IEC 60909)}`,
+        `\\text{Minimum symmetrical interrupting rating at the feeder end: } \\ge ${(fault3Isc / 1000).toFixed(2)} \\text{ kA (see KAIC compliance sheet)}`,
       ]);
     } else {
       writeEqSC([
@@ -3274,831 +3197,17 @@ export const exportToCAD = (
     }
   }
 
+  // === SINGLE LINE IMPEDANCE DIAGRAM ===
+  // The same sheet as the Short Circuit page (utils/impedanceSld.ts, same data, settings and layers);
+  // it is drawn at the end, once the sheet numbers are known.
+  let impedanceSld: { sheetIndex: number; input: Parameters<typeof buildImpedanceSld>[0]; opts: SldOptions } | null = null;
   if (exportMode === "ALL" || exportMode === "SHORT_CIRCUIT") {
-    // === SHEET 2: SHORT-CIRCUIT SINGLE-LINE IMPEDANCE DIAGRAM ===
-    const sldSheetIndex2 = allocSheet();
-    drawSheetTemplate(
-      sldSheetIndex2,
-      panel,
-      "SHORT CIRCUIT DIAGRAM",
-      "DETAILED ENGINEERING ANALYSIS",
-    );
-
-    const sConfSld2 = sheetConfigs[sldSheetIndex2] || {
-      w: baseW,
-      xOffset: sldSheetIndex2 * 900,
+    const input = {
+      result: analysePowerSystem({ panel, circuits, subPanels, iscParams, vdCalculations, basis: "demand" }),
+      panel, circuits, subPanels, iscParams,
     };
-    const xBase2 = sConfSld2.xOffset + 20;
-    const by = 20;
-    const contentH = H - by - MARGIN_TOP;
-
-    // Draw outer boundary for drawing section (W-40 width, matching title block boundary)
-    const boundingW2 = sConfSld2.w - 150;
-    b.addRect(xBase2, by, xBase2 + boundingW2, by + contentH, "BORDER");
-    b.addRect(
-      xBase2,
-      by + contentH - 12,
-      xBase2 + boundingW2,
-      by + contentH,
-      "BORDER",
-    );
-    b.addText(
-      "SHORT CIRCUIT SINGLE LINE IMPEDANCE DIAGRAM",
-      xBase2 + boundingW2 / 2,
-      by + contentH - 8,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "center",
-    );
-
-    // Section Column Centers
-    const xLeft = xBase2 + 180;
-    const xRight = xBase2 + 480;
-
-    // Sub-titles for side-by-side streams
-    b.addText(
-      "I. SYSTEM SINGLE LINE DIAGRAM",
-      xLeft,
-      by + contentH - 24,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "center",
-    );
-    b.addText(
-      "II. SEQUENCE IMPEDANCE MODEL",
-      xRight,
-      by + contentH - 24,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "center",
-    );
-
-    // Vertical Level Heights
-    const y1 = 475; // Utility / Infinite Bus
-    const y2 = 405; // Fault 1 / Primary Bus
-    const y3 = 315; // Transformer / Zt
-    const y4 = 235; // Fault 2 / Secondary MDP Busbar
-    const y5 = 150; // Feeder Cable / Zcab
-    const y6 = 65; // Fault 3 / Distribution Panelboard
-
-    // ----------------------------------------------------
-    // LEVEL 1: UTILITY / INFINITE BUS
-    // ----------------------------------------------------
-    // Left System: Utility service entrance
-    b.addCircle(xLeft, y1, 10, "SLD_GEOMETRY");
-    // Sine wave representation inside circle
-    b.addLine(xLeft - 7, y1, xLeft - 3.5, y1 + 4, "SLD_GEOMETRY");
-    b.addLine(xLeft - 3.5, y1 + 4, xLeft, y1, "SLD_GEOMETRY");
-    b.addLine(xLeft, y1, xLeft + 3.5, y1 - 4, "SLD_GEOMETRY");
-    b.addLine(xLeft + 3.5, y1 - 4, xLeft + 7, y1, "SLD_GEOMETRY");
-
-    b.addLine(xLeft, y1 - 10, xLeft, y2, "SLD_GEOMETRY");
-    b.addLine(xLeft, y1 + 10, xLeft, y1 + 30, "SLD_GEOMETRY");
-    b.addText(
-      "UTILITY SERVICE ENTRANCE",
-      xLeft + 30,
-      y1 + 5,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-
-    // Left Spec Box: GRID SUPPLY
-    b.addRect(xLeft - 150, y1 - 18, xLeft - 55, y1 + 18, "SLD_DASHED");
-    b.addText(
-      "GRID SUPPLY",
-      xLeft - 144,
-      y1 + 9,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `${scParams.utilityShortCircuitMVA} MVAsc`,
-      xLeft - 144,
-      y1 - 1,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "left",
-    );
-    b.addText(
-      `${scParams.primaryVoltage / 1000} kV Pri`,
-      xLeft - 144,
-      y1 - 11,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    // Pointer line
-    b.addLine(xLeft - 55, y1, xLeft - 12, y1, "SLD_DASHED");
-
-    // Right System: Infinite Bus
-    b.addLine(xRight - 60, y1 + 30, xRight + 60, y1 + 30, "SLD_BUSBAR");
-    b.addLine(xRight - 60, y1 + 29.5, xRight + 60, y1 + 29.5, "SLD_BUSBAR"); // Bold effect
-    b.addText(
-      "INFINITE BUS (V = 1.0 PU)",
-      xRight,
-      y1 + 33,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "center",
-    );
-
-    b.addLine(xRight, y1 + 30, xRight, y1 + 10, "SLD_GEOMETRY");
-    // Zu Box
-    b.addRect(xRight - 8, y1 - 10, xRight + 8, y1 + 10, "SLD_GEOMETRY");
-    b.addText("Zu", xRight, y1 - 1.5, 4.0, 0, "TEXT_HEADER", "center");
-    b.addLine(xRight, y1 - 10, xRight, y2, "SLD_GEOMETRY");
-
-    // Right Spec Box: UTILITY IMPEDANCE
-    b.addRect(xRight + 45, y1 - 15, xRight + 145, y1 + 15, "SLD_DASHED");
-    b.addText(
-      "UTILITY IMPEDANCE",
-      xRight + 50,
-      y1 + 7,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText("Z_utility:", xRight + 50, y1 - 1, 4.0, 0, "TEXT_DATA", "left");
-    b.addText(
-      `${zUtilitypu.toFixed(5)} pu`,
-      xRight + 50,
-      y1 - 9,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "left",
-    );
-    // Pointer line
-    b.addLine(xRight + 8, y1, xRight + 45, y1, "SLD_DASHED");
-
-    // Across dashed bridge
-    b.addLine(xLeft + 10, y1, xRight - 8, y1, "SLD_DASHED");
-
-    // ----------------------------------------------------
-    // LEVEL 2: FAULT 1 / PRIMARY BUS
-    // ----------------------------------------------------
-    // Left System: Primary Bus fat line
-    b.addLine(xLeft - 70, y2, xLeft + 70, y2, "SLD_BUSBAR");
-    b.addLine(xLeft - 70, y2 - 0.5, xLeft + 70, y2 - 0.5, "SLD_BUSBAR");
-    b.addText(
-      "PRIMARY BUS (HV)",
-      xLeft + 80,
-      y2 + 1,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `${scParams.primaryVoltage} V`,
-      xLeft + 80,
-      y2 - 7,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-
-    const f1X = xLeft - 40;
-    drawFaultStarburst(b, f1X, y2);
-    b.addText(
-      `Isc1 = ${fault1Isc.toFixed(1)} A`,
-      f1X,
-      y2 - 12,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "center",
-    );
-
-    // Fault 1 Left Spec Box
-    b.addRect(xLeft - 150, y2 - 18, xLeft - 55, y2 + 18, "SLD_DASHED");
-    b.addText(
-      "FAULT 1 (PRIMARY HV)",
-      xLeft - 144,
-      y2 + 9,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      "Symmetrical Isc:",
-      xLeft - 144,
-      y2 + 1,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `${fault1Isc.toFixed(1)} A`,
-      xLeft - 144,
-      y2 - 7,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      `At @ ${scParams.primaryVoltage}V Pri`,
-      xLeft - 144,
-      y2 - 15,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    // Pointer line
-    b.addLine(xLeft - 55, y2, f1X - 6, y2, "SLD_DASHED");
-
-    // Right System: Node 1 MDP
-    b.addCircle(xRight, y2, 1.5, "SLD_FAULT");
-    // Fault switch F1 Ground
-    b.addLine(xRight, y2, xRight - 15, y2, "SLD_GEOMETRY");
-    b.addCircle(xRight - 15, y2, 0.5, "SLD_GEOMETRY");
-    b.addLine(xRight - 15, y2, xRight - 30, y2 + 6, "SLD_GEOMETRY"); // open lever
-    b.addCircle(xRight - 30, y2, 0.5, "SLD_GEOMETRY");
-    // Ground horizontal line
-    b.addLine(xRight - 30, y2, xRight - 42, y2, "SLD_GEOMETRY");
-    // Reducing parallel lines
-    b.addLine(xRight - 42, y2 + 3, xRight - 42, y2 - 3, "SLD_GEOMETRY");
-    b.addLine(xRight - 44, y2 + 2, xRight - 44, y2 - 2, "SLD_GEOMETRY");
-    b.addLine(xRight - 46, y2 + 1, xRight - 46, y2 - 1, "SLD_GEOMETRY");
-    b.addText(
-      "F1 Ground",
-      xRight - 30,
-      y2 + 9,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "center",
-    );
-
-    // Dashed bridge connecting F1 Fault locations
-    b.addLine(f1X + 6, y2, xRight - 42, y2, "SLD_DASHED");
-
-    // ----------------------------------------------------
-    // LEVEL 3: TRANSFORMER SPEC / SUBSTATION
-    // ----------------------------------------------------
-    // Left System: Transformer overlapping circles
-    const tfY = y3;
-    b.addCircle(xLeft, tfY + 6, 8.5, "SLD_GEOMETRY");
-    b.addCircle(xLeft, tfY - 6, 8.5, "SLD_GEOMETRY");
-    b.addLine(xLeft, y2, xLeft, tfY + 14.5, "SLD_GEOMETRY");
-
-    // Disconnect LBS fuse device
-    const lbY = (y2 + tfY) / 2 + 5;
-    b.addRect(xLeft - 3, lbY - 8, xLeft + 3, lbY + 8, "SLD_GEOMETRY");
-    b.addLine(xLeft, lbY - 8, xLeft, lbY + 8, "SLD_GEOMETRY");
-    b.addText(
-      "LBS / HV FUSE",
-      xLeft + 10,
-      lbY - 1.5,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-
-    b.addText(
-      "TX-01 SUBSTATION",
-      xLeft,
-      tfY - 22,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "center",
-    );
-    b.addText(
-      `${scParams.transformerKVA}kVA ${scParams.transformerConnection}`,
-      xLeft,
-      tfY - 29,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "center",
-    );
-
-    // Spec Box left: TX-01 SPEC
-    b.addRect(xLeft - 150, tfY - 18, xLeft - 55, tfY + 18, "SLD_DASHED");
-    b.addText(
-      "TX-01 SPEC",
-      xLeft - 144,
-      tfY + 9,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `${scParams.transformerKVA} kVA`,
-      xLeft - 144,
-      tfY + 1,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "left",
-    );
-    b.addText(
-      `%Z = ${scParams.transformerZ}%`,
-      xLeft - 144,
-      tfY - 7,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      scParams.transformerConnection,
-      xLeft - 144,
-      tfY - 15,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    // Pointer line
-    b.addLine(xLeft - 55, tfY, xLeft - 9.5, tfY, "SLD_DASHED");
-
-    // Right System: Transformer Impedance Zt
-    b.addLine(xRight, y2, xRight, tfY + 10, "SLD_GEOMETRY");
-    b.addRect(xRight - 8, tfY - 10, xRight + 8, tfY + 10, "SLD_GEOMETRY");
-    b.addText("Zt", xRight, tfY - 1.5, 4.0, 0, "TEXT_HEADER", "center");
-    b.addLine(xRight, tfY - 10, xRight, y4, "SLD_GEOMETRY");
-
-    // Right Spec Box: XFMR IMPEDANCE
-    b.addRect(xRight + 45, tfY - 15, xRight + 145, tfY + 15, "SLD_DASHED");
-    b.addText(
-      "XFMR IMPEDANCE",
-      xRight + 50,
-      tfY + 7,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      "Z_transformer:",
-      xRight + 50,
-      tfY - 1,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `${zTranspu.toFixed(5)} pu`,
-      xRight + 50,
-      tfY - 9,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "left",
-    );
-    // Pointer line
-    b.addLine(xRight + 8, tfY, xRight + 45, tfY, "SLD_DASHED");
-
-    // Across dashed bridge
-    b.addLine(xLeft + 9.5, tfY, xRight - 8, tfY, "SLD_DASHED");
-
-    // ----------------------------------------------------
-    // LEVEL 4: FAULT 2 / SECONDARY BUS (MAIN MDP)
-    // ----------------------------------------------------
-    // Left System: secondary wire down and Main Breaker
-    b.addLine(xLeft, tfY - 14.5, xLeft, y4, "SLD_GEOMETRY");
-    // Main Breaker
-    const mbY = (tfY + y4) / 2 + 5;
-    b.addCircle(xLeft, mbY + 3, 1.2, "SLD_GEOMETRY");
-    b.addArc(xLeft, mbY, 3, 270, 90, "SLD_GEOMETRY");
-    b.addCircle(xLeft, mbY - 3, 1.2, "SLD_GEOMETRY");
-    b.addText(
-      `${panel.mainBreakerAT} AT / ${getBreakerFrameSize(panel.mainBreakerAT || 100)} AF`,
-      xLeft + 10,
-      mbY - 1.5,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-
-    b.addLine(xLeft - 70, y4, xLeft + 70, y4, "SLD_BUSBAR");
-    b.addLine(xLeft - 70, y4 - 0.5, xLeft + 70, y4 - 0.5, "SLD_BUSBAR");
-    b.addText(
-      "MAIN MDP BUSBAR",
-      xLeft + 80,
-      y4 + 1,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `${scParams.transformerVoltage} V (Dyn11 Wye-G)`,
-      xLeft + 80,
-      y4 - 7,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-
-    const f2X = xLeft - 40;
-    drawFaultStarburst(b, f2X, y4);
-    b.addText(
-      `Isc2 = ${fault2Isc.toFixed(1)} A`,
-      f2X,
-      y4 - 12,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "center",
-    );
-
-    // Fault 2 Left Spec Box
-    b.addRect(xLeft - 150, y4 - 18, xLeft - 55, y4 + 18, "SLD_DASHED");
-    b.addText(
-      "FAULT 2 (SECONDARY)",
-      xLeft - 144,
-      y4 + 9,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      "Symmetrical Isc:",
-      xLeft - 144,
-      y4 + 1,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `${fault2Isc.toFixed(1)} A`,
-      xLeft - 144,
-      y4 - 7,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      "At Main Dist Panel Bus",
-      xLeft - 144,
-      y4 - 15,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addLine(xLeft - 55, y4, f2X - 6, y4, "SLD_DASHED");
-
-    // Right System : MDP Node
-    b.addCircle(xRight, y4, 1.5, "SLD_FAULT");
-    b.addText(
-      "MDP NODE (Node 2)",
-      xRight + 12,
-      y4 + 3,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `Isc2 = ${fault2Isc.toFixed(1)} A`,
-      xRight + 12,
-      y4 - 4,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-
-    b.addLine(xRight, y4, xRight - 15, y4, "SLD_GEOMETRY");
-    b.addCircle(xRight - 15, y4, 0.5, "SLD_GEOMETRY");
-    b.addLine(xRight - 15, y4, xRight - 30, y4 + 6, "SLD_GEOMETRY");
-    b.addCircle(xRight - 30, y4, 0.5, "SLD_GEOMETRY");
-    b.addLine(xRight - 30, y4, xRight - 42, y4, "SLD_GEOMETRY");
-    b.addLine(xRight - 42, y4 + 3, xRight - 42, y4 - 3, "SLD_GEOMETRY");
-    b.addLine(xRight - 44, y4 + 2, xRight - 44, y4 - 2, "SLD_GEOMETRY");
-    b.addLine(xRight - 46, y4 + 1, xRight - 46, y4 - 1, "SLD_GEOMETRY");
-    b.addText(
-      "F2 Ground",
-      xRight - 30,
-      y4 + 9,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "center",
-    );
-
-    // Dashed bridge connecting F2 Fault locations
-    b.addLine(f2X + 6, y4, xRight - 42, y4, "SLD_DASHED");
-
-    // ----------------------------------------------------
-    // LEVEL 5: FEEDER CONDUCTOR SPEC / ZCAB
-    // ----------------------------------------------------
-    // Left System: Branch Breaker and Feeder Cable line
-    const bbY = (y4 + y5 + 10) / 2;
-    b.addRect(xLeft - 3, bbY - 4, xLeft + 3, bbY + 4, "SLD_GEOMETRY");
-    b.addLine(xLeft, bbY - 4, xLeft, bbY + 4, "SLD_GEOMETRY");
-    // Branch breaker rating
-    b.addText(
-      "30 AT / 50 AF",
-      xLeft + 10,
-      bbY - 1.5,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-
-    b.addLine(xLeft, y4, xLeft, y6, "SLD_FEEDER");
-    b.addText(
-      "★ FEEDER CABLE ★",
-      xLeft + 10,
-      y5 + 6,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `${scParams.feederRuns}x SETS OF ${scParams.feederSize} mm² ${panel?.insulationType || "THHN"} (${scParams.feederLength}m)`,
-      xLeft + 10,
-      y5 - 2,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-
-    // Left Spec Card: CONDUCTOR SPEC
-    b.addRect(xLeft - 150, y5 - 18, xLeft - 55, y5 + 18, "SLD_DASHED");
-    b.addText(
-      "CONDUCTOR SPEC",
-      xLeft - 144,
-      y5 + 9,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `${scParams.feederRuns} Runs x ${scParams.feederSize} mm²`,
-      xLeft - 144,
-      y5 + 1,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "left",
-    );
-    b.addText(
-      "Copper Conductors",
-      xLeft - 144,
-      y5 - 7,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `Length: ${scParams.feederLength} meters`,
-      xLeft - 144,
-      y5 - 15,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    // Connection pointer
-    b.addLine(xLeft - 55, y5, xLeft - 1, y5, "SLD_DASHED");
-
-    // Right System: Impedance Zcab
-    b.addRect(xRight - 8, y5 - 10, xRight + 8, y5 + 10, "SLD_GEOMETRY");
-    b.addText("Zcab", xRight, y5 - 1.5, 4.0, 0, "TEXT_HEADER", "center");
-    b.addLine(xRight, y4, xRight, y5 + 10, "SLD_GEOMETRY");
-    b.addLine(xRight, y5 - 10, xRight, y6, "SLD_GEOMETRY");
-
-    // Right Spec Box: FEEDER IMPEDANCE
-    b.addRect(xRight + 45, y5 - 18, xRight + 145, y5 + 18, "SLD_DASHED");
-    b.addText(
-      "FEEDER IMPEDANCE",
-      xRight + 50,
-      y5 + 10,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `R=${feederR.toFixed(4)} Ohms | X=${feederX.toFixed(4)}`,
-      xRight + 50,
-      y5 + 2,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      "Z_feeder (pu):",
-      xRight + 50,
-      y5 - 6,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `${zFeederpu.toFixed(5)} pu`,
-      xRight + 50,
-      y5 - 14,
-      4.0,
-      0,
-      "TEXT_TITLE",
-      "left",
-    );
-    // Pointer line
-    b.addLine(xRight + 8, y5, xRight + 45, y5, "SLD_DASHED");
-
-    // Across dashed bridge
-    b.addLine(xLeft + 1, y5, xRight - 8, y5, "SLD_DASHED");
-
-    // ----------------------------------------------------
-    // LEVEL 6: DISTRIBUTION BOARD / PANEL NODE
-    // ----------------------------------------------------
-    // Left System: Sub-panelboard bus
-    b.addLine(xLeft - 70, y6, xLeft + 70, y6, "SLD_BUSBAR");
-    b.addLine(xLeft - 70, y6 - 0.5, xLeft + 70, y6 - 0.5, "SLD_BUSBAR");
-    b.addText(
-      "DISTRIBUTION PANELBOARD (MDP)",
-      xLeft + 5,
-      y6 - 13,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      "Sec Bus Fault point",
-      xLeft + 5,
-      y6 - 21,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-
-    const f3X = xLeft - 40;
-    drawFaultStarburst(b, f3X, y6);
-    b.addText(
-      `Isc3 = ${fault3Isc.toFixed(1)} A`,
-      f3X,
-      y6 - 12,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "center",
-    );
-
-    // Fault 3 Left Spec Box
-    b.addRect(xLeft - 150, y6 - 18, xLeft - 55, y6 + 18, "SLD_DASHED");
-    b.addText(
-      "FAULT 3 (REMOTE BUS)",
-      xLeft - 144,
-      y6 + 9,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      "Symmetrical Isc:",
-      xLeft - 144,
-      y6 + 1,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `${fault3Isc.toFixed(1)} A`,
-      xLeft - 144,
-      y6 - 7,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      `Total: ${fault3Isc.toFixed(1)} A`,
-      xLeft - 144,
-      y6 - 15,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addLine(xLeft - 55, y6, f3X - 6, y6, "SLD_DASHED");
-
-    // Right System : Panel Node
-    b.addCircle(xRight, y6, 1.5, "SLD_FAULT");
-    b.addText(
-      "PANEL NODE (Node 3)",
-      xRight + 12,
-      y6 + 3,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText(
-      `Isc3 = ${fault3Isc.toFixed(1)} A`,
-      xRight + 12,
-      y6 - 4,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-
-    b.addLine(xRight, y6, xRight - 15, y6, "SLD_GEOMETRY");
-    b.addCircle(xRight - 15, y6, 0.5, "SLD_GEOMETRY");
-    b.addLine(xRight - 15, y6, xRight - 30, y6 + 6, "SLD_GEOMETRY");
-    b.addCircle(xRight - 30, y6, 0.5, "SLD_GEOMETRY");
-    b.addLine(xRight - 30, y6, xRight - 42, y6, "SLD_GEOMETRY");
-    b.addLine(xRight - 42, y6 + 3, xRight - 42, y6 - 3, "SLD_GEOMETRY");
-    b.addLine(xRight - 44, y6 + 2, xRight - 44, y6 - 2, "SLD_GEOMETRY");
-    b.addLine(xRight - 46, y6 + 1, xRight - 46, y6 - 1, "SLD_GEOMETRY");
-    b.addText(
-      "F3 Ground",
-      xRight - 30,
-      y6 + 9,
-      4.0,
-      0,
-      "TEXT_HEADER",
-      "center",
-    );
-
-    // Dashed bridge connecting F3 Fault locations
-    b.addLine(f3X + 6, y6, xRight - 42, y6, "SLD_DASHED");
-
-    // ----------------------------------------------------
-    // SUMMARY PANEL: IMPEDANCE TOTAL SUMMARY BOX (BOTTOM RIGHT)
-    // ----------------------------------------------------
-    b.addRect(xRight + 45, y6 - 18, xRight + 145, y6 + 18, "SLD_FAULT");
-    b.addText(
-      "IMPEDANCE TOTAL",
-      xRight + 50,
-      y6 + 9,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-    b.addText(
-      `Total Z = ${totalZpu.toFixed(5)} pu`,
-      xRight + 50,
-      y6 + 1,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `Multiplier M = ${(1 / totalZpu).toFixed(2)}`,
-      xRight + 50,
-      y6 - 7,
-      4.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-    b.addText(
-      `Asym Isc (1.6x): ${(fault3Isc * 1.6).toFixed(0)} A`,
-      xRight + 50,
-      y6 - 15,
-      4.0,
-      0,
-      "SLD_FAULT",
-      "left",
-    );
-
-    // Summary connecting guide
-    b.addLine(xRight + 1.5, y6, xRight + 45, y6, "SLD_DASHED");
+    const opts: SldOptions = { ...sldOptionsFor(panel, iscParams), minSize: "A1" };
+    impedanceSld = { sheetIndex: allocSheet(buildImpedanceSld(input, opts).w), input, opts };
   }
 
   // === DEDICATED NEW SHEET: VOLTAGE DROP ANALYSIS TABLE ===
@@ -4752,77 +3861,17 @@ export const exportToCAD = (
 
     ty -= labelH;
 
-    // Compute Short Circuit values matching Excel EXACTLY
+    // Same values as the Short Circuit page and the diagram (shared service fault study)
     const excelBaseKVA = scParams.transformerKVA || 100;
-    const excelBaseKV = (scParams.transformerVoltage || 230) / 1000;
-    const excelZUtilitypu = excelBaseKVA / ((scParams.utilityShortCircuitMVA || 500) * 1000);
-    
-    let excelZTranspu = (scParams.transformerZ || 5) / 100 / connectionMultiplier;
-    let excelTotalTransformerKVA = excelBaseKVA;
+    const excelTotalTransformerKVA = scStudy.src.kva;
     const ptCount = scParams.parallelTransformersCount || 1;
-    const ptZMatch = scParams.parallelTransformersZMatch !== false;
-    const ptkVAMatch = scParams.parallelTransformerskVAMatch !== false;
-
-    if (ptCount > 1) {
-      if (ptZMatch && ptkVAMatch) {
-        excelZTranspu = excelZTranspu / ptCount;
-        excelTotalTransformerKVA = excelBaseKVA * ptCount;
-      } else {
-        const z1pu = excelZTranspu;
-        const t2Rating = scParams.parallelTransformersRating || 100;
-        const t2Z = scParams.parallelTransformersZ || 5;
-        const z2pu = ((t2Z / 100) / connectionMultiplier) * (excelBaseKVA / t2Rating);
-        
-        const y1 = 1 / z1pu;
-        const y2 = (ptCount - 1) / z2pu;
-        excelZTranspu = 1 / (y1 + y2);
-        excelTotalTransformerKVA = excelBaseKVA + (ptCount - 1) * t2Rating;
-      }
-    }
-
     const feederRuns = scParams.feederRuns || 1;
-    const condType = scParams.conductorType || "Copper";
     const connType = scParams.connectionType || "Series";
+    const excelFeederR = feederR;
+    const excelFeederX = feederX;
+    const excelFeederZ = feederZ;
+    const excelIFullLoad = iFullLoad;
 
-    const eqFeeder = calculateEquivalentFeederImpedance(
-      scParams.feederLength || 10,
-      scParams.feederSize || "3.5",
-      feederRuns,
-      condType as "Copper" | "Aluminum",
-      connType as "Series" | "Parallel",
-      scParams.parallelFeedersSizeMatch !== false,
-      scParams.parallelFeedersLengthMatch !== false,
-      scParams.parallelFeedersMaterialMatch !== false,
-      scParams.parallelFeedersCustomSizes,
-      scParams.parallelFeedersCustomLengths,
-      scParams.parallelFeedersCustomMaterials,
-    );
-
-    const excelFeederR = eqFeeder.r;
-    const excelFeederX = eqFeeder.x;
-    const excelFeederZ = eqFeeder.z;
-    const excelZFeederpu = (excelFeederZ * (excelBaseKVA / 1000)) / (excelBaseKV * excelBaseKV);
-
-    const excelTotalZpu = excelZUtilitypu + excelZTranspu + excelZFeederpu;
-    const excelIFullLoad = excelTotalTransformerKVA / (scFactor * excelBaseKV);
-    const excelIFullLoadBase = excelBaseKVA / (scFactor * excelBaseKV);
-
-    const excelIscMainBreaker = excelIFullLoadBase / (excelZUtilitypu + excelZTranspu);
-    const excelIscFaultPoint = excelIFullLoadBase / excelTotalZpu;
-
-    const excelMotorLoadVA = circuits
-      .filter(
-        (c) => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
-      )
-      .reduce((sum, c) => sum + c.loadVA, 0);
-    const excelMotorContribution =
-      excelMotorLoadVA > 0
-        ? (excelMotorLoadVA / (scFactor * (scParams.transformerVoltage || 230))) * 4
-        : 0;
-
-    const excelCombinedSymmetricalCurrent = excelIscFaultPoint + excelMotorContribution;
-    const excelCombinedAsymmetricalCurrent = excelCombinedSymmetricalCurrent * 1.25;
-    const excelBreakingkAIC = excelCombinedAsymmetricalCurrent / 1000;
 
     const scRows: { label: string; val: string | number; unit: string; isSection?: boolean }[] = [
       { label: "INPUT DESIGN PARAMETERS", val: "", unit: "", isSection: true },
@@ -4849,26 +3898,33 @@ export const exportToCAD = (
       { label: "Parallel Feeder Conductors", val: feederRuns, unit: "Runs" },
       { label: "Active Conductor Metal Type", val: scParams.conductorType || "Copper", unit: "Copper/Aluminum" },
       { label: "Transformer Connection", val: scParams.transformerConnection || "Delta-Wye (D-Y)", unit: "Configuration" },
-      { label: "Ground Fault Factor applied", val: groundFaultFactor.toFixed(2), unit: "Multiplier" },
 
-      { label: "PER-UNIT IMPEDANCES (BASE S SYSTEM = " + excelBaseKVA + " kVA)", val: "", unit: "", isSection: true },
+      { label: "IMPEDANCES (PER UNIT ON " + scStudy.src.kva + " kVA, " + scStudy.vSec + " V)", val: "", unit: "", isSection: true },
       { label: "Transformer Full Load Current (FLA)", val: excelIFullLoad.toFixed(2), unit: "Amperes" },
-      { label: "Utility Grid Impedance (Z-utility)", val: excelZUtilitypu.toFixed(6), unit: "pu" },
-      { label: "Transformer Leakage Impedance (Z-transformer)", val: excelZTranspu.toFixed(6), unit: "pu" },
-      { label: "Main Feeder Ohmic Resistance (R)", val: excelFeederR.toFixed(5), unit: "Ohms" },
-      { label: "Main Feeder Ohmic Reactance (X)", val: excelFeederX.toFixed(5), unit: "Ohms" },
-      { label: "Main Feeder Absolute Ohmic Impedance (|Z|)", val: excelFeederZ.toFixed(5), unit: "Ohms" },
-      { label: "Feeder Integrated Impedance (Z-feeder)", val: excelZFeederpu.toFixed(6), unit: "pu" },
-      { label: "Total Consolidated System Impedance (Z-total)", val: excelTotalZpu.toFixed(6), unit: "pu" },
+      { label: "Utility Source Impedance |Z-utility| (X/R 10, assumed)", val: zUtilitypu.toFixed(6), unit: "pu" },
+      { label: "Transformer Impedance |Z-transformer| (X/R " + scStudy.src.txXr.toFixed(1) + ", IEEE 141)", val: zTranspu.toFixed(6), unit: "pu" },
+      { label: "Service Feeder Resistance R (75 °C, PEC Table 9)", val: excelFeederR.toFixed(5), unit: "Ohms" },
+      { label: "Service Feeder Reactance X", val: excelFeederX.toFixed(5), unit: "Ohms" },
+      { label: "Service Feeder |Z| (R at 20 °C for maximum fault)", val: excelFeederZ.toFixed(5), unit: "Ohms" },
+      { label: "Service Feeder Impedance |Z-feeder|", val: zFeederpu.toFixed(6), unit: "pu" },
+      { label: "Total Impedance |Zu + Zt + Zf| (complex sum)", val: totalZpu.toFixed(6), unit: "pu" },
 
       { label: "FAULT LEVEL CALCULATED RESULTS", val: "", unit: "", isSection: true },
-      { label: "Symmetrical Fault Current at Transformer (Isc Main)", val: excelIscMainBreaker.toFixed(2), unit: "Amps" },
-      { label: "Symmetrical Fault Current at Panel (Isc Panel)", val: excelIscFaultPoint.toFixed(2), unit: "Amps" },
-      { label: "Rotating Motor Feedback Symmetrical Contribution (Imotor)", val: excelMotorContribution.toFixed(2), unit: "Amps" },
-      { label: "Combined Total Symmetrical Fault Current (Isc sym)", val: excelCombinedSymmetricalCurrent.toFixed(2), unit: "Amps" },
-      { label: "Factored Asymmetrical Fault Current (Isc asym)", val: excelCombinedAsymmetricalCurrent.toFixed(2), unit: "Amps" },
-      { label: "Ultimate Fault Breaking Intensity Assessment", val: excelBreakingkAIC.toFixed(2), unit: "kAIC" },
-      { label: "Interrupting Protection Level Class", val: excelBreakingkAIC > 22 ? "35 kAIC Required" : excelBreakingkAIC > 10 ? "22 kAIC" : "10 kAIC", unit: "" }
+      { label: "Utility Fault Current at Primary (Isc1)", val: fault1Isc.toFixed(2), unit: "Amps" },
+      { label: "Symmetrical Fault at Transformer Secondary (Isc2)", val: iscMainBreaker.toFixed(2), unit: "Amps" },
+      { label: (isSC3Phase ? "Three-Phase" : "Single-Phase") + " Bolted Fault at Service Feeder End", val: iscFaultPoint.toFixed(2), unit: "Amps" },
+      ...(isSC3Phase
+        ? [
+            { label: "Line-to-Line Fault at Service Feeder End", val: scStudy.atPoint.iLL.toFixed(2), unit: "Amps" },
+            { label: "Line-to-Ground Fault at Service Feeder End (3E / |2Z1 + Z0|)", val: Number.isFinite(scStudy.atPoint.iLG) ? scStudy.atPoint.iLG.toFixed(2) : "n/a", unit: "Amps" },
+          ]
+        : []),
+      { label: "Motor Contribution (4 x motor FLA)", val: motorContribution.toFixed(2), unit: "Amps" },
+      { label: "Total Symmetrical Fault Current (Isc3, with motors)", val: fault3Isc.toFixed(2), unit: "Amps" },
+      { label: "X/R Ratio at Fault Point", val: scStudy.atPoint.xr.toFixed(2), unit: "Ratio" },
+      { label: "Peak Current ip (IEC 60909 kappa)", val: scStudy.iscPeak.toFixed(2), unit: "Amps" },
+      { label: "Minimum Interrupting Rating Required (symmetrical)", val: (fault3Isc / 1000).toFixed(2), unit: "kAIC" },
+      { label: "Next Standard Interrupting Rating", val: `${[5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100].find((k) => k >= fault3Isc / 1000) ?? ">100"} kAIC`, unit: "" }
     );
 
     const continueScTable = () => {
@@ -5479,6 +4535,11 @@ export const exportToCAD = (
 
   b.originX = 0;
   b.originY = 0;
+  if (impedanceSld) {
+    const { sheetIndex, input, opts } = impedanceSld;
+    const sheet = buildImpedanceSld(input, { ...opts, title: { ...opts.title, drawingNo: `E - ${sheetIndex + 1} / ${sheetConfigs.length}` } });
+    drawSldOnDrawing(b.drawing, sheet, sheetConfigs[sheetIndex].xOffset, 0);
+  }
   sheetNumberMarks.forEach(({ sheetIndex, x }) => {
     b.addText(`E - ${sheetIndex + 1} / ${sheetConfigs.length}`, x, 32, 10.0, 0, "BORDER", "center");
   });

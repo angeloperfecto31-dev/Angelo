@@ -4,8 +4,9 @@ import { ShortCircuitParams, Circuit, PanelConfig, LoadType, VoltageDropCalculat
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { exportToCAD } from '../utils/exportDxf';
 import ImpedanceSLD from './ImpedanceSLD';
-import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getBreakerFrameSize } from '../utils/computeEngine';
-import { R20_AL, R20_CU, cmag, cx, faultLevels, peakFactor, sourceImpedance } from '../utils/faultMath';
+import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace, getBreakerFrameSize } from '../utils/computeEngine';
+import { serviceFaultStudy } from '../utils/serviceFault';
+import { syncHierarchyData } from '../utils/hierarchyEngine';
 
 export interface ShortCircuitCalcProps {
   panel?: PanelConfig;
@@ -291,51 +292,21 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       });
     }
 
-    // 3. Feeder Impedance Estimate (Series vs Parallel)
+    // 3-4. Service fault study: shared with the AutoCAD export (utils/serviceFault.ts), the Load Schedule,
+    // the Power Analysis Suite and the Single Line Impedance Diagram (complex impedances, utils/faultMath.ts)
     const runs = params.feederRuns || 1;
-    const condType = params.conductorType || 'Copper';
     const connType = params.connectionType || 'Series';
-
-    const eqFeeder = calculateEquivalentFeederImpedance(
-      params.feederLength || 10,
-      params.feederSize || '30',
-      runs,
-      condType,
-      connType,
-      params.parallelFeedersSizeMatch !== false,
-      params.parallelFeedersLengthMatch !== false,
-      params.parallelFeedersMaterialMatch !== false,
-      params.parallelFeedersCustomSizes,
-      params.parallelFeedersCustomLengths,
-      params.parallelFeedersCustomMaterials,
-    );
-
+    const study = serviceFaultStudy(params, is3Phase, circuits || [], allSubPanels, panel?.voltage);
+    const { eqFeeder, atPoint, iFullLoad, iscMainBreaker, iscFaultPoint, motorContribution, totalZpu, zFeederpu } = study;
     const feederR = eqFeeder.r;
     const feederX = eqFeeder.x;
+    const zUtilitypuC = study.zUtilitypu;
+    const zTranspuC = study.zTranspu;
 
-    // Shared short-circuit method (complex impedances, see utils/faultMath.ts): the same values as the
-    // Load Schedule, the Power Analysis Suite and the Single Line Impedance Diagram
-    const vSec = params.transformerVoltage || panel?.voltage || 230;
-    const src = sourceImpedance(params, vSec, is3Phase);
-    const zFeederOhm = cx(eqFeeder.r * (condType === 'Aluminum' ? R20_AL : R20_CU), eqFeeder.x);
-    const atTerminals = faultLevels(src);
-    const atPoint = faultLevels(src, zFeederOhm, { groundReturn: is3Phase });
-    const zUtilitypuC = cmag(src.zUtility) / src.zBase;
-    const zTranspuC = cmag(src.zTransformer) / src.zBase;
-    const zFeederpu = (cmag(zFeederOhm) * (is3Phase ? 1 : 2)) / src.zBase;
-    const totalZpu = cmag(atPoint.z1) / src.zBase;
-
-    // FLA based on combined capacity
-    const iFullLoad = (totalTransformerKVA * 1000) / ((is3Phase ? Math.sqrt(3) : 1) * vSec);
-
-    const iscMainBreaker = atTerminals.i3ph;
-    const iscFaultPoint = atPoint.i3ph;
-
-    const motorContribution = motorLoadVA > 0 ? (motorLoadVA / ((is3Phase ? Math.sqrt(3) : 1) * vSec)) * 4 : 0;
     const multiplier = 1 / totalZpu;
 
     // Fault 1 (HV side or Primary Service Entrance) - Always uses 1.732 since the HV utility primary grid is 3-phase
-    const fault1Isc = ((params.utilityShortCircuitMVA || 500) * 1000000) / (1.732 * (params.primaryVoltage || 34500));
+    const fault1Isc = study.fault1Isc;
 
     // Validations & Safety Warnings
     const warnings: string[] = [];
@@ -418,7 +389,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       iscLLG: atPoint.iLLG,
       iscLLGEarth: atPoint.iLLGEarth,
       xrPoint: atPoint.xr,
-      iscPeak: peakFactor(atPoint.xr) * Math.SQRT2 * (iscFaultPoint + motorContribution),
+      iscPeak: study.iscPeak,
       multiplier: multiplier.toFixed(2),
       iscFault1: fault1Isc.toFixed(2),
       iscFault2: iscMainBreaker.toFixed(2),
@@ -434,7 +405,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       eqFeeder,
       warnings
     };
-  }, [params, motorLoadVA, panel, selectedPhaseType, panelSchedule]);
+  }, [params, motorLoadVA, panel, circuits, allSubPanels, selectedPhaseType, panelSchedule]);
 
   const kaicValidationData = useMemo(() => {
     const list: Array<{
@@ -1256,7 +1227,9 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
                   return;
                 }
                 if (panel && circuits) {
-                  exportToCAD(panel, circuits, subPanels || [], params, 'SHORT_CIRCUIT');
+                  // Same hierarchy sync and inputs as "Export AutoCAD Drawing", so the sheets match
+                  const { updatedMdpCircuits, updatedSubPanels } = syncHierarchyData(panel, circuits, allSubPanels, vdCalculations || []);
+                  exportToCAD(panel, updatedMdpCircuits, updatedSubPanels, params, 'SHORT_CIRCUIT', vdCalculations || []);
                 } else {
                   alert("Please ensure panels and circuits are fully loaded before exporting.");
                 }
@@ -1480,7 +1453,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
       {/* Single Line Impedance Diagram (generated from the project, see utils/impedanceSld.ts) */}
       <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm panel-container print:mt-12 relative border border-slate-200 dark:border-slate-800 p-4 sm:p-6">
         {panel ? (
-          <ImpedanceSLD panel={panel} circuits={circuits || []} subPanels={allSubPanels} iscParams={params} vdCalculations={vdCalculations} isPremium={isPremium} onRequestUpgrade={onRequestUpgrade} />
+          <ImpedanceSLD panel={panel} circuits={circuits || []} subPanels={allSubPanels} iscParams={params} vdCalculations={vdCalculations} isPremium={isPremium} onRequestUpgrade={onRequestUpgrade} onSettingsChange={(sldSettings) => setParams((p) => ({ ...p, sldSettings }))} />
         ) : (
           <p className="text-xs text-slate-500">Load a panel in the Load Schedule to generate the diagram.</p>
         )}

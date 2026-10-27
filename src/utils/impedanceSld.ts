@@ -46,6 +46,32 @@ export interface SldOptions {
   faultTypes: { threePhase: boolean; lineLine: boolean; lineGround: boolean; doubleLineGround: boolean };
   showImpedance: boolean;
   title: { project: string; location: string; client: string; drawingNo: string; revision: string; preparedBy: string; checkedBy: string; date: string };
+  /** Smallest sheet to use (the full project drawing uses A1 sheets) */
+  minSize?: "A3" | "A2" | "A1" | "A0";
+}
+
+/**
+ * Diagram options from the settings saved with the project (Short Circuit inputs), filled with the
+ * project data. The Short Circuit page and "Export AutoCAD Drawing" both use this, so they match.
+ */
+export function sldOptionsFor(panel: PanelConfig, iscParams?: ShortCircuitParams): SldOptions {
+  const saved = iscParams?.sldSettings;
+  const p = panel as any;
+  return {
+    faultTypes: { threePhase: true, lineLine: true, lineGround: true, doubleLineGround: false, ...(saved?.faultTypes || {}) },
+    showImpedance: saved?.showImpedance ?? true,
+    title: {
+      project: panel.project || "",
+      location: panel.location || "",
+      client: p.owner || "",
+      drawingNo: "E-SC-01",
+      revision: "0",
+      preparedBy: p.engineer || "",
+      checkedBy: "",
+      date: new Date().toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" }),
+      ...Object.fromEntries(Object.entries(saved?.title || {}).filter(([, v]) => typeof v === "string" && v !== "")),
+    },
+  };
 }
 
 export interface SldSheet {
@@ -192,7 +218,8 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   const margin = 10;
   const needW = diagW + sideW + margin * 2 + 6;
   const needH = diagH + tableH + bottomH + margin * 2 + 8;
-  const [size, W, H] = SHEETS.find(([, w, h]) => w >= needW && h >= needH) || SHEETS[SHEETS.length - 1];
+  const minIdx = Math.max(0, SHEETS.findIndex(([s]) => s === opt.minSize));
+  const [size, W, H] = SHEETS.slice(minIdx).find(([, w, h]) => w >= needW && h >= needH) || SHEETS[SHEETS.length - 1];
   const availW = W - sideW - margin * 2 - 6;
   const availH = H - tableH - bottomH - margin * 2 - 8;
   const scale = Math.min(1, availW / diagW, availH / diagH);
@@ -539,22 +566,53 @@ export function exportSldPdf(sheet: SldSheet, fileBase: string) {
 const pdfText = (t: string) => t.replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...").replace(/Ω/g, "ohm");
 const dxfText = (t: string) => t.replace(/²/g, "\\U+00B2").replace(/Ω/g, "\\U+03A9").replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...");
 
+/** CAD layer name of a diagram layer; the same names in the standalone DXF and in the full project drawing */
+export const sldCadLayer = (l: Layer) => `SC-SLD-${l}`;
+
+/**
+ * Draws the sheet into a dxf-writer drawing with its lower-left corner at (dx, dy), y up, in millimetres.
+ * Used by the standalone DXF and by "Export AutoCAD Drawing" (utils/exportDxf.ts), so both are identical.
+ */
+export function drawSldOnDrawing(d: Drawing, sheet: SldSheet, dx = 0, dy = 0) {
+  (Object.keys(LAYER_STYLE) as Layer[]).forEach((l) => d.addLayer(sldCadLayer(l), LAYER_STYLE[l].aci, "CONTINUOUS"));
+  const X = (x: number) => x + dx;
+  const Y = (y: number) => sheet.h - y + dy;
+  for (const p of sheet.prims) {
+    d.setActiveLayer(sldCadLayer(p.layer));
+    if (p.t === "line") {
+      const w = p.w ?? LAYER_STYLE[p.layer].w;
+      const seg = (x1: number, y1: number, x2: number, y2: number) =>
+        w >= 1 ? d.drawPolyline([[X(x1), Y(y1)], [X(x2), Y(y2)]], false, w, w) : d.drawLine(X(x1), Y(y1), X(x2), Y(y2));
+      if (!p.dash) seg(p.x1, p.y1, p.x2, p.y2);
+      else {
+        // Dashes drawn as segments so they look the same at any LTSCALE
+        const len = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
+        const ux = (p.x2 - p.x1) / (len || 1), uy = (p.y2 - p.y1) / (len || 1);
+        for (let t = 0; t < len; t += 3.5) {
+          const e = Math.min(len, t + 2);
+          seg(p.x1 + ux * t, p.y1 + uy * t, p.x1 + ux * e, p.y1 + uy * e);
+        }
+      }
+    } else if (p.t === "circle") d.drawCircle(X(p.cx), Y(p.cy), p.r);
+    else if (p.t === "arc") d.drawArc(X(p.cx), Y(p.cy), p.r, p.a0, p.a1);
+    else if (p.t === "rect") {
+      if (p.fill && p.fill === LAYER_STYLE[p.layer].color) {
+        // Solid colour swatch (legend): a wide polyline through the middle
+        d.drawPolyline([[X(p.x), Y(p.y + p.h / 2)], [X(p.x + p.w), Y(p.y + p.h / 2)]], false, p.h, p.h);
+      }
+      d.drawRect(X(p.x), Y(p.y + p.h), X(p.x + p.w), Y(p.y));
+    } else if (p.t === "text") {
+      d.drawText(X(p.x), Y(p.y), p.s, 0, dxfText(p.text), p.anchor === "middle" ? "center" : p.anchor === "end" ? "right" : "left", "baseline");
+    }
+  }
+}
+
 export function buildSldDxf(sheet: SldSheet): string {
   const d = new Drawing();
   d.setUnits("Millimeters");
-  (Object.keys(LAYER_STYLE) as Layer[]).forEach((l) => d.addLayer(`SLD_${l}`, LAYER_STYLE[l].aci, "CONTINUOUS"));
-  const Y = (y: number) => sheet.h - y;
-  for (const p of sheet.prims) {
-    d.setActiveLayer(`SLD_${p.layer}`);
-    if (p.t === "line") {
-      const w = p.w ?? LAYER_STYLE[p.layer].w;
-      if (w >= 1) d.drawPolyline([[p.x1, Y(p.y1)], [p.x2, Y(p.y2)]], false, w, w);
-      else d.drawLine(p.x1, Y(p.y1), p.x2, Y(p.y2));
-    } else if (p.t === "circle") d.drawCircle(p.cx, Y(p.cy), p.r);
-    else if (p.t === "arc") d.drawArc(p.cx, Y(p.cy), p.r, p.a0, p.a1);
-    else if (p.t === "rect") d.drawRect(p.x, Y(p.y + p.h), p.x + p.w, Y(p.y));
-    else if (p.t === "text") d.drawText(p.x, Y(p.y), p.s, 0, dxfText(p.text), p.anchor === "middle" ? "center" : p.anchor === "end" ? "right" : "left", "baseline");
-  }
+  drawSldOnDrawing(d, sheet);
+  // Arial for every text style, as in the full project drawing
+  ((d as any).tables?.STYLE?.elements || []).forEach((e: any) => (e.fontFileName = "arial.ttf"));
   return d.toDxfString();
 }
 
