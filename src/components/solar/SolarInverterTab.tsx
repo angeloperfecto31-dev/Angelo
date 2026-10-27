@@ -214,6 +214,10 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
       }
       map.get(groupName)!.push(i);
     });
+    // Single-phase models first, then by size
+    map.forEach((list) =>
+      list.sort((a, b) => (a.phase === b.phase ? 0 : a.phase === "1PH" ? -1 : 1) || a.ratedAcPowerKw - b.ratedAcPowerKw)
+    );
     return map;
   }, [filteredInverters, allInverters, config.selectedInverterId]);
 

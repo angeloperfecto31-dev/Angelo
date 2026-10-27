@@ -731,6 +731,146 @@ export const DEFAULT_PV_MODULES: PVModule[] = [
 ];
 
 // ==========================================
+// 2b. ADDITIONAL INVERTER MODELS & SIZES (mostly single-phase residential / small commercial)
+// ==========================================
+// [id, manufacturer, model, rated AC kW, max DC kW, max DC V, MPPT min V, MPPT max V, MPPTs,
+//  max input A per MPPT, max Isc per MPPT, efficiency %, IP rating, phase, AC voltage]
+type InverterRow = [string, string, string, number, number, number, number, number, number, number, number, number, string, "1PH" | "3PH", number];
+
+const MORE_INVERTER_ROWS: InverterRow[] = [
+  // ---------- Huawei ----------
+  ["huawei-sun2000-3-68ktl-l1", "Huawei", "SUN2000-3.68KTL-L1 (1PH 230V)", 3.68, 5.52, 600, 90, 560, 2, 12.5, 18.0, 98.3, "IP65", "1PH", 230],
+  ["huawei-sun2000-4ktl-l1", "Huawei", "SUN2000-4KTL-L1 (1PH 230V)", 4.0, 6.0, 600, 90, 560, 2, 12.5, 18.0, 98.4, "IP65", "1PH", 230],
+  ["huawei-sun2000-4-6ktl-l1", "Huawei", "SUN2000-4.6KTL-L1 (1PH 230V)", 4.6, 6.9, 600, 90, 560, 2, 12.5, 18.0, 98.4, "IP65", "1PH", 230],
+  ["huawei-sun2000-8k-lc0", "Huawei", "SUN2000-8K-LC0 (1PH 230V)", 8.0, 12.0, 600, 90, 560, 3, 16.0, 22.0, 98.4, "IP66", "1PH", 230],
+  ["huawei-sun2000-10k-lc0", "Huawei", "SUN2000-10K-LC0 (1PH 230V)", 10.0, 15.0, 600, 90, 560, 3, 16.0, 22.0, 98.4, "IP66", "1PH", 230],
+  ["huawei-sun2000-8ktl-m1", "Huawei", "SUN2000-8KTL-M1 (3PH 400V)", 8.0, 12.0, 1100, 140, 980, 2, 11.0, 15.0, 98.6, "IP65", "3PH", 400],
+  ["huawei-sun2000-25ktl-m5", "Huawei", "SUN2000-25KTL-M5 (3PH 400V)", 25.0, 37.5, 1100, 200, 1000, 2, 30.0, 40.0, 98.6, "IP66", "3PH", 400],
+
+  // ---------- Sungrow ----------
+  ["sungrow-sg2-0rs-s", "Sungrow", "SG2.0RS-S (1PH 230V)", 2.0, 3.0, 600, 40, 560, 1, 16.0, 20.0, 97.7, "IP65", "1PH", 230],
+  ["sungrow-sg4-0rs", "Sungrow", "SG4.0RS (1PH 230V)", 4.0, 6.0, 600, 40, 560, 2, 16.0, 20.0, 98.1, "IP65", "1PH", 230],
+  ["sungrow-sg6-0rs", "Sungrow", "SG6.0RS (1PH 230V)", 6.0, 9.0, 600, 40, 560, 2, 16.0, 20.0, 98.2, "IP65", "1PH", 230],
+  ["sungrow-sg8-0rs", "Sungrow", "SG8.0RS (1PH 230V)", 8.0, 12.0, 600, 40, 560, 3, 16.0, 20.0, 98.2, "IP65", "1PH", 230],
+  ["sungrow-sg10rs", "Sungrow", "SG10RS (1PH 230V)", 10.0, 15.0, 600, 40, 560, 3, 16.0, 20.0, 98.2, "IP65", "1PH", 230],
+  ["sungrow-sh3-0rs-hybrid", "Sungrow", "SH3.0RS Single-Phase Hybrid (1PH 230V)", 3.0, 4.5, 600, 40, 560, 2, 16.0, 20.0, 97.5, "IP65", "1PH", 230],
+  ["sungrow-sh3-6rs-hybrid", "Sungrow", "SH3.6RS Single-Phase Hybrid (1PH 230V)", 3.68, 5.5, 600, 40, 560, 2, 16.0, 20.0, 97.6, "IP65", "1PH", 230],
+  ["sungrow-sh4-0rs-hybrid", "Sungrow", "SH4.0RS Single-Phase Hybrid (1PH 230V)", 4.0, 6.0, 600, 40, 560, 2, 16.0, 20.0, 97.6, "IP65", "1PH", 230],
+  ["sungrow-sh6-0rs-hybrid", "Sungrow", "SH6.0RS Single-Phase Hybrid (1PH 230V)", 6.0, 9.0, 600, 40, 560, 2, 16.0, 20.0, 97.7, "IP65", "1PH", 230],
+  ["sungrow-sh8-0rs-hybrid", "Sungrow", "SH8.0RS Single-Phase Hybrid (1PH 230V)", 8.0, 12.0, 600, 40, 560, 3, 16.0, 20.0, 97.7, "IP65", "1PH", 230],
+  ["sungrow-sh10rs-hybrid", "Sungrow", "SH10RS Single-Phase Hybrid (1PH 230V)", 10.0, 15.0, 600, 40, 560, 4, 16.0, 20.0, 97.7, "IP65", "1PH", 230],
+  ["sungrow-sg5-0rt", "Sungrow", "SG5.0RT (3PH 400V)", 5.0, 7.5, 1100, 160, 1000, 2, 12.5, 16.0, 98.4, "IP65", "3PH", 400],
+  ["sungrow-sg8-0rt", "Sungrow", "SG8.0RT (3PH 400V)", 8.0, 12.0, 1100, 160, 1000, 2, 12.5, 16.0, 98.5, "IP65", "3PH", 400],
+  ["sungrow-sg12rt", "Sungrow", "SG12RT (3PH 400V)", 12.0, 18.0, 1100, 160, 1000, 2, 25.0, 32.0, 98.5, "IP65", "3PH", 400],
+
+  // ---------- Deye ----------
+  ["deye-sun-3-6k-sg04", "Deye", "SUN-3.6K-SG04LP1-EU Hybrid (1PH 230V)", 3.6, 4.68, 500, 125, 425, 2, 13.0, 17.0, 97.6, "IP65", "1PH", 230],
+  ["deye-sun-6k-sg03", "Deye", "SUN-6K-SG03LP1-EU Hybrid (1PH 230V)", 6.0, 7.8, 500, 150, 425, 2, 13.0, 17.0, 97.6, "IP65", "1PH", 230],
+  ["deye-sun-10k-sg02", "Deye", "SUN-10K-SG02LP1-EU Hybrid (1PH 230V)", 10.0, 13.0, 500, 125, 425, 3, 26.0, 34.0, 97.6, "IP65", "1PH", 230],
+  ["deye-sun-12k-sg02", "Deye", "SUN-12K-SG02LP1-EU Hybrid (1PH 230V)", 12.0, 15.6, 500, 125, 425, 3, 26.0, 34.0, 97.6, "IP65", "1PH", 230],
+  ["deye-sun-16k-sg01", "Deye", "SUN-16K-SG01LP1-EU Hybrid (1PH 230V)", 16.0, 20.8, 500, 125, 425, 4, 26.0, 34.0, 97.6, "IP65", "1PH", 230],
+  ["deye-sun-3k-g", "Deye", "SUN-3K-G03 String (1PH 230V)", 3.0, 3.9, 550, 70, 500, 2, 13.0, 19.5, 97.5, "IP65", "1PH", 230],
+  ["deye-sun-6k-g", "Deye", "SUN-6K-G03 String (1PH 230V)", 6.0, 7.8, 550, 70, 500, 2, 13.0, 19.5, 97.8, "IP65", "1PH", 230],
+  ["deye-sun-8k-g", "Deye", "SUN-8K-G String (1PH 230V)", 8.0, 10.4, 600, 100, 550, 2, 26.0, 34.0, 97.8, "IP65", "1PH", 230],
+  ["deye-sun-10k-g", "Deye", "SUN-10K-G String (1PH 230V)", 10.0, 13.0, 600, 100, 550, 2, 26.0, 34.0, 97.8, "IP65", "1PH", 230],
+  ["deye-sun-5k-sg04lp3", "Deye", "SUN-5K-SG04LP3-EU Hybrid (3PH 400V)", 5.0, 6.5, 800, 160, 650, 2, 13.0, 17.0, 97.6, "IP65", "3PH", 400],
+  ["deye-sun-8k-sg04lp3", "Deye", "SUN-8K-SG04LP3-EU Hybrid (3PH 400V)", 8.0, 10.4, 800, 160, 650, 2, 13.0, 17.0, 97.6, "IP65", "3PH", 400],
+
+  // ---------- SMA ----------
+  ["sma-sunny-boy-3-6", "SMA", "Sunny Boy 3.6-1AV-41 (1PH 230V)", 3.68, 5.5, 600, 130, 500, 2, 15.0, 20.0, 97.0, "IP65", "1PH", 230],
+  ["sma-sunny-boy-4-0", "SMA", "Sunny Boy 4.0-1AV-41 (1PH 230V)", 4.0, 6.0, 600, 140, 500, 2, 15.0, 20.0, 97.0, "IP65", "1PH", 230],
+  ["sma-sunny-boy-6-0", "SMA", "Sunny Boy 6.0-1AV-41 (1PH 230V)", 6.0, 9.0, 600, 210, 500, 2, 15.0, 20.0, 97.0, "IP65", "1PH", 230],
+  ["sma-sunny-boy-smart-energy-5-0", "SMA", "Sunny Boy Smart Energy SBSE5.0 Hybrid (1PH 230V)", 5.0, 7.5, 600, 90, 480, 2, 16.0, 22.0, 97.5, "IP65", "1PH", 230],
+  ["sma-sunny-boy-smart-energy-6-0", "SMA", "Sunny Boy Smart Energy SBSE6.0 Hybrid (1PH 230V)", 6.0, 9.0, 600, 90, 480, 2, 16.0, 22.0, 97.5, "IP65", "1PH", 230],
+
+  // ---------- Fronius ----------
+  ["fronius-primo-3-0-1", "Fronius", "Primo 3.0-1 (1PH 230V)", 3.0, 4.5, 1000, 200, 800, 2, 12.0, 18.0, 97.6, "IP65", "1PH", 230],
+  ["fronius-primo-6-0-1", "Fronius", "Primo 6.0-1 (1PH 230V)", 6.0, 9.0, 1000, 240, 800, 2, 18.0, 27.0, 98.0, "IP65", "1PH", 230],
+  ["fronius-primo-8-2-1", "Fronius", "Primo 8.2-1 (1PH 230V)", 8.2, 12.3, 1000, 270, 800, 2, 18.0, 27.0, 98.1, "IP65", "1PH", 230],
+  ["fronius-primo-gen24-3-0", "Fronius", "Primo GEN24 3.0 Plus Hybrid (1PH 230V)", 3.0, 4.5, 600, 65, 530, 2, 22.0, 33.0, 97.4, "IP66", "1PH", 230],
+  ["fronius-primo-gen24-6-0", "Fronius", "Primo GEN24 6.0 Plus Hybrid (1PH 230V)", 6.0, 9.0, 600, 80, 530, 2, 22.0, 33.0, 97.6, "IP66", "1PH", 230],
+
+  // ---------- GoodWe ----------
+  ["goodwe-dns-gw3000d-ns", "GoodWe", "DNS G3 GW3000D-NS (1PH 230V)", 3.0, 4.5, 600, 80, 550, 2, 16.0, 22.0, 98.2, "IP65", "1PH", 230],
+  ["goodwe-dns-gw6000d-ns", "GoodWe", "DNS G3 GW6000D-NS (1PH 230V)", 6.0, 9.0, 600, 80, 550, 2, 16.0, 22.0, 98.4, "IP65", "1PH", 230],
+  ["goodwe-ms-gw8k-ms", "GoodWe", "MS G3 GW8K-MS (1PH 230V)", 8.0, 12.0, 600, 60, 550, 3, 16.0, 22.0, 98.4, "IP66", "1PH", 230],
+  ["goodwe-ms-gw10k-ms", "GoodWe", "MS G3 GW10K-MS (1PH 230V)", 10.0, 15.0, 600, 60, 550, 3, 16.0, 22.0, 98.4, "IP66", "1PH", 230],
+  ["goodwe-es-gw3648d-es-hybrid", "GoodWe", "ES G2 GW3648D-ES Hybrid (1PH 230V)", 3.68, 5.5, 600, 90, 520, 2, 16.0, 22.0, 97.6, "IP65", "1PH", 230],
+  ["goodwe-eh-gw6000-eh-hybrid", "GoodWe", "EH GW6000-EH Hybrid (1PH 230V)", 6.0, 9.0, 600, 80, 550, 2, 16.0, 22.0, 97.6, "IP66", "1PH", 230],
+  ["goodwe-sdt-gw15k-dt", "GoodWe", "SDT G2 GW15K-DT (3PH 400V)", 15.0, 22.5, 1100, 180, 850, 2, 22.0, 27.5, 98.6, "IP65", "3PH", 400],
+
+  // ---------- Solis ----------
+  ["solis-s6-gr1p3k", "Solis", "S6-GR1P3K (1PH 230V)", 3.0, 4.5, 600, 90, 520, 2, 16.0, 22.0, 97.5, "IP66", "1PH", 230],
+  ["solis-s6-gr1p4k", "Solis", "S6-GR1P4K (1PH 230V)", 4.0, 6.0, 600, 90, 520, 2, 16.0, 22.0, 97.7, "IP66", "1PH", 230],
+  ["solis-s6-gr1p6k", "Solis", "S6-GR1P6K (1PH 230V)", 6.0, 9.0, 600, 90, 520, 2, 16.0, 22.0, 97.8, "IP66", "1PH", 230],
+  ["solis-s6-gr1p8k", "Solis", "S6-GR1P8K (1PH 230V)", 8.0, 12.0, 600, 90, 520, 3, 16.0, 22.0, 97.8, "IP66", "1PH", 230],
+  ["solis-s6-gr1p10k", "Solis", "S6-GR1P10K (1PH 230V)", 10.0, 15.0, 600, 90, 520, 4, 16.0, 22.0, 97.8, "IP66", "1PH", 230],
+  ["solis-s6-eh1p3-6k-hybrid", "Solis", "S6-EH1P3.6K-L-PRO Hybrid (1PH 230V)", 3.6, 5.8, 600, 90, 520, 2, 16.0, 24.0, 97.5, "IP66", "1PH", 230],
+  ["solis-s6-eh1p6k-hybrid", "Solis", "S6-EH1P6K-L-PRO Hybrid (1PH 230V)", 6.0, 9.6, 600, 90, 520, 2, 16.0, 24.0, 97.5, "IP66", "1PH", 230],
+  ["solis-s6-eh1p8k-hybrid", "Solis", "S6-EH1P8K-L-PRO Hybrid (1PH 230V)", 8.0, 12.8, 600, 90, 520, 4, 16.0, 24.0, 97.5, "IP66", "1PH", 230],
+  ["solis-s5-gr3p5k", "Solis", "S5-GR3P5K (3PH 400V)", 5.0, 7.5, 1100, 160, 1000, 2, 13.0, 20.0, 98.3, "IP65", "3PH", 400],
+  ["solis-s5-gr3p15k", "Solis", "S5-GR3P15K (3PH 400V)", 15.0, 22.5, 1100, 160, 1000, 2, 26.0, 40.0, 98.5, "IP65", "3PH", 400],
+
+  // ---------- Growatt ----------
+  ["growatt-min-2500tl-x", "Growatt", "MIN 2500TL-X (1PH 230V)", 2.5, 3.5, 550, 80, 500, 2, 13.5, 16.9, 98.2, "IP65", "1PH", 230],
+  ["growatt-min-3000tl-x", "Growatt", "MIN 3000TL-X (1PH 230V)", 3.0, 4.2, 550, 80, 500, 2, 13.5, 16.9, 98.2, "IP65", "1PH", 230],
+  ["growatt-min-4200tl-x", "Growatt", "MIN 4200TL-X (1PH 230V)", 4.2, 5.9, 550, 80, 500, 2, 13.5, 16.9, 98.3, "IP65", "1PH", 230],
+  ["growatt-min-6000tl-x", "Growatt", "MIN 6000TL-X (1PH 230V)", 6.0, 8.4, 550, 80, 500, 2, 13.5, 16.9, 98.4, "IP65", "1PH", 230],
+  ["growatt-min-8000tl-x", "Growatt", "MIN 8000TL-X (1PH 230V)", 8.0, 11.2, 550, 80, 500, 3, 13.5, 16.9, 98.4, "IP65", "1PH", 230],
+  ["growatt-min-10000tl-x", "Growatt", "MIN 10000TL-X (1PH 230V)", 10.0, 14.0, 550, 80, 500, 3, 13.5, 16.9, 98.4, "IP65", "1PH", 230],
+  ["growatt-sph3000-hybrid", "Growatt", "SPH3000 Storage Hybrid (1PH 230V)", 3.0, 4.5, 550, 120, 550, 2, 13.5, 16.9, 97.4, "IP65", "1PH", 230],
+  ["growatt-sph6000-hybrid", "Growatt", "SPH6000 Storage Hybrid (1PH 230V)", 6.0, 9.0, 550, 120, 550, 2, 13.5, 16.9, 97.7, "IP65", "1PH", 230],
+  ["growatt-spf5000es-offgrid", "Growatt", "SPF 5000 ES Off-Grid Hybrid (1PH 230V)", 5.0, 6.5, 450, 120, 430, 1, 22.0, 27.0, 93.0, "IP20", "1PH", 230],
+  ["growatt-mod-6ktl3-x", "Growatt", "MOD 6KTL3-X (3PH 400V)", 6.0, 9.0, 1100, 140, 1000, 2, 13.5, 16.9, 98.4, "IP66", "3PH", 400],
+  ["growatt-mod-15ktl3-x", "Growatt", "MOD 15KTL3-X (3PH 400V)", 15.0, 22.5, 1100, 140, 1000, 2, 27.0, 33.8, 98.6, "IP66", "3PH", 400],
+
+  // ---------- SolarEdge ----------
+  ["solaredge-se3000h", "SolarEdge", "HD-Wave SE3000H (1PH 230V)", 3.0, 4.65, 480, 380, 480, 1, 9.0, 11.0, 99.2, "IP65", "1PH", 230],
+  ["solaredge-se6000h", "SolarEdge", "HD-Wave SE6000H (1PH 230V)", 6.0, 9.3, 480, 380, 480, 1, 16.5, 20.0, 99.2, "IP65", "1PH", 230],
+  ["solaredge-se10000h", "SolarEdge", "HD-Wave SE10000H (1PH 230V)", 10.0, 15.5, 480, 380, 480, 1, 27.0, 33.0, 99.0, "IP65", "1PH", 230],
+
+  // ---------- SolaX ----------
+  ["solax-x1-boost-3-0", "SolaX", "X1-Boost 3.0 G4 (1PH 230V)", 3.0, 4.5, 600, 70, 580, 2, 16.0, 20.0, 97.8, "IP66", "1PH", 230],
+  ["solax-x1-boost-5-0", "SolaX", "X1-Boost 5.0 G4 (1PH 230V)", 5.0, 7.5, 600, 70, 580, 2, 16.0, 20.0, 98.0, "IP66", "1PH", 230],
+  ["solax-x1-boost-6-0", "SolaX", "X1-Boost 6.0 G4 (1PH 230V)", 6.0, 9.0, 600, 70, 580, 2, 16.0, 20.0, 98.0, "IP66", "1PH", 230],
+  ["solax-x1-hybrid-5-0-g4", "SolaX", "X1-Hybrid 5.0 G4 Hybrid (1PH 230V)", 5.0, 8.0, 600, 70, 550, 2, 16.0, 20.0, 97.6, "IP65", "1PH", 230],
+  ["solax-x1-hybrid-7-5-g4", "SolaX", "X1-Hybrid 7.5 G4 Hybrid (1PH 230V)", 7.5, 12.0, 600, 70, 550, 2, 16.0, 20.0, 97.6, "IP65", "1PH", 230],
+
+  // ---------- Microinverters ----------
+  ["enphase-iq8mc", "Enphase", "IQ8MC Microinverter (1PH 230V)", 0.33, 0.46, 60, 29, 45, 1, 12.0, 15.0, 97.4, "IP67", "1PH", 230],
+  ["apsystems-ds3-l", "APsystems", "DS3-L Dual Microinverter (1PH 230V)", 0.73, 1.0, 60, 25, 55, 2, 18.0, 20.0, 96.7, "IP67", "1PH", 230],
+  ["apsystems-ds3-h", "APsystems", "DS3-H Dual Microinverter (1PH 230V)", 0.96, 1.3, 60, 32, 55, 2, 20.0, 25.0, 96.7, "IP67", "1PH", 230],
+  ["hoymiles-hms-800-2t", "Hoymiles", "HMS-800-2T Microinverter (1PH 230V)", 0.8, 1.06, 65, 16, 60, 2, 14.0, 17.5, 96.7, "IP67", "1PH", 230],
+  ["hoymiles-hms-2000-4t", "Hoymiles", "HMS-2000-4T Microinverter (1PH 230V)", 2.0, 2.68, 65, 16, 60, 4, 14.0, 17.5, 96.5, "IP67", "1PH", 230],
+];
+
+const MORE_INVERTERS: SolarInverter[] = MORE_INVERTER_ROWS.map(
+  ([id, manufacturer, model, kw, dcKw, dcV, mpMin, mpMax, mppts, iMp, isc, eff, ip, phase, acV]) => {
+    const ratedAcCurrent = Math.round(((kw * 1000) / (phase === "3PH" ? Math.sqrt(3) * acV : acV)) * 10) / 10;
+    return {
+      id,
+      manufacturer,
+      model,
+      ratedAcPowerKw: kw,
+      maxDcInputPowerKw: dcKw,
+      maxDcVoltage: dcV,
+      mpptVoltageRangeMin: mpMin,
+      mpptVoltageRangeMax: mpMax,
+      numMppts: mppts,
+      maxInputCurrentPerMppt: iMp,
+      maxIscPerMppt: isc,
+      ratedAcCurrent,
+      maxAcCurrent: Math.round(ratedAcCurrent * 1.05 * 10) / 10,
+      acVoltage: acV,
+      phase,
+      frequencyHz: 60,
+      efficiencyPercent: eff,
+      ipRating: ip,
+    };
+  }
+);
+
+// ==========================================
 // 2. STANDARD INVERTER LIBRARY
 // ==========================================
 export const DEFAULT_INVERTERS: SolarInverter[] = [
@@ -2329,6 +2469,7 @@ export const DEFAULT_INVERTERS: SolarInverter[] = [
     efficiencyPercent: 98.3,
     ipRating: "IP65",
   },
+  ...MORE_INVERTERS,
 ];
 
 // ==========================================
@@ -4143,69 +4284,35 @@ export function determineRecommendedInverter(
   const targetAcKw = targetKwp / 1.20;
 
   // 1. Single-Phase Utility Grid (1PH 230V - typically residential or small commercial)
+  // Smallest single-phase inverter that covers the target AC size; ties go to the preferred brand
   if (is1Phase) {
-    const singlePhaseInverters = allInverters.filter((i) => i.phase === "1PH");
-
-    // Hybrid / Off-Grid with Battery Storage
-    if (isHybridOrStorage || isOffGrid) {
-      if (targetAcKw <= 3.5) {
-        return (
-          singlePhaseInverters.find((i) => i.id === "deye-sun-3k-sg04") ||
-          singlePhaseInverters.find((i) => i.id === "sungrow-sh5-0rs-hybrid") ||
-          singlePhaseInverters[0] ||
-          allInverters[0]
-        );
-      }
-      if (targetAcKw <= 6.0) {
-        return (
-          singlePhaseInverters.find((i) => i.id === "sungrow-sh5-0rs-hybrid") ||
-          singlePhaseInverters.find((i) => i.id === "deye-sun-5k-sg01") ||
-          singlePhaseInverters.find((i) => i.id === "fronius-primo-gen24-5-0") ||
-          singlePhaseInverters[0] ||
-          allInverters[0]
-        );
-      }
-      return (
-        singlePhaseInverters.find((i) => i.id === "deye-sun-8k-sg01") ||
-        singlePhaseInverters.find((i) => i.id === "sungrow-sh5-0rs-hybrid") ||
-        singlePhaseInverters[0] ||
-        allInverters[0]
-      );
+    const name = (i: SolarInverter) => i.model.toLowerCase();
+    const isMicro = (i: SolarInverter) => name(i).includes("micro");
+    const isStorage = (i: SolarInverter) => name(i).includes("hybrid") || name(i).includes("storage");
+    const needsStorage = isHybridOrStorage || isOffGrid;
+    const singlePhaseInverters = allInverters.filter((i) => i.phase === "1PH" && !isMicro(i) && !i.isCustom);
+    const pool = needsStorage ? singlePhaseInverters.filter(isStorage) : singlePhaseInverters.filter((i) => !isStorage(i));
+    const brandOrder = needsStorage
+      ? ["Deye", "Sungrow", "Huawei", "Solis", "GoodWe", "Growatt", "Fronius", "SMA", "SolaX"]
+      : ["Huawei", "Sungrow", "Solis", "GoodWe", "Growatt", "Deye", "SMA", "Fronius", "SolaX", "SolarEdge"];
+    const rank = (i: SolarInverter) => {
+      const r = brandOrder.indexOf(i.manufacturer);
+      return r < 0 ? brandOrder.length : r;
+    };
+    const candidates = (pool.length ? pool : singlePhaseInverters).slice();
+    if (candidates.length === 0) return allInverters[0];
+    const fits = candidates.filter((i) => i.ratedAcPowerKw >= targetAcKw);
+    if (fits.length > 0) {
+      const smallest = Math.min(...fits.map((i) => i.ratedAcPowerKw));
+      return fits
+        .filter((i) => i.ratedAcPowerKw === smallest)
+        .sort((a, b) => rank(a) - rank(b) || b.efficiencyPercent - a.efficiencyPercent)[0];
     }
-
-    // Standard Grid-Tie On-Grid Single Phase
-    if (targetAcKw <= 2.5) {
-      return (
-        singlePhaseInverters.find((i) => i.id === "huawei-sun2000-2ktl-l1") ||
-        singlePhaseInverters.find((i) => i.id === "sungrow-sg3-0rs") ||
-        singlePhaseInverters[0] ||
-        allInverters[0]
-      );
-    }
-    if (targetAcKw <= 3.8) {
-      return (
-        singlePhaseInverters.find((i) => i.id === "huawei-sun2000-3ktl-l1") ||
-        singlePhaseInverters.find((i) => i.id === "sungrow-sg3-0rs") ||
-        singlePhaseInverters[0] ||
-        allInverters[0]
-      );
-    }
-    if (targetAcKw <= 5.5) {
-      return (
-        singlePhaseInverters.find((i) => i.id === "huawei-sun2000-5ktl-l1") ||
-        singlePhaseInverters.find((i) => i.id === "sungrow-sg5-0rs") ||
-        singlePhaseInverters[0] ||
-        allInverters[0]
-      );
-    }
-    // 6kW to 10kW 1PH
-    return (
-      singlePhaseInverters.find((i) => i.id === "huawei-sun2000-6ktl-l1") ||
-      singlePhaseInverters.find((i) => i.id === "deye-sun-8k-sg01") ||
-      singlePhaseInverters.find((i) => i.id === "sungrow-sg5-0rs") ||
-      singlePhaseInverters[0] ||
-      allInverters[0]
-    );
+    // Larger than any single unit: the largest model (quantity is sized separately)
+    const largest = Math.max(...candidates.map((i) => i.ratedAcPowerKw));
+    return candidates
+      .filter((i) => i.ratedAcPowerKw === largest)
+      .sort((a, b) => rank(a) - rank(b) || b.efficiencyPercent - a.efficiencyPercent)[0];
   }
 
   // 2. Three-Phase Utility Grid (3PH)
