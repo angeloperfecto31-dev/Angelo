@@ -14,7 +14,7 @@ import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePan
 import { serviceFaultStudy } from "./serviceFault";
 import { kaicAudit } from "./kaicAudit";
 import { analysePowerSystem } from "./powerAnalysis";
-import { buildImpedanceSld, drawSldOnDrawing, sldOptionsFor, type SldOptions } from "./impedanceSld";
+import { buildImpedanceSld, drawSldOnDrawing, drawingSetTemplate, sldCadLayer, sldOptionsFor, type SldOptions } from "./impedanceSld";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import Drawing from "dxf-writer";
@@ -1492,12 +1492,15 @@ export const exportToCAD = (
     sheetConfigs.push({ w, xOffset: last ? last.xOffset + last.w + 60 : 0 }); // 60 padding between sheets
     return sheetConfigs.length - 1;
   };
-  const sheetNumberMarks: { sheetIndex: number; x: number }[] = [];
+  const sheetNumberMarks: { sheetIndex: number; x: number; y: number }[] = [];
   /** Lowest y a section may draw down to before it continues on a new sheet */
   const PAGE_BOTTOM_Y = 20;
   /** Where a continued section starts on its new sheet */
   const CONTINUE_TOP_Y = 560;
 
+  // Every sheet uses the drawing-set template of the Single Line Impedance Diagram (utils/impedanceSld.ts):
+  // same frame, notes column, drawing title and title-block cells, filled from the saved title block.
+  const sheetTitle = sldOptionsFor(panel, iscParams).title;
   const drawSheetTemplate = (
     sheetIndex: number,
     currentPanel: PanelConfig,
@@ -1508,269 +1511,14 @@ export const exportToCAD = (
       w: baseW,
       xOffset: sheetIndex * 900,
     };
-    const xOffset = sConf.xOffset;
-    const W = sConf.w;
-    // The template is drawn in sheet coordinates even while a section is drawing with an offset
-    const savedOriginX = b.originX;
-    const savedOriginY = b.originY;
-    b.originX = 0;
-    b.originY = 0;
-
-    // Outer border
-    b.addRect(xOffset + 0, 0, xOffset + W, H, "BORDER");
-    // Inner layout cut border (10mm margins)
-    b.addRect(
-      xOffset + MARGIN_LEFT,
-      MARGIN_BOTTOM,
-      xOffset + W - MARGIN_RIGHT,
-      H - MARGIN_TOP,
-      "BORDER",
-    );
-
-    // Title block dividing boundary: aligned to the right
-    const titleBlockX = xOffset + W - 130;
-    b.addLine(
-      titleBlockX,
-      MARGIN_BOTTOM,
-      titleBlockX,
-      H - MARGIN_TOP,
-      "BORDER",
-    );
-
-    // Professional Column partitions within vertical block
-    b.addLine(titleBlockX, 85, xOffset + W - MARGIN_RIGHT, 85, "BORDER"); // Sheet ID Row
-    b.addLine(titleBlockX, 145, xOffset + W - MARGIN_RIGHT, 145, "BORDER"); // Date / Scaling info
-    b.addLine(titleBlockX, 235, xOffset + W - MARGIN_RIGHT, 235, "BORDER"); // Custom Drawing title Row
-    b.addLine(titleBlockX, 325, xOffset + W - MARGIN_RIGHT, 325, "BORDER"); // Project name block
-    b.addLine(titleBlockX, 420, xOffset + W - MARGIN_RIGHT, 420, "BORDER"); // Firm ID
-    b.addLine(titleBlockX, 550, xOffset + W - MARGIN_RIGHT, 550, "BORDER"); // General Notes header partition
-
-    // Label Titles & Static Texts in Vertical block
-    const tx = titleBlockX + 5;
-    const blockCenter = titleBlockX + (130 - MARGIN_RIGHT) / 2;
-
-    // Firm Block
-    b.addText(
-      "ELECTRICALPH CONSULTANTS",
-      blockCenter,
-      400,
-      2.5,
-      0,
-      "TEXT_TITLE",
-      "center"
-    );
-    b.addText(
-      "SEC REGISTERED ELECTRICAL ENGINEERS",
-      blockCenter,
-      390,
-      1.8,
-      0,
-      "TEXT_DATA",
-      "center"
-    );
-    b.addText(
-      "PHILIPPINES DESIGN CONFORMITY PRACTICE",
-      blockCenter,
-      381,
-      1.5,
-      0,
-      "TEXT_DATA",
-      "center"
-    );
-
-    // Project metadata
-    b.addText("PROJECT:", tx, 312, 1.8, 0, "TEXT_HEADER", "left");
-    const classification = panel.projectType 
-      ? (panel.institution 
-          ? `[${panel.projectType} - ${panel.institution === 'Custom...' ? panel.customInstitutionName || 'Custom' : panel.institution}] `
-          : `[${panel.projectType}] `)
-      : "";
-
-    b.addText(
-      classification + (panel.project || "UNSPECIFIED DESIGN PROJECT"),
-      tx,
-      301,
-      2.0,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-
-    b.addText("OWNER:", tx, 290, 1.8, 0, "TEXT_HEADER", "left");
-    b.addText(
-      panel.owner || "UNSPECIFIED OWNER",
-      tx,
-      281,
-      1.8,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-
-    b.addText("LOCATION:", tx, 271, 1.8, 0, "TEXT_HEADER", "left");
-    b.addText(
-      panel.location || "PHILIPPINES LOCAL SITE",
-      tx,
-      261,
-      2.3,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-
-    // Drawing title
-    b.addText("DRAWING TITLE:", tx, 222, 1.8, 0, "TEXT_HEADER", "left");
-    b.addText(
-      customTitle1 || `${currentPanel.designation || "SUB BOARD"} DISTRIBUTION`,
-      blockCenter,
-      205,
-      2.8,
-      0,
-      "TEXT_TITLE",
-      "center"
-    );
-    b.addText(
-      customTitle2 || "LOAD SCHEDULE & FAULT ANALYSIS",
-      blockCenter,
-      194,
-      2.4,
-      0,
-      "TEXT_TITLE",
-      "center"
-    );
-
-    // Approval stamp / PEC statement
-    b.addText("DESIGN APPROVAL:", tx, 175, 1.8, 0, "TEXT_HEADER", "left");
-    b.addText(
-      "PEC APPROVED FOR CONSTRUCTION",
-      tx,
-      164,
-      2.0,
-      0,
-      "TEXT_DATA",
-      "left",
-    );
-
-    // Scale and stats block
-    b.addLine(titleBlockX + 60, 85, titleBlockX + 60, 145, "BORDER");
-    b.addText("SCALE:", tx, 133, 1.6, 0, "TEXT_HEADER", "left");
-    b.addText("NOT TO SCALE (N.T.S.)", tx, 122, 2.2, 0, "TEXT_DATA", "left");
-
-    b.addText("CREATED DATE:", tx, 108, 1.6, 0, "TEXT_HEADER", "left");
-    b.addText("06 JUNE 2026", tx, 97, 2.2, 0, "TEXT_DATA", "left");
-
-    b.addText(
-      "DESIGNED BY:",
-      titleBlockX + 65,
-      133,
-      1.6,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText("EE OFFICE", titleBlockX + 65, 122, 2.2, 0, "TEXT_DATA", "left");
-
-    b.addText(
-      "CHECKED BY:",
-      titleBlockX + 65,
-      108,
-      1.6,
-      0,
-      "TEXT_HEADER",
-      "left",
-    );
-    b.addText("PEE ENGR.", titleBlockX + 65, 97, 2.2, 0, "TEXT_DATA", "left");
-
-    // Sheet Numbers
-    b.addText("SHEET CODE", tx, 74, 1.8, 0, "TEXT_HEADER", "left");
+    const tpl = drawingSetTemplate(sConf.w, H, {
+      title: { ...sheetTitle, drawingNo: "" },
+      title1: customTitle1 || `${currentPanel.designation || "SUB BOARD"} DISTRIBUTION`,
+      title2: customTitle2 || "LOAD SCHEDULE & FAULT ANALYSIS",
+    });
+    drawSldOnDrawing(b.drawing, { w: sConf.w, h: H, size: "A1", scale: 1, prims: tpl.prims }, sConf.xOffset, 0);
     // "E - n / N" is written after every sheet exists (sections may add continuation sheets)
-    sheetNumberMarks.push({ sheetIndex, x: blockCenter });
-
-    // Standard Electrical Notes
-    b.addText("GENERAL DRAWING NOTES:", tx, 538, 2.2, 0, "TEXT_HEADER", "left");
-    b.addText(
-      "1. ALL ELECTRICAL INSTALLATIONS SHALL BE",
-      tx,
-      525,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "   MADE IN ACCORDANCE WITH THE PHILIPPINE",
-      tx,
-      517,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "   ELECTRICAL CODE (PEC) COMPLIANCE MANDATES.",
-      tx,
-      509,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "2. CONDUCTORS FOR POWER LOADS SHALL BE EXCLUSIVELY",
-      tx,
-      497,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "   COPPER THHN / THWN-2 HEAT RESISTANT TYPES.",
-      tx,
-      489,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "3. ALL CIRCUITS SHALL RUN IN HEAVY DUTY CONDUIT.",
-      tx,
-      477,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "4. COMPLIANCE STAMP INDICATES POINT-TO-POINT",
-      tx,
-      465,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "   SHORT CIRCUIT EVALUATION AS PER SEC 1.10.1.24",
-      tx,
-      457,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.addText(
-      "   FOR PROPER INTERRUPTING kAIC SAFETY RATINGS.",
-      tx,
-      449,
-      1.6,
-      0,
-      "TEXT_DATA",
-      "left"
-    );
-    b.originX = savedOriginX;
-    b.originY = savedOriginY;
+    sheetNumberMarks.push({ sheetIndex, x: sConf.xOffset + tpl.drawingNoX, y: H - tpl.drawingNoY });
   };
 
   /**
@@ -4427,8 +4175,9 @@ export const exportToCAD = (
     const sheet = buildImpedanceSld(input, { ...opts, title: { ...opts.title, drawingNo: `E - ${sheetIndex + 1} / ${sheetConfigs.length}` } });
     drawSldOnDrawing(b.drawing, sheet, sheetConfigs[sheetIndex].xOffset, 0);
   }
-  sheetNumberMarks.forEach(({ sheetIndex, x }) => {
-    b.addText(`E - ${sheetIndex + 1} / ${sheetConfigs.length}`, x, 32, 10.0, 0, "BORDER", "center");
+  b.drawing.setActiveLayer(sldCadLayer("TITLE"));
+  sheetNumberMarks.forEach(({ sheetIndex, x, y }) => {
+    b.drawing.drawText(x, y, 3, 0, `E - ${sheetIndex + 1} / ${sheetConfigs.length}`, "left", "baseline");
   });
 
   const dxfString = b.toDxfString();
