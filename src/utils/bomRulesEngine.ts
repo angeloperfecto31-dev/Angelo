@@ -1,5 +1,5 @@
 import { PanelConfig, Circuit, ShortCircuitParams, VoltageDropCalculation, LoadType } from "../types";
-import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles, getBreakerFrameSize, getActiveWireCount } from "./computeEngine";
+import { computePanelScheduleValues, getTotalPoles, getConduitSizeForWiresLocal, getActivePoles, getNeutralPoles, getBreakerFrameSize, getActiveWireCount, isIdleSpareOrSpace } from "./computeEngine";
 import { computeSolarDesign, resolveSolarBOM } from "./solarEngine";
 
 export interface BomItem {
@@ -80,6 +80,36 @@ const getLugPrice = (sizeStr: string): number => {
   if (sizeNum <= 100.0) return 280;
   if (sizeNum <= 150.0) return 380;
   return 480;
+};
+
+// Breaker price by trip rating (larger breakers cost more)
+const getBreakerPrice = (at: number): number => {
+  if (at <= 63) return 1250;
+  if (at <= 100) return 2800;
+  if (at <= 250) return 5800;
+  if (at <= 400) return 18500;
+  if (at <= 630) return 32000;
+  if (at <= 800) return 48000;
+  return Math.round(at * 70);
+};
+
+// Grounding electrode conductor, copper, from the largest service conductor area (PEC 2017 Table 2.50.3.4)
+const getGecSizeStr = (serviceAreaMm2: number): string => {
+  if (serviceAreaMm2 <= 30) return "8.0";
+  if (serviceAreaMm2 <= 50) return "14.0";
+  if (serviceAreaMm2 <= 80) return "22.0";
+  if (serviceAreaMm2 <= 175) return "30.0";
+  if (serviceAreaMm2 <= 300) return "50.0";
+  if (serviceAreaMm2 <= 550) return "60.0";
+  return "80.0";
+};
+
+// A neutral conductor is run only where the system has one
+const systemHasNeutral = (system: string, connectionType?: string): boolean => {
+  const sys = (system || "").toUpperCase();
+  if (sys.includes("4W") || sys.includes("5W")) return true;
+  if (sys.includes("1PH") && sys.includes("3W")) return true;
+  return connectionType === "Line-to-Neutral" && !sys.includes("3PH");
 };
 
 // Sizing Equipment Grounding Conductor (EGC) based on Overcurrent Protective Device (OCPD) - PEC Table 2.50.6.13
@@ -215,6 +245,8 @@ export const runBomQuantityTakeoff = (
     const vd = vdCalculations.find(v => v.source === panelId);
     return vd && vd.length ? vd.length : 50; // 50m default feeder
   };
+  const lengthNote = (key: string, fallback: number) =>
+    vdCalculations.find(v => v.source === key)?.length ? "length from Voltage Drop" : `length not set in Voltage Drop: ${fallback} m assumed`;
 
   logs.push(`[${timestamp}] Initiated PEC-compliant BOM Takeoff Rules Engine.`);
 
@@ -254,6 +286,7 @@ export const runBomQuantityTakeoff = (
                              (iscParams && iscParams.transformerKVA > 0);
 
   if (isTransformerNeeded) {
+    const txUnits = Math.max(1, iscParams?.parallelTransformersCount || 1);
     const transCostMap: Record<number, number> = {
       5: 45000, 10: 75000, 15: 110000, 25: 140000, 30: 155000, 37.5: 185000,
       45: 210000, 50: 235000, 75: 310000, 100: 360000, 112.5: 395000,
@@ -269,15 +302,15 @@ export const runBomQuantityTakeoff = (
       category: "Distribution Equipment",
       name: `${is3Phase ? "Three-Phase" : "Single-Phase"} Step-Down Distribution Transformer, ${transformerSizeKVA} kVA`,
       description: is3Phase 
-        ? `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V, ${panel.transformerConnection || "Dyn11"} connection, Dry-Type self-cooled`
-        : `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V, Dry-Type self-cooled`,
+        ? `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V, ${iscParams?.transformerConnection || panel.transformerConnection || "Dyn11"}${txUnits > 1 ? `, ${txUnits} units in parallel` : ""}`
+        : `Primary: ${iscParams?.primaryVoltage || 13800}V, Secondary: ${panel.voltage || 230}V${txUnits > 1 ? `, ${txUnits} units in parallel` : ""}`,
       brand: "ABB",
-      specification: `Impedance %Z: ${iscParams?.transformerZ || 4.5}%, Copper winding, compliant with PEC Article 4.50`,
-      quantity: 1,
+      specification: `Impedance %Z: ${iscParams?.transformerZ || 5}%, compliant with PEC Article 4.50`,
+      quantity: txUnits,
       unit: "pcs",
       unitCost: transCost,
       laborCostPerUnit: transCost * 0.08,
-      remarks: `Primary distribution step-down transformer (Required: ${reqTransformerKVA.toFixed(1)} kVA)`,
+      remarks: `Rating from the Transformer / Short Circuit sections (${transformerSizeKVA} kVA${txUnits > 1 ? ` × ${txUnits}` : ""})`,
       source: "Substation Feed"
     });
 
@@ -288,7 +321,7 @@ export const runBomQuantityTakeoff = (
       description: `Seismic rated spring vibration isolator designed for transformer cabinet footing`,
       brand: settings.preferredBrandAccessories,
       specification: `Double deflection neoprene & spring, load capacity 500kg each`,
-      quantity: 4,
+      quantity: 4 * txUnits,
       unit: "pcs",
       unitCost: 4500,
       laborCostPerUnit: 1200,
@@ -318,7 +351,7 @@ export const runBomQuantityTakeoff = (
   if (hasGeneratorBackUp) {
     let motorStartingSurgeVA = 0;
     const checkMotor = (c: Circuit) => {
-      if (c.loadType === "M" || c.description.toLowerCase().includes("motor") || c.description.toLowerCase().includes("pump") || c.description.toLowerCase().includes("ac")) {
+      if (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) {
         const surge = (c.loadVA || 1000) * 2; // 3x run load (continuous run + 2x surge)
         if (surge > motorStartingSurgeVA) motorStartingSurgeVA = surge;
       }
@@ -431,7 +464,7 @@ export const runBomQuantityTakeoff = (
   const mBreakerAmp = mdpFeeder.cb || 100;
   const mBreakerAF = mdpFeeder.af || getBreakerFrameSize(mBreakerAmp);
   const mPolesStr = mdpFeeder.poles?.toString() || (is3Phase ? "3P" : "2P");
-  const mBreakerCost = mBreakerAmp > 100 ? 5800 : 18500;
+  const mBreakerCost = getBreakerPrice(mBreakerAmp);
   const mBreakerKAIC = mdpFeeder.kaic || panel.icRating || "10";
 
   addItem({
@@ -449,7 +482,7 @@ export const runBomQuantityTakeoff = (
   });
 
   // Service entrance wires
-  const fLength = getFeederLength(mdpId);
+  const fLength = getFeederLength("main");
   const fPhaseSize = mdpFeeder.wire.size.toString() || "30";
   const fPhaseCount = is3Phase ? 3 : 2;
   const fWireRuns = mdpFeeder.wire.runs || 1;
@@ -487,12 +520,12 @@ export const runBomQuantityTakeoff = (
     unit: "meters",
     unitCost: fPhaseCost,
     laborCostPerUnit: fPhaseCost * 0.25,
-    remarks: `Service Feeder Phases (${fPhaseCount} x ${fLength}m x ${fWireRuns} runs)`,
+    remarks: `Service Feeder Phases (${fPhaseCount} x ${fLength}m x ${fWireRuns} runs, ${lengthNote("main", 50)})`,
     source: `Panel [${mdpId}] Feeder`
   });
 
   // Neutral wire - conditionally sizing and adding only if neutral is present in the system connection
-  const fNeutralCount = (panel.system.includes("4W") || panel.system.includes("5W") || panel.system.includes("3W") || panel.connectionType === "Line-to-Neutral") ? 1 : 0;
+  const fNeutralCount = systemHasNeutral(panel.system, panel.connectionType) ? 1 : 0;
   if (fNeutralCount > 0) {
     const fNeutralSize = fPhaseSize;
     const fNeutralMeters = fLength * fNeutralCount * fWireRuns * wasteConductorsFactor;
@@ -512,22 +545,53 @@ export const runBomQuantityTakeoff = (
     });
   }
 
-  // Service grounding wire (Grounding Electrode Conductor - GEC, PEC Table 2.50.3.17)
-  const fGecSize = mdpFeeder.groundSize || "8.0";
-  const fGecMeters = fLength * 1 * wasteConductorsFactor;
+  // Service feeder equipment grounding conductor (PEC Table 2.50.6.13), one in each raceway
+  const fEgcSize = String(mdpFeeder.groundSize || getEgcSizeStr(mBreakerAmp));
+  const fRaceways = fWireRuns > 1 && (panel.conduitArrangement || "single") === "separate_per_set" ? fWireRuns : 1;
+  const fEgcMeters = fLength * fRaceways * wasteConductorsFactor;
+  const fEgcCost = getWirePricePerMeter(fEgcSize);
+  addItem({
+    category: "Grounding",
+    name: `Equipment Grounding Conductor EGC, Copper ${mdpInsulationLabel}, ${fEgcSize} mm²`,
+    description: "Service feeder equipment grounding conductor (green)",
+    brand: settings.preferredBrandConductors,
+    specification: "Annealed copper, green insulation, sized per PEC Table 2.50.6.13",
+    quantity: Math.ceil(fEgcMeters),
+    unit: "meters",
+    unitCost: fEgcCost,
+    laborCostPerUnit: fEgcCost * 0.25,
+    remarks: `Service Feeder Ground (${fRaceways} raceway(s) x ${fLength}m, ${lengthNote("main", 50)})`,
+    source: `Panel [${mdpId}] Feeder`
+  });
+
+  // Grounding electrode system at the service (PEC 2017 Art. 2.50, Part III)
+  const fGecSize = getGecSizeStr((parseFloat(fPhaseSize) || 0) * fWireRuns);
   const fGecCost = getWirePricePerMeter(fGecSize);
   addItem({
     category: "Grounding",
-    name: `Grounding Conductor GEC, Copper ${mdpInsulationLabel}, ${fGecSize} mm²`,
-    description: "System Grounding Electrode Conductor to primary ground rod grid",
+    name: `Grounding Electrode Conductor GEC, Bare Copper, ${fGecSize} mm²`,
+    description: "Service neutral / ground bus to the grounding electrodes",
     brand: settings.preferredBrandConductors,
-    specification: "Lead-free PVC/Nylon jacket green insulation, 90°C rated",
-    quantity: Math.ceil(fGecMeters),
+    specification: `Sized from the ${fWireRuns > 1 ? `${fWireRuns} × ` : ""}${fPhaseSize} mm² service conductors per PEC Table 2.50.3.4`,
+    quantity: Math.ceil(6 * wasteConductorsFactor),
     unit: "meters",
     unitCost: fGecCost,
     laborCostPerUnit: fGecCost * 0.25,
-    remarks: `Service Feeder Grounding (1 x ${fLength}m)`,
-    source: `Panel [${mdpId}] Feeder`
+    remarks: "Electrode run not in the design: 6 m allowance, adjust to the site",
+    source: `Panel [${mdpId}] Grounding`
+  });
+  addItem({
+    category: "Grounding",
+    name: "Ground Rod, Copper-Clad Steel, 16mm Ø x 3.0m",
+    description: "Driven grounding electrode with clamp",
+    brand: settings.preferredBrandAccessories,
+    specification: "Copper-bonded steel rod, UL listed, with bronze ground rod clamp",
+    quantity: 2,
+    unit: "pcs",
+    unitCost: 1450,
+    laborCostPerUnit: 450,
+    remarks: "A single rod is supplemented by a second electrode (PEC 2.50.3.53)",
+    source: `Panel [${mdpId}] Grounding`
   });
 
   // Service entrance conduit
@@ -555,7 +619,7 @@ export const runBomQuantityTakeoff = (
   }
 
   // Feeder accessories (Lugs calculation needs to be before or after, it doesn't matter, we'll keep it here)
-  const totalFeederConductors = (fPhaseCount + fNeutralCount) * fWireRuns + 1; // Phases + Neutral * runs + Ground
+  const totalFeederConductors = (fPhaseCount + fNeutralCount) * fWireRuns + fRaceways; // Phases + Neutral per run, + one EGC per raceway
   const fLugCount = totalFeederConductors * 2; // Lug on each end of conductor
 
   feederConduits.forEach(cItem => {
@@ -669,25 +733,47 @@ export const runBomQuantityTakeoff = (
 
   // 4. GLOBAL ILLUMINATION MODULE COUPLING (Wiring Devices & LED Fixtures)
   let totalProjectLightingFixturesCount = 0;
+  let totalLightingSwitches = 0;
+  // Luminaires grouped by type, wattage and lumens across all rooms
+  const fixtureGroups = new Map<string, { type: string; watts: number; lumens: number; qty: number; rooms: Set<string> }>();
   if (illumParams && Array.isArray(illumParams.savedRooms)) {
     illumParams.savedRooms.forEach((r: any) => {
-      totalProjectLightingFixturesCount += r.fixturesCount || 0;
+      const count = Number(r.fixturesCount) || 0;
+      totalProjectLightingFixturesCount += count;
+      if (count > 0) totalLightingSwitches += Math.max(1, Math.ceil(count / 8)); // at least one switch per room
+      const selections: Array<{ type: string; watts: number; lumens: number; qty: number }> =
+        Array.isArray(r.activeFixtures) && r.activeFixtures.length > 0
+          ? r.activeFixtures.map((a: any) => ({ type: a.lightType || "LED luminaire", watts: Number(a.wattage) || 0, lumens: Number(a.lumens) || 0, qty: Number(a.quantity) || 0 }))
+          : [{ type: r.fixtureLightType || "LED luminaire", watts: Number(r.fixtureWattage) || (count ? (Number(r.totalWattage) || 0) / count : 0), lumens: Number(r.fixtureLumens) || 0, qty: count }];
+      // If the room's selections do not add up to its installed count, the count governs
+      const selQty = selections.reduce((a, x) => a + x.qty, 0);
+      if (selQty !== count && selections.length === 1) selections[0].qty = count;
+      selections.forEach((x) => {
+        if (x.qty <= 0) return;
+        const key = `${x.type}|${Math.round(x.watts)}|${Math.round(x.lumens)}`;
+        const g = fixtureGroups.get(key) || { type: x.type, watts: x.watts, lumens: x.lumens, qty: 0, rooms: new Set<string>() };
+        g.qty += x.qty;
+        g.rooms.add(r.roomName || "room");
+        fixtureGroups.set(key, g);
+      });
     });
   }
 
   if (totalProjectLightingFixturesCount > 0) {
-    addItem({
-      category: "Lighting",
-      name: `LED Recessed Downlight Luminaire, 9W`,
-      description: `Premium circular recessed ceiling LED downlight fixture, daylight (6500K), aluminum body`,
-      brand: "Philips",
-      specification: `Sized from Illumination Layout module, 230V, PF 0.90, lifetime 30,000 hrs`,
-      quantity: totalProjectLightingFixturesCount,
-      unit: "pcs",
-      unitCost: 450,
-      laborCostPerUnit: 85,
-      remarks: "Sized automatically from Illumination Layout (total across all rooms)",
-      source: "Illumination Layout Module"
+    fixtureGroups.forEach((g) => {
+      addItem({
+        category: "Lighting",
+        name: `${g.type}, ${Math.round(g.watts)}W${g.lumens ? `, ${Math.round(g.lumens)} lm` : ""}`,
+        description: `Luminaire as selected in the Illumination module (${g.rooms.size} room${g.rooms.size === 1 ? "" : "s"}: ${[...g.rooms].slice(0, 4).join(", ")}${g.rooms.size > 4 ? ", ..." : ""})`,
+        brand: settings.preferredBrandAccessories,
+        specification: `230V, ${Math.round(g.watts)} W${g.lumens ? `, ${Math.round(g.lumens)} lm` : ""}`,
+        quantity: g.qty,
+        unit: "pcs",
+        unitCost: Math.round(250 + g.watts * 18),
+        laborCostPerUnit: 85,
+        remarks: "Quantity from the Illumination module (installed fixtures per room)",
+        source: "Illumination Layout Module"
+      });
     });
 
     addItem({
@@ -704,8 +790,8 @@ export const runBomQuantityTakeoff = (
       source: "Illumination Layout Module"
     });
 
-    // Switches based on fixture count (approx 1 gang per 8 fixtures)
-    const switchCount = Math.ceil(totalProjectLightingFixturesCount / 8) || 2;
+    // Switches: at least one per room, one per 8 fixtures in larger rooms
+    const switchCount = totalLightingSwitches || 1;
     addItem({
       category: "Switches",
       name: `Flush Wall Switch, 1-Gang, Wide Series`,
@@ -716,7 +802,7 @@ export const runBomQuantityTakeoff = (
       unit: "pcs",
       unitCost: 125,
       laborCostPerUnit: 35,
-      remarks: "Lighting loop switch controls",
+      remarks: "One per room, one per 8 fixtures in larger rooms (Illumination module)",
       source: "Illumination Layout Module"
     });
 
@@ -742,20 +828,27 @@ export const runBomQuantityTakeoff = (
     const pInsulationLabel = formatInsulationLabel(p.insulationType || "THHN");
 
     panelCircuits.forEach(c => {
+      // A space has no device; a spare is a breaker only
+      if (c.loadType === LoadType.SPACE || (c.loadType as string) === "SPACE") return;
+      const isSpare = isIdleSpareOrSpace(c as any) || c.loadType === LoadType.SPARE;
+      // A sub-panel feeder's conductors and raceway are taken off with the sub-panel (from its Voltage Drop row)
+      const isTakenOffFeeder = !!c.linkedSubPanelId && reachablePanelIds.has(c.linkedSubPanelId) &&
+        (c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL);
       // Breakers
       addItem({
         category: "Breakers",
-        name: `Circuit Breaker MCB, ${c.mcbAT || 20}AT/${c.mcbAF || 50}AF, ${typeof c.mcbP === "string" ? c.mcbP : (c.mcbP || 2) + "P"}`,
+        name: `Circuit Breaker ${(Number(c.mcbAF) || getBreakerFrameSize(Number(c.mcbAT) || 20)) > 100 ? "MCCB" : "MCB"}, ${c.mcbAT || 20}AT/${c.mcbAF || getBreakerFrameSize(Number(c.mcbAT) || 20)}AF, ${typeof c.mcbP === "string" ? c.mcbP : (c.mcbP || 2) + "P"}`,
         description: `Branch circuit protection thermal-magnetic circuit breaker, ${c.mcbKAIC || "10"} kAIC`,
         brand: settings.preferredBrandBreakers,
         specification: `Molded Miniature Circuit Breaker (MCB), compliant with PEC Article 2.40`,
         quantity: 1,
         unit: "pcs",
-        unitCost: c.mcbAF && c.mcbAF > 50 ? 2800 : 1250,
+        unitCost: getBreakerPrice(Number(c.mcbAT) || 20),
         laborCostPerUnit: 250,
-        remarks: `Circuit ${c.circuitNo} Protection`,
+        remarks: `Circuit ${c.circuitNo} Protection${isSpare ? " (spare)" : isTakenOffFeeder ? " (feeder breaker; feeder cable with the sub-panel)" : ""}`,
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
+      if (isSpare || isTakenOffFeeder) return;
 
       // Conductors (Phase/Neutral wires)
       const bWireSets = c.wireSets || c.calculatedWireSets || 1;
@@ -775,7 +868,7 @@ export const runBomQuantityTakeoff = (
         unit: "meters",
         unitCost: bPhaseCost,
         laborCostPerUnit: bPhaseCost * 0.30,
-        remarks: `Circuit ${c.circuitNo} Phase Wires (${bPoles} x ${bLength}m)`,
+        remarks: `Circuit ${c.circuitNo} Phase/Neutral Wires (${bPoles} x ${bLength}m, ${lengthNote(c.id, 30)})`,
         source: `Panel [${panelId}] Circuit ${c.circuitNo}`
       });
 
@@ -913,7 +1006,7 @@ export const runBomQuantityTakeoff = (
       // Wiring Devices & Fixtures (fallback when global illumination count is zero or for specific circuits)
       if (c.loadType === "L") {
         if (totalProjectLightingFixturesCount === 0) {
-          const fixturesQty = Math.ceil(c.loadVA / 50) || 1;
+          const fixturesQty = (Number(c.quantity) > 1 ? Number(c.quantity) : 0) || Math.ceil(c.loadVA / (Number(c.wattage) > 0 && Number(c.quantity) > 0 ? Number(c.wattage) : 50)) || 1;
           addItem({
             category: "Lighting",
             name: `LED Recessed Downlight Luminaire, 9W`,
@@ -972,7 +1065,8 @@ export const runBomQuantityTakeoff = (
           });
         }
       } else if (c.loadType === LoadType.CONVENIENCE_OUTLET) {
-        const outletQty = Math.ceil(c.loadVA / 180) || 1;
+        // Load Schedule quantity when given, otherwise 180 VA per outlet (PEC 2.20.2.14(I))
+        const outletQty = (Number(c.quantity) > 1 ? Number(c.quantity) : 0) || Math.ceil(c.loadVA / 180) || 1;
         addItem({
           category: "Devices",
           name: "Duplex Convenience Outlet with Ground, Wide Series",
@@ -1001,7 +1095,7 @@ export const runBomQuantityTakeoff = (
           source: `Panel [${panelId}] Circuit ${c.circuitNo}`
         });
       } else if (c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON) {
-        const dsRating = (c.mcbAT && c.mcbAT > 30) ? (c.mcbAT > 60 ? 100 : 60) : 30;
+        const dsRating = [30, 60, 100, 200, 400, 600, 800, 1200].find(r => r >= (Number(c.mcbAT) || 20)) || 1200;
         const polesStr = typeof c.mcbP === "string" ? c.mcbP : (c.mcbP || 2) + "P";
         addItem({
           category: "Switches",
@@ -1011,8 +1105,8 @@ export const runBomQuantityTakeoff = (
           specification: `NEMA 3R rainproof steel enclosure with external lockable handle, compliant with PEC Sec 4.30.9 & 4.40.2`,
           quantity: 1,
           unit: "pcs",
-          unitCost: dsRating === 30 ? 1850 : (dsRating === 60 ? 3200 : 5800),
-          laborCostPerUnit: dsRating === 30 ? 400 : (dsRating === 60 ? 600 : 1000),
+          unitCost: dsRating === 30 ? 1850 : dsRating === 60 ? 3200 : dsRating === 100 ? 5800 : Math.round(dsRating * 60),
+          laborCostPerUnit: dsRating === 30 ? 400 : dsRating === 60 ? 600 : dsRating === 100 ? 1000 : Math.round(dsRating * 8),
           remarks: `Equipment safety disconnect switch for ${c.circuitNo} (${c.description || "Motor/AC"})`,
           source: `Panel [${panelId}] Circuit ${c.circuitNo}`
         });
@@ -1034,7 +1128,7 @@ export const runBomQuantityTakeoff = (
     const spMainAmp = spFeeder.cb || sp.panel.mainBreakerAT || 60;
     const spMainAF = spFeeder.af || getBreakerFrameSize(spMainAmp);
     const spPolesStr = spFeeder.poles?.toString() || (sp.panel.system.includes("3PH") ? "3P" : "2P");
-    const spBreakerCost = spMainAmp > 100 ? 5800 : 1250;
+    const spBreakerCost = getBreakerPrice(spMainAmp);
     const spBreakerKAIC = spFeeder.kaic || sp.panel.icRating || "10";
 
     // Determine parent panel and dynamic type (SP/SSP/DP)
@@ -1088,20 +1182,6 @@ export const runBomQuantityTakeoff = (
       source: `Panel [${spId}] Main`
     });
 
-    // Enclosed Safety Disconnect Switch for the subpanel (feeder isolation)
-    addItem({
-      category: "Switches",
-      name: `Enclosed Safety Disconnect Switch (Feeder Isolator), ${spMainAmp}A, ${spPolesStr}`,
-      description: `Molded safety disconnect switch in NEMA 1/3R enclosure, acting as local isolating switch for Panel ${spId}.`,
-      brand: settings.preferredBrandBreakers,
-      specification: `Heavy-duty quick-make quick-break mechanism, visible blade design, rated for ${sp.panel.voltage}V, compliant with PEC Article 4.30 & Sec 5.0.1.`,
-      quantity: 1,
-      unit: "pcs",
-      unitCost: spMainAmp * 35 + 2500,
-      laborCostPerUnit: (spMainAmp * 35 + 2500) * 0.15,
-      remarks: `Feeder Isolation Disconnect Switch for ${spId}`,
-      source: `Panel [${spId}] Main`
-    });
 
     // Subpanel Feeder conductors
     const spInsulationLabel = formatInsulationLabel(sp.panel.insulationType || "THHN");
@@ -1120,12 +1200,12 @@ export const runBomQuantityTakeoff = (
       unit: "meters",
       unitCost: sfPhaseCost,
       laborCostPerUnit: sfPhaseCost * 0.25,
-      remarks: `Subpanel Feeder Phases (${sfPhaseCount} x ${sfLength}m x ${sfWireRuns} runs)`,
+      remarks: `Subpanel Feeder Phases (${sfPhaseCount} x ${sfLength}m x ${sfWireRuns} runs, ${lengthNote(sp.id, 50)})`,
       source: `Panel [${spId}] Feeder`
     });
 
     // Neutral wire - conditionally sizing and adding only if neutral is present in the subpanel system connection
-    const sfNeutralCount = (sp.panel.system.includes("4W") || sp.panel.system.includes("5W") || sp.panel.system.includes("3W") || sp.panel.connectionType === "Line-to-Neutral") ? 1 : 0;
+    const sfNeutralCount = systemHasNeutral(sp.panel.system, sp.panel.connectionType) ? 1 : 0;
     if (sfNeutralCount > 0) {
       const sfNeutralSize = sfPhaseSize;
       const sfNeutralMeters = sfLength * sfNeutralCount * sfWireRuns * wasteConductorsFactor;

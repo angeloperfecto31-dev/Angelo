@@ -300,10 +300,10 @@ export default function BomModule({
         if (ampMatch && poleMatch) {
           const ampStr = ampMatch[0];
           const poleStr = poleMatch[0].replace("-Pole", "P");
-          foundLibItem = library.find(lib => 
-            lib.category === "Breakers" && 
-            lib.rating?.includes(ampStr) && 
-            lib.rating?.includes(poleStr)
+          const ampRe = new RegExp(`(^|[^0-9.])${ampStr}`); // "20A" must not match "120A"
+          foundLibItem = library.find(lib => lib.category === "Breakers" &&
+            !!lib.rating && ampRe.test(lib.rating) &&
+            lib.rating.includes(poleStr)
           );
         }
       } else if (item.category === "Boxes") {
@@ -331,13 +331,13 @@ export default function BomModule({
         const matchedKw = keywords.find(kw => item.name.toLowerCase().includes(kw));
         if (matchedKw) {
           if (matchedKw === "connector" || matchedKw === "coupling" || matchedKw === "lug") {
-            const sizeMatch = item.name.match(/\d+\s*(mm²|mm)/);
+            const sizeMatch = item.name.match(/\d+(\.\d+)?\s*(mm²|mm)/); // "3.5 mm²", not "5 mm²"
             if (sizeMatch) {
               const sizeStr = sizeMatch[0].replace(/\s+/g, "");
-              foundLibItem = library.find(lib => 
-                lib.category === "Accessories" && 
+              const sizeRe = new RegExp(`(^|[^0-9.])${sizeStr.replace(".", "\\.")}`);
+              foundLibItem = library.find(lib => lib.category === "Accessories" &&
                 lib.name.toLowerCase().includes(matchedKw) &&
-                lib.name.replace(/\s+/g, "").toLowerCase().includes(sizeStr)
+                sizeRe.test(lib.name.replace(/\s+/g, "").toLowerCase())
               );
             }
           }
