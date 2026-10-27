@@ -16,6 +16,115 @@ import { PanelConfig, Circuit } from "../types";
 import { computePanelScheduleValues } from "./computeEngine";
 
 // ==========================================
+// 1b. ADDITIONAL PV MODULE MODELS & WATTAGES
+// ==========================================
+// Cell technology sets the temperature coefficients: TOPCon (N), PERC (P), heterojunction (H), back-contact (B)
+const MODULE_TECH_COEFFS = {
+  N: { tempCoeffVoc: -0.25, tempCoeffIsc: 0.045, tempCoeffPmax: -0.29 },
+  P: { tempCoeffVoc: -0.27, tempCoeffIsc: 0.048, tempCoeffPmax: -0.35 },
+  H: { tempCoeffVoc: -0.24, tempCoeffIsc: 0.04, tempCoeffPmax: -0.24 },
+  B: { tempCoeffVoc: -0.24, tempCoeffIsc: 0.05, tempCoeffPmax: -0.26 },
+} as const;
+
+// [id, manufacturer, model, Wp, Voc, Vmp, Isc, max system V, tech, length mm, width mm, thickness mm, weight kg]
+type ModuleRow = [string, string, string, number, number, number, number, number, keyof typeof MODULE_TECH_COEFFS, number, number, number, number];
+
+const MORE_PV_MODULE_ROWS: ModuleRow[] = [
+  // ---------- Jinko Solar ----------
+  ["jinko-tiger-neo-430-res", "Jinko Solar", "Tiger Neo N-type 54HL4R-(V) 430W (Residential)", 430, 38.97, 32.42, 13.85, 1500, "N", 1722, 1134, 30, 21.3],
+  ["jinko-tiger-neo-450-res", "Jinko Solar", "Tiger Neo N-type 54HL4R-B 450W All-Black (Residential)", 450, 39.62, 33.06, 14.12, 1500, "N", 1762, 1134, 30, 21.5],
+  ["jinko-tiger-neo-560", "Jinko Solar", "Tiger Neo N-type 72HL4-(V) 560W", 560, 50.67, 41.95, 14.11, 1500, "N", 2278, 1134, 30, 28.0],
+  ["jinko-tiger-neo-570", "Jinko Solar", "Tiger Neo N-type 72HL4-(V) 570W", 570, 50.87, 42.24, 14.26, 1500, "N", 2278, 1134, 30, 28.0],
+  ["jinko-tiger-neo-580", "Jinko Solar", "Tiger Neo N-type 72HL4-(V) 580W", 580, 51.17, 42.64, 14.38, 1500, "N", 2278, 1134, 30, 28.0],
+  ["jinko-tiger-neo-610", "Jinko Solar", "Tiger Neo N-type 78HL4-(V) 610W", 610, 55.14, 45.86, 14.08, 1500, "N", 2465, 1134, 35, 30.6],
+  ["jinko-tiger-neo-630", "Jinko Solar", "Tiger Neo N-type 78HL4-(V) 630W", 630, 55.86, 46.83, 14.29, 1500, "N", 2465, 1134, 35, 30.6],
+  ["jinko-tiger-neo3-620", "Jinko Solar", "Tiger Neo 3.0 72HL5-BDV 620W Bifacial", 620, 53.6, 44.66, 14.65, 1500, "N", 2382, 1134, 30, 28.5],
+  ["jinko-tiger-neo3-640", "Jinko Solar", "Tiger Neo 3.0 72HL5-BDV 640W Bifacial", 640, 54.2, 45.26, 14.93, 1500, "N", 2382, 1134, 30, 28.5],
+
+  // ---------- LONGi ----------
+  ["longi-himo4m-375-res", "Longi Solar", "Hi-MO 4m LR4-60HPH 375W Mono-PERC (Residential)", 375, 41.1, 34.5, 11.6, 1500, "P", 1755, 1038, 35, 19.5],
+  ["longi-himo5m-415-res", "Longi Solar", "Hi-MO 5m LR5-54HPH 415W Mono-PERC (Residential)", 415, 37.43, 31.42, 14.03, 1500, "P", 1722, 1134, 30, 21.6],
+  ["longi-himox6-425-res", "Longi Solar", "Hi-MO X6 Explorer LR5-54HTH 425W (Residential)", 425, 39.13, 32.64, 13.93, 1500, "B", 1722, 1134, 30, 21.6],
+  ["longi-himox6-440-res", "Longi Solar", "Hi-MO X6 Explorer LR5-54HTH 440W (Residential)", 440, 39.73, 33.24, 14.13, 1500, "B", 1722, 1134, 30, 21.6],
+  ["longi-himo6-570", "Longi Solar", "Hi-MO 6 Explorer LR5-72HTH 570W", 570, 51.66, 43.66, 14.04, 1500, "B", 2278, 1134, 30, 27.5],
+  ["longi-himo6-580", "Longi Solar", "Hi-MO 6 Explorer LR5-72HTH 580W", 580, 51.86, 43.86, 14.22, 1500, "B", 2278, 1134, 30, 27.5],
+  ["longi-himo7-580", "Longi Solar", "Hi-MO 7 LR7-72HGD 580W Bifacial", 580, 50.96, 42.83, 14.47, 1500, "N", 2382, 1134, 30, 32.5],
+  ["longi-himo7-620", "Longi Solar", "Hi-MO 7 LR7-72HGD 620W Bifacial", 620, 52.16, 44.03, 15.06, 1500, "N", 2382, 1134, 30, 32.5],
+  ["longi-himo9-640", "Longi Solar", "Hi-MO 9 LR7-72HYD 640W HPBC 2.0 Bifacial", 640, 53.3, 44.9, 15.1, 1500, "B", 2382, 1134, 30, 32.5],
+  ["longi-himo9-660", "Longi Solar", "Hi-MO 9 LR7-72HYD 660W HPBC 2.0 Bifacial", 660, 53.75, 45.35, 15.41, 1500, "B", 2382, 1134, 30, 32.5],
+
+  // ---------- Trina Solar ----------
+  ["trina-vertex-s-430", "Trina Solar", "Vertex S+ TSM-NEG9R.28 430W (Residential)", 430, 51.8, 43.6, 10.49, 1500, "N", 1762, 1134, 30, 21.0],
+  ["trina-vertex-s-455", "Trina Solar", "Vertex S+ TSM-NEG9RC.27 455W All-Black (Residential)", 455, 53.1, 44.8, 10.82, 1500, "N", 1762, 1134, 30, 21.0],
+  ["trina-vertex-n-595", "Trina Solar", "Vertex N TSM-NEG19RC.20 595W", 595, 47.5, 39.7, 15.85, 1500, "N", 2382, 1134, 30, 33.7],
+  ["trina-vertex-n-620", "Trina Solar", "Vertex N TSM-NEG19RC.20 620W", 620, 48.3, 40.5, 16.15, 1500, "N", 2382, 1134, 30, 33.7],
+  ["trina-vertex-n-690", "Trina Solar", "Vertex N TSM-NEG21C.20 690W Bifacial", 690, 47.6, 40.2, 18.33, 1500, "N", 2384, 1303, 33, 38.3],
+  ["trina-vertex-n-720", "Trina Solar", "Vertex N TSM-NEG21C.20 720W Bifacial", 720, 48.6, 41.0, 18.7, 1500, "N", 2384, 1303, 33, 38.3],
+
+  // ---------- Canadian Solar ----------
+  ["canadian-solar-hiku6-410-res", "Canadian Solar", "HiKu6 CS6R-410MS 410W Mono-PERC (Residential)", 410, 37.4, 31.2, 13.85, 1500, "P", 1722, 1134, 30, 21.3],
+  ["canadian-solar-tophiku6-430-res", "Canadian Solar", "TOPHiKu6 CS6R-430T 430W (Residential)", 430, 39.0, 32.4, 13.95, 1500, "N", 1722, 1134, 30, 21.3],
+  ["canadian-solar-tophiku6-590", "Canadian Solar", "TOPHiKu6 CS6W-590T 590W TOPCon", 590, 52.4, 43.9, 14.28, 1500, "N", 2278, 1134, 30, 27.8],
+  ["canadian-solar-topbihiku7-650", "Canadian Solar", "TOPBiHiKu7 CS7N-650TB-AG 650W Bifacial", 650, 44.8, 37.9, 18.39, 1500, "N", 2384, 1303, 33, 37.9],
+  ["canadian-solar-topbihiku7-700", "Canadian Solar", "TOPBiHiKu7 CS7N-700TB-AG 700W Bifacial", 700, 46.6, 39.1, 18.88, 1500, "N", 2384, 1303, 33, 37.9],
+
+  // ---------- JA Solar ----------
+  ["ja-solar-deepblue4-430-res", "JA Solar", "DeepBlue 4.0 Pro JAM54D41-430/LB 430W (Residential)", 430, 38.85, 32.37, 13.92, 1500, "N", 1762, 1134, 30, 21.5],
+  ["ja-solar-deepblue4-450-res", "JA Solar", "DeepBlue 4.0 Pro JAM54D41-450/LB 450W (Residential)", 450, 39.55, 33.07, 14.36, 1500, "N", 1762, 1134, 30, 21.5],
+  ["ja-solar-deepblue4-580", "JA Solar", "DeepBlue 4.0 Pro JAM72D40-580/MB 580W", 580, 51.65, 43.04, 14.27, 1500, "N", 2333, 1134, 30, 32.0],
+  ["ja-solar-deepblue4-600", "JA Solar", "DeepBlue 4.0 Pro JAM72D40-600/MB 600W", 600, 52.35, 43.74, 14.53, 1500, "N", 2333, 1134, 30, 32.0],
+  ["ja-solar-deepblue5-620", "JA Solar", "DeepBlue 5.0 JAM66D45-620/LB 620W Bifacial", 620, 46.5, 39.0, 16.84, 1500, "N", 2382, 1134, 30, 33.1],
+
+  // ---------- Risen Energy ----------
+  ["risen-titan-s-650", "Risen Energy", "Titan S RSM132-8-650BMDG 650W Bifacial", 650, 45.6, 38.3, 18.15, 1500, "P", 2384, 1303, 35, 38.7],
+  ["risen-hyperion-hjt-720", "Risen Energy", "Hyper-ion HJT RSM132-8-720BHDG 720W", 720, 50.06, 42.3, 18.08, 1500, "H", 2384, 1303, 35, 38.3],
+
+  // ---------- Tongwei Solar ----------
+  ["tw-solar-twmnd-430-res", "Tongwei Solar", "TWMND-54HS430 430W TOPCon (Residential)", 430, 39.1, 32.6, 13.88, 1500, "N", 1722, 1134, 30, 21.5],
+  ["tw-solar-twmnf-700", "Tongwei Solar", "TWMNF-66HD700 700W G12 TOPCon Bifacial", 700, 47.9, 40.1, 18.45, 1500, "N", 2384, 1303, 33, 38.0],
+
+  // ---------- Astronergy ----------
+  ["astronergy-astro-n7-440-res", "Astronergy", "ASTRO N7 CHSM54N(DG)/F-HC 440W (Residential)", 440, 39.3, 32.9, 14.1, 1500, "N", 1762, 1134, 30, 21.5],
+  ["astronergy-astro-n5-590", "Astronergy", "ASTRO N5 CHSM72N(DG)/F-BH 590W TOPCon", 590, 52.0, 43.4, 14.39, 1500, "N", 2278, 1134, 30, 32.0],
+
+  // ---------- Hanwha Qcells ----------
+  ["qcells-qtron-430-res", "Hanwha Qcells", "Q.TRON BLK M-G2+ 430W (Residential)", 430, 38.9, 32.6, 13.9, 1000, "N", 1722, 1134, 30, 21.1],
+
+  // ---------- REC Solar ----------
+  ["rec-alpha-pure-r-410-res", "REC Solar", "Alpha Pure-R REC410AA 410W HJT", 410, 58.8, 49.9, 8.75, 1000, "H", 1730, 1118, 30, 20.5],
+
+  // ---------- AIKO ----------
+  ["aiko-neostar-2p-460-res", "AIKO", "Neostar 2P ABC AIKO-A460-MAH54Mw 460W (Residential)", 460, 41.3, 34.6, 14.08, 1500, "B", 1762, 1134, 30, 21.0],
+  ["aiko-comet-2u-640", "AIKO", "Comet 2U ABC AIKO-A640-MCE72Mw 640W", 640, 54.1, 45.6, 14.9, 1500, "B", 2382, 1134, 30, 28.6],
+
+  // ---------- Huasun ----------
+  ["huasun-himalaya-720", "Huasun", "Himalaya G12 HS-210-B132DS 720W HJT Bifacial", 720, 49.9, 41.9, 18.25, 1500, "H", 2384, 1303, 35, 38.5],
+
+  // ---------- DAS Solar ----------
+  ["das-solar-dh144na-580", "DAS Solar", "DAS-DH144NA 580W TOPCon Bifacial", 580, 51.6, 43.0, 14.27, 1500, "N", 2278, 1134, 30, 32.0],
+];
+
+const MORE_PV_MODULES: PVModule[] = MORE_PV_MODULE_ROWS.map(
+  ([id, manufacturer, model, wp, voc, vmp, isc, sysV, tech, lengthMm, widthMm, thicknessMm, weightKg]) => ({
+    id,
+    manufacturer,
+    model,
+    ratedPowerWp: wp,
+    voc,
+    vmp,
+    isc,
+    imp: Math.round((wp / vmp) * 100) / 100,
+    maxSystemVoltage: sysV,
+    efficiencyPercent: Math.round((wp / ((lengthMm * widthMm) / 1e6) / 10) * 100) / 100,
+    ...MODULE_TECH_COEFFS[tech],
+    lengthMm,
+    widthMm,
+    thicknessMm,
+    weightKg,
+  })
+);
+
+// ==========================================
 // 1. STANDARD PV MODULE LIBRARY (TIER 1)
 // ==========================================
 export const DEFAULT_PV_MODULES: PVModule[] = [
@@ -728,6 +837,7 @@ export const DEFAULT_PV_MODULES: PVModule[] = [
     thicknessMm: 30,
     weightKg: 27.5,
   },
+  ...MORE_PV_MODULES,
 ];
 
 // ==========================================
