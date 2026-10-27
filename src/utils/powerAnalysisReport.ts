@@ -197,7 +197,7 @@ export function buildReportTables(meta: ReportMeta, r: PowerAnalysisResult, sel:
     key: "summary", title: "2. Executive Summary", kv: true, head: ["Item", "Result"], statusCol: 1,
     rows: [
       ["Overall result", `${ST[overall]}: ${r.counts.fail} fail, ${r.counts.warning} warning finding${r.counts.warning === 1 ? "" : "s"}`],
-      ["Transformer loading", `${n(s.loadingPct, 1)}% of ${s.kva} kVA (limit ${n(s.loadingLimitPct, 0)}%)`],
+      ["Transformer loading", `${n(s.loadingPct, 1)}% of ${s.kva} kVA: ${n(s.demandKva)} kVA max demand (limit ${n(s.loadingLimitPct, 0)}%)`],
       ["Main bus fault (with motors)", `${n(mdp.iSym)} kA sym, ${n(mdp.iPeak)} kA peak, X/R ${n(mdp.xr, 1)}`],
       ["Highest interrupting duty", `${n(maxDuty, 0)}% of the lowest-rated device`],
       ["Highest cumulative voltage drop", `${n(maxVd)}% (limit 5% incl. branch circuits)`],
@@ -214,13 +214,16 @@ export function buildReportTables(meta: ReportMeta, r: PowerAnalysisResult, sel:
       ["Utility impedance (secondary)", `${n(s.zUtility.r * 1000, 3)} + j${n(s.zUtility.x * 1000, 3)} mΩ`],
       ["Transformer impedance (secondary)", `${n(s.zTransformer.r * 1000, 3)} + j${n(s.zTransformer.x * 1000, 3)} mΩ`],
       ["Bolted fault at secondary terminals", `${n(s.terminalFaultKA)} kA (X/R ${n(s.terminalXr, 1)})`],
-      ["Demand on transformer", `${n(mdp.kva)} kVA (${n(s.loadingPct, 1)}%): ${ST[s.loadingStatus]}`],
+      ["Connected load / demand factor", `${n(s.connectedKva)} kVA × ${n(s.demandFactor)} (${s.demandFactorSource})`],
+      ["Maximum demand on transformer", `${n(s.demandKva)} kVA (${n(s.loadingPct, 1)}%): ${ST[s.loadingStatus]}`],
     ],
   });
   t.push({
     key: "loadflow", title: "4. Load Flow Summary", statusCol: 10,
-    note: `Basis: ${r.basis === "demand" ? "demand" : "connected"} load at power factor ${r.powerFactor.toFixed(2)}. Current = highest line current. Breaker loading limit 80% for continuous load (PEC 2.10.2).`,
-    head: ["Panel", "System", "Connected kVA", "Demand kVA", "kW", "kVAR", "Current A", "Sched. design A", "Breaker AT", "Breaker load %", "Status"],
+    note: r.basis === "demand"
+      ? `Basis: Load Schedule demand at power factor ${r.powerFactor.toFixed(2)}. Max demand current = the Load Schedule's design current (125% of the continuous demand), so a breaker may carry 100% of its rating (PEC 2.10.2).`
+      : `Basis: connected load at power factor ${r.powerFactor.toFixed(2)}. Current = highest line current; breaker loading limit 80% for continuous load (PEC 2.10.2).`,
+    head: ["Panel", "System", "Connected kVA", "Demand kVA", "kW", "kVAR", r.basis === "demand" ? "Max demand A" : "Line current A", "Continuous A", "Breaker AT", "Breaker load %", "Status"],
     rows: r.buses.map((b) => [
       `${"  ".repeat(b.level - 1)}${b.name}`, `${b.nominalV} V ${b.is3Phase ? "3Φ" : "1Φ"}`, n(b.connectedVA / 1000), n(b.demandVA / 1000), n(b.kw), n(b.kvar),
       n(b.current, 1), n(b.demandCurrent, 1), b.feeder.breakerAT || "-", n(b.breakerLoadingPct, 1), ST[b.loadStatus],
@@ -228,12 +231,12 @@ export function buildReportTables(meta: ReportMeta, r: PowerAnalysisResult, sel:
   });
   t.push({
     key: "vd", title: "5. Feeders and Voltage Drop", statusCol: 10,
-    note: "VD = k·I·L·(R cosφ + X sinφ) / sets (PEC 2017 Ch. 9 Table 9). Limits: feeder 3%, feeders plus branch circuit 5% (PEC 2.15.2 FPN No. 2). n/a: feeder length not set, not evaluated. * cumulative value excludes feeders without a length.",
+    note: "Voltage drop as in the Voltage Drop section: VD = k·L·I·R / 1000 with R from PEC 2017 Ch. 9 Table 9 corrected for temperature, sets and conduit; I = the feeder's Load Schedule design current. Limits: main feeder 3%, sub-feeders 5%, total 5% (PEC 2.15.2 FPN No. 2). n/a: no length in Voltage Drop, not evaluated. * cumulative value excludes feeders without a length.",
     head: ["Panel", "Feeder", "Length m", "Ampacity A", "Conductor load %", "VD V", "VD %", "Cumulative %", "Bus V", "Feeder source", "Status"],
     rows: r.buses.map((b) => {
-      const st: Status = b.vdCumulativePct > 5 || b.vdFeederPct > 3 || b.feederLoadingPct > 100
+      const st: Status = b.vdCumulativePct > 5 || b.vdFeederPct > b.vdLimitPct || b.feederLoadingPct > 100
         ? "fail"
-        : b.vdCumulativePct > 3 || b.vdFeederPct > 2.5 || b.feederLoadingPct > 80 ? "warning" : "pass";
+        : b.vdCumulativePct > 3 || b.vdFeederPct > b.vdLimitPct * 0.9 || b.feederLoadingPct > b.loadingWarnPct ? "warning" : "pass";
       return [
         b.name, b.feeder.label, b.feeder.lengthAssumed ? "not set" : b.feeder.lengthM, n(b.feeder.ampacityA, 0), n(b.feederLoadingPct, 1),
         b.vdEvaluated ? n(b.vdFeederV) : "n/a", b.vdEvaluated ? n(b.vdFeederPct) : "n/a", `${n(b.vdCumulativePct)}${b.vdComplete ? "" : "*"}`,

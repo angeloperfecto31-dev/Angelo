@@ -32,6 +32,7 @@ import {
   Gauge
 } from "lucide-react";
 import { computePanelScheduleValues } from "../utils/computeEngine";
+import { transformerDemand } from "../utils/transformerDemand";
 import { jsPDF } from "jspdf";
 import "../utils/pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
 import { pdfFitText } from "../utils/pdfLayout";
@@ -300,29 +301,10 @@ export default function TransformerCalc({
   const connectedLoadkW = connectedLoadKVA * powerFactor;
   const factor = is3Phase ? Math.sqrt(3) : 1;
 
-  // Auto-calculated PEC engineering baseline demand factor based on PEC Article 2.20 load schedules
-  const computedEngineDemandFactor = useMemo(() => {
-    if (connectedLoadVA <= 0) return 0.80;
-    const lightingReduction = Math.max(
-      0,
-      (panelValues.lightingReceptacleVA || 0) - (panelValues.lightingReceptacleDemand || 0)
-    );
-    const pecDemandVA = Math.max(0, connectedLoadVA - lightingReduction);
-    const rawRatio = pecDemandVA / connectedLoadVA;
-    // If PEC demand reductions are active and yield a factor < 1.0, use it; otherwise default to standard PEC 80% continuous/diversity rule
-    if (rawRatio < 0.999) {
-      return Number(Math.max(0.20, Math.min(1.00, rawRatio)).toFixed(2));
-    }
-    return 0.80;
-  }, [connectedLoadVA, panelValues.lightingReceptacleVA, panelValues.lightingReceptacleDemand]);
-
-  // Effective demand factor: Use user-adjusted value if valid (0.10 to 1.00), otherwise fallback to computed PEC engine value
-  const effectiveDemandFactor = useMemo(() => {
-    if (typeof demandFactor === "number" && demandFactor > 0 && demandFactor <= 1.0) {
-      return demandFactor;
-    }
-    return computedEngineDemandFactor;
-  }, [demandFactor, computedEngineDemandFactor]);
+  // Demand factor (user value, else PEC Article 2.20 reduction, else 0.80): shared with the Power Analysis Suite
+  const txDemand = useMemo(() => transformerDemand(panelValues, demandFactor), [panelValues, demandFactor]);
+  const computedEngineDemandFactor = txDemand.computedFactor;
+  const effectiveDemandFactor = txDemand.factor;
 
   // Actual Maximum Demand Load calculation:
   // S_demand (kVA) = S_connected (kVA) × Demand Factor
