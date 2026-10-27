@@ -24,7 +24,8 @@ import {
   type Cx, cadd as add, cscale as scale, cmag as mag, cpolar as polar, cx, UTILITY_XR, asymFactor, conductorImpedance, deviceTestXr,
   faultLevels, feederFaultImpedance, peakFactor, sourceImpedance, typicalTransformerXr,
 } from "./faultMath";
-import { computePanelScheduleValues, getActivePoles, isIdleSpareOrSpace, parseSystemVoltage } from "./computeEngine";
+import { calculateUnifiedVD, computePanelScheduleValues, getActivePoles, isIdleSpareOrSpace, parseSystemVoltage } from "./computeEngine";
+import { transformerDemand } from "./transformerDemand";
 import { getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
 import { serviceFaultStudy } from "./serviceFault";
 
@@ -97,6 +98,13 @@ export interface BusResult {
   busVoltage: number;
   /** Feeder voltage drop computed (length and size known) */
   vdEvaluated: boolean;
+  /** Breaker loading limit, %: 100 for the Load Schedule design current (125% included), 80 for connected load */
+  loadingLimitPct: number;
+  loadingWarnPct: number;
+  /** Voltage Drop section limit for this feeder, % */
+  vdLimitPct: number;
+  /** Current of the Voltage Drop section row, A */
+  vdCurrentA: number;
   /** Every feeder from the transformer to this bus has a voltage drop */
   vdComplete: boolean;
   loadStatus: Status;
@@ -155,6 +163,11 @@ export interface SourceResult {
   terminalLGKA: number;
   /** Source data not entered in the project (defaults of the Short Circuit module were used) */
   missing: string[];
+  /** Transformer section values: connected kVA × demand factor */
+  connectedKva: number;
+  demandFactor: number;
+  demandFactorSource: string;
+  demandKva: number;
   loadingPct: number;
   loadingStatus: Status;
   loadingLimitPct: number;
@@ -186,7 +199,7 @@ export interface SelectivityResult {
 
 export interface Finding {
   status: Status;
-  area: "Transformer" | "Load Flow" | "Voltage Drop" | "Phase Balance" | "Short Circuit" | "Conductor Withstand" | "Coordination" | "Missing Data";
+  area: "Transformer" | "Load Flow" | "Voltage Drop" | "Phase Balance" | "Short Circuit" | "Conductor Withstand" | "Coordination" | "Missing Data" | "Data Consistency";
   location: string;
   title: string;
   detail: string;
@@ -202,6 +215,8 @@ export interface PowerAnalysisInput {
   powerFactor?: number;
   /** Transformer loading limit as a fraction (e.g. 0.8) */
   transformerLoadingLimit?: number;
+  /** Transformer section demand factor (0 < DF <= 1); otherwise the PEC Art. 2.20 reduction or 0.80 */
+  transformerDemandFactor?: number;
   basis?: "demand" | "connected";
   /** Feeder length used when a feeder has no length in the project (m) */
   defaultFeederLengthM?: number;
@@ -318,8 +333,10 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   if (!iscParams.utilityShortCircuitMVA) missing.push("Utility short-circuit MVA not entered (500 MVA default of the Short Circuit module).");
   assumptions.push(
     `Utility source ${utilityMVA} MVA at X/R ${UTILITY_XR} (assumed; no utility X/R in the project); transformer ${kva} kVA${nPar > 1 ? ` × ${nPar} in parallel` : ""}, Z ${zPct}% at typical X/R ${txXr.toFixed(1)} (IEEE Std 141)${openDelta ? ", open-delta (Z / 0.866)" : ""}.`,
-    `Power factor ${pf.toFixed(2)} for all loads. Line currents are phasor sums of the circuits; load flow basis: ${basis === "demand" ? "demand (connected line currents × the Load Schedule demand factor)" : "connected load"}.`,
-    "Conductor R and X from PEC 2017 Chapter 9 Table 9 (75 °C, copper in PVC conduit; aluminium R × 1.64); short-circuit resistance corrected to 20 °C.",
+    `Power factor ${pf.toFixed(2)} for kW / kVAR. Load flow basis: ${basis === "demand" ? "demand: each panel's Load Schedule maximum demand current (125% of the continuous demand) and demand kVA" : "connected load: highest line current (phasor sum of the circuits)"}.`,
+    "Voltage drop per feeder is the Voltage Drop section's result for that feeder (same current, conductor, length and limit: main feeder 3%, sub-feeders 5%; cumulative 5%).",
+    "Transformer loading uses the Transformer section's maximum demand: connected kVA × demand factor.",
+    "Short-circuit conductor R and X from PEC 2017 Chapter 9 Table 9 (75 °C, aluminium R × 1.64), resistance corrected to 20 °C; the main feeder fault uses the Short Circuit section's service feeder.",
     "Faults by symmetrical components with Z2 = Z1; zero sequence: transformer (Dyn) plus phase and equal-size neutral return of each feeder.",
     "Motor fault contribution 4 × motor full-load current (motors and air-conditioning compressors at and below each panel).",
     "Feeders without a length in the project: fault current computed with zero feeder impedance (upper bound) and voltage drop not evaluated.",
@@ -371,7 +388,10 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
     const basisVA = basis === "demand" ? demandVA : connectedVA;
     // Highest line current (phasor sum of the circuits), scaled by the demand factor for the demand basis
     const maxLine = Math.max(ph.R, ph.Y, ph.B) || connectedVA / (bus3 ? Math.sqrt(3) * nominalV : nominalV);
-    const current = basis === "demand" && connectedVA > 0 ? maxLine * (demandVA / connectedVA) : maxLine;
+    // Demand basis: the Load Schedule's maximum demand current (the current the feeder and the Voltage Drop
+    // section use); connected basis: the highest line current of the connected loads
+    const scheduleCurrent = sched.mainCurrent?.designAmp || 0;
+    const current = basis === "demand" && scheduleCurrent > 0 ? scheduleCurrent : maxLine;
     const kvaB = basisVA / 1000;
 
     // ---- feeder into this bus
@@ -379,12 +399,12 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
     const material = (n.panel.conductorMaterial || panel.conductorMaterial || iscParams.conductorType || "Copper") as "Copper" | "Aluminum";
     if (n.id === "mdp") {
       const mf = sched.mainFeeder;
-      const size = iscParams.isFeederSizeCustomized && iscParams.feederSize ? String(iscParams.feederSize) : String(mf?.wire?.size ?? iscParams.feederSize ?? "38");
-      const sets = iscParams.isFeederRunsCustomized && iscParams.feederRuns ? iscParams.feederRuns : mf?.wire?.runs || iscParams.feederRuns || 1;
+      const mainVd = vd.find((v) => v.source === "main");
+      const size = String(mainVd?.wireSize || mf?.wire?.size || iscParams.feederSize || "0");
+      const sets = Number(mainVd?.wireSets) || mf?.wire?.runs || 1;
       const ins = panel.insulationType || "THHN";
       const amp = getConductorAmpacity(Number(size), material, getTemperatureForInsulation(ins)) * sets;
-      const mainVd = vd.find((v) => v.source === "main");
-      const len = iscParams.feederLength || mainVd?.length || 0;
+      const len = mainVd?.length || 0;
       feeder = {
         label: `${sets > 1 ? `${sets} sets × ` : ""}${size} mm² ${ins} ${material === "Aluminum" ? "Al" : "Cu"}`,
         size, sets, material, insulation: ins,
@@ -392,15 +412,15 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
         ampacityA: amp || mf?.wire?.ampacity || 0,
         breakerAT: Number(mf?.cb) || panel.mainBreakerAT || 0,
         breakerAF: Number(mf?.af) || Number(panel.mainBreakerAF) || 0,
-        source: "Load Schedule main feeder; length from Short Circuit / Voltage Drop",
+        source: "Load Schedule main feeder; length from Voltage Drop (fault: Short Circuit service feeder)",
       };
     } else if (n.feederCircuit) {
       const c = n.feederCircuit;
-      const size = String(c.wireSizeOverride || c.wireSize || "");
-      const sets = c.wireSets || (c as any).calculatedWireSets || 1;
+      const vdRow = vd.find((v) => v.source === n.id) || vd.find((v) => v.source === c.id) || vd.find((v) => v.id === n.id);
+      const size = String(vdRow?.wireSize || c.wireSizeOverride || c.wireSize || "");
+      const sets = Number(vdRow?.wireSets) || c.wireSets || (c as any).calculatedWireSets || 1;
       const ins = c.wireTypeOverride || c.wireType || "THHN";
       const amp = size ? getConductorAmpacity(Number(size), material, getTemperatureForInsulation(ins)) * sets : 0;
-      const vdRow = vd.find((v) => v.source === n.id) || vd.find((v) => v.source === c.id) || vd.find((v) => v.id === n.id);
       const len = vdRow?.length || 0;
       feeder = {
         label: size ? `${sets > 1 ? `${sets} sets × ` : ""}${size} mm² ${ins} ${material === "Aluminum" ? "Al" : "Cu"}` : "Conductor size not set",
@@ -425,13 +445,18 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
       feeder.breakerKaic = parseFloat(panel.icRating) || Number(sched.mainFeeder?.kaic) || 0;
     }
 
-    // ---- voltage drop (75 °C table values); not evaluated without a length
+    // ---- voltage drop: the Voltage Drop section's own result for this feeder (calculateUnifiedVD, same row,
+    // current, conductor and limit); not evaluated without a row or a length
     const sizeKnown = Number(feeder.size) > 0;
-    const zc = sizeKnown ? conductorImpedance(feeder.size, feeder.material) : cx(0, 0);
-    const k = bus3 ? Math.sqrt(3) : 2;
-    const vdEvaluated = !feeder.lengthAssumed && sizeKnown;
-    const vdFeederV = vdEvaluated ? (k * current * (feeder.lengthM / 1000) * (zc.r * pf + zc.x * sinPhi)) / feeder.sets : 0;
-    const vdFeederPct = nominalV > 0 ? (vdFeederV / nominalV) * 100 : 0;
+    const vdRow = n.id === "mdp"
+      ? vd.find((v) => v.source === "main")
+      : vd.find((v) => v.source === n.id) || (n.feederCircuit ? vd.find((v) => v.source === n.feederCircuit!.id) : undefined) || vd.find((v) => v.id === n.id);
+    const vdRes = vdRow && Number(vdRow.length) > 0 && sizeKnown ? calculateUnifiedVD(vdRow, panel, subPanels, circuits) : null;
+    const vdEvaluated = !!vdRes;
+    const vdFeederV = vdRes ? vdRes.vd : 0;
+    const vdFeederPct = vdRes ? vdRes.vdPercentage : 0;
+    const vdLimitPct = vdRes ? vdRes.limit : 3;
+    const vdCurrentA = vdRow ? Number(vdRow.loadA) || 0 : 0;
     const parent = n.parentId ? byId[n.parentId] : undefined;
     const vdCumulativePct = (parent?.vdCumulativePct || 0) + vdFeederPct;
     const vdComplete = vdEvaluated && (parent ? parent.vdComplete : true);
@@ -440,12 +465,22 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
     const breakerLoadingPct = feeder.breakerAT > 0 ? (current / feeder.breakerAT) * 100 : 0;
 
     const loadNotes: string[] = [];
-    const sFeeder: Status = !vdEvaluated ? "warning" : vdFeederPct > 3 ? "fail" : vdFeederPct > 2.5 ? "warning" : "pass";
+    const sFeeder: Status = !vdRes ? "warning" : !vdRes.isCompliant ? "fail" : vdRes.isWarning ? "warning" : "pass";
     const sCum: Status = vdCumulativePct > 5 ? "fail" : vdCumulativePct > 3 ? "warning" : "pass";
-    const sAmp: Status = feederLoadingPct > 100 ? "fail" : feederLoadingPct > 80 ? "warning" : "pass";
-    const sBrk: Status = breakerLoadingPct > 100 ? "fail" : breakerLoadingPct > 80 ? "warning" : "pass";
+    // The Load Schedule design current already includes 125% for continuous load (PEC 2.10.2 / 3.10), so it
+    // may reach 100% of the rating; a connected-load current is held to 80%
+    const loadingLimitPct = basis === "demand" && scheduleCurrent > 0 ? 100 : 80;
+    const loadingWarnPct = loadingLimitPct === 100 ? 95 : 80;
+    const sAmp: Status = feederLoadingPct > 100 ? "fail" : feederLoadingPct > loadingWarnPct ? "warning" : "pass";
+    const sBrk: Status = breakerLoadingPct > loadingLimitPct ? "fail" : breakerLoadingPct > loadingWarnPct ? "warning" : "pass";
     const sUnb: Status = bus3 && ph.unbalancePct > 20 ? "fail" : bus3 && ph.unbalancePct > 10 ? "warning" : "pass";
-    if (feeder.lengthAssumed) loadNotes.push("Feeder length not set in the project: voltage drop not evaluated; fault current is the upper bound (zero feeder impedance).");
+    const faultFromService = n.id === "mdp" && iscParams.feederLength > 0;
+    if (feeder.lengthAssumed)
+      loadNotes.push(
+        faultFromService
+          ? "Feeder length not set in Voltage Drop: voltage drop not evaluated (the fault uses the Short Circuit service feeder)."
+          : "Feeder length not set in the project: voltage drop not evaluated; fault current is the upper bound (zero feeder impedance).",
+      );
     if (!sizeKnown) loadNotes.push("Feeder conductor size not set.");
 
     // ---- short circuit (cumulative per-phase feeder impedance from the transformer)
@@ -454,7 +489,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
         ? serviceZ
         : sizeKnown && feeder.lengthM > 0 ? feederFaultImpedance(feeder.lengthM, feeder.size, feeder.sets, feeder.material) : cx(0, 0);
     const zPathFeeders = add(parent ? (parent as any)._zFeeders : cx(0, 0), zFeeder);
-    const upperBound = feeder.lengthAssumed || !sizeKnown || (parent ? parent.faultUpperBound : false);
+    const upperBound = n.id === "mdp" && iscParams.feederLength > 0 ? false : feeder.lengthAssumed || !sizeKnown || (parent ? parent.faultUpperBound : false);
     const fl = faultLevels(src, zPathFeeders, { groundReturn: is3 && mdpSys.wireCount >= 4 });
     const zPath = fl.z1;
     let i3ph: number;
@@ -518,7 +553,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
       id: n.id, name: n.name, parentId: n.parentId, level: levelOf(n.parentId) + 1, is3Phase: bus3, system: n.panel.system, nominalV,
       connectedVA, demandVA, basisVA, kva: kvaB, kw: kvaB * pf, kvar: kvaB * sinPhi, pf, current, demandCurrent,
       phaseCurrents: { R: ph.R, Y: ph.Y, B: ph.B }, neutralCurrent: ph.neutral, unbalancePct: bus3 ? ph.unbalancePct : 0,
-      feeder, feederLoadingPct, breakerLoadingPct, vdFeederV, vdFeederPct, vdCumulativePct, busVoltage, vdEvaluated, vdComplete,
+      feeder, feederLoadingPct, breakerLoadingPct, loadingLimitPct, loadingWarnPct, vdFeederV, vdFeederPct, vdLimitPct, vdCurrentA, vdCumulativePct, busVoltage, vdEvaluated, vdComplete,
       loadStatus: worst(sFeeder, sCum, sAmp, sBrk, sUnb), loadNotes,
       z1: zPath, zFeeder, xr, i3ph: i3ph / 1000, motorKA: motorA / 1000, iSym: iKA, iLL: iLL / 1000, iLG: iLG / 1000,
       iLLG: fl.iLLG / 1000, iLLGEarth: fl.iLLGEarth / 1000, faultUpperBound: upperBound,
@@ -535,16 +570,34 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   const mdp = byId.mdp;
   const loadLimit = (input.transformerLoadingLimit ?? 0.8) * 100;
   const capacityKva = src.kva;
-  const loadingPct = capacityKva > 0 ? (mdp.kva / capacityKva) * 100 : 0;
+  const txD = transformerDemand(computePanelScheduleValues(panel, circuits, { availableSubPanels: subPanels }), input.transformerDemandFactor);
+  const loadingPct = capacityKva > 0 ? (txD.demandKva / capacityKva) * 100 : 0;
   const source: SourceResult = {
     utilityMVA, utilityXr: UTILITY_XR, primaryV: priV, secondaryV: secV, is3Phase: is3, kva: capacityKva, zPct, txXr,
     ratedSecondaryA, ratedPrimaryA, zUtility, zTransformer: zT,
     terminalFaultKA: terminal.i3ph / 1000, terminalXr: terminal.xr, terminalLGKA: terminal.iLG / 1000, missing,
+    connectedKva: txD.connectedKva, demandFactor: txD.factor, demandFactorSource: txD.factorSource, demandKva: txD.demandKva,
     loadingPct, loadingLimitPct: loadLimit,
     loadingStatus: loadingPct > 100 ? "fail" : loadingPct > loadLimit ? "warning" : "pass",
   };
 
   const findings = buildFindings(source, buses);
+  // The service feeder is entered twice: Load Schedule / Voltage Drop (load flow) and Short Circuit (fault)
+  const mf = mdp.feeder;
+  const scSize = String(iscParams.feederSize || "");
+  const scSets = iscParams.feederRuns || 1;
+  const scLen = iscParams.feederLength || 0;
+  const diffs: string[] = [];
+  if (scSize && Number(mf.size) > 0 && (Number(scSize) !== Number(mf.size) || scSets !== mf.sets))
+    diffs.push(`conductor ${scSets > 1 ? `${scSets} × ` : ""}${scSize} mm² in Short Circuit vs ${mf.sets > 1 ? `${mf.sets} × ` : ""}${mf.size} mm² in the Load Schedule`);
+  if (scLen > 0 && mf.lengthM > 0 && Math.abs(scLen - mf.lengthM) > 0.5) diffs.push(`length ${scLen} m in Short Circuit vs ${mf.lengthM} m in Voltage Drop`);
+  if (diffs.length)
+    findings.push({
+      status: "warning", area: "Data Consistency", location: `${mdp.name} service feeder`,
+      title: "Service feeder differs between sections",
+      detail: `The fault levels use the Short Circuit feeder; the load flow and voltage drop use the Load Schedule / Voltage Drop feeder: ${diffs.join("; ")}.`,
+      action: "Make the Short Circuit service feeder match the installed main feeder (or update the Load Schedule / Voltage Drop length).",
+    });
   const counts: Record<Status, number> = { pass: 0, warning: 0, fail: 0 };
   findings.forEach((f) => counts[f.status]++);
   buses.forEach((b) => delete (b as any)._zFeeders);
@@ -567,27 +620,29 @@ function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
   }
   for (const b of buses) {
     const loc = b.name;
-    if (b.feederLoadingPct > 80) {
+    if (b.feederLoadingPct > b.loadingWarnPct) {
       f.push({
         status: b.feederLoadingPct > 100 ? "fail" : "warning", area: "Load Flow", location: loc,
-        title: b.feederLoadingPct > 100 ? "Feeder conductor overloaded" : "Feeder conductor above 80% of ampacity",
+        title: b.feederLoadingPct > 100 ? "Feeder conductor overloaded" : `Feeder conductor above ${b.loadingWarnPct}% of ampacity`,
         detail: `${b.current.toFixed(1)} A on ${b.feeder.label} rated ${b.feeder.ampacityA.toFixed(0)} A (${b.feederLoadingPct.toFixed(0)}%).`,
         action: "Upsize the feeder or add a parallel set.",
       });
     }
-    if (b.breakerLoadingPct > 80) {
+    if (b.breakerLoadingPct > b.loadingWarnPct) {
       f.push({
-        status: b.breakerLoadingPct > 100 ? "fail" : "warning", area: "Load Flow", location: loc,
-        title: b.breakerLoadingPct > 100 ? "Feeder breaker overloaded" : "Feeder breaker above 80% (continuous load)",
-        detail: `${b.current.toFixed(1)} A through a ${b.feeder.breakerAT} AT breaker (${b.breakerLoadingPct.toFixed(0)}%). PEC 2.10.2: continuous load ≤ 80% of the rating.`,
+        status: b.breakerLoadingPct > b.loadingLimitPct ? "fail" : "warning", area: "Load Flow", location: loc,
+        title: b.breakerLoadingPct > b.loadingLimitPct ? "Feeder breaker undersized" : "Feeder breaker close to its limit",
+        detail: b.loadingLimitPct === 100
+          ? `Load Schedule design current ${b.current.toFixed(1)} A (125% of the continuous demand) through a ${b.feeder.breakerAT} AT breaker (${b.breakerLoadingPct.toFixed(0)}%). PEC 2.10.2: rating at least 125% of the continuous load.`
+          : `${b.current.toFixed(1)} A through a ${b.feeder.breakerAT} AT breaker (${b.breakerLoadingPct.toFixed(0)}%). PEC 2.10.2: continuous load ≤ 80% of the rating.`,
         action: "Use the next breaker rating (with a matching conductor).",
       });
     }
-    if (b.vdEvaluated && b.vdFeederPct > 2.5) {
+    if (b.vdEvaluated && b.vdFeederPct > b.vdLimitPct * 0.9) {
       f.push({
-        status: b.vdFeederPct > 3 ? "fail" : "warning", area: "Voltage Drop", location: loc,
-        title: b.vdFeederPct > 3 ? "Feeder voltage drop above 3%" : "Feeder voltage drop near 3%",
-        detail: `${b.vdFeederV.toFixed(2)} V (${b.vdFeederPct.toFixed(2)}%) over ${b.feeder.lengthM} m of ${b.feeder.label}${b.feeder.lengthAssumed ? " (length assumed)" : ""}.`,
+        status: b.vdFeederPct > b.vdLimitPct ? "fail" : "warning", area: "Voltage Drop", location: loc,
+        title: b.vdFeederPct > b.vdLimitPct ? `Feeder voltage drop above ${b.vdLimitPct}%` : `Feeder voltage drop near ${b.vdLimitPct}%`,
+        detail: `${b.vdFeederV.toFixed(2)} V (${b.vdFeederPct.toFixed(2)}%) over ${b.feeder.lengthM} m of ${b.feeder.label} at ${b.vdCurrentA.toFixed(1)} A, as in the Voltage Drop section.`,
         action: "Increase the conductor size or the number of sets (PEC 2.15.2 FPN No. 2).",
       });
     }
@@ -635,8 +690,10 @@ function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
       f.push({
         status: "warning", area: "Missing Data", location: loc,
         title: !(Number(b.feeder.size) > 0) ? "Feeder conductor size not set" : "Feeder length not set",
-        detail: `${b.feeder.label}: voltage drop not evaluated; fault currents at this panel and below are upper bounds (feeder impedance taken as zero).`,
-        action: b.id === "mdp" ? "Enter the main feeder length in Short Circuit or Voltage Drop." : "Add this feeder to the Voltage Drop module with its length.",
+        detail: b.faultUpperBound
+          ? `${b.feeder.label}: voltage drop not evaluated; fault currents at this panel and below are upper bounds (feeder impedance taken as zero).`
+          : `${b.feeder.label}: voltage drop not evaluated (fault levels use the Short Circuit service feeder).`,
+        action: b.id === "mdp" ? "Enter the main feeder length in the Voltage Drop section." : "Add this feeder to the Voltage Drop module with its length.",
       });
     }
     if (b.withstand.status !== "pass" && Number.isFinite(b.withstand.maxTimeS)) {

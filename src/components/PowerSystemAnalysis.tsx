@@ -54,7 +54,7 @@ function Metric({ label, value, sub, s }: { label: string; value: string; sub?: 
 
 export default function PowerSystemAnalysis({
   panel, circuits, subPanels, iscParams, vdCalculations, isPremium, onRequestUpgrade,
-  transformerPrimaryVoltage, transformerPowerFactor, transformerLoadingFactor, user,
+  transformerPrimaryVoltage, transformerPowerFactor, transformerDemandFactor, transformerLoadingFactor, user,
 }: PowerSystemAnalysisProps) {
   const [tab, setTab] = useState<Tab>("overview");
   const [basis, setBasis] = useState<"demand" | "connected">("demand");
@@ -66,8 +66,9 @@ export default function PowerSystemAnalysis({
     iscParams: { ...iscParams, primaryVoltage: transformerPrimaryVoltage || iscParams.primaryVoltage },
     powerFactor: transformerPowerFactor ?? 0.85,
     transformerLoadingLimit: transformerLoadingFactor ?? 0.8,
+    transformerDemandFactor,
     basis,
-  }), [panel, circuits, subPanels, vdCalculations, iscParams, transformerPrimaryVoltage, transformerPowerFactor, transformerLoadingFactor, basis]);
+  }), [panel, circuits, subPanels, vdCalculations, iscParams, transformerPrimaryVoltage, transformerPowerFactor, transformerDemandFactor, transformerLoadingFactor, basis]);
   const result = useMemo(() => analysePowerSystem(input), [input]);
   const bus: BusResult = result.byId[selectedBus] || result.byId.mdp;
 
@@ -198,7 +199,7 @@ export default function PowerSystemAnalysis({
       {tab === "overview" && (
         <div className="flex flex-col gap-5">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Metric label="Transformer loading" value={`${fx(src.loadingPct, 1)}%`} sub={`${fx(mdp.kva)} kVA of ${src.kva} kVA (limit ${fx(src.loadingLimitPct, 0)}%)`} s={src.loadingStatus} />
+            <Metric label="Transformer loading" value={`${fx(src.loadingPct, 1)}%`} sub={`${fx(src.demandKva)} kVA (${fx(src.connectedKva)} kVA × DF ${fx(src.demandFactor)}) of ${src.kva} kVA, limit ${fx(src.loadingLimitPct, 0)}%`} s={src.loadingStatus} />
             <Metric label="Main bus fault" value={`${fx(mdp.iSym)} kA`} sub={`peak ${fx(mdp.iPeak)} kA · X/R ${fx(mdp.xr, 1)}`} s={mdp.faultStatus} />
             <Metric label="Highest duty" value={`${fx(Math.max(...result.buses.map((b) => b.adjustedDutyPct)), 0)}%`} sub="of the lowest-rated device (X/R adjusted)" s={worstOf(result.buses.map((b) => b.faultStatus))} />
             <Metric label="Highest voltage drop" value={`${fx(Math.max(...result.buses.map((b) => b.vdCumulativePct)))}%`} sub="cumulative feeders (limit 5% incl. branch)" s={pctStatus(Math.max(...result.buses.map((b) => b.vdCumulativePct)), 3, 5)} />
@@ -226,7 +227,7 @@ export default function PowerSystemAnalysis({
                     <td className="p-2.5 font-bold text-white" style={{ paddingLeft: 10 + (b.level - 1) * 16 }}>{b.name}</td>
                     <td className="p-2.5 text-right font-mono">{fx(b.demandVA / 1000)}</td>
                     <td className="p-2.5 text-right font-mono">{fx(b.current, 1)}</td>
-                    <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.breakerLoadingPct, 80, 100))}`}>{b.feeder.breakerAT ? `${fx(b.breakerLoadingPct, 0)}%` : "-"}</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.breakerLoadingPct, b.loadingWarnPct, b.loadingLimitPct))}`}>{b.feeder.breakerAT ? `${fx(b.breakerLoadingPct, 0)}%` : "-"}</td>
                     <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.vdCumulativePct, 3, 5))}`}>{fx(b.vdCumulativePct)}%{b.vdComplete ? "" : "*"}</td>
                     <td className={`p-2.5 text-right font-mono ${valueClass(b.is3Phase ? pctStatus(b.unbalancePct, 10, 20) : "pass")}`}>{b.is3Phase ? `${fx(b.unbalancePct, 1)}%` : "1Φ"}</td>
                     <td className="p-2.5 text-right font-mono text-yellow-300">{fx(b.iSym)}</td>
@@ -393,7 +394,7 @@ export default function PowerSystemAnalysis({
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Metric label="Bus voltage" value={`${fx(bus.busVoltage, 1)} V`} sub={`cumulative drop ${fx(bus.vdCumulativePct)}%`} s={pctStatus(bus.vdCumulativePct, 3, 5)} />
-              <Metric label="Current" value={`${fx(bus.current, 1)} A`} sub={`Load Schedule design ${fx(bus.demandCurrent, 1)} A`} />
+              <Metric label={basis === "demand" ? "Max demand current" : "Highest line current"} value={`${fx(bus.current, 1)} A`} sub={basis === "demand" ? `Load Schedule (continuous ${fx(bus.demandCurrent, 1)} A × 1.25)` : "connected load, phasor sum"} />
               <Metric label="Power" value={`${fx(bus.kva)} kVA`} sub={`${fx(bus.kw)} kW · ${fx(bus.kvar)} kVAR`} />
               <Metric label="Connected" value={`${fx(bus.connectedVA / 1000)} kVA`} sub={`demand ${fx(bus.demandVA / 1000)} kVA`} />
             </div>
@@ -402,11 +403,11 @@ export default function PowerSystemAnalysis({
                 <span className="text-[10px] font-black uppercase text-slate-400 block">Feeder</span>
                 <Row k="Conductor" v={bus.feeder.label} />
                 <Row k="Length" v={bus.feeder.lengthAssumed ? "not set (add it in Voltage Drop)" : `${bus.feeder.lengthM} m`} warn={bus.feeder.lengthAssumed} />
-                <Row k="Ampacity / loading" v={`${fx(bus.feeder.ampacityA, 0)} A · ${fx(bus.feederLoadingPct, 1)}%`} s={pctStatus(bus.feederLoadingPct, 80, 100)} />
-                <Row k="Breaker / loading" v={bus.feeder.breakerAT ? `${bus.feeder.breakerAT} AT · ${fx(bus.breakerLoadingPct, 1)}%` : "-"} s={pctStatus(bus.breakerLoadingPct, 80, 100)} />
+                <Row k="Ampacity / loading" v={`${fx(bus.feeder.ampacityA, 0)} A · ${fx(bus.feederLoadingPct, 1)}%`} s={pctStatus(bus.feederLoadingPct, bus.loadingWarnPct, 100)} />
+                <Row k="Breaker / loading" v={bus.feeder.breakerAT ? `${bus.feeder.breakerAT} AT · ${fx(bus.breakerLoadingPct, 1)}%` : "-"} s={pctStatus(bus.breakerLoadingPct, bus.loadingWarnPct, bus.loadingLimitPct)} />
                 {bus.vdEvaluated
-                  ? <Row k="Voltage drop" v={`${fx(bus.vdFeederV)} V · ${fx(bus.vdFeederPct)}% (limit 3%)`} s={pctStatus(bus.vdFeederPct, 2.5, 3)} />
-                  : <Row k="Voltage drop" v="not evaluated (length not set)" warn />}
+                  ? <Row k="Voltage drop" v={`${fx(bus.vdFeederV)} V · ${fx(bus.vdFeederPct)}% at ${fx(bus.vdCurrentA, 1)} A (limit ${bus.vdLimitPct}%)`} s={pctStatus(bus.vdFeederPct, bus.vdLimitPct * 0.9, bus.vdLimitPct)} />
+                  : <Row k="Voltage drop" v="not evaluated (no length in Voltage Drop)" warn />}
                 <p className="text-[10px] text-slate-500 pt-1">{bus.feeder.source}</p>
               </div>
               <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-3 text-xs">
