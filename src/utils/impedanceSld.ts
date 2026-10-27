@@ -213,15 +213,15 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   const n = R.buses.length;
   const tableRows = n + 1;
   const tableH = tableRows * 5 + 10;
-  const sideW = 118;
-  const bottomH = Math.max(46, 0);
+  const colW = 130; // title column of the drawing-set template (frame margin included)
+  const headH = 16;
   const margin = 10;
-  const needW = diagW + sideW + margin * 2 + 6;
-  const needH = diagH + tableH + bottomH + margin * 2 + 8;
+  const needW = diagW + colW + margin + 6;
+  const needH = diagH + tableH + headH + margin * 2 + 4;
   const minIdx = Math.max(0, SHEETS.findIndex(([s]) => s === opt.minSize));
   const [size, W, H] = SHEETS.slice(minIdx).find(([, w, h]) => w >= needW && h >= needH) || SHEETS[SHEETS.length - 1];
-  const availW = W - sideW - margin * 2 - 6;
-  const availH = H - tableH - bottomH - margin * 2 - 8;
+  const availW = W - colW - margin - 6;
+  const availH = H - tableH - headH - margin * 2 - 4;
   const scale = Math.min(1, availW / diagW, availH / diagH);
 
   const prims: Prim[] = [];
@@ -269,63 +269,72 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   void LH;
   drawBus(D, root, chainH, opt, circuitsOf);
 
-  // ---- place the diagram on the sheet
-  const ox = margin + 3;
-  const oy = margin + 12;
+  // ---- place the diagram on the sheet, inside the drawing-set template (same frame and title block as
+  // every other sheet of the AutoCAD drawing): content area left of the 130 mm title column
+  const flags = R.buses.filter((b) => b.faultStatus === "fail").length;
+  const missing = R.findings.filter((f) => f.area === "Missing Data").length;
+  const tpl = drawingSetTemplate(W, H, {
+    title: opt.title,
+    title1: "SINGLE LINE IMPEDANCE DIAGRAM",
+    title2: `SHORT-CIRCUIT STUDY · ${panel.designation || "MDP"} · ${R.buses.length} panel${R.buses.length === 1 ? "" : "s"}`,
+    column: (C, sx, sy0, cw) => {
+      // Legend and study notes in the column, above the drawing title
+      let sy = sy0;
+      C.push({ t: "text", x: sx + 4, y: sy, s: 3, text: "LEGEND", layer: "TITLE", bold: true });
+      sy += 6;
+      const legend: Array<[(p: Prim[], x: number, y: number) => void, string]> = [
+        [(p, x, yy) => sourceSymbol(p, x, yy - 4), "Utility source"],
+        [(p, x, yy) => transformerSymbol(p, x, yy - 6), "Transformer"],
+        [(p, x, yy) => breakerSymbol(p, x, yy - 1), "Circuit breaker"],
+        [(p, x, yy) => p.push({ t: "line", x1: x - 6, y1: yy + 2, x2: x + 6, y2: yy + 2, layer: "BUS" }), "Bus (panelboard)"],
+        [(p, x, yy) => p.push({ t: "line", x1: x, y1: yy - 2, x2: x, y2: yy + 6, layer: "LINE" }), "Feeder / cable"],
+        [(p, x, yy) => loadSymbol(p, x, yy), "Load (branch circuits)"],
+        [(p, x, yy) => faultMark(p, x - 1, yy + 5), "Fault location (bus)"],
+      ];
+      legend.forEach(([draw, label]) => {
+        draw(C, sx + 12, sy);
+        C.push({ t: "text", x: sx + 24, y: sy + 3.5, s: 2.4, text: label, layer: "LABEL" });
+        sy += 12;
+      });
+      ([["FAULT", "Calculated fault current"], ["FLAG", "Rating insufficient / exceeded"], ["MISSING", "Missing data or upper bound"]] as Array<[Layer, string]>).forEach(([layer, label]) => {
+        C.push({ t: "rect", x: sx + 8, y: sy, w: 8, h: 3, layer, fill: LAYER_STYLE[layer].color });
+        C.push({ t: "text", x: sx + 24, y: sy + 2.6, s: 2.4, text: label, layer: "LABEL" });
+        sy += 6;
+      });
+      sy += 4;
+      C.push({ t: "text", x: sx + 4, y: sy, s: 3, text: "NOTES", layer: "TITLE", bold: true });
+      sy += 5;
+      [...sldNotes(R, opt), "Method: complex impedances, symmetrical components (IEC 60909 / IEEE Std 141, 242, 399); PEC 2017 Ch. 9 Table 9 conductors."].forEach((t, i) => {
+        const wrapped = wrap(`${i + 1}. ${t}`, maxChars(cw - 8, 2.1));
+        wrapped.forEach((l, k) => C.push({ t: "text", x: sx + 4 + (k ? 3 : 0), y: sy + k * 2.9, s: 2.1, text: l, layer: l.includes("NOT ") ? "MISSING" : "NOTE" }));
+        sy += wrapped.length * 2.9 + 1.2;
+      });
+      return sy;
+    },
+  });
+  P.push(...tpl.prims);
+  const cR = tpl.contentRight;
+  P.push({ t: "text", x: margin + 4, y: margin + 7, s: 4, text: "SINGLE LINE IMPEDANCE DIAGRAM AND SHORT-CIRCUIT STUDY", layer: "TITLE", bold: true });
+  P.push({ t: "text", x: cR - 4, y: margin + 7, s: 2.6, text: `${R.source.secondaryV} V ${R.source.is3Phase ? "3PH" : "1PH"}, 60 Hz${scale < 1 ? ` · diagram scaled ${(scale * 100).toFixed(0)}%` : ""}`, anchor: "end", layer: "LABEL" });
+  P.push({
+    t: "text", x: margin + 4, y: margin + 12.5, s: 2.4, layer: flags ? "FLAG" : missing ? "MISSING" : "TEXT", bold: true,
+    text: clip(`${flags} bus${flags === 1 ? "" : "es"} with insufficient interrupting rating · ${missing} missing-data item${missing === 1 ? "" : "s"} (see notes)`, cR - margin - 8, 2.4, true),
+  });
+  // Centred in the content area (the template's title column is on the right)
+  const ox = margin + 3 + Math.max(0, (availW - diagW * scale) / 2);
+  const oy = margin + headH;
   for (const d of D) P.push(transform(d, ox, oy, scale));
 
-  // ---- sheet frame and title strip
-  P.push({ t: "rect", x: 0, y: 0, w: W, h: H, layer: "BORDER", lw: 0.25 });
-  P.push({ t: "rect", x: margin, y: margin, w: W - 2 * margin, h: H - 2 * margin, layer: "BORDER" });
-  P.push({ t: "text", x: margin + 4, y: margin + 7, s: 4, text: "SINGLE LINE IMPEDANCE DIAGRAM AND SHORT-CIRCUIT STUDY", layer: "TITLE", bold: true });
-  P.push({ t: "text", x: W - margin - sideW - 4, y: margin + 7, s: 2.6, text: `${R.source.secondaryV} V ${R.source.is3Phase ? "3PH" : "1PH"}, 60 Hz${scale < 1 ? ` · diagram scaled ${(scale * 100).toFixed(0)}%` : ""}`, anchor: "end", layer: "LABEL" });
-
-  // ---- side column: legend, flags summary, notes
-  const sx = W - margin - sideW;
-  P.push({ t: "line", x1: sx, y1: margin, x2: sx, y2: H - margin - bottomH - tableH, layer: "BORDER" });
-  let sy = margin + 8;
-  P.push({ t: "text", x: sx + 4, y: sy, s: 3, text: "LEGEND", layer: "TITLE", bold: true });
-  sy += 6;
-  const legend: Array<[(p: Prim[], x: number, y: number) => void, string]> = [
-    [(p, x, yy) => sourceSymbol(p, x, yy - 4), "Utility source"],
-    [(p, x, yy) => transformerSymbol(p, x, yy - 6), "Transformer"],
-    [(p, x, yy) => breakerSymbol(p, x, yy - 1), "Circuit breaker"],
-    [(p, x, yy) => p.push({ t: "line", x1: x - 6, y1: yy + 2, x2: x + 6, y2: yy + 2, layer: "BUS" }), "Bus (panelboard)"],
-    [(p, x, yy) => p.push({ t: "line", x1: x, y1: yy - 2, x2: x, y2: yy + 6, layer: "LINE" }), "Feeder / cable"],
-    [(p, x, yy) => loadSymbol(p, x, yy), "Load (branch circuits)"],
-    [(p, x, yy) => faultMark(p, x - 1, yy + 5), "Fault location (bus)"],
-  ];
-  legend.forEach(([draw, label]) => {
-    draw(P, sx + 12, sy);
-    P.push({ t: "text", x: sx + 24, y: sy + 3.5, s: 2.4, text: label, layer: "LABEL" });
-    sy += 12;
-  });
-  ([["FAULT", "Calculated fault current"], ["FLAG", "Rating insufficient / exceeded"], ["MISSING", "Missing data or upper bound"]] as Array<[Layer, string]>).forEach(([layer, label]) => {
-    P.push({ t: "rect", x: sx + 8, y: sy, w: 8, h: 3, layer, fill: LAYER_STYLE[layer].color });
-    P.push({ t: "text", x: sx + 24, y: sy + 2.6, s: 2.4, text: label, layer: "LABEL" });
-    sy += 6;
-  });
-  sy += 4;
-  P.push({ t: "text", x: sx + 4, y: sy, s: 3, text: "NOTES", layer: "TITLE", bold: true });
-  sy += 5;
-  const notes = sldNotes(R, opt);
-  const noteW = sideW - 8;
-  notes.forEach((t, i) => {
-    const wrapped = wrap(`${i + 1}. ${t}`, maxChars(noteW, 2.1));
-    wrapped.forEach((l, k) => P.push({ t: "text", x: sx + 4 + (k ? 3 : 0), y: sy + k * 2.9, s: 2.1, text: l, layer: l.includes("NOT ") ? "MISSING" : "NOTE" }));
-    sy += wrapped.length * 2.9 + 1.2;
-  });
-
-  // ---- calculation summary table (full width above the title strip)
-  const ty = H - margin - bottomH - tableH;
-  P.push({ t: "line", x1: margin, y1: ty, x2: W - margin, y2: ty, layer: "BORDER" });
+  // ---- calculation summary table at the foot of the content area
+  const ty = H - margin - tableH;
+  P.push({ t: "line", x1: margin, y1: ty, x2: cR, y2: ty, layer: "BORDER" });
   P.push({ t: "text", x: margin + 4, y: ty + 5, s: 3, text: "CALCULATION SUMMARY", layer: "TITLE", bold: true });
   const cols: Array<[string, number]> = [
     ["BUS", 34], ["SYSTEM", 30], ["FEEDER (SIZE, LENGTH)", 62], ["I 3PH/1PH kA", 22], ["I L-L kA", 18], ["I L-G kA", 18], ["I LLG kA", 18],
     ["X/R", 12], ["Ip kA", 16], ["MOTOR kA", 16], ["LOWEST DEVICE kAIC", 40], ["DUTY %", 16], ["BUS SCCR", 22], ["STATUS", 24],
   ];
   const tW = cols.reduce((s, c) => s + c[1], 0);
-  const tScale = Math.min(1, (W - 2 * margin - 8) / tW);
+  const tScale = Math.min(1, (cR - margin - 8) / tW);
   let tx = margin + 4;
   const hy = ty + 8;
   cols.forEach(([h, w]) => {
@@ -361,22 +370,6 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
     });
   });
 
-  // ---- notes area + title block (bottom strip)
-  const by = H - margin - bottomH;
-  P.push({ t: "line", x1: margin, y1: by, x2: W - margin, y2: by, layer: "BORDER" });
-  const tbW = 190;
-  const tbx = W - margin - tbW;
-  P.push({ t: "line", x1: tbx, y1: by, x2: tbx, y2: H - margin, layer: "BORDER" });
-  titleCells(P, tbx, by, tbW, bottomH, opt.title);
-  // Left of the title block: drawing title and standards
-  const lx = margin + 4;
-  P.push({ t: "text", x: lx, y: by + 7, s: 3.6, text: "SINGLE LINE IMPEDANCE DIAGRAM", layer: "TITLE", bold: true });
-  P.push({ t: "text", x: lx, y: by + 13, s: 2.4, text: clip(`${panel.designation || "MDP"} · ${R.buses.length} panel${R.buses.length === 1 ? "" : "s"} · Transformer ${R.source.kva} kVA · ${R.source.secondaryV} V ${R.source.is3Phase ? "3-phase" : "single-phase"}`, tbx - lx - 6, 2.4), layer: "LABEL" });
-  P.push({ t: "text", x: lx, y: by + 19, s: 2.2, text: clip("Short-circuit method: complex impedances, symmetrical components (IEC 60909 / IEEE Std 141, 242, 399); PEC 2017 Ch. 9 Table 9 conductors.", tbx - lx - 6, 2.2), layer: "NOTE" });
-  const flags = R.buses.filter((b) => b.faultStatus === "fail").length;
-  const missing = R.findings.filter((f) => f.area === "Missing Data").length;
-  P.push({ t: "text", x: lx, y: by + 25, s: 2.4, text: clip(`${flags} bus${flags === 1 ? "" : "es"} with insufficient interrupting rating · ${missing} missing-data item${missing === 1 ? "" : "s"} (see notes)`, tbx - lx - 6, 2.4), layer: flags ? "FLAG" : missing ? "MISSING" : "TEXT", bold: true });
-  P.push({ t: "text", x: lx, y: by + 31, s: 2, text: clip("Generated from the project data by ElectricalPH; values change when the Load Schedule, Voltage Drop or Short Circuit inputs change.", tbx - lx - 6, 2), layer: "NOTE" });
   return { w: W, h: H, size, scale, prims };
 
   // ---------------------------------------------------------------- nested drawing helpers
@@ -552,7 +545,18 @@ export const DRAWING_SET_NOTES = [
  * The column is the 130 mm the sheet layouts already keep free, so no drawing content moves.
  * Coordinates are millimetres, y down, for a sheet of w × h.
  */
-export function drawingSetTemplate(w: number, h: number, o: { title: SldOptions["title"]; title1: string; title2: string; notes?: string[] }) {
+export function drawingSetTemplate(
+  w: number,
+  h: number,
+  o: {
+    title: SldOptions["title"];
+    title1: string;
+    title2: string;
+    notes?: string[];
+    /** Draws the column content instead of the general notes (x, top y, column width); returns the lowest y */
+    column?: (P: Prim[], x: number, y: number, w: number) => number;
+  },
+) {
   const P: Prim[] = [];
   const margin = 10;
   const colX = w - 130;
@@ -561,15 +565,18 @@ export function drawingSetTemplate(w: number, h: number, o: { title: SldOptions[
   P.push({ t: "rect", x: margin, y: margin, w: w - 2 * margin, h: h - 2 * margin, layer: "BORDER" });
   P.push({ t: "line", x1: colX, y1: margin, x2: colX, y2: h - margin, layer: "BORDER" });
 
-  // Notes at the top of the column
-  let sy = margin + 8;
-  P.push({ t: "text", x: colX + 4, y: sy, s: 3, text: "GENERAL NOTES", layer: "TITLE", bold: true });
-  sy += 5;
-  (o.notes || DRAWING_SET_NOTES).forEach((n, i) => {
-    const lines = wrap(`${i + 1}. ${n}`, maxChars(colW - 8, 2.1));
-    lines.forEach((l, k) => P.push({ t: "text", x: colX + 4 + (k ? 3 : 0), y: sy + k * 2.9, s: 2.1, text: l, layer: "NOTE" }));
-    sy += lines.length * 2.9 + 1.2;
-  });
+  // Notes (or the sheet's own column content) at the top of the column
+  if (o.column) o.column(P, colX, margin + 8, colW);
+  else {
+    let sy = margin + 8;
+    P.push({ t: "text", x: colX + 4, y: sy, s: 3, text: "GENERAL NOTES", layer: "TITLE", bold: true });
+    sy += 5;
+    (o.notes || DRAWING_SET_NOTES).forEach((n, i) => {
+      const lines = wrap(`${i + 1}. ${n}`, maxChars(colW - 8, 2.1));
+      lines.forEach((l, k) => P.push({ t: "text", x: colX + 4 + (k ? 3 : 0), y: sy + k * 2.9, s: 2.1, text: l, layer: "NOTE" }));
+      sy += lines.length * 2.9 + 1.2;
+    });
+  }
 
   // Title-block cells at the foot of the column, the drawing title above them
   const cellsH = 46;
