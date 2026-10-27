@@ -34,7 +34,7 @@ interface RoomShapeEditorProps {
   polygon?: RoomPoint[];
   width: number;
   length: number;
-  /** Room cavity height (ceiling − working plane) for the room index readout */
+  /** Luminaire height above the working plane (hm) for the room index readout */
   cavityHeight: number;
   onChange: (next: RoomShapeChange) => void;
 }
@@ -529,7 +529,7 @@ export default function RoomShapeEditor({ shape, dims, polygon, width, length, c
               <p className="text-base font-extrabold text-slate-800 dark:text-slate-100 font-mono">{fmt(perimeter)} m</p>
             </div>
             <div className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Room Index (2A / h·P)</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Room Index (2A / hm·P)</span>
               <p className="text-base font-extrabold text-slate-800 dark:text-slate-100 font-mono">{fmt(ri)}</p>
             </div>
             <div className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2">
