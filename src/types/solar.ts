@@ -606,6 +606,8 @@ export interface RoofPlanFace {
   /** Gap between modules in a row (m) and between rows (m) */
   moduleGapM: number;
   rowGapM: number;
+  /** "fill": as many modules as fit; "strings": whole strings as equal, centred blocks */
+  arrangement?: "fill" | "strings";
 }
 
 export interface RoofPlanModule {

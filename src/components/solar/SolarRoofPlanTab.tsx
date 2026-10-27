@@ -444,6 +444,7 @@ const RoofEditor: React.FC<{
       orientation: "portrait",
       moduleGapM: 0.02,
       rowGapM: 0.02,
+      arrangement: "strings",
     };
     commit({ ...plan, faces: [...plan.faces, f] });
     setDraft([]);
@@ -455,7 +456,7 @@ const RoofEditor: React.FC<{
     let remaining = calc.totalModules;
     const mods: RoofPlanModule[] = [];
     for (const f of plan.faces) {
-      const placed = autoPlaceModules(f, plan, dims, remaining);
+      const placed = autoPlaceModules(f, plan, dims, remaining, calc.effective.modulesPerString);
       mods.push(...placed);
       remaining -= placed.length;
     }
@@ -464,7 +465,7 @@ const RoofEditor: React.FC<{
   };
   const autoPlaceFace = (f: RoofPlanFace) => {
     const others = plan.modules.filter((m) => m.faceId !== f.id);
-    const placed = autoPlaceModules(f, plan, dims, Math.max(0, calc.totalModules - others.length));
+    const placed = autoPlaceModules(f, plan, dims, Math.max(0, calc.totalModules - others.length), calc.effective.modulesPerString);
     commit({ ...plan, modules: [...others, ...placed] });
   };
 
@@ -811,6 +812,12 @@ const RoofEditor: React.FC<{
                   <option value="landscape">Landscape</option>
                 </select>
               </Field>
+              <Field label="Arrangement">
+                <select className={input} value={face.arrangement || "fill"} onChange={(e) => updateFace(face.id, { arrangement: e.target.value as any })}>
+                  <option value="strings">Equal strings ({calc.effective.modulesPerString} per string)</option>
+                  <option value="fill">Fill roof (max modules)</option>
+                </select>
+              </Field>
               <Field label="Row angle (°)">
                 <input className={input} type="number" step="0.5" value={face.rowAngleDeg} onChange={(e) => updateFace(face.id, { rowAngleDeg: Number(e.target.value) })} />
               </Field>
@@ -835,7 +842,7 @@ const RoofEditor: React.FC<{
                 <Ruler className="w-3.5 h-3.5" /> Align to longest edge
               </button>
               <button className={btnPrimary} onClick={() => autoPlaceFace(face)}>
-                <Wand2 className="w-3.5 h-3.5" /> Fill this roof
+                <Wand2 className="w-3.5 h-3.5" /> {face.arrangement === "strings" ? "Arrange strings" : "Fill this roof"}
               </button>
               <button className={btnGhost} onClick={() => commit({ ...plan, modules: plan.modules.filter((m) => m.faceId !== face.id) })}>
                 Clear modules

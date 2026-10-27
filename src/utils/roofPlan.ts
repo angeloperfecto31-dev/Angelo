@@ -271,8 +271,18 @@ const newId = () => Math.random().toString(36).slice(2, 10);
  * Each row is packed greedily from one end, which also suits irregular outlines.
  * Returns at most maxCount modules, ordered row by row (used for string numbering).
  */
-export function autoPlaceModules(face: RoofPlanFace, plan: RoofPlanConfig, dims: ModuleDims, maxCount: number): RoofPlanModule[] {
+export function autoPlaceModules(
+  face: RoofPlanFace,
+  plan: RoofPlanConfig,
+  dims: ModuleDims,
+  maxCount: number,
+  modulesPerString = 0
+): RoofPlanModule[] {
   if (face.points.length < 3 || maxCount <= 0) return [];
+  if (face.arrangement === "strings" && modulesPerString > 0) {
+    const byString = placeByStrings(face, plan, dims, maxCount, modulesPerString);
+    if (byString.length) return byString;
+  }
   const mpp = metersPerPx(plan);
   const th = (face.rowAngleDeg * Math.PI) / 180;
   const ux = Math.cos(th), uy = Math.sin(th), vx = -uy, vy = ux;
@@ -311,16 +321,133 @@ export function autoPlaceModules(face: RoofPlanFace, plan: RoofPlanConfig, dims:
   return out;
 }
 
+/**
+ * Places whole strings only, each string as a neat block: one row of modulesPerString, or the string
+ * split evenly over 2-4 rows (e.g. 12 = 2 rows x 6) when the roof is too short for one row.
+ * Strings are shared out as evenly as possible over the fewest rows needed, and every row of blocks
+ * is centred on the roof. Modules are returned string by string (snaking within a block), so the
+ * string numbering follows the blocks. Returns [] when not even one string fits.
+ */
+function placeByStrings(face: RoofPlanFace, plan: RoofPlanConfig, dims: ModuleDims, maxCount: number, per: number): RoofPlanModule[] {
+  const totalStrings = Math.floor(maxCount / per);
+  if (totalStrings < 1) return [];
+  const mpp = metersPerPx(plan);
+  const th = (face.rowAngleDeg * Math.PI) / 180;
+  const ux = Math.cos(th), uy = Math.sin(th), vx = -uy, vy = ux;
+  const toUV = ([x, y]: Pt): Pt => [x * ux + y * uy, x * vx + y * vy];
+  const fromUV = (u: number, v: number): Pt => [u * ux + v * vx, u * uy + v * vy];
+  const uv = face.points.map(toUV);
+  const umin = Math.min(...uv.map((p) => p[0])), umax = Math.max(...uv.map((p) => p[0]));
+  const vmin = Math.min(...uv.map((p) => p[1])), vmax = Math.max(...uv.map((p) => p[1]));
+
+  const portrait = face.orientation === "portrait";
+  const along = (portrait ? dims.widthM : dims.lengthM) / mpp;
+  const across = (portrait ? dims.lengthM : dims.widthM) / mpp;
+  const pitch = along + face.moduleGapM / mpp;
+  const rowPitch = across + face.rowGapM / mpp;
+  const clearance = face.setbackM / mpp;
+  const step = Math.max(0.05 / mpp, 0.5);
+  const rot = faceModuleRot(face);
+  const fits = (u: number, v: number) => {
+    const [x, y] = fromUV(u, v);
+    return rectFits(moduleCorners({ x, y, rotDeg: rot }, dims, mpp), face.points, clearance);
+  };
+
+  // Rows with the longest unbroken range [a, b] of module centre positions
+  const rows: { v: number; a: number; b: number }[] = [];
+  let v = vmin + clearance + across / 2;
+  while (v + across / 2 <= vmax - clearance + 1e-6) {
+    let best: [number, number] | null = null;
+    let start: number | null = null;
+    let last = 0;
+    for (let u = umin + clearance + along / 2; u <= umax - clearance - along / 2 + 1e-6; u += step) {
+      if (fits(u, v)) {
+        if (start === null) start = u;
+        last = u;
+      } else if (start !== null) {
+        if (!best || last - start > best[1] - best[0]) best = [start, last];
+        start = null;
+      }
+    }
+    if (start !== null && (!best || last - start > best[1] - best[0])) best = [start, last];
+    if (best) {
+      rows.push({ v, a: best[0], b: best[1] });
+      v += rowPitch;
+    } else v += step;
+  }
+  const capacity = (a: number, b: number) => (b < a ? 0 : Math.floor((b - a) / pitch + 1e-6) + 1);
+
+  // Pick the block shape (rows per string) and band offset that hold the most strings
+  type Band = { rows: { v: number; a: number; b: number }[]; a: number; b: number; strings: number };
+  let layout: { r: number; c: number; bands: Band[]; total: number } | null = null;
+  for (let r = 1; r <= Math.min(4, rows.length); r++) {
+    if (per % r) continue;
+    const c = per / r;
+    for (let off = 0; off < r; off++) {
+      const bands: Band[] = [];
+      for (let i = off; i + r <= rows.length; i += r) {
+        const group = rows.slice(i, i + r);
+        const consecutive = group.every((g, k) => k === 0 || Math.abs(g.v - group[k - 1].v - rowPitch) < 1e-3);
+        if (!consecutive) continue;
+        const a = Math.max(...group.map((g) => g.a)), b = Math.min(...group.map((g) => g.b));
+        const strings = Math.floor(capacity(a, b) / c);
+        if (strings > 0) bands.push({ rows: group, a, b, strings });
+      }
+      const total = Math.min(totalStrings, bands.reduce((s, b) => s + b.strings, 0));
+      if (!layout || total > layout.total) layout = { r, c, bands, total };
+    }
+  }
+  if (!layout || layout.total < 1) return [];
+  const { r, c, bands, total } = layout;
+
+  // Fewest bands that hold all the strings, then share the strings out evenly over them
+  let used = 0, room = 0;
+  while (used < bands.length && room < total) room += bands[used++].strings;
+  const active = bands.slice(0, used);
+  const count = active.map(() => 0);
+  for (let left = total; left > 0; ) {
+    const order = active.map((_, i) => i).filter((i) => count[i] < active[i].strings).sort((i, j) => count[i] - count[j]);
+    if (!order.length) break;
+    count[order[0]]++;
+    left--;
+  }
+
+  const out: RoofPlanModule[] = [];
+  active.forEach((band, bi) => {
+    const n = count[bi] * c; // modules per row in this band
+    if (!n) return;
+    const span = (n - 1) * pitch;
+    const u0 = Math.min(Math.max((band.a + band.b) / 2 - span / 2, band.a), band.b - span);
+    for (let s = 0; s < count[bi]; s++)
+      for (let k = 0; k < r; k++) {
+        const cols = Array.from({ length: c }, (_, j) => s * c + j);
+        (k % 2 ? cols.reverse() : cols).forEach((col) => {
+          const [x, y] = fromUV(u0 + col * pitch, band.rows[k].v);
+          out.push({ id: newId(), faceId: face.id, x, y, rotDeg: rot });
+        });
+      }
+  });
+  return out;
+}
+
 /** String numbering: modules in face order then placement order, modulesPerString per string */
 export function assignStrings(plan: RoofPlanConfig, calc: SolarCalculationResults) {
   const per = Math.max(1, calc.effective.modulesPerString);
   const required = calc.effective.modulesPerString * calc.effective.numberOfStrings;
-  const order = plan.faces.flatMap((f) => plan.modules.filter((m) => m.faceId === f.id));
   const loose = plan.modules.filter((m) => !plan.faces.some((f) => f.id === m.faceId));
   const map = new Map<string, { stringNo: number; pos: number; extra: boolean }>();
-  [...order, ...loose].forEach((m, i) =>
-    map.set(m.id, { stringNo: Math.floor(i / per) + 1, pos: (i % per) + 1, extra: i >= required })
-  );
+  let i = 0;
+  const put = (m: RoofPlanModule) => {
+    const stringNo = Math.floor(i / per) + 1;
+    map.set(m.id, { stringNo, pos: (i % per) + 1, extra: required <= 0 || stringNo > calc.effective.numberOfStrings });
+    i++;
+  };
+  plan.faces.forEach((f) => {
+    // A roof laid out in equal strings starts on a new string, so its blocks stay whole
+    if (f.arrangement === "strings" && i % per) i += per - (i % per);
+    plan.modules.filter((m) => m.faceId === f.id).forEach(put);
+  });
+  loose.forEach(put);
   return map;
 }
 
