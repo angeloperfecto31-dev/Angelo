@@ -624,7 +624,13 @@ export function exportSldPdf(sheet: SldSheet, fileBase: string) {
 
 /** Characters outside the standard PDF fonts */
 const pdfText = (t: string) => t.replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...").replace(/Ω/g, "ohm");
-const dxfText = (t: string) => t.replace(/²/g, "\\U+00B2").replace(/Ω/g, "\\U+03A9").replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...");
+/** Text for AutoCAD: no carets (control codes) or braces, and every non-ASCII symbol as a \U+ escape */
+const dxfText = (t: string) =>
+  t
+    .replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...")
+    .replace(/\^2(?![0-9])/g, "²").replace(/\^3(?![0-9])/g, "³").replace(/\^/g, "^ ")
+    .replace(/\\/g, "/").replace(/[{}]/g, "").replace(/[\uD800-\uDFFF]/g, "")
+    .replace(/[^\x20-\x7e]/g, (c) => `\\U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
 
 /** CAD layer name of a drawing layer (E- prefix); the same names on every sheet of the drawing set and in the standalone DXF */
 export const sldCadLayer = (l: Layer) => `E-${l}`;

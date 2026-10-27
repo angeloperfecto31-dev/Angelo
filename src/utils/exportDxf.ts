@@ -67,7 +67,11 @@ export function sanitizeStringForDxf(text: any): string {
     .replace(/²/g, "\\U+00B2") // Superscript 2
     .replace(/³/g, "\\U+00B3") // Superscript 3
     .replace(/[øØ]/g, "%%c") // Native AutoCAD Control code for Diameter/Phase (Ø)
-    .replace(/°/g, "%%d"); // Native AutoCAD Control code for Degrees (°)
+    .replace(/°/g, "%%d") // Native AutoCAD Control code for Degrees (°)
+    // A caret followed by a character is an AutoCAD control code (it shows as a box): use superscripts
+    .replace(/\^(?:\(2\)|2)(?![0-9])/g, "\\U+00B2")
+    .replace(/\^(?:\(3\)|3)(?![0-9])/g, "\\U+00B3")
+    .replace(/\^/g, "^ "); // any other caret: "^ " is AutoCAD's literal caret
 
   res = res
     .replace(/\r?\n/g, " ") // Replace newlines with spaces
@@ -79,8 +83,10 @@ export function sanitizeStringForDxf(text: any): string {
     const code = res.charCodeAt(i);
     if (code >= 32 && code <= 126) {
       asciiOnly += res[i];
+    } else if (code > 126 && (code < 0xd800 || code > 0xdfff)) {
+      // Any other symbol (·, κ, Φ ...) as an AutoCAD Unicode escape, so it is shown instead of dropped
+      asciiOnly += `\\U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
     } else {
-      // Map other characters to spaces / ignore
       asciiOnly += " ";
     }
   }
@@ -2769,7 +2775,7 @@ export const exportToCAD = (
 
       writeEqSC([
         "\\textbf{6. Symmetrical Short Circuit Currents}",
-        `\\text{Fault 1 (HV Primary): } I_{SC1} = \\frac{MVA_{SC} \\times 10^6}{\\sqrt{3} \\times V_{HV}} = ${fault1Isc.toFixed(0)} \\text{ A}`,
+        `\\text{Fault 1 (HV Primary): } I_{SC1} = \\frac{MVA_{SC} \\times 1000000}{\\sqrt{3} \\times V_{HV}} = ${fault1Isc.toFixed(0)} \\text{ A}`,
         `\\text{Fault 2 (LV Secondary): } I_{SC2} = \\frac{E}{|Z_{u} + Z_{t}|} = ${fault2Isc.toFixed(0)} \\text{ A}`,
         `\\text{Fault 3 (Feeder End): } I_{SC3} = \\frac{E}{|Z_{1}|} + 4 \\times I_{motor} = ${iscFaultPoint.toFixed(0)} + ${motorContribution.toFixed(0)} = ${fault3Isc.toFixed(0)} \\text{ A}`,
         ...(isSC3Phase
@@ -2779,7 +2785,7 @@ export const exportToCAD = (
 
       writeEqSC([
         "\\textbf{7. Peak Current and Interrupting Duty}",
-        `i_{p} = kappa \\times \\sqrt{2} \\times I_{SC3}, \\ kappa = 1.02 + 0.98 e^{-3/(X/R)}, \\ i_{p} = ${scStudy.iscPeak.toFixed(0)} \\text{ A (IEC 60909)}`,
+        `i_{p} = kappa \\times \\sqrt{2} \\times I_{SC3}, \\ kappa = 1.02 + 0.98 \\times exp(-3 / (X/R)),\\ i_{p} = ${scStudy.iscPeak.toFixed(0)} \\text{ A (IEC 60909)}`,
         `\\text{Minimum symmetrical interrupting rating at the feeder end: } \\ge ${(fault3Isc / 1000).toFixed(2)} \\text{ kA (see KAIC compliance sheet)}`,
       ]);
     } else {
