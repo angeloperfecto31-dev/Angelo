@@ -20,54 +20,17 @@
  */
 import type { Circuit, PanelConfig, ShortCircuitParams, VoltageDropCalculation } from "../types";
 import { LoadType } from "../types";
-import { WIRE_IMPEDANCE_TABLE } from "../constants";
+import {
+  type Cx, cadd as add, cscale as scale, cmag as mag, cpolar as polar, cx, UTILITY_XR, asymFactor, conductorImpedance, deviceTestXr,
+  faultLevels, feederFaultImpedance, peakFactor, sourceImpedance, typicalTransformerXr,
+} from "./faultMath";
 import { computePanelScheduleValues, getActivePoles, isIdleSpareOrSpace, parseSystemVoltage } from "./computeEngine";
 import { getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
 
-// ------------------------------------------------------------------------------------------ complex helpers
-export interface Cx { r: number; x: number }
-const cx = (r: number, x: number): Cx => ({ r, x });
-const add = (...zs: Cx[]): Cx => zs.reduce((a, b) => ({ r: a.r + b.r, x: a.x + b.x }), cx(0, 0));
-const scale = (z: Cx, k: number): Cx => cx(z.r * k, z.x * k);
-const mag = (z: Cx) => Math.hypot(z.r, z.x);
-const polar = (m: number, deg: number): Cx => cx(m * Math.cos((deg * Math.PI) / 180), m * Math.sin((deg * Math.PI) / 180));
-/** Impedance of magnitude m with the given X/R */
-const withXr = (m: number, xr: number): Cx => {
-  const d = Math.sqrt(1 + xr * xr);
-  return cx(m / d, (m * xr) / d);
-};
-
-// ------------------------------------------------------------------------------------------ tables
-/** Typical transformer X/R by kVA (IEEE Std 141 Red Book, liquid-filled distribution transformers) */
-const TX_XR: Array<[number, number]> = [
-  [25, 1.1], [50, 1.4], [75, 1.6], [112.5, 2.0], [150, 2.4], [225, 3.0], [300, 3.6], [500, 4.7],
-  [750, 5.7], [1000, 6.3], [1500, 7.5], [2000, 8.4], [2500, 9.0], [3000, 9.6], [5000, 11],
-];
-export function typicalTransformerXr(kva: number): number {
-  if (kva <= TX_XR[0][0]) return TX_XR[0][1];
-  for (let i = 1; i < TX_XR.length; i++) {
-    const [k1, v1] = TX_XR[i - 1];
-    const [k2, v2] = TX_XR[i];
-    if (kva <= k2) return v1 + ((v2 - v1) * Math.log(kva / k1)) / Math.log(k2 / k1);
-  }
-  return TX_XR[TX_XR.length - 1][1];
-}
-export const UTILITY_XR = 10;
+export type { Cx };
+export { UTILITY_XR, conductorImpedance, deviceTestXr, typicalTransformerXr };
 /** Breaker instantaneous clearing time used for conductor withstand (about 1.5 cycles at 60 Hz) */
 export const CLEARING_TIME_S = 0.025;
-
-/** R and X (Ω/km per conductor, 75 °C) for a conductor size; nearest table size when not listed */
-export function conductorImpedance(size: string | number, material: "Copper" | "Aluminum" = "Copper"): Cx & { size: string } {
-  const n = Number(size);
-  const keys = Object.keys(WIRE_IMPEDANCE_TABLE);
-  let key = keys.find((k) => Number(k) === n);
-  if (!key && Number.isFinite(n) && n > 0) key = keys.reduce((best, k) => (Math.abs(Number(k) - n) < Math.abs(Number(best) - n) ? k : best), keys[0]);
-  const t = WIRE_IMPEDANCE_TABLE[key || "14"];
-  return { r: t.r * (material === "Aluminum" ? 1.64 : 1), x: t.x, size: key || "14" };
-}
-/** 75 °C table resistance to 20 °C (maximum fault current) */
-const R20 = (234.5 + 20) / (234.5 + 75);
-const R20_AL = (228 + 20) / (228 + 75);
 
 /** Adiabatic constant k (A·√s/mm²) for the conductor */
 export function adiabaticK(material: "Copper" | "Aluminum", insulation: string): number {
@@ -75,15 +38,6 @@ export function adiabaticK(material: "Copper" | "Aluminum", insulation: string):
   if (material === "Aluminum") return xlpe ? 94 : 76;
   return xlpe ? 143 : 115;
 }
-
-/** Interrupting-rating test X/R (UL 489 / IEC 60947-2 test power factor) for a device rating */
-export function deviceTestXr(kaic: number): number {
-  if (kaic <= 10) return 1.73; // PF 0.50
-  if (kaic <= 20) return 3.18; // PF 0.30
-  return 4.9; // PF 0.20
-}
-const asymFactor = (xr: number) => Math.sqrt(1 + 2 * Math.exp((-2 * Math.PI) / Math.max(xr, 0.01)));
-const kappa = (xr: number) => 1.02 + 0.98 * Math.exp(-3 / Math.max(xr, 0.01));
 
 // ------------------------------------------------------------------------------------------ types
 export type Status = "pass" | "warning" | "fail";
@@ -96,11 +50,14 @@ export interface FeederInfo {
   material: "Copper" | "Aluminum";
   insulation: string;
   lengthM: number;
-  /** Length not found in the Voltage Drop / Short Circuit inputs: a default was used */
+  /** Length not set in the Voltage Drop / Short Circuit inputs (lengthM = 0: fault upper bound, VD not evaluated) */
   lengthAssumed: boolean;
   ampacityA: number;
   breakerAT: number;
   breakerAF: number;
+  breakerPoles?: number;
+  /** Interrupting rating of the feeder breaker (kA); 0 = not specified */
+  breakerKaic?: number;
   /** Where the feeder data came from */
   source: string;
 }
@@ -137,22 +94,37 @@ export interface BusResult {
   vdFeederPct: number;
   vdCumulativePct: number;
   busVoltage: number;
+  /** Feeder voltage drop computed (length and size known) */
+  vdEvaluated: boolean;
+  /** Every feeder from the transformer to this bus has a voltage drop */
+  vdComplete: boolean;
   loadStatus: Status;
   loadNotes: string[];
   // fault
   z1: Cx;
+  /** This bus's own feeder, per phase, 20 °C (Ω) */
+  zFeeder: Cx;
   xr: number;
   i3ph: number; // kA, bolted, without motors
   motorKA: number;
   iSym: number; // kA, with motor contribution (maximum available)
   iLL: number;
   iLG: number;
+  /** Double line-to-ground: highest phase current and earth current (kA) */
+  iLLG: number;
+  iLLGEarth: number;
+  /** A feeder length or size on the path is missing: values are upper bounds */
+  faultUpperBound: boolean;
   iPeak: number;
   iAsym: number;
   faultMVA: number;
   mainKaic: number;
   lowestKaic: number;
   lowestDevice: string;
+  /** Some interrupting rating is specified for this panel */
+  kaicKnown: boolean;
+  /** Branch breakers of this panel without an interrupting rating */
+  missingBranchKaic: number;
   dutyPct: number;
   /** Duty with the X/R multiplying factor against the device test X/R */
   adjustedDutyPct: number;
@@ -178,6 +150,10 @@ export interface SourceResult {
   /** Bolted fault at the transformer secondary terminals (kA) */
   terminalFaultKA: number;
   terminalXr: number;
+  /** Line-to-ground at the terminals (kA; NaN without a neutral) */
+  terminalLGKA: number;
+  /** Source data not entered in the project (defaults of the Short Circuit module were used) */
+  missing: string[];
   loadingPct: number;
   loadingStatus: Status;
   loadingLimitPct: number;
@@ -209,7 +185,7 @@ export interface SelectivityResult {
 
 export interface Finding {
   status: Status;
-  area: "Transformer" | "Load Flow" | "Voltage Drop" | "Phase Balance" | "Short Circuit" | "Conductor Withstand" | "Coordination";
+  area: "Transformer" | "Load Flow" | "Voltage Drop" | "Phase Balance" | "Short Circuit" | "Conductor Withstand" | "Coordination" | "Missing Data";
   location: string;
   title: string;
   detail: string;
@@ -315,7 +291,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   const defaultLen = input.defaultFeederLengthM ?? 30;
   const assumptions: string[] = [];
 
-  // ---- source
+  // ---- source (shared fault math, see faultMath.ts)
   const mdpSys = parseSystemVoltage(panel.system);
   const is3 = iscParams.phaseTypeOverrideEnabled ? iscParams.phaseTypeOverride === "3PH" : mdpSys.is3Phase;
   const secV = iscParams.transformerVoltage || panel.voltage || (is3 ? 400 : 230);
@@ -323,34 +299,27 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   const kva = iscParams.transformerKVA || 500;
   const zPct = iscParams.transformerZ || 5;
   const utilityMVA = iscParams.utilityShortCircuitMVA || 500;
-  const txXr = typicalTransformerXr(kva);
-  const openDelta = /open/i.test(iscParams.transformerConnection || "");
-  // Ohms per phase (3-phase, line-to-neutral equivalent) or of the loop (1-phase)
-  const zBase = (secV * secV) / (kva * 1000);
-  const zUtility = withXr((secV * secV) / (utilityMVA * 1e6), UTILITY_XR);
-  let zT = withXr((zPct / 100) * zBase / (openDelta ? 0.866 : 1), txXr);
+  const src = sourceImpedance(iscParams, secV, is3);
+  const txXr = src.txXr;
   const nPar = iscParams.parallelTransformersCount || 1;
-  if (nPar > 1) {
-    if (iscParams.parallelTransformersZMatch !== false && iscParams.parallelTransformerskVAMatch !== false) {
-      zT = scale(zT, 1 / nPar);
-    } else {
-      const k2 = iscParams.parallelTransformersRating || kva;
-      const z2 = withXr(((iscParams.parallelTransformersZ || zPct) / 100) * ((secV * secV) / (k2 * 1000)), typicalTransformerXr(k2));
-      // Parallel: 1 / (1/Z1 + (n-1)/Z2)
-      const inv = (z: Cx) => { const d = z.r * z.r + z.x * z.x; return cx(z.r / d, -z.x / d); };
-      const y = add(inv(zT), scale(inv(z2), nPar - 1));
-      zT = inv(y);
-    }
-  }
-  const vSrc = is3 ? secV / Math.sqrt(3) : secV;
+  const openDelta = /open/i.test(iscParams.transformerConnection || "");
+  const zUtility = src.zUtility;
+  const zT = src.zTransformer;
   const zSrc = add(zUtility, zT);
-  const ratedSecondaryA = (kva * 1000) / (is3 ? Math.sqrt(3) * secV : secV) * nPar;
-  const ratedPrimaryA = (kva * 1000) / (is3 ? Math.sqrt(3) * priV : priV) * nPar;
+  const terminal = faultLevels(src);
+  const ratedSecondaryA = (src.kva * 1000) / (is3 ? Math.sqrt(3) * secV : secV);
+  const ratedPrimaryA = (src.kva * 1000) / (is3 ? Math.sqrt(3) * priV : priV);
+  const missing: string[] = [];
+  if (!iscParams.transformerKVA) missing.push("Transformer kVA not entered (500 kVA default of the Short Circuit module).");
+  if (!iscParams.transformerZ) missing.push("Transformer %Z not entered (5% default of the Short Circuit module).");
+  if (!iscParams.utilityShortCircuitMVA) missing.push("Utility short-circuit MVA not entered (500 MVA default of the Short Circuit module).");
   assumptions.push(
-    `Utility source ${utilityMVA} MVA at X/R ${UTILITY_XR}; transformer ${kva} kVA${nPar > 1 ? ` × ${nPar} in parallel` : ""}, Z ${zPct}% at typical X/R ${txXr.toFixed(1)} (IEEE Std 141)${openDelta ? ", open-delta (Z / 0.866)" : ""}.`,
+    `Utility source ${utilityMVA} MVA at X/R ${UTILITY_XR} (assumed; no utility X/R in the project); transformer ${kva} kVA${nPar > 1 ? ` × ${nPar} in parallel` : ""}, Z ${zPct}% at typical X/R ${txXr.toFixed(1)} (IEEE Std 141)${openDelta ? ", open-delta (Z / 0.866)" : ""}.`,
     `Power factor ${pf.toFixed(2)} for all loads. Line currents are phasor sums of the circuits; load flow basis: ${basis === "demand" ? "demand (connected line currents × the Load Schedule demand factor)" : "connected load"}.`,
     "Conductor R and X from PEC 2017 Chapter 9 Table 9 (75 °C, copper in PVC conduit; aluminium R × 1.64); short-circuit resistance corrected to 20 °C.",
+    "Faults by symmetrical components with Z2 = Z1; zero sequence: transformer (Dyn) plus phase and equal-size neutral return of each feeder.",
     "Motor fault contribution 4 × motor full-load current (motors and air-conditioning compressors at and below each panel).",
+    "Feeders without a length in the project: fault current computed with zero feeder impedance (upper bound) and voltage drop not evaluated.",
   );
 
   // ---- panels in tree order
@@ -416,7 +385,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
       feeder = {
         label: `${sets > 1 ? `${sets} sets × ` : ""}${size} mm² ${ins} ${material === "Aluminum" ? "Al" : "Cu"}`,
         size, sets, material, insulation: ins,
-        lengthM: len || defaultLen, lengthAssumed: !len,
+        lengthM: len, lengthAssumed: !len,
         ampacityA: amp || mf?.wire?.ampacity || 0,
         breakerAT: Number(mf?.cb) || panel.mainBreakerAT || 0,
         breakerAF: Number(mf?.af) || Number(panel.mainBreakerAF) || 0,
@@ -424,122 +393,133 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
       };
     } else if (n.feederCircuit) {
       const c = n.feederCircuit;
-      const size = String(c.wireSizeOverride || c.wireSize || "14");
+      const size = String(c.wireSizeOverride || c.wireSize || "");
       const sets = c.wireSets || (c as any).calculatedWireSets || 1;
       const ins = c.wireTypeOverride || c.wireType || "THHN";
-      const amp = getConductorAmpacity(Number(size), material, getTemperatureForInsulation(ins)) * sets;
+      const amp = size ? getConductorAmpacity(Number(size), material, getTemperatureForInsulation(ins)) * sets : 0;
       const vdRow = vd.find((v) => v.source === n.id) || vd.find((v) => v.source === c.id) || vd.find((v) => v.id === n.id);
       const len = vdRow?.length || 0;
       feeder = {
-        label: `${sets > 1 ? `${sets} sets × ` : ""}${size} mm² ${ins} ${material === "Aluminum" ? "Al" : "Cu"}`,
-        size, sets, material, insulation: ins,
-        lengthM: len || defaultLen, lengthAssumed: !len,
+        label: size ? `${sets > 1 ? `${sets} sets × ` : ""}${size} mm² ${ins} ${material === "Aluminum" ? "Al" : "Cu"}` : "Conductor size not set",
+        size: size || "0", sets, material, insulation: ins,
+        lengthM: len, lengthAssumed: !len,
         ampacityA: amp,
         breakerAT: Number(c.mcbATOverride || c.mcbAT) || 0,
         breakerAF: Number(c.mcbAF) || 0,
+        breakerPoles: getActivePoles(c.mcbP),
+        breakerKaic: Number(c.mcbKAIC) || 0,
         source: `Feeder circuit ${c.circuitNo ?? ""} in ${nodes.find((x) => x.id === n.parentId)?.name || "parent"}`.trim(),
       };
     } else {
-      const size = "14";
       feeder = {
-        label: "Feeder not linked (assumed 14 mm² THHN Cu)", size, sets: 1, material: "Copper", insulation: "THHN",
-        lengthM: defaultLen, lengthAssumed: true, ampacityA: getConductorAmpacity(14, "Copper", 90), breakerAT: 0, breakerAF: 0,
+        label: "Feeder not linked to a circuit", size: "0", sets: 1, material: "Copper", insulation: "THHN",
+        lengthM: 0, lengthAssumed: true, ampacityA: 0, breakerAT: 0, breakerAF: 0,
         source: "Sub-panel not linked from a feeder circuit",
       };
     }
+    if (n.id === "mdp") {
+      feeder.breakerPoles = getActivePoles((sched.mainFeeder as any)?.poles || (is3 ? 3 : 2)) || (is3 ? 3 : 2);
+      feeder.breakerKaic = parseFloat(panel.icRating) || Number(sched.mainFeeder?.kaic) || 0;
+    }
 
-    // ---- voltage drop (operating temperature 75 °C table values)
-    const zc = conductorImpedance(feeder.size, feeder.material);
+    // ---- voltage drop (75 °C table values); not evaluated without a length
+    const sizeKnown = Number(feeder.size) > 0;
+    const zc = sizeKnown ? conductorImpedance(feeder.size, feeder.material) : cx(0, 0);
     const k = bus3 ? Math.sqrt(3) : 2;
-    const vdFeederV = (k * current * (feeder.lengthM / 1000) * (zc.r * pf + zc.x * sinPhi)) / feeder.sets;
+    const vdEvaluated = !feeder.lengthAssumed && sizeKnown;
+    const vdFeederV = vdEvaluated ? (k * current * (feeder.lengthM / 1000) * (zc.r * pf + zc.x * sinPhi)) / feeder.sets : 0;
     const vdFeederPct = nominalV > 0 ? (vdFeederV / nominalV) * 100 : 0;
     const parent = n.parentId ? byId[n.parentId] : undefined;
     const vdCumulativePct = (parent?.vdCumulativePct || 0) + vdFeederPct;
+    const vdComplete = vdEvaluated && (parent ? parent.vdComplete : true);
     const busVoltage = nominalV * (1 - vdCumulativePct / 100);
     const feederLoadingPct = feeder.ampacityA > 0 ? (current / feeder.ampacityA) * 100 : 0;
     const breakerLoadingPct = feeder.breakerAT > 0 ? (current / feeder.breakerAT) * 100 : 0;
 
     const loadNotes: string[] = [];
-    const sFeeder: Status = vdFeederPct > 3 ? "fail" : vdFeederPct > 2.5 ? "warning" : "pass";
+    const sFeeder: Status = !vdEvaluated ? "warning" : vdFeederPct > 3 ? "fail" : vdFeederPct > 2.5 ? "warning" : "pass";
     const sCum: Status = vdCumulativePct > 5 ? "fail" : vdCumulativePct > 3 ? "warning" : "pass";
     const sAmp: Status = feederLoadingPct > 100 ? "fail" : feederLoadingPct > 80 ? "warning" : "pass";
     const sBrk: Status = breakerLoadingPct > 100 ? "fail" : breakerLoadingPct > 80 ? "warning" : "pass";
     const sUnb: Status = bus3 && ph.unbalancePct > 20 ? "fail" : bus3 && ph.unbalancePct > 10 ? "warning" : "pass";
-    if (feeder.lengthAssumed) loadNotes.push(`Feeder length not set; ${defaultLen} m assumed.`);
+    if (feeder.lengthAssumed) loadNotes.push("Feeder length not set in the project: voltage drop not evaluated; fault current is the upper bound (zero feeder impedance).");
+    if (!sizeKnown) loadNotes.push("Feeder conductor size not set.");
 
-    // ---- short circuit
-    const material20 = feeder.material === "Aluminum" ? R20_AL : R20;
-    const zFeeder = scale(cx(zc.r * material20, zc.x), feeder.lengthM / 1000 / feeder.sets);
-    const zPath = add(parent ? parent.z1 : zSrc, zFeeder); // positive sequence to this bus
-    // Line-to-ground loop: source (2·Zu + 3·Zt)/3 plus phase + return conductor on every feeder of the path
-    const lgLoop: Cx = add(parent ? (parent as any)._lgLoop : add(scale(zUtility, 2 / 3), zT), scale(zFeeder, 2));
-    // Single-phase system: loop through both conductors of every feeder
-    const loop1: Cx = add(parent ? (parent as any)._loop1 : zSrc, scale(zFeeder, 2));
+    // ---- short circuit (cumulative per-phase feeder impedance from the transformer)
+    const zFeeder = sizeKnown && feeder.lengthM > 0 ? feederFaultImpedance(feeder.lengthM, feeder.size, feeder.sets, feeder.material) : cx(0, 0);
+    const zPathFeeders = add(parent ? (parent as any)._zFeeders : cx(0, 0), zFeeder);
+    const upperBound = feeder.lengthAssumed || !sizeKnown || (parent ? parent.faultUpperBound : false);
+    const fl = faultLevels(src, zPathFeeders, { groundReturn: is3 && mdpSys.wireCount >= 4 });
+    const zPath = fl.z1;
     let i3ph: number;
     let iLL: number;
     let iLG: number;
-    if (bus3) {
-      i3ph = vSrc / mag(zPath);
-      iLL = (Math.sqrt(3) / 2) * i3ph;
-      iLG = (secV / Math.sqrt(3)) / mag(lgLoop);
-    } else if (is3) {
-      // Single-phase panel fed from a 3-phase system: line-to-line fault of its two lines
-      i3ph = (Math.sqrt(3) / 2) * (vSrc / mag(zPath));
-      iLL = i3ph;
-      iLG = (secV / Math.sqrt(3)) / mag(lgLoop);
+    if (!is3) {
+      i3ph = fl.i3ph;
+      iLL = fl.i3ph;
+      iLG = NaN;
+    } else if (bus3) {
+      i3ph = fl.i3ph;
+      iLL = fl.iLL;
+      iLG = fl.iLG;
     } else {
-      i3ph = secV / mag(loop1);
-      iLL = i3ph;
-      iLG = i3ph;
+      // Single-phase panel fed from a 3-phase system: its worst fault is line-to-line (or line-to-ground)
+      i3ph = fl.iLL;
+      iLL = fl.iLL;
+      iLG = fl.iLG;
     }
-    const zFault = is3 ? zPath : loop1;
-    const xr = zFault.r > 0 ? zFault.x / zFault.r : 10;
+    const xr = fl.xr;
     const mVA = motorsBelow(n.id);
     const motorFla = mVA / (bus3 ? Math.sqrt(3) * nominalV : nominalV);
     const motorA = 4 * motorFla;
-    const iSymA = Math.max(i3ph, iLG) + motorA;
-    const iPeak = kappa(xr) * Math.SQRT2 * iSymA;
+    const iSymA = Math.max(i3ph, Number.isFinite(iLG) ? iLG : 0) + motorA;
+    const iPeak = peakFactor(xr) * Math.SQRT2 * iSymA;
     const iAsym = asymFactor(xr) * iSymA;
     const faultMVA = (bus3 ? Math.sqrt(3) * nominalV : nominalV) * iSymA / 1e6;
 
-    // devices on this bus
-    // The panel's interrupting rating as entered; the schedule's auto value otherwise
-    const mainKaic = parseFloat(n.panel.icRating) || Number(sched.mainFeeder?.kaic) || 10;
-    let lowestKaic = mainKaic;
-    let lowestDevice = `Main breaker (${mainKaic} kA)`;
+    // devices on this bus: the panel's main rating as entered (else the schedule's), and every branch rating
+    const mainKaic = parseFloat(n.panel.icRating) || Number(sched.mainFeeder?.kaic) || 0;
+    let lowestKaic = mainKaic > 0 ? mainKaic : Infinity;
+    let lowestDevice = mainKaic > 0 ? `Main breaker (${mainKaic} kA)` : "";
+    let missingKaic = 0;
     n.circuits.forEach((c) => {
       if (isIdleSpareOrSpace(c)) return;
       const r = Number(c.mcbKAIC) || 0;
-      if (r > 0 && r < lowestKaic) {
+      if (r <= 0) { missingKaic++; return; }
+      if (r < lowestKaic) {
         lowestKaic = r;
         lowestDevice = `Circuit ${c.circuitNo ?? ""} ${c.description ? `(${String(c.description).slice(0, 30)})` : ""} ${r} kA`.replace(/\s+/g, " ").trim();
       }
     });
+    const kaicKnown = Number.isFinite(lowestKaic);
+    if (!kaicKnown) { lowestKaic = 0; lowestDevice = "Not specified"; }
+    if (mainKaic <= 0) loadNotes.push("Main device interrupting rating not specified.");
+    if (missingKaic) loadNotes.push(`${missingKaic} branch breaker${missingKaic === 1 ? "" : "s"} without an interrupting rating.`);
     const iKA = iSymA / 1000;
-    const dutyPct = lowestKaic > 0 ? (iKA / lowestKaic) * 100 : 0;
-    const xrMultiplier = Math.max(1, asymFactor(xr) / asymFactor(deviceTestXr(lowestKaic)));
+    const dutyPct = kaicKnown ? (iKA / lowestKaic) * 100 : NaN;
+    const xrMultiplier = kaicKnown ? Math.max(1, asymFactor(xr) / asymFactor(deviceTestXr(lowestKaic))) : 1;
     const adjustedDutyPct = dutyPct * xrMultiplier;
-    const faultStatus: Status = adjustedDutyPct > 100 ? "fail" : adjustedDutyPct > 85 ? "warning" : "pass";
+    const faultStatus: Status = !kaicKnown ? "warning" : adjustedDutyPct > 100 ? "fail" : adjustedDutyPct > 85 ? "warning" : "pass";
 
     // feeder conductor withstand for a fault at its supply end (parent bus or transformer terminals)
     const kAd = adiabaticK(feeder.material, feeder.insulation);
-    const area = Number(feeder.size) * feeder.sets;
-    const lineEndKA = parent ? parent.iSym : (vSrc / mag(zSrc)) / 1000;
-    const maxTimeS = Math.pow((kAd * area) / (lineEndKA * 1000), 2);
-    const wStatus: Status = maxTimeS < CLEARING_TIME_S ? "fail" : maxTimeS < CLEARING_TIME_S * 2 ? "warning" : "pass";
+    const area = (Number(feeder.size) || 0) * feeder.sets;
+    const lineEndKA = parent ? parent.iSym : terminal.i3ph / 1000;
+    const maxTimeS = area > 0 ? Math.pow((kAd * area) / (lineEndKA * 1000), 2) : NaN;
+    const wStatus: Status = !(area > 0) ? "warning" : maxTimeS < CLEARING_TIME_S ? "fail" : maxTimeS < CLEARING_TIME_S * 2 ? "warning" : "pass";
 
     const bus: BusResult = {
       id: n.id, name: n.name, parentId: n.parentId, level: levelOf(n.parentId) + 1, is3Phase: bus3, system: n.panel.system, nominalV,
       connectedVA, demandVA, basisVA, kva: kvaB, kw: kvaB * pf, kvar: kvaB * sinPhi, pf, current, demandCurrent,
       phaseCurrents: { R: ph.R, Y: ph.Y, B: ph.B }, neutralCurrent: ph.neutral, unbalancePct: bus3 ? ph.unbalancePct : 0,
-      feeder, feederLoadingPct, breakerLoadingPct, vdFeederV, vdFeederPct, vdCumulativePct, busVoltage,
+      feeder, feederLoadingPct, breakerLoadingPct, vdFeederV, vdFeederPct, vdCumulativePct, busVoltage, vdEvaluated, vdComplete,
       loadStatus: worst(sFeeder, sCum, sAmp, sBrk, sUnb), loadNotes,
-      z1: zPath, xr, i3ph: i3ph / 1000, motorKA: motorA / 1000, iSym: iKA, iLL: iLL / 1000, iLG: iLG / 1000,
+      z1: zPath, zFeeder, xr, i3ph: i3ph / 1000, motorKA: motorA / 1000, iSym: iKA, iLL: iLL / 1000, iLG: iLG / 1000,
+      iLLG: fl.iLLG / 1000, iLLGEarth: fl.iLLGEarth / 1000, faultUpperBound: upperBound,
       iPeak: iPeak / 1000, iAsym: iAsym / 1000, faultMVA,
-      mainKaic, lowestKaic, lowestDevice, dutyPct, adjustedDutyPct, xrMultiplier, faultStatus,
+      mainKaic, lowestKaic, lowestDevice, kaicKnown, missingBranchKaic: missingKaic, dutyPct, adjustedDutyPct, xrMultiplier, faultStatus,
       withstand: { k: kAd, areaMm2: area, faultKA: lineEndKA, maxTimeS, status: wStatus },
-      _lgLoop: lgLoop,
-      _loop1: loop1,
+      _zFeeders: zPathFeeders,
     } as any;
     buses.push(bus);
     byId[n.id] = bus;
@@ -548,12 +528,12 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   // ---- transformer loading
   const mdp = byId.mdp;
   const loadLimit = (input.transformerLoadingLimit ?? 0.8) * 100;
-  const capacityKva = kva * nPar;
+  const capacityKva = src.kva;
   const loadingPct = capacityKva > 0 ? (mdp.kva / capacityKva) * 100 : 0;
   const source: SourceResult = {
     utilityMVA, utilityXr: UTILITY_XR, primaryV: priV, secondaryV: secV, is3Phase: is3, kva: capacityKva, zPct, txXr,
     ratedSecondaryA, ratedPrimaryA, zUtility, zTransformer: zT,
-    terminalFaultKA: vSrc / mag(zSrc) / 1000, terminalXr: zSrc.x / zSrc.r,
+    terminalFaultKA: terminal.i3ph / 1000, terminalXr: terminal.xr, terminalLGKA: terminal.iLG / 1000, missing,
     loadingPct, loadingLimitPct: loadLimit,
     loadingStatus: loadingPct > 100 ? "fail" : loadingPct > loadLimit ? "warning" : "pass",
   };
@@ -561,7 +541,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   const findings = buildFindings(source, buses);
   const counts: Record<Status, number> = { pass: 0, warning: 0, fail: 0 };
   findings.forEach((f) => counts[f.status]++);
-  buses.forEach((b) => { delete (b as any)._lgLoop; delete (b as any)._loop1; });
+  buses.forEach((b) => delete (b as any)._zFeeders);
   return { source, buses, byId, findings, basis, powerFactor: pf, assumptions, counts };
 }
 
@@ -570,6 +550,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
 const STANDARD_KAIC = [10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100, 150, 200];
 function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
   const f: Finding[] = [];
+  src.missing.forEach((m) => f.push({ status: "warning", area: "Missing Data", location: "Source", title: "Source data not entered", detail: m, action: "Enter the utility and transformer data in Short Circuit." }));
   if (src.loadingStatus !== "pass") {
     f.push({
       status: src.loadingStatus, area: "Transformer", location: `Transformer ${src.kva} kVA`,
@@ -596,7 +577,7 @@ function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
         action: "Use the next breaker rating (with a matching conductor).",
       });
     }
-    if (b.vdFeederPct > 2.5) {
+    if (b.vdEvaluated && b.vdFeederPct > 2.5) {
       f.push({
         status: b.vdFeederPct > 3 ? "fail" : "warning", area: "Voltage Drop", location: loc,
         title: b.vdFeederPct > 3 ? "Feeder voltage drop above 3%" : "Feeder voltage drop near 3%",
@@ -605,6 +586,7 @@ function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
       });
     }
     if (b.vdCumulativePct > 3) {
+      // (computed from the feeders that have a length; others add to it)
       f.push({
         status: b.vdCumulativePct > 5 ? "fail" : "warning", area: "Voltage Drop", location: loc,
         title: b.vdCumulativePct > 5 ? "Total voltage drop above 5%" : "Little voltage drop left for branch circuits",
@@ -620,7 +602,14 @@ function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
         action: "Move single-phase circuits to the lighter phases (target ≤ 10%).",
       });
     }
-    if (b.faultStatus !== "pass") {
+    if (!b.kaicKnown) {
+      f.push({
+        status: "warning", area: "Missing Data", location: loc,
+        title: "Interrupting ratings not specified",
+        detail: `No kAIC for the main device or the branch breakers; available fault ${b.iSym.toFixed(2)} kA${b.faultUpperBound ? " (upper bound)" : ""} cannot be checked.`,
+        action: "Enter the panel interrupting rating (IC rating) and the breaker kAIC in the Load Schedule.",
+      });
+    } else if (b.faultStatus !== "pass") {
       f.push({
         status: b.faultStatus, area: "Short Circuit", location: loc,
         title: b.faultStatus === "fail" ? "Interrupting rating exceeded" : "Interrupting duty above 85%",
@@ -628,7 +617,23 @@ function buildFindings(src: SourceResult, buses: BusResult[]): Finding[] {
         action: `Use devices rated at least ${STANDARD_KAIC.find((k) => k >= b.iSym * b.xrMultiplier) ?? Math.ceil(b.iSym * b.xrMultiplier)} kA, or a tested series-rated combination.`,
       });
     }
-    if (b.withstand.status !== "pass") {
+    if (b.kaicKnown && b.missingBranchKaic > 0) {
+      f.push({
+        status: "warning", area: "Missing Data", location: loc,
+        title: "Breakers without an interrupting rating",
+        detail: `${b.missingBranchKaic} breaker${b.missingBranchKaic === 1 ? "" : "s"} in this panel have no kAIC; available fault ${b.iSym.toFixed(2)} kA.`,
+        action: "Enter the kAIC of every breaker in the Load Schedule.",
+      });
+    }
+    if (b.feeder.lengthAssumed || !(Number(b.feeder.size) > 0)) {
+      f.push({
+        status: "warning", area: "Missing Data", location: loc,
+        title: !(Number(b.feeder.size) > 0) ? "Feeder conductor size not set" : "Feeder length not set",
+        detail: `${b.feeder.label}: voltage drop not evaluated; fault currents at this panel and below are upper bounds (feeder impedance taken as zero).`,
+        action: b.id === "mdp" ? "Enter the main feeder length in Short Circuit or Voltage Drop." : "Add this feeder to the Voltage Drop module with its length.",
+      });
+    }
+    if (b.withstand.status !== "pass" && Number.isFinite(b.withstand.maxTimeS)) {
       f.push({
         status: b.withstand.status, area: "Conductor Withstand", location: loc,
         title: "Feeder conductor short-time withstand",
