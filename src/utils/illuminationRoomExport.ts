@@ -3,6 +3,7 @@ import "./pdfSafeText"; // printable PDF text (², ≥ ...)
 import autoTable from "jspdf-autotable";
 import { pdfFitText } from "./pdfLayout";
 import { needsLeader, resolveOverlaps, type RoomAnnotation } from "./modelAnnotations";
+import type { FloorTotals } from "./modelFloors";
 import {
   RoomPoint,
   RoomShapeId,
@@ -18,6 +19,8 @@ import {
 /** Everything the room layout sheet shows for one room */
 export interface RoomLayoutData {
   roomName: string;
+  /** Floor (storey) the room is on */
+  floorName?: string;
   shape?: RoomShapeId;
   /** Outline in metres (x east, z south, bounding box at 0, 0) */
   outline: RoomPoint[];
@@ -239,6 +242,13 @@ export function drawRoomPlanPdf(doc: jsPDF, data: RoomLayoutData, x: number, y: 
 /** A3 landscape room layout sheet: scaled plan, geometry and wall schedule, lighting results */
 export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+  drawRoomLayoutSheets(doc, data, "IL-1", true);
+  const safeName = (data.roomName || "Room").replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "");
+  doc.save(`Illumination_Room_Layout_${safeName || "Room"}.pdf`);
+}
+
+/** One room's layout sheet on the current (fresh) A3 landscape page, plus the model page when asked */
+function drawRoomLayoutSheets(doc: jsPDF, data: RoomLayoutData, sheet: string, withModelPage: boolean) {
   const W = 420;
   const H = 297;
   const m = 10;
@@ -256,7 +266,7 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   doc.text("ILLUMINATION ROOM LAYOUT", m + 5, m + 9.2);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
-  pdfFitText(doc, `${data.roomName} | ${roomShapeLabel(data.shape)} | ${geo.area.toFixed(2)} m²`, W - m - 5, m + 9, 200, { align: "right" });
+  pdfFitText(doc, `${data.floorName ? `${data.floorName} | ` : ""}${data.roomName} | ${roomShapeLabel(data.shape)} | ${geo.area.toFixed(2)} m²`, W - m - 5, m + 9, 200, { align: "right" });
 
   // Plan (left)
   const planX = m + 4;
@@ -357,11 +367,11 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   doc.line(m, tbY, W - m, tbY);
   const cells = [
     ["PROJECT", "ElectricalPH Lighting Design"],
-    ["ROOM", data.roomName],
+    ["ROOM", data.floorName ? `${data.floorName} - ${data.roomName}` : data.roomName],
     ["DRAWING", "Luminaire layout plan"],
     ["SCALE", `1:${scale} (A3)`],
     ["DATE", new Date().toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" })],
-    ["SHEET", "IL-1"],
+    ["SHEET", sheet],
   ];
   const cw = (W - m * 2) / cells.length;
   cells.forEach(([label, value], i) => {
@@ -381,7 +391,7 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   doc.text("Dimensions in metres. Luminaire positions measured from the north-west corner of the bounding box.", m + 4, tbY - 1.2);
 
   // Page 2: the imported 3D model the room comes from
-  if (data.importedModel) {
+  if (withModelPage && data.importedModel) {
     const im = data.importedModel;
     doc.addPage("a3", "landscape");
     doc.setDrawColor(...NAVY);
@@ -445,9 +455,112 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
       "not manufacturer photometric (IES/LDT) files, and are indicative only.",
     ].forEach((line) => { doc.text(line, imgX + imgW + 6, ny); ny += 4; });
   }
+}
 
-  const safeName = (data.roomName || "Room").replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "");
-  doc.save(`Illumination_Room_Layout_${safeName || "Room"}.pdf`);
+export interface FloorReportRoom {
+  layout: RoomLayoutData;
+  area: number;
+  targetLux: number;
+  fixtureType: string;
+  fixtures: number;
+  required: number;
+  lumens: number;
+  watts: number;
+  achievedLux: number;
+  circuitNo?: number;
+}
+
+export interface FloorReportGroup {
+  name: string;
+  totals: FloorTotals;
+  rooms: FloorReportRoom[];
+}
+
+/**
+ * Project illumination by floor (A3 landscape): floor summary, each floor's room schedule, then one
+ * layout sheet per room, floor by floor (lowest first).
+ */
+export function exportFloorReportPdf(projectName: string, groups: FloorReportGroup[], all: FloorTotals) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+  const W = 420;
+  const H = 297;
+  const m = 10;
+  const head = { fillColor: NAVY, textColor: 255, fontStyle: "bold" as const, fontSize: 8 };
+  const body = { fontSize: 8, cellPadding: 1.4, textColor: NAVY };
+  const frame = (title: string) => {
+    doc.setDrawColor(...NAVY);
+    doc.setLineWidth(0.6);
+    doc.rect(m, m, W - m * 2, H - m * 2);
+    doc.setFillColor(...NAVY);
+    doc.rect(m, m, W - m * 2, 14, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text(title, m + 5, m + 9.2);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    pdfFitText(doc, projectName, W - m - 5, m + 9, 200, { align: "right" });
+  };
+  const n0 = (v: number, d = 0) => v.toLocaleString("en-PH", { minimumFractionDigits: d, maximumFractionDigits: d });
+  // Continuation pages of the schedule get the sheet frame once
+  const framed = new Set<number>([1]);
+  const frameContinued = () => {
+    const p = doc.getCurrentPageInfo().pageNumber;
+    if (framed.has(p)) return;
+    framed.add(p);
+    frame("ILLUMINATION DESIGN BY FLOOR (CONTINUED)");
+  };
+
+  frame("ILLUMINATION DESIGN BY FLOOR");
+  autoTable(doc, {
+    startY: m + 20,
+    margin: { left: m + 4, right: m + 4, top: m + 20, bottom: m + 6 },
+    head: [["FLOOR", "ROOMS", "AREA (m²)", "LUMINAIRES (REQUIRED)", "LUMENS (lm)", "LOAD (W)", "LPD (W/m²)", "Eavg (lx)", "TARGET (lx)"]],
+    body: [
+      ...groups.map((g) => [g.name, g.totals.rooms, n0(g.totals.area, 2), `${g.totals.fixtures} (${g.totals.required})`, n0(g.totals.lumens), n0(g.totals.watts), g.totals.lpd.toFixed(2), n0(g.totals.avgLux), n0(g.totals.avgTargetLux)]),
+      ["ALL FLOORS", all.rooms, n0(all.area, 2), `${all.fixtures} (${all.required})`, n0(all.lumens), n0(all.watts), all.lpd.toFixed(2), n0(all.avgLux), n0(all.avgTargetLux)],
+    ],
+    theme: "grid",
+    headStyles: head,
+    bodyStyles: body,
+    didParseCell: (d) => { if (d.section === "body" && d.row.index === groups.length) d.cell.styles.fontStyle = "bold"; },
+    didDrawPage: frameContinued,
+  });
+  let y = (doc as any).lastAutoTable.finalY + 8;
+  groups.forEach((g) => {
+    autoTable(doc, {
+      startY: y,
+      margin: { left: m + 4, right: m + 4, top: m + 20, bottom: m + 6 },
+      head: [
+        [{ content: `${g.name.toUpperCase()}  -  ${g.totals.rooms} room${g.totals.rooms === 1 ? "" : "s"}, ${n0(g.totals.area, 2)} m², LPD ${g.totals.lpd.toFixed(2)} W/m²`, colSpan: 10, styles: { fillColor: INDIGO, halign: "left" } }],
+        ["ROOM", "AREA (m²)", "TARGET (lx)", "LUMINAIRE", "QTY (REQ.)", "LUMENS (lm)", "LOAD (W)", "LPD (W/m²)", "Eavg (lx)", "CIRCUIT"],
+      ],
+      body: g.rooms.map((r) => [
+        r.layout.roomName, n0(r.area, 2), n0(r.targetLux), r.fixtureType, `${r.fixtures} (${r.required})`, n0(r.lumens), n0(r.watts),
+        r.area > 0 ? (r.watts / r.area).toFixed(2) : "-", n0(r.achievedLux), r.circuitNo ? String(r.circuitNo) : "-",
+      ]),
+      theme: "grid",
+      headStyles: head,
+      bodyStyles: body,
+      columnStyles: { 0: { cellWidth: 60 }, 3: { cellWidth: 70 } },
+      didDrawPage: frameContinued,
+    });
+    y = (doc as any).lastAutoTable.finalY + 8;
+  });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  if (y < H - m - 10) doc.text("Eavg: maintained average illuminance by the lumen method, E = N x lumens x UF x MF / A. Room layout sheets follow, floor by floor.", m + 4, y);
+
+  // Layout sheets, floor by floor
+  let n = 0;
+  groups.forEach((g) => g.rooms.forEach((r) => {
+    doc.addPage("a3", "landscape");
+    n++;
+    drawRoomLayoutSheets(doc, { ...r.layout, floorName: r.layout.floorName ?? g.name }, `IL-${n}`, false);
+  }));
+
+  const safe = (projectName || "Project").replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "");
+  doc.save(`Illumination_By_Floor_${safe || "Project"}.pdf`);
 }
 
 /** Room plan as a PNG data URL (for the Word report), drawn on a canvas */

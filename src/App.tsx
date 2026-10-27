@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { isFullAccessPlan, isExpiringPlan } from "./utils/plans";
 import { illuminationDesignSummary } from "./utils/illuminationSizing";
+import { groupSavedRoomsByFloor } from "./utils/modelFloors";
 import { isEqual } from "lodash";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
@@ -3843,6 +3844,7 @@ export default function App() {
           "",
           "",
           "",
+          "",
         ]);
         illData.push([]);
         illData.push([
@@ -3857,9 +3859,15 @@ export default function App() {
           "ASHRAE LIMIT (W/m²)",
           "STATUS",
           "CIRCUIT NO.",
+          "FLOOR",
         ]);
 
-        illumParams.savedRooms.forEach((room) => {
+        // Rooms floor by floor (lowest first) when floors are set
+        const illFloorGroups = groupSavedRoomsByFloor(illumParams, illumParams.savedRooms);
+        const illRows = illFloorGroups
+          ? illFloorGroups.flatMap((g) => g.rooms.map((room) => ({ room, floor: g.name })))
+          : illumParams.savedRooms.map((room) => ({ room, floor: room.floorName || "-" }));
+        illRows.forEach(({ room, floor }) => {
           const roomLPD = room.totalWattage / room.area;
           const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
           const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
@@ -3875,8 +3883,18 @@ export default function App() {
             limitLPD,
             status,
             room.circuitNo ? room.circuitNo : "-",
+            floor,
           ]);
         });
+        // Floor totals
+        if (illFloorGroups) {
+          illData.push([]);
+          illData.push(["FLOOR", "ROOMS", "AREA (m²)", "LUMINAIRES (REQ.)", "TOTAL LUMENS", "TOTAL WATTAGE (W)", "LPD (W/m²)", "Eavg (lx)", "TARGET (lx)"]);
+          illFloorGroups.forEach((g) => {
+            const t = g.totals;
+            illData.push([g.name, t.rooms, Number(t.area.toFixed(2)), `${t.fixtures} (${t.required})`, Math.round(t.lumens), Math.round(t.watts), Number(t.lpd.toFixed(2)), Math.round(t.avgLux), Math.round(t.avgTargetLux)]);
+          });
+        }
 
         const wsIll = XLSX.utils.aoa_to_sheet(illData);
         const wscolsIll = [
@@ -3891,10 +3909,11 @@ export default function App() {
           { wch: 20 },
           { wch: 15 },
           { wch: 15 },
+          { wch: 18 },
         ];
         wsIll["!cols"] = wscolsIll;
 
-        wsIll["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+        wsIll["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }];
 
         const rangeIll = XLSX.utils.decode_range(wsIll["!ref"] || "A1:A1");
         const wsrowsIll = [];

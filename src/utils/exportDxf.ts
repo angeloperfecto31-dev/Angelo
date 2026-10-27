@@ -1,4 +1,5 @@
 import { getRoomOutline, polygonArea, polygonBounds, vertexLabel } from "./roomGeometry";
+import { floorSummaryLine, groupSavedRoomsByFloor } from "./modelFloors";
 import { isFullAccessPlan } from "./plans";
 import {
   PanelConfig,
@@ -5283,8 +5284,25 @@ export const exportToCAD = (
 
     ty -= 24;
 
-    // Data Row rendering
-    illumParams.savedRooms.forEach((room: any) => {
+    // Data Row rendering: rooms floor by floor, each floor under a heading row with its totals
+    const floorGroups = groupSavedRoomsByFloor(illumParams, illumParams.savedRooms);
+    const tableRooms: any[] = floorGroups
+      ? floorGroups.flatMap((g) => [{ __floor: g }, ...g.rooms])
+      : illumParams.savedRooms;
+    tableRooms.forEach((room: any) => {
+      if (room.__floor) {
+        const fh = 12.0;
+        if (ty - fh - 14.0 < PAGE_BOTTOM_Y) {
+          continueOnNewSheet(illSheetIndex, panel, "ILLUMINATION ANALYSIS (CONTINUED)", "LUMEN METHOD LIGHTING REPORT");
+          ty = drawColumnLabelRow(tableLeft, tableRight, cols, colPositions, CONTINUE_TOP_Y, 24, 4.0);
+        }
+        b.addLine(tableLeft, ty - fh, tableRight, ty - fh, "TABLE_GRID");
+        b.addLine(tableLeft, ty - fh, tableLeft, ty, "BORDER");
+        b.addLine(tableRight, ty - fh, tableRight, ty, "BORDER");
+        b.addText(floorSummaryLine(room.__floor), tableLeft + 3, ty - fh / 2 - 2.0, 4.0, 0, "TEXT_HEADER", "left", tableWidth - 6);
+        ty -= fh;
+        return;
+      }
       const roomLPD = room.totalWattage / room.area;
       const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
       const status = roomLPD <= limitLPD ? "PASSED" : "FAILED";
@@ -5333,9 +5351,12 @@ export const exportToCAD = (
     });
 
     // === ROOM LAYOUT PLANS: each room with a known outline, drawn to a standard scale ===
-    const planRooms = illumParams.savedRooms.filter(
-      (r: any) => (Array.isArray(r.roomPolygon) && r.roomPolygon.length >= 3) || (r.roomWidth > 0 && r.roomLength > 0)
-    );
+    const hasOutline = (r: any) => (Array.isArray(r.roomPolygon) && r.roomPolygon.length >= 3) || (r.roomWidth > 0 && r.roomLength > 0);
+    const planRooms = illumParams.savedRooms.filter(hasOutline);
+    // One set of plans per floor (each floor starts on its own sheet), or one set without floors
+    const planSets: { title: string; rooms: any[] }[] = floorGroups
+      ? floorGroups.map((g) => ({ title: g.name.toUpperCase(), rooms: g.rooms.filter(hasOutline) })).filter((s) => s.rooms.length > 0)
+      : [{ title: "", rooms: planRooms }];
     const areaBottom = 28;
     const areaLeft = tableLeft;
     const areaRight = xOffset + sConf.w - 145; // clear of the title block strip
@@ -5347,15 +5368,17 @@ export const exportToCAD = (
       const scales = [20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
 
       // Fill the space under the table first, then as many continuation sheets as the rooms need
-      let remaining = planRooms.slice();
       let areaTop = ty - 18;
+      for (const set of planSets) {
+      let remaining = set.rooms.slice();
       let page = 0;
       while (remaining.length > 0) {
         if (areaTop - areaBottom < PLAN_CELL_MIN_H) {
-          continueOnNewSheet(illSheetIndex, panel, "ILLUMINATION ANALYSIS (CONTINUED)", "ROOM LAYOUT PLANS");
+          continueOnNewSheet(illSheetIndex, panel, "ILLUMINATION ANALYSIS (CONTINUED)", set.title ? `ROOM LAYOUT PLANS - ${set.title}` : "ROOM LAYOUT PLANS");
           areaTop = CONTINUE_TOP_Y;
         }
-        b.addText(page === 0 ? "ROOM LAYOUT PLANS" : "ROOM LAYOUT PLANS (CONTINUED)", areaLeft, areaTop + 6, 5.0, 0, "TEXT_TITLE", "left");
+        const planTitle = set.title ? `ROOM LAYOUT PLANS - ${set.title}` : "ROOM LAYOUT PLANS";
+        b.addText(page === 0 ? planTitle : `${planTitle} (CONTINUED)`, areaLeft, areaTop + 6, 5.0, 0, "TEXT_TITLE", "left");
         const cols = Math.min(remaining.length, 3);
         const maxRows = Math.max(1, Math.floor((areaTop - areaBottom) / PLAN_CELL_MIN_H));
         const rows = Math.min(maxRows, Math.ceil(remaining.length / cols));
@@ -5446,8 +5469,9 @@ export const exportToCAD = (
         });
 
         remaining = remaining.slice(rows * cols);
-        areaTop = areaBottom; // next rooms go on a new sheet
+        areaTop = areaBottom; // next rooms (and the next floor) go on a new sheet
         page++;
+      }
       }
       b.originX = 0;
     }
