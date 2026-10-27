@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Download, FileType2, Maximize2, Minimize2 } from "lucide-react";
 import type { Circuit, PanelConfig, ShortCircuitParams, VoltageDropCalculation } from "../types";
 import { analysePowerSystem } from "../utils/powerAnalysis";
-import { LAYER_STYLE, type Prim, type SldOptions, buildImpedanceSld, exportSldDxf, exportSldPdf } from "../utils/impedanceSld";
+import { LAYER_STYLE, type Prim, type SldOptions, buildImpedanceSld, exportSldDxf, exportSldPdf, sldOptionsFor } from "../utils/impedanceSld";
 
 interface Props {
   panel: PanelConfig;
@@ -12,30 +12,31 @@ interface Props {
   vdCalculations?: VoltageDropCalculation[];
   isPremium?: boolean;
   onRequestUpgrade?: () => void;
+  /** Saves the study scope and title block with the project (used by "Export AutoCAD Drawing" too) */
+  onSettingsChange?: (settings: NonNullable<ShortCircuitParams["sldSettings"]>) => void;
 }
 
+const NO_SETTINGS: NonNullable<ShortCircuitParams["sldSettings"]> = {};
+
 /** Single Line Impedance Diagram sheet, generated from the project data and the short-circuit results */
-export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vdCalculations, isPremium = true, onRequestUpgrade }: Props) {
+export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vdCalculations, isPremium = true, onRequestUpgrade, onSettingsChange }: Props) {
   const result = useMemo(
     () => analysePowerSystem({ panel, circuits, subPanels, iscParams, vdCalculations, basis: "demand" }),
     [panel, circuits, subPanels, iscParams, vdCalculations]
   );
   const is3 = result.source.is3Phase;
   const hasNeutral = result.buses.some((b) => Number.isFinite(b.iLG));
-  const [faultTypes, setFaultTypes] = useState<SldOptions["faultTypes"]>({ threePhase: true, lineLine: true, lineGround: true, doubleLineGround: false });
-  const [showImpedance, setShowImpedance] = useState(true);
   const [big, setBig] = useState(false);
-  const [title, setTitle] = useState<SldOptions["title"]>(() => ({
-    project: panel.project || "",
-    location: panel.location || "",
-    client: (panel as any).owner || "",
-    drawingNo: "E-SC-01",
-    revision: "0",
-    preparedBy: (panel as any).engineer || "",
-    checkedBy: "",
-    date: new Date().toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "2-digit" }),
-  }));
-  const sheet = useMemo(() => buildImpedanceSld({ result, panel, circuits, subPanels, iscParams }, { faultTypes, showImpedance, title }), [result, panel, circuits, subPanels, iscParams, faultTypes, showImpedance, title]);
+  // Settings live in the project (iscParams.sldSettings) when the page can save them, otherwise locally
+  const [local, setLocal] = useState<NonNullable<ShortCircuitParams["sldSettings"]>>({});
+  const saved = (onSettingsChange ? iscParams.sldSettings : local) || NO_SETTINGS;
+  const opts = useMemo(() => sldOptionsFor(panel, { ...iscParams, sldSettings: saved }), [panel, iscParams, saved]);
+  const { faultTypes, showImpedance, title } = opts;
+  const save = (next: NonNullable<ShortCircuitParams["sldSettings"]>) => (onSettingsChange ? onSettingsChange(next) : setLocal(next));
+  const setFaultTypes = (fn: (f: SldOptions["faultTypes"]) => SldOptions["faultTypes"]) => save({ ...saved, faultTypes: fn(faultTypes) });
+  const setShowImpedance = (v: boolean) => save({ ...saved, showImpedance: v });
+  const setTitle = (fn: (t: SldOptions["title"]) => SldOptions["title"]) => save({ ...saved, title: { ...(saved.title || {}), ...fn(title) } });
+  const sheet = useMemo(() => buildImpedanceSld({ result, panel, circuits, subPanels, iscParams }, opts), [result, panel, circuits, subPanels, iscParams, opts]);
   const fileBase = `${(title.project || panel.designation || "Project").replace(/[^a-z0-9]+/gi, "_")}_Impedance_SLD`;
   const flagged = result.buses.filter((b) => b.faultStatus === "fail" || b.withstand.status === "fail");
   const missing = result.findings.filter((f) => f.area === "Missing Data");
@@ -120,7 +121,7 @@ export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vd
         </svg>
       </div>
       <p className="text-[11px] text-slate-500">
-        To change the diagram, edit the project: panels, breakers and kAIC in the Load Schedule, feeder lengths in Voltage Drop, utility and transformer data above. AutoCAD: the DXF opens directly (save as DWG if needed); every element is on its own SLD_* layer.
+        To change the diagram, edit the project: panels, breakers and kAIC in the Load Schedule, feeder lengths in Voltage Drop, utility and transformer data above. Study scope and title block are saved with the project and used by both this DXF and "Export AutoCAD Drawing". AutoCAD: the DXF opens directly (save as DWG if needed); every element is on its own SC-SLD-* layer.
       </p>
     </div>
   );

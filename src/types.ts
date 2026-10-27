@@ -169,6 +169,12 @@ export interface PanelConfig {
 }
 
 export interface ShortCircuitParams {
+  /** Single Line Impedance Diagram settings (study scope and title block), shared by both AutoCAD exports */
+  sldSettings?: {
+    faultTypes?: { threePhase?: boolean; lineLine?: boolean; lineGround?: boolean; doubleLineGround?: boolean };
+    showImpedance?: boolean;
+    title?: Partial<Record<"project" | "location" | "client" | "drawingNo" | "revision" | "preparedBy" | "checkedBy" | "date", string>>;
+  };
   transformerKVA: number;
   transformerZ: number; // percentage
   transformerVoltage: number;
