@@ -381,7 +381,9 @@ export default function ImportedModelViewer({
     t.clipLow.constant = -low;
     const planes = [...(high < 1e6 ? [t.clip] : []), ...(low > -1e6 ? [t.clipLow] : [])];
     placedModel.current?.traverse((o: any) => {
-      if (!o.isMesh) return;
+      // Surfaces and also edges / points / sprites (SketchUp exports carry edges as lines); otherwise
+      // those of cut-away floors stay floating above the section
+      if (!(o.isMesh || o.isLine || o.isPoints || o.isSprite) || !o.material) return;
       (Array.isArray(o.material) ? o.material : [o.material]).forEach((m: THREE.Material) => {
         if (!m) return;
         m.clippingPlanes = planes;
@@ -905,6 +907,11 @@ export default function ImportedModelViewer({
       const h = Math.max(m.height * ds, 0.02);
       const lines = a.text.split('\n');
       return { a, p, rot: m.rotation, h, lines };
+    }).filter(({ p }) => {
+      // Text of hidden floors, and of floors cut away above the section, is not shown
+      if (!floorShown(p.y)) return false;
+      const fl = floorOf(floors, p.y);
+      return !(sectionView && fl && floors.length > 1 && fl.elevation > info.sectionElevation);
     });
     const moves = annSet.resolveOverlaps
       ? resolveOverlaps(placedItems.map(it => ({
@@ -986,7 +993,7 @@ export default function ImportedModelViewer({
         t.labels.add(l);
       }
     });
-  }, [loaded, info, annSet, view, sectionView, annSelected]);
+  }, [loaded, info, annSet, view, sectionView, annSelected, floors, floorShown]);
 
   // ------------------------------------------------------------------ picking
   const ndc = (e: React.PointerEvent | PointerEvent) => {
