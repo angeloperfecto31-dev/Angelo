@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
-import { generateSolarBOM } from "./solarEngine";
+import { resolveSolarBOM } from "./solarEngine";
 
 /**
  * Generates an executive-grade, multi-sheet Solar PV Engineering Workbook (.xlsx)
@@ -414,11 +414,7 @@ export function exportSolarToExcel(
 
   // Resolve BOM items: use user customized BOM if present, otherwise calc.bomItems, or generate fresh from engine
   const bomList: SolarBOMItem[] =
-    config.bomItems && config.bomItems.length > 0
-      ? config.bomItems
-      : calc.bomItems && calc.bomItems.length > 0
-      ? calc.bomItems
-      : generateSolarBOM(config, calc);
+    resolveSolarBOM(config, calc);
 
   let grandTotal = 0;
   let subtotalCost = 0;

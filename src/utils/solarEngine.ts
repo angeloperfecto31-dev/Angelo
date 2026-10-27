@@ -5245,10 +5245,7 @@ export function computeSolarDesign(
     totalChecks,
   };
 
-  results.bomItems =
-    config.bomItems && config.bomItems.length > 0
-      ? config.bomItems
-      : generateSolarBOM(config, results);
+  results.bomItems = resolveSolarBOM(config, results);
 
   return results;
 }
@@ -5256,290 +5253,418 @@ export function computeSolarDesign(
 // ==========================================
 // 7. AUTOMATED SOLAR BOM GENERATOR
 // ==========================================
+/**
+ * Bill of materials generated from the effective design (auto values or the user's overrides). Every
+ * quantity follows the design and carries its basis, so the BOM changes with the design. Unit costs are
+ * indicative (PHP) and meant to be replaced with supplier quotes; brands are "or equivalent".
+ */
 export function generateSolarBOM(
   config: SolarDesignConfig,
   calc: SolarCalculationResults
 ): SolarBOMItem[] {
   const items: SolarBOMItem[] = [];
   const eff = calc.effective;
+  const mod = calc.selectedModule;
+  const inv = calc.selectedInverter;
+  const invQty = Math.max(1, eff.inverterQuantity || 1);
+  const strings = Math.max(0, eff.numberOfStrings || 0);
+  const dcp = config.dcProtection;
+  const acp = config.acProtection;
+  const dcRun = config.cabling.dcCable;
+  const acRun = config.cabling.acCable;
+  const add = (it: Omit<SolarBOMItem, "totalCostPhp" | "markupPercent"> & { markupPercent?: number }) =>
+    items.push({ markupPercent: 15, ...it, totalCostPhp: 0, source: "auto" });
 
-  // 1. PV Modules
-  items.push({
+  // ---- PV array
+  add({
     id: "bom-pv-modules",
     category: "PV Equipment",
-    itemDescription: `Monocrystalline N-Type Solar PV Module ${calc.selectedModule.ratedPowerWp}Wp`,
-    manufacturer: calc.selectedModule.manufacturer,
-    model: calc.selectedModule.model,
+    itemDescription: `Solar PV Module ${mod.ratedPowerWp} Wp, ${mod.efficiencyPercent}% eff., Voc ${mod.voc} V / Isc ${mod.isc} A, ${mod.lengthMm} × ${mod.widthMm} × ${mod.thicknessMm} mm`,
+    manufacturer: mod.manufacturer,
+    model: mod.model,
     quantity: eff.totalModules,
     unit: "pcs",
-    unitCostPhp: Math.round(calc.selectedModule.ratedPowerWp * 14.5), // approx 14.5 PHP/Wp
-    markupPercent: 15,
-    totalCostPhp: 0,
+    unitCostPhp: Math.round(mod.ratedPowerWp * 14.5),
+    basis: `${strings} strings × ${eff.modulesPerString} modules = ${(eff.totalModules * mod.ratedPowerWp / 1000).toFixed(2)} kWp`,
   });
 
-  // 2. Solar Inverters
-  const invTypeLabel =
-    config.systemType === "hybrid"
-      ? "Hybrid Storage (BESS)"
-      : config.systemType === "off-grid"
-      ? "Off-Grid Islanding"
-      : "Grid-Tied On-Grid";
-
-  items.push({
+  const invTypeLabel = config.systemType === "hybrid" ? "Hybrid (battery-ready)" : config.systemType === "off-grid" ? "Off-grid" : "Grid-tied";
+  add({
     id: "bom-inverters",
     category: "PV Equipment",
-    itemDescription: `${invTypeLabel} Solar Inverter ${calc.selectedInverter.ratedAcPowerKw}kW ${calc.selectedInverter.phase} ${calc.selectedInverter.acVoltage}V`,
-    manufacturer: calc.selectedInverter.manufacturer,
-    model: calc.selectedInverter.model,
-    quantity: eff.inverterQuantity,
-    unit: "sets",
-    unitCostPhp: Math.round(calc.selectedInverter.ratedAcPowerKw * 5200), // approx 5,200 PHP/kW
-    markupPercent: 15,
-    totalCostPhp: 0,
+    itemDescription: `${invTypeLabel} Solar Inverter ${inv.ratedAcPowerKw} kW, ${inv.phase === "3PH" ? "3-phase" : "1-phase"} ${inv.acVoltage} V, ${inv.numMppts} MPPT, ${inv.maxDcVoltage} V DC max, ${inv.ipRating}`,
+    manufacturer: inv.manufacturer,
+    model: inv.model,
+    quantity: invQty,
+    unit: "units",
+    unitCostPhp: Math.round(inv.ratedAcPowerKw * 5200),
+    basis: `${invQty} × ${inv.ratedAcPowerKw} kW = ${(invQty * inv.ratedAcPowerKw).toFixed(1)} kW AC, DC/AC ${calc.dcAcRatio?.toFixed?.(2) ?? "-"}`,
   });
 
-  // 3. Battery Storage (if enabled)
+  // ---- battery
   if (config.battery.enabled) {
-    const battUnits = eff.batteryUnits;
-    items.push({
+    const b = config.battery;
+    add({
       id: "bom-battery",
       category: "PV Equipment",
-      itemDescription: `Lithium Iron Phosphate (LiFePO4) Battery Module ${config.battery.energyKwh}kWh ${config.battery.voltageV}V`,
-      manufacturer: config.battery.manufacturer,
-      model: config.battery.model,
-      quantity: battUnits,
+      itemDescription: `${b.chemistry || "Lithium"} Battery Module ${b.energyKwh} kWh, ${b.voltageV} V, ${b.capacityAh} Ah, DoD ${b.dodPercent}%`,
+      manufacturer: b.manufacturer,
+      model: b.model,
+      quantity: eff.batteryUnits,
       unit: "units",
-      unitCostPhp: Math.round(config.battery.energyKwh * 24000), // ~24,000 PHP per kWh LFP
-      markupPercent: 15,
-      totalCostPhp: 0,
+      unitCostPhp: Math.round(b.energyKwh * 24000),
+      basis: `${calc.batteryUnitsInSeries}S × ${calc.batteryUnitsInParallel}P, bank ${calc.batteryBankVoltage} V / ${calc.batteryTotalEnergyKwh?.toFixed?.(1) ?? "-"} kWh`,
     });
-    // Battery DC protection and cabling, sized by the calculation engine
-    items.push({
+    add({
       id: "bom-battery-breaker",
       category: "DC Equipment",
-      itemDescription: `Battery DC Breaker / MCCB ${calc.batteryBreakerAmps}A 2P, ${Math.max(80, Math.ceil(calc.batteryBankVoltage * 1.25 / 10) * 10)}V DC rated`,
-      manufacturer: "Tier-1 DC Protection",
-      model: `DC-MCCB-${calc.batteryBreakerAmps}A`,
+      itemDescription: `Battery DC Breaker / MCCB ${calc.batteryBreakerAmps} A 2P, ${Math.max(80, Math.ceil((calc.batteryBankVoltage * 1.25) / 10) * 10)} V DC rated`,
+      manufacturer: "DC-rated MCCB (or equivalent)",
+      model: `DC MCCB ${calc.batteryBreakerAmps} A 2P`,
       quantity: 1,
       unit: "units",
       unitCostPhp: Math.round(2500 + calc.batteryBreakerAmps * 25),
-      markupPercent: 15,
-      totalCostPhp: 0,
+      basis: `125% of the ${calc.batteryMaxDcCurrentA?.toFixed?.(0) ?? "-"} A battery current`,
     });
-    items.push({
+    add({
       id: "bom-battery-cable",
       category: "Wiring & Conduit",
-      itemDescription: `Battery DC Cable ${calc.batteryCableSizeMm2}mm² Cu (+/-)${calc.batteryCableRuns > 1 ? ` x ${calc.batteryCableRuns} runs` : ""} with lugs, EGC ${calc.batteryEgcSizeMm2}mm² (est. 5 m run - adjust to site)`,
-      manufacturer: "Phelps Dodge / Equivalent",
-      model: `${calc.batteryCableSizeMm2}mm² Flexible`,
+      itemDescription: `Battery DC Cable ${calc.batteryCableSizeMm2} mm² Cu flexible (+/-)${calc.batteryCableRuns > 1 ? ` × ${calc.batteryCableRuns} runs` : ""} with lugs; EGC ${calc.batteryEgcSizeMm2} mm²`,
+      manufacturer: "Flexible Cu cable (or equivalent)",
+      model: `${calc.batteryCableSizeMm2} mm² flexible`,
       quantity: 2 * calc.batteryCableRuns * 5,
       unit: "meters",
       unitCostPhp: Math.round(calc.batteryCableSizeMm2 * 18 + 60),
-      markupPercent: 15,
-      totalCostPhp: 0,
+      basis: "2 poles × runs × 5 m: battery cable length is not in the design, adjust to the site",
     });
   }
 
-  // 4. Mounting Structure
-  const mountingDesc =
-    config.roofType === "gi_sheet"
-      ? "Aluminum Rail & L-Foot Mounting System for Corrugated / GI Roof"
-      : config.roofType === "concrete_slab"
-      ? "Ballasted / Tilted Triangular Aluminum Rack for Concrete Flat Roof"
-      : "Ground-Mount Galvanized Steel / Aluminum High-Strength Framing";
-
-  items.push({
+  // ---- mounting (per roof type)
+  const mounting: Record<string, [string, string]> = {
+    gi_sheet: ["Aluminium rail mounting kit for corrugated / GI roof: rails, mid / end clamps, L-feet / roof clamps, EPDM seals, stainless fasteners", "Rail + L-foot"],
+    concrete_slab: ["Tilted aluminium rack for concrete roof slab: triangle frames, rails, clamps, anchors / ballast", "Tilted rack"],
+    tile_roof: ["Aluminium rail mounting kit for tile roof: rails, mid / end clamps, tile hooks, stainless fasteners", "Rail + tile hook"],
+    ground_mount: ["Ground-mount structure: galvanized steel / aluminium frames, rails, clamps (foundations by civil works)", "Ground structure"],
+    carport_canopy: ["Carport / canopy PV structure: steel frame, purlins, rails and clamps", "Carport structure"],
+  };
+  const [mountDesc, mountModel] = mounting[config.roofType] || mounting.gi_sheet;
+  add({
     id: "bom-mounting",
     category: "Mounting & Structure",
-    itemDescription: mountingDesc,
-    manufacturer: "Tier-1 Mounting",
-    model: "SolarRail AL6005-T5",
+    itemDescription: mountDesc,
+    manufacturer: "Mounting system (or equivalent)",
+    model: mountModel,
     quantity: eff.totalModules,
-    unit: "sets",
-    unitCostPhp: 1250,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    unit: "module sets",
+    unitCostPhp: config.roofType === "ground_mount" || config.roofType === "carport_canopy" ? 2800 : config.roofType === "concrete_slab" ? 1900 : 1250,
+    basis: `1 set per module (${eff.totalModules} modules)`,
   });
 
-  // 5. DC Combiner Box & Protection
-  if (config.dcProtection.combinerBoxRequired) {
-    const combinerBoxes = Math.max(1, Math.ceil(eff.numberOfStrings / 4));
-    items.push({
+  // ---- DC side
+  const stringsPerInverter = Math.ceil(strings / invQty);
+  const stringsPerMppt = Math.max(1, Math.ceil(strings / (invQty * Math.max(1, inv.numMppts))));
+  const combinerInputs = Math.max(1, dcp.combinerBoxInputs || 4);
+  const combinerBoxes = dcp.combinerBoxRequired ? invQty * Math.max(1, Math.ceil(stringsPerInverter / combinerInputs)) : 0;
+  if (combinerBoxes > 0) {
+    add({
       id: "bom-dc-combiner",
       category: "DC Equipment",
-      itemDescription: `DC Combiner Box IP65 with Fuses, Isolator, and Type II SPD (1000V DC)`,
-      manufacturer: "Chint / Suntree",
-      model: "SCB-4IN-1OUT 1000V",
+      itemDescription: `PV DC Combiner Box IP65, ${combinerInputs} inputs / 1 output, ${dcp.fuseVoltageVolts || 1000} V DC enclosure with busbars (fuses, isolator and SPD listed separately)`,
+      manufacturer: "PV combiner (or equivalent)",
+      model: dcp.combinerBoxModel || `${combinerInputs}-in / 1-out`,
       quantity: combinerBoxes,
-      unit: "sets",
-      unitCostPhp: 8500,
-      markupPercent: 15,
-      totalCostPhp: 0,
+      unit: "units",
+      unitCostPhp: 4500 + combinerInputs * 600,
+      basis: `${invQty} inverter(s) × ⌈${stringsPerInverter} strings / ${combinerInputs} inputs⌉`,
     });
   }
 
-  // 6. DC Fuses
-  items.push({
-    id: "bom-dc-fuses",
-    category: "DC Equipment",
-    itemDescription: `1000V DC Photovoltaic Fuse Link & Holder ${eff.dcFuseRatingAmps}A 10x38mm`,
-    manufacturer: "Eaton Bussmann / Suntree",
-    model: "PV-10M 1000VDC",
-    quantity: eff.numberOfStrings * 2, // Positive & Negative poles
-    unit: "pcs",
-    unitCostPhp: 380,
-    markupPercent: 15,
-    totalCostPhp: 0,
-  });
+  // String fuses: needed when more than 2 strings are paralleled (PEC 6.90 / NEC 690.9) or a combiner is used
+  const fusesNeeded = combinerBoxes > 0 || stringsPerMppt > 2;
+  if (fusesNeeded && strings > 0) {
+    const fuseA = eff.dcFuseRatingAmps;
+    const fuseSize = fuseA <= 32 ? "10×38 mm" : fuseA <= 50 ? "14×51 mm" : "NH";
+    const poles = Math.max(1, dcp.fusePoles || 2);
+    add({
+      id: "bom-dc-fuses",
+      category: "DC Equipment",
+      itemDescription: `PV String Fuse (gPV) ${fuseA} A ${dcp.fuseVoltageVolts || 1000} V DC, ${fuseSize}, with fuse holder`,
+      manufacturer: "gPV fuse (or equivalent)",
+      model: `gPV ${fuseA} A ${fuseSize}`,
+      quantity: strings * poles,
+      unit: "pcs",
+      unitCostPhp: fuseA <= 32 ? 380 : 650,
+      basis: `${strings} strings × ${poles} pole(s)${combinerBoxes ? " in the combiner boxes" : `; ${stringsPerMppt} strings per MPPT`}`,
+    });
+  }
 
-  // 7. DC Isolator / Disconnect
-  items.push({
+  add({
     id: "bom-dc-isolator",
     category: "DC Equipment",
-    itemDescription: `Rotary DC Disconnect Switch ${eff.dcIsolatorRatingAmps}A 1000V 4-Pole IP66`,
-    manufacturer: "Socomed / Suntree",
-    model: "SISO-32 1000V",
-    quantity: Math.max(1, eff.inverterQuantity * 2),
-    unit: "sets",
-    unitCostPhp: 3200,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    itemDescription: `DC Isolator Switch ${eff.dcIsolatorRatingAmps} A, ${dcp.isolatorVoltageVolts || 1000} V DC, ${dcp.isolatorPoles || 4}-pole, IP66, lockable`,
+    manufacturer: "PV DC isolator (or equivalent)",
+    model: `DC isolator ${eff.dcIsolatorRatingAmps} A ${dcp.isolatorPoles || 4}P`,
+    quantity: invQty + combinerBoxes,
+    unit: "units",
+    unitCostPhp: eff.dcIsolatorRatingAmps > 32 ? 5200 : 3200,
+    basis: combinerBoxes ? `1 per inverter + 1 per combiner box` : "1 per inverter (array disconnect)",
   });
 
-  // 8. DC SPD
-  items.push({
+  // SPD at the inverter, and at the array end too when the DC run is over 10 m (IEC 60364-7-712)
+  const dcSpdQty = combinerBoxes > 0 ? combinerBoxes + ((dcRun.lengthM || 0) > 10 ? invQty : 0) : invQty;
+  add({
     id: "bom-dc-spd",
     category: "DC Equipment",
-    itemDescription: `Photovoltaic DC Surge Protective Device (SPD) Type 2 Uc=${eff.dcSpdUcVolts}V`,
-    manufacturer: "OBO Bettermann / Suntree",
-    model: "V20-C 1000V DC",
-    quantity: Math.max(1, eff.inverterQuantity),
-    unit: "sets",
+    itemDescription: `PV DC Surge Protective Device (${dcp.spdType || "Type 2"}), Ucpv ≥ ${eff.dcSpdUcVolts} V DC, In ${dcp.spdInKa || 20} kA / Imax ${dcp.spdImaxKa || 40} kA`,
+    manufacturer: "PV SPD (or equivalent)",
+    model: `${dcp.spdType || "Type 2"} ${eff.dcSpdUcVolts} V DC`,
+    quantity: dcSpdQty,
+    unit: "units",
     unitCostPhp: 2800,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    basis: combinerBoxes ? `1 per combiner box${(dcRun.lengthM || 0) > 10 ? " + 1 per inverter (DC run > 10 m)" : ""}` : "1 per inverter",
   });
 
-  // 9. MC4 Connectors
-  items.push({
+  const mc4Pairs = strings * 2 + (combinerBoxes ? 0 : strings * 2);
+  add({
     id: "bom-mc4",
     category: "DC Equipment",
-    itemDescription: `MC4 Solar Connectors Male/Female Pairs IP68 1500V DC`,
-    manufacturer: "Staubli / Genuine",
-    model: "MC4-Evo2",
-    quantity: eff.numberOfStrings * 4 + 10,
+    itemDescription: "MC4-compatible PV connector pairs (male / female), IP68, 1500 V DC",
+    manufacturer: "PV connector (or equivalent)",
+    model: "MC4 pair",
+    quantity: mc4Pairs + Math.max(4, Math.ceil(mc4Pairs * 0.05)),
     unit: "pairs",
     unitCostPhp: 110,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    basis: `${strings} strings × ${combinerBoxes ? "2 (array end)" : "4 (array + inverter end)"} + 5% spares`,
   });
 
-  // 10. DC Solar Cable
-  const totalDcMeters = eff.numberOfStrings * (config.cabling.dcCable.lengthM || 35) * 2;
-  items.push({
+  const dcLen = dcRun.lengthM || 35;
+  add({
     id: "bom-dc-cable",
     category: "Wiring & Conduit",
-    itemDescription: `${eff.dcCableSizeMm2} mm² PV1-F / H1Z2Z2-K UV Double-Insulated Solar Cable`,
-    manufacturer: "KBE / Lapp / Phelps Dodge",
-    model: `H1Z2Z2-K 1x${eff.dcCableSizeMm2}mm²`,
-    quantity: Math.round(totalDcMeters),
+    itemDescription: `PV Solar Cable ${eff.dcCableSizeMm2} mm² H1Z2Z2-K / PV1-F, UV-resistant double insulated (red / black)`,
+    manufacturer: "PV cable (or equivalent)",
+    model: `H1Z2Z2-K 1×${eff.dcCableSizeMm2} mm²`,
+    quantity: Math.round(strings * dcLen * 2),
     unit: "meters",
-    unitCostPhp: 75,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    unitCostPhp: Math.round(45 + eff.dcCableSizeMm2 * 6),
+    basis: `${strings} strings × ${dcLen} m × 2 (+/-)`,
   });
+  if (eff.dcEgcSizeMm2 > 0) {
+    add({
+      id: "bom-dc-egc",
+      category: "Wiring & Conduit",
+      itemDescription: `DC Equipment Grounding Conductor ${eff.dcEgcSizeMm2} mm² ${dcp.egcMaterial || "Cu"} ${dcp.egcInsulation || "THHN"}${/bare/i.test(dcp.egcInsulation || "") ? "" : " (green)"}, array frames to ground bus`,
+      manufacturer: "Building wire (or equivalent)",
+      model: `${eff.dcEgcSizeMm2} mm² ${dcp.egcInsulation || "THHN"}`,
+      quantity: Math.round(dcLen * invQty),
+      unit: "meters",
+      unitCostPhp: Math.round(eff.dcEgcSizeMm2 * 11.5 + 10),
+      basis: `${invQty} DC run(s) × ${dcLen} m`,
+    });
+  }
 
-  // 11. AC Breakers for Inverters
-  items.push({
+  // ---- AC side
+  add({
     id: "bom-ac-breakers",
     category: "AC Equipment",
-    itemDescription: `AC Circuit Breaker ${config.acProtection.breakerType} ${eff.acBreakerAtAmps}A AT / ${eff.acBreakerAfAmps}AF ${eff.acBreakerPoles}P ${eff.acKaic}kAIC`,
-    manufacturer: "Schneider Electric / ABB / LS",
-    model: "Compact NSX / XT2",
-    quantity: eff.inverterQuantity,
-    unit: "sets",
-    unitCostPhp: eff.acBreakerAtAmps > 100 ? 12500 : 3500,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    itemDescription: `Inverter Output Breaker ${acp.breakerType} ${eff.acBreakerAtAmps} AT / ${eff.acBreakerAfAmps} AF, ${eff.acBreakerPoles}P, ${eff.acKaic} kAIC`,
+    manufacturer: "Circuit breaker (or equivalent)",
+    model: `${acp.breakerType} ${eff.acBreakerAtAmps} AT ${eff.acBreakerPoles}P`,
+    quantity: invQty,
+    unit: "units",
+    unitCostPhp: eff.acBreakerAtAmps > 100 ? 12500 : acp.breakerType === "MCB" ? 1800 : 3500,
+    basis: `1 per inverter, 125% of ${calc.inverterMaxAcCurrent?.toFixed?.(1) ?? "-"} A`,
+  });
+  const isoPoles = Math.min(acp.isolatorPoles || 99, calc.acSystem?.currentCarryingConductors ?? (inv.phase === "3PH" ? 4 : 2));
+  if (eff.acIsolatorRatingAmps > 0) {
+    add({
+      id: "bom-ac-isolator",
+      category: "AC Equipment",
+      itemDescription: `AC Isolator / Disconnect Switch ${eff.acIsolatorRatingAmps} A, ${isoPoles}P, lockable, weatherproof (at the inverter)`,
+      manufacturer: "AC isolator (or equivalent)",
+      model: `AC isolator ${eff.acIsolatorRatingAmps} A ${isoPoles}P`,
+      quantity: invQty,
+      unit: "units",
+      unitCostPhp: eff.acIsolatorRatingAmps > 63 ? 6500 : 2600,
+      basis: "1 per inverter",
+    });
+  }
+  add({
+    id: "bom-ac-spd",
+    category: "AC Equipment",
+    itemDescription: `AC Surge Protective Device (${acp.spdType || "Type 2"}), ${calc.acSystem?.inverterIs3Phase ? (calc.acSystem.hasNeutral ? "3P+N" : "3P") : "1P+N"} for the ${inv.acVoltage} V ${inv.phase === "3PH" ? "3-phase" : "1-phase"} inverter output`,
+    manufacturer: "AC SPD (or equivalent)",
+    model: `${acp.spdType || "Type 2"} AC SPD`,
+    quantity: 1,
+    unit: "units",
+    unitCostPhp: 3500,
+    basis: "1 at the solar distribution panel",
   });
 
-  // 12. Solar Distribution Panel
-  items.push({
+  const mainPoles = calc.acSystem?.mainDisconnectPoles || eff.acBreakerPoles;
+  add({
     id: "bom-solar-panel",
     category: "AC Equipment",
-    itemDescription: `Solar AC Combiner / Distribution Panelboard NEMA 3R/4X with Busbars & Main Breaker`,
-    manufacturer: "Custom Electrical Panelboard",
-    model: "SDP-400V",
+    itemDescription: `Solar AC Distribution Panel NEMA 3R / IP54, busbars for ${invQty} inverter breaker(s), main / back-feed device ${calc.acMainDisconnectAmps} A ${mainPoles}P (${config.utilityVoltage || inv.acVoltage} V)`,
+    manufacturer: "Panelboard (or equivalent)",
+    model: `SDP ${calc.acMainDisconnectAmps} A ${mainPoles}P ${config.utilityVoltage || inv.acVoltage} V`,
     quantity: 1,
     unit: "lot",
-    unitCostPhp: eff.inverterQuantity > 1 ? 45000 : 15000,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    unitCostPhp: invQty > 1 ? 45000 : 15000,
+    basis: `Main sized 125% of ${calc.acSystem?.interconnectionLineCurrent?.toFixed?.(1) ?? "-"} A interconnection current`,
   });
 
-  // 13. AC Main Feeder Cable
-  const acMeters = (config.cabling.acCable.lengthM || 40) * (calc.acSystem?.currentCarryingConductors ?? (calc.selectedInverter.phase === "3PH" ? 4 : 2));
-  items.push({
+  const acLen = acRun.lengthM || 40;
+  const ccc = calc.acSystem?.currentCarryingConductors ?? (inv.phase === "3PH" ? 4 : 2);
+  const acSets = Math.max(1, acRun.sets || 1);
+  add({
     id: "bom-ac-cable",
     category: "Wiring & Conduit",
-    itemDescription: `${eff.acCableSizeMm2} mm² Cu ${config.cabling.acCable.insulation} Power Cable in ${eff.acConduitSizeMm}mm Conduit`,
-    manufacturer: "Phelps Dodge / Columbia",
-    model: "THHN/THWN-2 90°C",
-    quantity: Math.round(acMeters),
+    itemDescription: `AC Output Cable ${eff.acCableSizeMm2} mm² ${acRun.material || "Cu"} ${acRun.insulation}${acSets > 1 ? ` × ${acSets} sets` : ""}, in ${eff.acConduitSizeMm} mm ${acRun.conduitType}`,
+    manufacturer: "Building wire (or equivalent)",
+    model: `${eff.acCableSizeMm2} mm² ${acRun.insulation}`,
+    quantity: Math.round(acLen * ccc * acSets * invQty),
     unit: "meters",
-    unitCostPhp: Math.round(eff.acCableSizeMm2 * 11.5),
-    markupPercent: 15,
-    totalCostPhp: 0,
+    unitCostPhp: Math.round(eff.acCableSizeMm2 * 11.5 + 10),
+    basis: `${invQty} inverter circuit(s) × ${acLen} m × ${ccc} conductors${acSets > 1 ? ` × ${acSets} sets` : ""}`,
   });
+  if (eff.acEgcSizeMm2 > 0) {
+    add({
+      id: "bom-ac-egc",
+      category: "Wiring & Conduit",
+      itemDescription: `AC Equipment Grounding Conductor ${eff.acEgcSizeMm2} mm² Cu ${acRun.insulation} (green)`,
+      manufacturer: "Building wire (or equivalent)",
+      model: `${eff.acEgcSizeMm2} mm² ${acRun.insulation}`,
+      quantity: Math.round(acLen * invQty),
+      unit: "meters",
+      unitCostPhp: Math.round(eff.acEgcSizeMm2 * 11.5 + 10),
+      basis: `${invQty} circuit(s) × ${acLen} m`,
+    });
+  }
 
-  // 14. Conduits & Fittings
-  items.push({
+  // Conduit lengths follow the cable runs (+10% for bends and offcuts)
+  add({
     id: "bom-conduits",
     category: "Wiring & Conduit",
-    itemDescription: `Conduits (${eff.acConduitSizeMm}mm & ${eff.dcConduitSizeMm}mm), EMT/PVC Pipes, Couplings, Clamps, and Fittings`,
-    manufacturer: "Neltex / Maruichi",
-    model: "Heavy Duty EMT/PVC",
-    quantity: 1,
-    unit: "lot",
-    unitCostPhp: Math.round(calc.totalDcCapacityKwp * 800),
-    markupPercent: 15,
-    totalCostPhp: 0,
+    itemDescription: `Conduit ${eff.acConduitSizeMm} mm ${acRun.conduitType} (AC) and ${eff.dcConduitSizeMm} mm ${dcRun.conduitType} (DC), with couplings, elbows, clamps and fittings`,
+    manufacturer: "Conduit (or equivalent)",
+    model: `${acRun.conduitType} / ${dcRun.conduitType}`,
+    quantity: Math.ceil((acLen * invQty + dcLen * invQty) * 1.1 / 3),
+    unit: "lengths (3 m)",
+    unitCostPhp: Math.round(120 + Math.max(eff.acConduitSizeMm, eff.dcConduitSizeMm) * 6),
+    basis: `(${acLen} m AC + ${dcLen} m DC) × ${invQty} run(s) + 10%, 3 m lengths`,
   });
 
-  // 15. Grounding System
-  items.push({
+  // ---- transformer and metering
+  if (config.transformer?.enabled && eff.transformerKva > 0) {
+    const t = config.transformer;
+    add({
+      id: "bom-transformer",
+      category: "AC Equipment",
+      itemDescription: `Isolation / Step-up Transformer ${eff.transformerKva} kVA, ${t.phase === "3PH" ? "3-phase" : "1-phase"}, ${t.primaryVoltage} / ${t.secondaryVoltage} V, ${t.frequencyHz || 60} Hz, Z ${t.impedancePercent}%`,
+      manufacturer: "Transformer (or equivalent)",
+      model: `${eff.transformerKva} kVA`,
+      quantity: 1,
+      unit: "units",
+      unitCostPhp: Math.round(eff.transformerKva * 3500),
+      basis: `Inverter AC ${calc.totalInverterAcKw?.toFixed?.(1) ?? "-"} kW / 0.85 PF`,
+    });
+    add({
+      id: "bom-transformer-breakers",
+      category: "AC Equipment",
+      itemDescription: `Transformer Protection: primary ${eff.transformerPrimaryBreaker} A and secondary ${eff.transformerSecondaryBreaker} A breakers`,
+      manufacturer: "Circuit breaker (or equivalent)",
+      model: `${eff.transformerPrimaryBreaker} A / ${eff.transformerSecondaryBreaker} A`,
+      quantity: 1,
+      unit: "lot",
+      unitCostPhp: 9000,
+      basis: "125% of the transformer rated currents (PEC 4.50)",
+    });
+  }
+  if (config.netMetering?.enabled) {
+    const nm = config.netMetering;
+    add({
+      id: "bom-net-meter",
+      category: "AC Equipment",
+      itemDescription: `${nm.smartMeterModel || "Bi-directional net meter"} (${nm.servicePhase === "3PH" ? "3-phase" : "1-phase"} ${nm.serviceVoltage} V)${nm.exportLimitation !== "none" ? ` with export limiter / CT kit (${nm.exportLimitation === "zero_export" ? "zero export" : `${nm.exportLimitPercent}% export`})` : ""}`,
+      manufacturer: nm.utilityProvider || "Utility-approved meter",
+      model: nm.smartMeterModel || "Net meter",
+      quantity: 1,
+      unit: "lot",
+      unitCostPhp: nm.exportLimitation !== "none" ? 18000 : 9500,
+      basis: "Net-metering interconnection (meter may be supplied by the utility)",
+    });
+  }
+
+  // ---- grounding and labels
+  add({
     id: "bom-grounding",
     category: "Safety & Accessories",
-    itemDescription: `Grounding Electrode System: Copper-Clad Ground Rods, ${eff.acEgcSizeMm2} mm² Bare Copper Ground Wire, & Clamps`,
-    manufacturer: "Erico / Kumwell",
-    model: "5/8\" x 10ft Copper Clad",
+    itemDescription: `Grounding electrode system: copper-clad ground rods 16 mm × 3 m, ${Math.max(8, eff.acEgcSizeMm2, eff.dcEgcSizeMm2)} mm² bare Cu grounding electrode conductor (min. 8 mm², PEC Table 2.50.3.4), clamps and lugs`,
+    manufacturer: "Grounding hardware (or equivalent)",
+    model: "Ground rod kit",
     quantity: 1,
     unit: "lot",
     unitCostPhp: 18500,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    basis: "PEC 2017 Art. 2.50 / 6.90 grounding",
   });
-
-  // 16. Warning Signs & Labels
-  items.push({
+  add({
     id: "bom-labels",
     category: "Safety & Accessories",
-    itemDescription: `PEC Article 6.90 Mandatory Photovoltaic Hazard Warning Labels & Placards (UV-Resistant)`,
-    manufacturer: "Engraved Acrylic",
-    model: "Solar Warning Kit",
+    itemDescription: "PV warning labels and placards per PEC 2017 Art. 6.90 (DC conductors, disconnects, dual-source, rapid identification), UV-resistant",
+    manufacturer: "Engraved / UV labels",
+    model: "PV label kit",
     quantity: 1,
     unit: "lot",
     unitCostPhp: 4500,
-    markupPercent: 15,
-    totalCostPhp: 0,
+    basis: "PEC 2017 Art. 6.90 marking",
   });
 
-  // Calculate totals with markup
-  return items.map((item) => {
-    const unitPriceWithMarkup = item.unitCostPhp * (1 + item.markupPercent / 100);
-    return {
-      ...item,
-      totalCostPhp: Math.round(item.quantity * unitPriceWithMarkup),
-    };
-  });
+  return items.map(withTotal);
+}
+
+const withTotal = (item: SolarBOMItem): SolarBOMItem => ({
+  ...item,
+  totalCostPhp: Math.round((Number(item.quantity) || 0) * (Number(item.unitCostPhp) || 0) * (1 + (Number(item.markupPercent) || 0) / 100)),
+});
+
+/** Commercial fields the user may edit on a generated line; everything else follows the design */
+export const SOLAR_BOM_EDITABLE = ["itemDescription", "manufacturer", "model", "quantity", "unitCostPhp", "markupPercent"] as const;
+
+/**
+ * The BOM shown and exported: lines generated from the current design, with the user's edits to those lines
+ * (only the fields they changed), lines they removed left out, and their own added lines. A design change
+ * therefore updates quantities and ratings without losing prices.
+ */
+export function resolveSolarBOM(config: SolarDesignConfig, calc: SolarCalculationResults): SolarBOMItem[] {
+  const generated = generateSolarBOM(config, calc);
+  const saved = config.bomItems || [];
+  const byId = new Map(saved.map((s) => [s.id, s]));
+  const out: SolarBOMItem[] = [];
+  for (const g of generated) {
+    const s = byId.get(g.id);
+    if (!s) { out.push(g); continue; }
+    if (s.excluded) continue;
+    const item: SolarBOMItem = { ...g };
+    if (s.overrides) {
+      for (const k of SOLAR_BOM_EDITABLE) if (s.overrides[k]) (item as any)[k] = (s as any)[k];
+      item.overrides = s.overrides;
+    } else {
+      // Saved before edits were tracked: keep the prices (commercial data), take quantities from the design
+      const o: SolarBOMItem["overrides"] = {};
+      if (s.unitCostPhp !== g.unitCostPhp) { item.unitCostPhp = s.unitCostPhp; o.unitCostPhp = true; }
+      if (s.markupPercent !== g.markupPercent) { item.markupPercent = s.markupPercent; o.markupPercent = true; }
+      if (Object.keys(o).length) item.overrides = o;
+    }
+    out.push(withTotal(item));
+  }
+  // The user's own lines (auto lines from older versions that no longer exist are dropped)
+  const genIds = new Set(generated.map((g) => g.id));
+  for (const s of saved) {
+    if (genIds.has(s.id) || s.excluded) continue;
+    const isOldAuto = s.source === "auto" || (/^bom-/.test(s.id) && !/^bom-item-/.test(s.id));
+    if (isOldAuto) continue;
+    out.push(withTotal({ ...s, source: "custom" }));
+  }
+  return out;
 }

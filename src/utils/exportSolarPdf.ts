@@ -3,7 +3,7 @@ import "./pdfSafeText"; // printable PDF text (₱, ≤, Ω ...)
 import { pdfFitText } from "./pdfLayout";
 import autoTable from "jspdf-autotable";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
-import { generateSolarBOM } from "./solarEngine";
+import { resolveSolarBOM } from "./solarEngine";
 import { captureSolarBlockDiagram } from "./solarSldCapture";
 import { drawCaptureToPdf } from "./pdfCapturedDrawing";
 import { hasRoofPlan, roofPlanLayout, roofPlanImage, roofPlanInfo, drawRoofPlanPdf, drawRoofPlanInfoPdf } from "./roofPlanExport";
@@ -565,11 +565,7 @@ export async function exportSolarToPdf(
 
   let grandTotalPhp = 0;
   const bomList: SolarBOMItem[] =
-    config.bomItems && config.bomItems.length > 0
-      ? config.bomItems
-      : calc.bomItems && calc.bomItems.length > 0
-      ? calc.bomItems
-      : generateSolarBOM(config, calc);
+    resolveSolarBOM(config, calc);
 
   const bomRows = bomList.map((item, idx) => {
     const unitCost = typeof item.unitCostPhp === "number" ? item.unitCostPhp : Number(item.unitCostPhp) || 0;
