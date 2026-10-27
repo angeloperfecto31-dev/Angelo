@@ -26,6 +26,7 @@ import {
 } from "./faultMath";
 import { computePanelScheduleValues, getActivePoles, isIdleSpareOrSpace, parseSystemVoltage } from "./computeEngine";
 import { getConductorAmpacity, getTemperatureForInsulation } from "./pecAmpacityDatabase";
+import { serviceFaultStudy } from "./serviceFault";
 
 export type { Cx };
 export { UTILITY_XR, conductorImpedance, deviceTestXr, typicalTransformerXr };
@@ -300,6 +301,8 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
   const zPct = iscParams.transformerZ || 5;
   const utilityMVA = iscParams.utilityShortCircuitMVA || 500;
   const src = sourceImpedance(iscParams, secV, is3);
+  // Service feeder impedance exactly as on the Short Circuit page (parallel / series runs, custom sizes)
+  const serviceZ = serviceFaultStudy(iscParams, is3).zFeederOhm;
   const txXr = src.txXr;
   const nPar = iscParams.parallelTransformersCount || 1;
   const openDelta = /open/i.test(iscParams.transformerConnection || "");
@@ -446,7 +449,10 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
     if (!sizeKnown) loadNotes.push("Feeder conductor size not set.");
 
     // ---- short circuit (cumulative per-phase feeder impedance from the transformer)
-    const zFeeder = sizeKnown && feeder.lengthM > 0 ? feederFaultImpedance(feeder.lengthM, feeder.size, feeder.sets, feeder.material) : cx(0, 0);
+    const zFeeder =
+      n.id === "mdp" && iscParams.feederLength > 0
+        ? serviceZ
+        : sizeKnown && feeder.lengthM > 0 ? feederFaultImpedance(feeder.lengthM, feeder.size, feeder.sets, feeder.material) : cx(0, 0);
     const zPathFeeders = add(parent ? (parent as any)._zFeeders : cx(0, 0), zFeeder);
     const upperBound = feeder.lengthAssumed || !sizeKnown || (parent ? parent.faultUpperBound : false);
     const fl = faultLevels(src, zPathFeeders, { groundReturn: is3 && mdpSys.wireCount >= 4 });

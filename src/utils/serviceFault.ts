@@ -3,6 +3,15 @@ import { calculateEquivalentFeederImpedance } from "./computeEngine";
 import { R20_AL, R20_CU, cmag, cx, faultLevels, peakFactor, sourceImpedance } from "./faultMath";
 
 /**
+ * How the service feeder runs are combined. Runs taken from the Load Schedule are parallel sets of the
+ * main feeder, so they are always in parallel; "Series" applies only to runs the user entered.
+ */
+export function feederConnection(params: ShortCircuitParams): "Series" | "Parallel" {
+  if ((params.feederRuns || 1) > 1 && !params.isFeederRunsCustomized) return "Parallel";
+  return params.connectionType || "Series";
+}
+
+/**
  * Service short-circuit study (utility -> transformer -> service feeder -> fault point), shared by the
  * Short Circuit page and the AutoCAD export so both show the same numbers.
  */
@@ -19,12 +28,13 @@ export function serviceFaultStudy(
     .reduce((s, c) => (isMotor(c) ? s + (c.loadVA || 0) : s), 0);
 
   const condType = params.conductorType || "Copper";
+  const connectionType = feederConnection(params);
   const eqFeeder = calculateEquivalentFeederImpedance(
     params.feederLength || 10,
     params.feederSize || "30",
     params.feederRuns || 1,
     condType,
-    params.connectionType || "Series",
+    connectionType,
     params.parallelFeedersSizeMatch !== false,
     params.parallelFeedersLengthMatch !== false,
     params.parallelFeedersMaterialMatch !== false,
@@ -44,6 +54,7 @@ export function serviceFaultStudy(
   const iscTotal = atPoint.i3ph + motorContribution;
 
   return {
+    connectionType,
     vSec,
     src,
     eqFeeder,

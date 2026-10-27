@@ -5,7 +5,9 @@ import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, INITIAL_SHORT_CIRCUIT_PARAMS,
 import { exportToCAD } from '../utils/exportDxf';
 import ImpedanceSLD from './ImpedanceSLD';
 import { computePanelScheduleValues, parseSystemVoltage, calculatePanelFault, isIdleSpareOrSpace, getBreakerFrameSize } from '../utils/computeEngine';
-import { serviceFaultStudy } from '../utils/serviceFault';
+import { feederConnection, serviceFaultStudy } from '../utils/serviceFault';
+import { analysePowerSystem } from '../utils/powerAnalysis';
+import { kaicAudit } from '../utils/kaicAudit';
 import { syncHierarchyData } from '../utils/hierarchyEngine';
 
 export interface ShortCircuitCalcProps {
@@ -295,7 +297,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     // 3-4. Service fault study: shared with the AutoCAD export (utils/serviceFault.ts), the Load Schedule,
     // the Power Analysis Suite and the Single Line Impedance Diagram (complex impedances, utils/faultMath.ts)
     const runs = params.feederRuns || 1;
-    const connType = params.connectionType || 'Series';
+    const connType = feederConnection(params);
     const study = serviceFaultStudy(params, is3Phase, circuits || [], allSubPanels, panel?.voltage);
     const { eqFeeder, atPoint, iFullLoad, iscMainBreaker, iscFaultPoint, motorContribution, totalZpu, zFeederpu } = study;
     const feederR = eqFeeder.r;
@@ -407,213 +409,15 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
     };
   }, [params, motorLoadVA, panel, circuits, allSubPanels, selectedPhaseType, panelSchedule]);
 
-  const kaicValidationData = useMemo(() => {
-    const list: Array<{
-      id: string;
-      location: string;
-      type: string;
-      faultCurrentA: number;
-      selectedKAIC: number;
-      status: "PASS" | "FAIL";
-      recommendation: string;
-    }> = [];
-    const seenIds = new Set<string>();
-
-    const pushUnique = (item: {
-      id: string;
-      location: string;
-      type: string;
-      faultCurrentA: number;
-      selectedKAIC: number;
-      status: "PASS" | "FAIL";
-      recommendation: string;
-    }) => {
-      if (!seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        list.push(item);
-      }
-    };
-
-    if (!panel) return list;
-
-    const standardKAICRatings = [5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
-
-    // 1. MDP Main Breaker
-    const mdpFaultA = parseFloat(calculation.iscFault2) || 10000;
-    const mdpKAICSelected = parseFloat(panel.icRating) || 10;
-    const mdpFaultKA = mdpFaultA / 1000;
-    const mdpPass = mdpKAICSelected >= mdpFaultKA;
-    const recMdp = standardKAICRatings.find(k => k >= mdpFaultKA) || 100;
-
-    pushUnique({
-      id: "mdp-main",
-      location: panel.designation || "Main Distribution Panel (MDP) Main Breaker",
-      type: "Main Protective Device",
-      faultCurrentA: mdpFaultA,
-      selectedKAIC: mdpKAICSelected,
-      status: mdpPass ? "PASS" : "FAIL",
-      recommendation: mdpPass 
-        ? "Breaker is adequately sized for maximum short-circuit duty." 
-        : `INSUFFICIENT kAIC: Upgrade main breaker rating to at least ${recMdp} kAIC immediately.`,
-    });
-
-    // 2. MDP Branch Protective Devices
-    if (circuits && circuits.length > 0) {
-      circuits.forEach(c => {
-        if (isIdleSpareOrSpace(c)) return;
-        const branchFaultA = parseFloat(calculation.iscFault3) || 10000;
-        const branchFaultKA = branchFaultA / 1000;
-        const branchKAICSelected = c.mcbKAIC || 10;
-        const bPass = branchKAICSelected >= branchFaultKA;
-        const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
-
-        pushUnique({
-          id: `mdp-branch-${c.circuitNo}`,
-          location: `${panel.designation || "MDP"} - Circuit ${c.circuitNo} (${c.description})`,
-          type: "Branch Circuit Breaker",
-          faultCurrentA: branchFaultA,
-          selectedKAIC: branchKAICSelected,
-          status: bPass ? "PASS" : "FAIL",
-          recommendation: bPass
-            ? "Circuit breaker is adequate."
-            : `Recommend MCCB upgrade to at least ${recB} kAIC.`,
-        });
-      });
-    }
-
-    // 3. Subpanels
-    if (subPanels && subPanels.length > 0) {
-      subPanels.forEach(sp => {
-        let spFaultA = 10000;
-        let parentConn = circuits?.find(c => c.linkedSubPanelId === sp.id);
-        if (!parentConn && subPanels) {
-          parentConn = subPanels.flatMap(otherSp => otherSp.circuits).find(c => c.linkedSubPanelId === sp.id);
-        }
-
-        if (parentConn) {
-          const feederLen = params.feederLength || 10;
-          const feederSize = parentConn.wireSize || "14";
-          const feederRuns = parentConn.quantity || 1;
-          const motorVA = sp.circuits.reduce((acc, curr) => 
-            (curr.loadType as any === LoadType.MOTOR || curr.loadType as any === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
-          );
-          spFaultA = calculatePanelFault(
-            sp.panel,
-            params,
-            feederLen,
-            feederSize,
-            feederRuns,
-            motorVA
-          );
-        } else {
-          spFaultA = calculatePanelFault(sp.panel, params, undefined, undefined, undefined, 0);
-        }
-
-        const spFaultKA = spFaultA / 1000;
-        const spKAICSelected = parseFloat(sp.panel.icRating) || 10;
-        const spPass = spKAICSelected >= spFaultKA;
-        const recSp = standardKAICRatings.find(k => k >= spFaultKA) || 100;
-
-        pushUnique({
-          id: `sp-${sp.id}-main`,
-          location: `${sp.panel.designation || `Subpanel ${sp.id}`} Main Breaker`,
-          type: "Subpanel Main Device",
-          faultCurrentA: spFaultA,
-          selectedKAIC: spKAICSelected,
-          status: spPass ? "PASS" : "FAIL",
-          recommendation: spPass
-            ? "Main breaker is adequate for short-circuit duty."
-            : `INSUFFICIENT kAIC: Upgrade to minimum ${recSp} kAIC protection.`,
-        });
-
-        // Subpanel branch circuits
-        sp.circuits.forEach(c => {
-          if (isIdleSpareOrSpace(c)) return;
-          const branchFaultKA = spFaultKA;
-          const branchKAICSelected = c.mcbKAIC || 10;
-          const bPass = branchKAICSelected >= branchFaultKA;
-          const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
-
-          pushUnique({
-            id: `sp-${sp.id}-branch-${c.circuitNo}`,
-            location: `${sp.panel.designation || `Subpanel ${sp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
-            type: "Branch Circuit Breaker",
-            faultCurrentA: spFaultA,
-            selectedKAIC: branchKAICSelected,
-            status: bPass ? "PASS" : "FAIL",
-            recommendation: bPass
-              ? "Circuit breaker is adequate."
-              : `Recommend upgrade to ${recB} kAIC.`,
-          });
-        });
-      });
-    }
-
-    // 4. Sub-subpanels
-    if (subSubPanels && subSubPanels.length > 0) {
-      subSubPanels.forEach(ssp => {
-        let sspFaultA = 8000;
-        let parentConn = subPanels?.flatMap(sp => sp.circuits).find(c => c.linkedSubPanelId === ssp.id);
-        if (parentConn) {
-          const feederLen = params.feederLength || 10;
-          const feederSize = parentConn.wireSize || "14";
-          const feederRuns = parentConn.quantity || 1;
-          const motorVA = ssp.circuits.reduce((acc, curr) => 
-            (curr.loadType as any === LoadType.MOTOR || curr.loadType as any === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
-          );
-          sspFaultA = calculatePanelFault(
-            ssp.panel,
-            params,
-            feederLen,
-            feederSize,
-            feederRuns,
-            motorVA
-          );
-        } else {
-          sspFaultA = calculatePanelFault(ssp.panel, params, undefined, undefined, undefined, 0);
-        }
-
-        const sspFaultKA = sspFaultA / 1000;
-        const sspKAICSelected = parseFloat(ssp.panel.icRating) || 10;
-        const sspPass = sspKAICSelected >= sspFaultKA;
-        const recSsp = standardKAICRatings.find(k => k >= sspFaultKA) || 100;
-
-        pushUnique({
-          id: `ssp-${ssp.id}-main`,
-          location: `${ssp.panel.designation || `Sub-Subpanel ${ssp.id}`} Main Breaker`,
-          type: "Sub-Subpanel Main Device",
-          faultCurrentA: sspFaultA,
-          selectedKAIC: sspKAICSelected,
-          status: sspPass ? "PASS" : "FAIL",
-          recommendation: sspPass
-            ? "Main breaker is adequate."
-            : `INSUFFICIENT kAIC: Upgrade to minimum ${recSsp} kAIC.`,
-        });
-
-        ssp.circuits.forEach(c => {
-          if (isIdleSpareOrSpace(c)) return;
-          const branchFaultKA = sspFaultKA;
-          const branchKAICSelected = c.mcbKAIC || 10;
-          const bPass = branchKAICSelected >= branchFaultKA;
-          const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
-
-          pushUnique({
-            id: `ssp-${ssp.id}-branch-${c.circuitNo}`,
-            location: `${ssp.panel.designation || `Sub-Subpanel ${ssp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
-            type: "Branch Circuit Breaker",
-            faultCurrentA: sspFaultA,
-            selectedKAIC: branchKAICSelected,
-            status: bPass ? "PASS" : "FAIL",
-            recommendation: bPass
-              ? "Circuit breaker is adequate."
-              : `Recommend upgrade to ${recB} kAIC.`,
-          });
-        });
-      });
-    }
-
-    return list;
-  }, [panel, circuits, subPanels, subSubPanels, params, calculation]);
+  // Per-panel fault levels (cascaded feeders) shared with the impedance diagram and every export
+  const powerResult = useMemo(
+    () => (panel ? analysePowerSystem({ panel, circuits: circuits || [], subPanels: allSubPanels, iscParams: params, vdCalculations, basis: "demand" }) : null),
+    [panel, circuits, allSubPanels, params, vdCalculations]
+  );
+  const kaicValidationData = useMemo(
+    () => (powerResult && panel ? kaicAudit(powerResult, panel, circuits || [], allSubPanels) : []),
+    [powerResult, panel, circuits, allSubPanels]
+  );
 
   const totalDevicesCount = kaicValidationData.length;
   const passedDevicesCount = kaicValidationData.filter(d => d.status === "PASS").length;
@@ -648,7 +452,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
             <button
               onClick={() => setParams({ ...params, connectionType: 'Series' })}
               className={`px-3 py-1.5 rounded-lg text-xxs font-black tracking-wider uppercase transition-all ${
-                (params.connectionType || 'Series') === 'Series'
+                feederConnection(params) === 'Series'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-black'
                   : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 font-semibold'
               }`}
@@ -658,7 +462,7 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
             <button
               onClick={() => setParams({ ...params, connectionType: 'Parallel' })}
               className={`px-3 py-1.5 rounded-lg text-xxs font-black tracking-wider uppercase transition-all ${
-                params.connectionType === 'Parallel'
+                feederConnection(params) === 'Parallel'
                   ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-black'
                   : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 font-semibold'
               }`}
@@ -1524,16 +1328,22 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-300">
               {kaicValidationData.map((d, dIdx) => {
                 const isFail = d.status === "FAIL";
+                const isMissing = d.status === "NOT SPECIFIED";
                 return (
                   <tr key={`kaic-${d.id}-${dIdx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-850/20 transition-all duration-150">
                     <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-100">{d.location}</td>
                     <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{d.type}</td>
                     <td className="py-3.5 px-4 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
-                      {(d.faultCurrentA / 1000).toFixed(2)} kA <span className="text-[10px] text-slate-400 font-normal">({d.faultCurrentA.toFixed(0)} A)</span>
+                      {(d.faultCurrentA / 1000).toFixed(2)} kA{d.upperBound ? " ↑" : ""} <span className="text-[10px] text-slate-400 font-normal">({d.faultCurrentA.toFixed(0)} A, X/R {d.xr.toFixed(1)})</span>
+                      {d.dutyCurrentA > d.faultCurrentA * 1.005 && <span className="block text-[10px] text-slate-400 font-normal">duty {(d.dutyCurrentA / 1000).toFixed(2)} kA at device test X/R</span>}
                     </td>
-                    <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800 dark:text-slate-200">{d.selectedKAIC} kAIC</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-800 dark:text-slate-200">{d.selectedKAIC > 0 ? `${d.selectedKAIC} kAIC` : "Not specified"}</td>
                     <td className="py-3.5 px-4 text-center">
-                      {isFail ? (
+                      {isMissing ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-amber-50 text-amber-700 border border-amber-200/50 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/40">
+                          🟠 NO kAIC
+                        </span>
+                      ) : isFail ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase bg-rose-50 text-rose-700 border border-rose-200/50 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/40">
                           🔴 FAIL
                         </span>
@@ -1589,23 +1399,24 @@ export default function ShortCircuitCalc({ panel, circuits, subPanels, subSubPan
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200">
               {selectedPhaseType === '3PH' 
                 ? "FLA = (kVA × 1000) / (Voltage × √3)" 
-                : "FLA = (kVA × 1000) / (Voltage × 2)"}
+                : "FLA = (kVA × 1000) / Voltage"}
             </div>
             <p className="mt-2 text-red-600 font-bold">Calculated FLA: {calculation.fla} Amperes</p>
           </div>
 
           <div>
             <h3 className="font-bold text-slate-900 mb-2">2. Impedance Multiplier (M)</h3>
-            <p className="mb-2">The Multiplier determines the relationship between the Full Load Current and the Short Circuit Current, considering the Utility Fault level (MVA) and Transformer Impedance (%Z).</p>
+            <p className="mb-2">The multiplier is the ratio of the bolted fault current at the fault point to the transformer full-load current: 1 / |Z_total| with every impedance in per unit on the transformer base. The utility (X/R 10, assumed), transformer (typical X/R by kVA, IEEE 141) and feeder (PEC Table 9) impedances are added as complex values.</p>
             {calculation.connectionMultiplier !== "1.000" && (
               <p className="mb-2 text-indigo-700 bg-indigo-50 p-2 rounded border border-indigo-100">
                 <strong>PEC Connection Factor Applied:</strong> As an Open configuration is selected, the equivalent 3-phase symmetrical fault duty is reduced by a factor of <strong>{calculation.connectionMultiplier}</strong> compared to a closed delta bank of identical individual base ratings.
               </p>
             )}
             <div className="bg-slate-50 p-4 rounded-lg font-mono text-xs border border-slate-200 flex flex-col gap-2">
-              <span>{`Step A: Z_trans_pu = (%Z / 100) / ConnectionFactor(${calculation.connectionMultiplier})`}</span>
-              <span>{`Step B: Z_utility_pu = Transformer kVA / (Utility MVA × 1000)`}</span>
-              <span>{`Combined Multiplier (M) = 1 / (Z_trans_pu + Z_utility_pu)`}</span>
+              <span>{`Step A: |Z_utility| = kVA / (Utility MVA × 1000) = ${calculation.zUtilitypu} pu`}</span>
+              <span>{`Step B: |Z_transformer| = (%Z / 100) / ConnectionFactor(${calculation.connectionMultiplier}) = ${calculation.zTranspu} pu`}</span>
+              <span>{`Step C: |Z_feeder| = ${calculation.zFeederpu} pu (R = ${calculation.feederR} Ω, X = ${calculation.feederX} Ω${feederConnection(params) === 'Parallel' && (params.feederRuns || 1) > 1 ? `, ${params.feederRuns} runs in parallel` : ''})`}</span>
+              <span>{`Multiplier (M) = 1 / |Z_utility + Z_transformer + Z_feeder| (complex sum)`}</span>
             </div>
             <p className="mt-2 text-red-600 font-bold">Calculated Multiplier (M): {calculation.multiplier}</p>
           </div>
