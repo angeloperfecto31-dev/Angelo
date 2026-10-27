@@ -25,6 +25,7 @@ import { Document, Packer, PageOrientation,
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { getRoomOutline, hasIrregularOutline, polygonArea } from './roomGeometry';
 import { illuminationDesignSummary } from './illuminationSizing';
+import { floorSummaryLine, floorTotals, groupSavedRoomsByFloor } from './modelFloors';
 import { renderRoomLayoutPng, roomGeometrySummary, roomShapeLabel } from './illuminationRoomExport';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, calculateUnifiedVD } from './computeEngine';
@@ -1766,7 +1767,21 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
       ]
     }));
 
-    illumParams.savedRooms.forEach(room => {
+    // Rooms floor by floor, each floor under a heading row with its totals
+    const floorGroups = groupSavedRoomsByFloor(illumParams, illumParams.savedRooms);
+    const floorHeading = (text: string) => new TableRow({
+      children: [new TableCell({
+        columnSpan: 7,
+        children: [new Paragraph({ children: [new TextRun({ text, bold: true, font: "Segoe UI", size: 17, color: "1B365D" })] })],
+        shading: { fill: "E0E7FF" },
+        margins: { top: 60, bottom: 60, left: 80, right: 80 },
+      })],
+    });
+    (floorGroups ? floorGroups.flatMap(g => [g as any, ...g.rooms]) : illumParams.savedRooms).forEach((room: any) => {
+      if (room.totals && Array.isArray(room.rooms)) {
+        tableRows.push(floorHeading(floorSummaryLine(room)));
+        return;
+      }
       const roomLPD = room.totalWattage / room.area;
       const limitLPD = room.targetLux > 300 ? 9.0 : 6.0;
       tableRows.push(new TableRow({
@@ -1793,6 +1808,40 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
       }
     }));
     docChildren.push(new Paragraph({ spacing: { after: 200 } }));
+
+    // Floor-specific totals
+    if (floorGroups) {
+      const all = floorTotals(illumParams.savedRooms);
+      const sumRow = (name: string, t: typeof all, bold = false) => new TableRow({
+        children: [
+          name, String(t.rooms), t.area.toFixed(2), `${t.fixtures} (${t.required})`, String(Math.round(t.watts)), t.lpd.toFixed(2), String(Math.round(t.avgLux)),
+        ].map(v => new TableCell({
+          children: [new Paragraph({ children: [new TextRun({ text: v, bold, font: "Segoe UI", size: 17, color: "334155" })], alignment: AlignmentType.CENTER })],
+          verticalAlign: VerticalAlign.CENTER,
+          margins: { top: 60, bottom: 60, left: 80, right: 80 },
+        })),
+      });
+      docChildren.push(
+        createSubHeader(`Floor Illumination Summary`),
+        new Paragraph({ spacing: { after: 100 } }),
+        new Table({
+          rows: [
+            new TableRow({ children: ['Floor', 'Rooms', 'Area (m²)', 'Luminaires (req.)', 'Load (W)', 'LPD (W/m²)', 'Eavg (lx)'].map(h => createTableCell(h, true)) }),
+            ...floorGroups.map(g => sumRow(g.name, g.totals)),
+            ...(floorGroups.length > 1 ? [sumRow('All floors', all, true)] : []),
+          ],
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+            top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+            bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+            insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 2 },
+            insideVertical: { style: BorderStyle.NONE },
+          },
+        }),
+        createParagraph(`Eavg: maintained average illuminance by the lumen method, $E = \\frac{N \\times \\Phi \\times UF \\times MF}{A}$.`),
+        new Paragraph({ spacing: { after: 200 } })
+      );
+    }
   }
 
   // Active Parameters Section detail

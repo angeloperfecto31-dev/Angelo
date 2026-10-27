@@ -6,12 +6,13 @@ import {
   Trash2, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, Columns3, ShieldCheck, AlertTriangle,
   Loader2, Camera, Grid3x3, Info, X, CheckCircle2, Scan, Sun, Type, FileText, Crosshair,
 } from 'lucide-react';
-import { AnnotationSet, IlluminationParams, ImportedModelInfo, ImportedModelRoom, ModelAnnotation, PlacedFixtureDragPosition } from '../types';
+import { AnnotationSet, IlluminationParams, ImportedModelInfo, ImportedModelRoom, ModelAnnotation, ModelFloor, PlacedFixtureDragPosition, SavedLightingDetail } from '../types';
+import { floorOf, floorSectionElevation, floorTop, floorTotals, floorsFromLevels, newFloorId, ordinalFloorName, sortedFloors } from '../utils/modelFloors';
 import { DxfAnnotationError, parseDxfAnnotations } from '../utils/dxfAnnotations';
 import { annotationMetres, dxfToScene, isShown, needsLeader, resolveOverlaps, sceneToDxf } from '../utils/modelAnnotations';
 import {
   MODEL_ACCEPT, ModelImportError, ModelUnit, PlanSegment, UNIT_LABEL, UNIT_SCALE, UpAxis,
-  detectRoomAt, guessUnitAndAxis, heightsAt, loadModel, modelBounds, placeModel, sectionAt, validateModelFiles, visibleMeshes,
+  detectFloorLevels, detectRoomAt, guessUnitAndAxis, heightsAt, loadModel, modelBounds, placeModel, sectionAt, validateModelFiles, visibleMeshes,
 } from '../utils/modelImport';
 import { downloadModelCloud, hashModelFiles, loadModelLocal, saveModelLocal, uploadModelCloud } from '../utils/modelStore';
 import {
@@ -54,6 +55,10 @@ interface Props {
   onAddRoomsToProject: (rooms: ImportedModelRoom[]) => number;
   /** Model room ids already in Rooms & Properties */
   roomsInProject: string[];
+  /** Rooms in Rooms & Properties (their fixtures are shown on their floors) */
+  projectRooms?: SavedLightingDetail[];
+  /** Make a room from Rooms & Properties the design room, with its own fixtures and settings */
+  onLoadProjectRoom?: (savedRoomId: string) => void;
 }
 
 type Mode = 'orbit' | 'room' | 'measure' | 'place' | 'select' | 'text';
@@ -93,7 +98,7 @@ function luxColor(lux: number, target: number): [number, number, number] {
 
 export default function ImportedModelViewer({
   params, setParams, ceilingHeight, workingPlaneHeight, mountingHeight, roomOutline, luxAt, summary, onSnapshot,
-  onAddRoomsToProject, roomsInProject,
+  onAddRoomsToProject, roomsInProject, projectRooms = [], onLoadProjectRoom,
 }: Props) {
   const info = params.importedModel;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -110,7 +115,11 @@ export default function ImportedModelViewer({
     overlay: THREE.Group;
     labels: THREE.Group;
     fixtures: THREE.Group;
+    /** Luminaires of the other Rooms & Properties rooms, on their floors */
+    projectFixtures: THREE.Group;
     clip: THREE.Plane;
+    /** Lower cut: hides floors below the lowest visible floor */
+    clipLow: THREE.Plane;
   } | null>(null);
   const rawModel = useRef<THREE.Object3D | null>(null);
   const placedModel = useRef<THREE.Group | null>(null);
@@ -153,6 +162,24 @@ export default function ImportedModelViewer({
   const floorElev = activeRoom?.floorElevation ?? 0;
   const offset = info?.roomOffset ?? { x: 0, z: 0 };
   const roomCeiling = ceilingHeight;
+
+  // ------------------------------------------------------------------ floors (design layers)
+  const floors = useMemo(() => sortedFloors(info?.floors), [info?.floors]);
+  const activeFloor: ModelFloor | undefined =
+    floors.find(f => f.id === info?.activeFloorId) || (activeRoom ? floorOf(floors, activeRoom.floorElevation) : undefined) || floors[0];
+  const roomFloor = useCallback((r: { floorElevation: number }) => floorOf(floors, r.floorElevation), [floors]);
+  /** A floor's layer is shown (rooms, fixtures, model storey) */
+  const floorShown = useCallback((elevation: number) => {
+    const f = floorOf(floors, elevation);
+    return !f || f.visible !== false;
+  }, [floors]);
+  /** Rooms listed and picked on the active floor (all rooms when no floors are set) */
+  const [allFloorsList, setAllFloorsList] = useState(false);
+  const floorRooms = useMemo(
+    () => (info?.rooms || []).filter(r => allFloorsList || !activeFloor || roomFloor(r)?.id === activeFloor.id),
+    [info?.rooms, allFloorsList, activeFloor, roomFloor]
+  );
+  const modelTop = modelSize?.y ?? 3;
 
   // ------------------------------------------------------------------ scene setup
   useEffect(() => {
@@ -197,13 +224,15 @@ export default function ImportedModelViewer({
     const overlay = new THREE.Group();
     const labels = new THREE.Group();
     const fixtures = new THREE.Group();
-    scene.add(modelHolder, overlay, fixtures, labels);
+    const projectFixtures = new THREE.Group();
+    scene.add(modelHolder, overlay, fixtures, projectFixtures, labels);
     const grid = new THREE.GridHelper(200, 200, 0x1e293b, 0x172033);
     grid.userData.isHelper = true;
     scene.add(grid);
 
     const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
-    three.current = { scene, renderer, persp, ortho, controls, modelHolder, overlay, labels, fixtures, clip };
+    const clipLow = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1e6);
+    three.current = { scene, renderer, persp, ortho, controls, modelHolder, overlay, labels, fixtures, projectFixtures, clip, clipLow };
 
     let raf = 0;
     const loop = () => {
@@ -331,21 +360,35 @@ export default function ImportedModelViewer({
     fitOrtho();
   }, [fitOrtho, fitPersp, setParams]);
 
-  // Section clipping on the model's materials
+  // Section clipping on the model's materials; hidden floor layers above / below the visible ones are cut off
+  const visibleRange = useMemo(() => {
+    const shown = floors.filter(f => f.visible !== false);
+    if (!floors.length || !shown.length || shown.length === floors.length) return null;
+    const lowest = shown[0];
+    const highest = shown[shown.length - 1];
+    return {
+      low: lowest === floors[0] ? -1e6 : lowest.elevation - 0.05,
+      high: highest === floors[floors.length - 1] ? 1e6 : floorTop(floors, highest, modelTop) - 0.05,
+    };
+  }, [floors, modelTop]);
   useEffect(() => {
     const t = three.current;
     if (!t) return;
     const elev = info?.sectionElevation ?? 1.2;
-    t.clip.constant = sectionView ? elev : 1e6;
+    const high = Math.min(sectionView ? elev : 1e6, visibleRange?.high ?? 1e6);
+    const low = visibleRange?.low ?? -1e6;
+    t.clip.constant = high;
+    t.clipLow.constant = -low;
+    const planes = [...(high < 1e6 ? [t.clip] : []), ...(low > -1e6 ? [t.clipLow] : [])];
     placedModel.current?.traverse((o: any) => {
       if (!o.isMesh) return;
       (Array.isArray(o.material) ? o.material : [o.material]).forEach((m: THREE.Material) => {
         if (!m) return;
-        m.clippingPlanes = sectionView ? [t.clip] : [];
+        m.clippingPlanes = planes;
         m.needsUpdate = true;
       });
     });
-  }, [sectionView, info?.sectionElevation, loaded]);
+  }, [sectionView, info?.sectionElevation, loaded, visibleRange]);
 
   // ------------------------------------------------------------------ import
   const importFiles = async (files: File[]) => {
@@ -373,7 +416,12 @@ export default function ImportedModelViewer({
       const scale = UNIT_SCALE[unit];
       applyTransform(scale, upAxis);
       const height = placedModel.current ? modelBounds(placedModel.current).getSize(new THREE.Vector3()).y : 3;
-      const sectionElevation = Math.round(Math.min(Math.max(height * 0.45, 1.0), 2.3) * 100) / 100;
+      // Storeys from the model's floor slabs: each one is a design layer
+      setStatus('Finding the floors...');
+      const detectedFloors = floorsFromLevels(placedModel.current ? detectFloorLevels(placedModel.current) : [0]);
+      const sectionElevation = detectedFloors.length > 1
+        ? floorSectionElevation(detectedFloors, detectedFloors[0], height)
+        : Math.round(Math.min(Math.max(height * 0.45, 1.0), 2.3) * 100) / 100;
       const next: ImportedModelInfo = {
         fileName: set.main.name,
         format: set.format,
@@ -391,7 +439,10 @@ export default function ImportedModelViewer({
         importedAt: new Date().toISOString(),
         storageNote: 'Saving the model...',
         placementShift: { ...shiftRef.current },
+        floors: detectedFloors,
+        activeFloorId: detectedFloors[0].id,
       };
+      if (detectedFloors.length > 1) setWarnings(w => [...w, `${detectedFloors.length} floors found (${detectedFloors.map(f => `${f.name} +${f.elevation.toFixed(2)} m`).join(', ')}). Check them under Floors; rename, add or adjust levels as needed.`]);
       setParams(prev => ({ ...prev, importedModel: next }));
       setLoaded(true);
       setNeedsReattach(false);
@@ -487,8 +538,68 @@ export default function ImportedModelViewer({
     const scale = patch.scale ?? (patch.unit ? UNIT_SCALE[patch.unit] : info.scale);
     const upAxis = patch.upAxis ?? info.upAxis;
     applyTransform(scale, upAxis, info.hiddenNodes || []);
-    updateInfo({ unit, scale, upAxis, rooms: [], activeRoomId: undefined, verified: false });
+    const nextFloors = floorsFromLevels(placedModel.current ? detectFloorLevels(placedModel.current) : [0]);
+    const top = placedModel.current ? modelBounds(placedModel.current).getSize(new THREE.Vector3()).y : modelTop;
+    updateInfo({
+      unit, scale, upAxis, rooms: [], activeRoomId: undefined, verified: false, floors: nextFloors, activeFloorId: nextFloors[0].id,
+      sectionElevation: floorSectionElevation(nextFloors, nextFloors[0], top),
+    });
+    sectionCache.current = null;
     setCandidate(null);
+  };
+
+  // Projects saved before floors existed: find them once the model is open
+  useEffect(() => {
+    if (!loaded || !info || info.floors || !placedModel.current) return;
+    const found = floorsFromLevels(detectFloorLevels(placedModel.current));
+    const current = info.activeRoomId ? info.rooms.find(r => r.id === info.activeRoomId) : undefined;
+    updateInfo({ floors: found, activeFloorId: (current ? floorOf(found, current.floorElevation) : found[0])?.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, info?.floors]);
+
+  /** Work on a floor: its section is used for room picking, its rooms are listed */
+  const selectFloor = (f: ModelFloor) => {
+    if (!info) return;
+    updateInfo({ activeFloorId: f.id, sectionElevation: floorSectionElevation(floors, f, modelTop), floors: floors.map(x => (x.id === f.id ? { ...x, visible: true } : x)) });
+    sectionCache.current = null;
+    setSectionView(true);
+    setCandidate(null);
+    setCheckedRooms([]);
+  };
+  const updateFloor = (id: string, patch: Partial<ModelFloor>) => {
+    if (!info) return;
+    const next = floors.map(f => (f.id === id ? { ...f, ...patch } : f));
+    const active = next.find(f => f.id === (activeFloor?.id ?? id));
+    updateInfo({
+      floors: next,
+      // A changed level moves the active floor's section with it
+      ...(patch.elevation !== undefined && active && active.id === id ? { sectionElevation: floorSectionElevation(next, active, modelTop) } : {}),
+    });
+  };
+  const detectFloors = () => {
+    if (!info || !placedModel.current) return;
+    if (floors.length > 1 && !window.confirm('Detect the floors again? Floor names and levels you changed are replaced (rooms and fixtures stay; each room goes to the floor at its level).')) return;
+    const found = floorsFromLevels(detectFloorLevels(placedModel.current));
+    updateInfo({ floors: found, activeFloorId: found[0].id, sectionElevation: floorSectionElevation(found, found[0], modelTop) });
+    sectionCache.current = null;
+    setStatus(`${found.length} floor${found.length === 1 ? '' : 's'} found.`);
+    setTimeout(() => setStatus(null), 2500);
+  };
+  const addFloor = () => {
+    if (!info) return;
+    const top = floors[floors.length - 1];
+    // Default: one storey (3.0 m) above the top floor, or a typical floor height when there is none yet
+    const elevation = top ? Math.round((top.elevation + 3.0) * 100) / 100 : 0;
+    const f: ModelFloor = { id: newFloorId(), name: ordinalFloorName(floors.length), elevation, visible: true };
+    updateInfo({ floors: [...floors, f] });
+  };
+  const removeFloor = (id: string) => {
+    if (!info || floors.length <= 1) return;
+    const f = floors.find(x => x.id === id);
+    const n = info.rooms.filter(r => roomFloor(r)?.id === id).length;
+    if (!window.confirm(`Remove ${f?.name || 'this floor'}?${n ? ` Its ${n} room${n === 1 ? '' : 's'} move to the floor below.` : ''}`)) return;
+    const rest = floors.filter(x => x.id !== id);
+    updateInfo({ floors: rest, ...(info.activeFloorId === id ? { activeFloorId: rest[0].id, sectionElevation: floorSectionElevation(rest, rest[0], modelTop) } : {}) });
   };
 
   const togglePart = (path: string) => {
@@ -542,10 +653,14 @@ export default function ImportedModelViewer({
     // Picked rooms: outline and name label (design room green, last picked amber, others grey)
     const labelSize = Math.max(0.8, Math.min(4, (modelSize ? Math.max(modelSize.x, modelSize.z) : 10) / 11));
     info.rooms.forEach(r => {
+      // Hidden floor layers, and floors above the section cut (cut away with the model)
+      if (!floorShown(r.floorElevation) || (sectionView && r.floorElevation > info.sectionElevation)) return;
       const pts = toRoomPoints(r.polygon) || [];
-      const color = r.id === info.activeRoomId ? 0x22c55e : r.id === focusRoomId ? 0xf59e0b : 0x94a3b8;
+      const onActiveFloor = !activeFloor || roomFloor(r)?.id === activeFloor.id;
+      const color = r.id === info.activeRoomId ? 0x22c55e : r.id === focusRoomId ? 0xf59e0b : onActiveFloor ? 0x94a3b8 : 0x475569;
       lineAt(pts, r.floorElevation + 0.02, color);
-      if (!pts.length) return;
+      // In section view, rooms of other floors stay as dim outlines (no labels over the floor being worked on)
+      if (!pts.length || (sectionView && !onActiveFloor && r.id !== info.activeRoomId)) return;
       // Label at a point inside the room (centroid, or the first vertex nudged inward)
       let cx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
       let cz = pts.reduce((s, q) => s + q[1], 0) / pts.length;
@@ -566,13 +681,14 @@ export default function ImportedModelViewer({
       ctx.fillText(`${r.area.toFixed(1)} m²`, 128, 48);
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }));
       sprite.scale.set(labelSize * 2, labelSize * 0.5, 1);
-      sprite.position.set(cx, Math.max(r.floorElevation + 0.1, sectionView || mode === 'room' ? (info.sectionElevation + 0.05) : r.floorElevation + 0.1), cz);
+      // On the active floor the label sits just above the section cut; other floors keep theirs at floor level
+      sprite.position.set(cx, onActiveFloor && (sectionView || mode === 'room') ? Math.max(r.floorElevation + 0.1, info.sectionElevation + 0.05) : r.floorElevation + 0.1, cz);
       sprite.renderOrder = 13;
       sprite.userData.isHelper = true;
       t.overlay.add(sprite);
     });
     // Current design outline (it may have been edited after import)
-    if (activeRoom) lineAt(roomOutline.map(([x, z]) => [x + offset.x, z + offset.z] as RoomPoint), floorElev + 0.03, 0x38bdf8);
+    if (activeRoom && floorShown(activeRoom.floorElevation) && !(sectionView && activeRoom.floorElevation > info.sectionElevation)) lineAt(roomOutline.map(([x, z]) => [x + offset.x, z + offset.z] as RoomPoint), floorElev + 0.03, 0x38bdf8);
     if (candidate) lineAt(candidate.polygon, candidate.floorElevation + 0.04, 0xf59e0b);
     if (measure.length) {
       const g = new THREE.BufferGeometry().setFromPoints(measure);
@@ -617,7 +733,7 @@ export default function ImportedModelViewer({
       mesh.userData.isHelper = true;
       t.overlay.add(mesh);
     }
-  }, [loaded, info, mode, sectionView, candidate, measure, activeRoom, roomOutline, offset.x, offset.z, floorElev, showLux, luxAt, params.targetLux, getSection, focusRoomId, modelSize]);
+  }, [loaded, info, mode, sectionView, candidate, measure, activeRoom, roomOutline, offset.x, offset.z, floorElev, showLux, luxAt, params.targetLux, getSection, focusRoomId, modelSize, floorShown, activeFloor, roomFloor]);
 
   // ------------------------------------------------------------------ fixtures in the model
   const positions = params.customPositions || [];
@@ -633,7 +749,9 @@ export default function ImportedModelViewer({
     const t = three.current;
     if (!t) return;
     t.fixtures.clear();
-    if (!loaded || !activeRoom) return;
+    if (!loaded || !activeRoom || !floorShown(activeRoom.floorElevation)) return;
+    // The design room is on a floor above the section cut (another floor is being worked on)
+    if (sectionView && info && activeRoom.floorElevation > info.sectionElevation) return;
     positions.forEach(cp => {
       const { resolved, y, lightType } = fixtureMountY(cp);
       const { group } = createFixture3D(resolved, lightType, { dropToCeiling: roomCeiling - y, dropToFloor: y, showBeam: false, beamOpacity: 0 });
@@ -671,7 +789,32 @@ export default function ImportedModelViewer({
         }
       }
     }
-  }, [loaded, positions, activeRoom, offset.x, offset.z, floorElev, roomCeiling, selected, fixtureMountY]);
+  }, [loaded, positions, activeRoom, offset.x, offset.z, floorElev, roomCeiling, selected, fixtureMountY, floorShown, sectionView, info?.sectionElevation]);
+
+  // Luminaires of the other rooms in Rooms & Properties, each on its own floor (read-only here; Use a room to edit it)
+  useEffect(() => {
+    const t = three.current;
+    if (!t) return;
+    t.projectFixtures.clear();
+    if (!loaded || !info) return;
+    const geo = new THREE.BoxGeometry(0.5, 0.04, 0.5);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xfde68a });
+    projectRooms.forEach(sr => {
+      if (!sr.sourceModelRoomId || sr.sourceModelRoomId === info.activeRoomId) return;
+      const mr = info.rooms.find(r => r.id === sr.sourceModelRoomId);
+      if (!mr || !floorShown(mr.floorElevation)) return;
+      // Floors above the section cut are cut away, so are their luminaires
+      if (sectionView && mr.floorElevation > info.sectionElevation) return;
+      const b = polygonBounds(toRoomPoints(mr.polygon) || []);
+      const y = mr.floorElevation + Math.max(0.5, (sr.ceilingHeight || mr.ceilingHeight || ceilingHeight) - 0.03);
+      (sr.customPositions || []).forEach(cp => {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(b.minX + cp.x, y, b.minZ + cp.z);
+        m.userData.isHelper = true;
+        t.projectFixtures.add(m);
+      });
+    });
+  }, [loaded, info, projectRooms, floorShown, ceilingHeight, sectionView]);
 
   // ------------------------------------------------------------------ annotations (DXF text, labels, dimensions)
   const annSet = info?.annotations;
@@ -973,8 +1116,9 @@ export default function ImportedModelViewer({
     } else if (mode === 'room') {
       const p = pickModel(e) || pickPlane(e, info.sectionElevation);
       if (!p) return;
-      // A room already picked: select it instead of detecting it again
-      const existing = info.rooms.find(r => pointInPolygon(p.x, p.z, toRoomPoints(r.polygon) || []));
+      // A room already picked on this floor: select it instead of detecting it again (floors overlap in plan)
+      const existing = info.rooms.find(r =>
+        (!activeFloor || roomFloor(r)?.id === activeFloor.id) && pointInPolygon(p.x, p.z, toRoomPoints(r.polygon) || []));
       if (existing) {
         setFocusRoomId(existing.id);
         setCheckedRooms(c => (c.includes(existing.id) ? c : [...c, existing.id]));
@@ -1113,6 +1257,22 @@ export default function ImportedModelViewer({
 
   /** Make a detected room the design room (outline, size and ceiling go to the Illumination design) */
   const applyRoom = (room: ImportedModelRoom, keepPicking = false) => {
+    // Work on the room's floor
+    const rf = roomFloor(room);
+    if (rf && rf.id !== activeFloor?.id) {
+      updateInfo({ activeFloorId: rf.id, sectionElevation: floorSectionElevation(floors, rf, modelTop), floors: floors.map(x => (x.id === rf.id ? { ...x, visible: true } : x)) });
+      sectionCache.current = null;
+    }
+    // A room already in Rooms & Properties keeps its own fixtures and settings
+    const saved = projectRooms.find(s => s.sourceModelRoomId === room.id);
+    if (saved && onLoadProjectRoom) {
+      onLoadProjectRoom(saved.id);
+      setSelected([]);
+      setFocusRoomId(room.id);
+      if (!keepPicking) setMode('select');
+      setSectionView(true);
+      return;
+    }
     const world = toRoomPoints(room.polygon) || [];
     const norm = normalizePolygon(world);
     const b = polygonBounds(world);
@@ -1251,6 +1411,16 @@ export default function ImportedModelViewer({
                 <button type="button" onClick={() => setView('top')} className={view === 'top' ? btnOn : btnIdle}><Grid3x3 className="w-3.5 h-3.5" /> Top</button>
                 <button type="button" onClick={() => (view === 'top' ? fitOrtho() : fitPersp())} className={btnIdle} title="Fit the model in view"><Maximize2 className="w-3.5 h-3.5" /></button>
                 <button type="button" onClick={() => setSectionView(!sectionView)} className={sectionView ? btnOn : btnIdle} title="Cut the model at the section level to see inside"><Scan className="w-3.5 h-3.5" /> Section</button>
+                {floors.length > 0 && (
+                  <select
+                    value={activeFloor?.id || ''}
+                    onChange={e => { const f = floors.find(x => x.id === e.target.value); if (f) selectFloor(f); }}
+                    title="Floor to work on: its plan section, rooms and fixtures"
+                    className="px-2 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-500/50 bg-indigo-50 dark:bg-indigo-500/10 text-[11px] font-bold text-indigo-700 dark:text-indigo-300"
+                  >
+                    {[...floors].reverse().map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                )}
               </div>
               <span className="hidden sm:block w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
               <div className="flex flex-wrap gap-1">
@@ -1299,7 +1469,7 @@ export default function ImportedModelViewer({
                   {mode === 'text' && 'Click where the new text should go.'}
                 </span>
                 <span className="rounded bg-slate-900/85 px-2 py-1 text-[10px] text-slate-400">
-                  <span className="text-emerald-400">green</span> design room, <span className="text-sky-400">blue</span> current outline, <span className="text-amber-400">amber</span> detected, grey other rooms
+                  <span className="text-emerald-400">green</span> design room, <span className="text-sky-400">blue</span> current outline, <span className="text-amber-400">amber</span> detected, grey other rooms (darker on other floors), <span className="text-yellow-200">pale squares</span> luminaires of other project rooms
                 </span>
               </div>
             )}
@@ -1448,7 +1618,58 @@ export default function ImportedModelViewer({
 
           {info && loaded && (
             <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-              <div className="font-black uppercase tracking-widest text-[10px] text-slate-400">Room Detection</div>
+              <div className="flex items-center justify-between">
+                <div className="font-black uppercase tracking-widest text-[10px] text-slate-400">Floors ({floors.length})</div>
+                <div className="flex gap-1">
+                  <button type="button" onClick={detectFloors} className={btnIdle} title="Find the floor levels from the model's slabs"><Scan className="w-3.5 h-3.5" /> Detect</button>
+                  <button type="button" onClick={addFloor} className={btnIdle} title="Add a floor above the top one"><PlusCircle className="w-3.5 h-3.5" /> Add</button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                {[...floors].reverse().map(f => {
+                  const picked = info.rooms.filter(r => roomFloor(r)?.id === f.id);
+                  const inProject = projectRooms.filter(sr => {
+                    const mr = sr.sourceModelRoomId ? info.rooms.find(r => r.id === sr.sourceModelRoomId) : undefined;
+                    return mr && roomFloor(mr)?.id === f.id;
+                  });
+                  const tot = floorTotals(inProject);
+                  const isActive = f.id === activeFloor?.id;
+                  return (
+                    <div key={f.id} className={`rounded border px-1.5 py-1 space-y-0.5 ${isActive ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700'}`}>
+                      <div className="flex items-center gap-1">
+                        <input type="radio" name="active-floor" checked={isActive} onChange={() => selectFloor(f)} title="Work on this floor" />
+                        <button type="button" onClick={() => updateFloor(f.id, { visible: f.visible === false })} title={f.visible === false ? 'Show this floor' : 'Hide this floor'} className="text-slate-500 hover:text-indigo-600">
+                          {f.visible === false ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                        <input value={f.name} onChange={e => updateFloor(f.id, { name: e.target.value })} className="flex-1 min-w-0 bg-transparent font-bold text-slate-700 dark:text-slate-200" />
+                        <input
+                          type="number"
+                          step={0.05}
+                          value={f.elevation}
+                          onChange={e => { const v = Number(e.target.value); if (Number.isFinite(v)) updateFloor(f.id, { elevation: Math.round(v * 100) / 100 }); }}
+                          title="Floor level (m above the lowest point of the model)"
+                          className="w-16 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-right"
+                        />
+                        <span className="text-slate-400">m</span>
+                        <button type="button" disabled={floors.length <= 1} onClick={() => removeFloor(f.id)} title="Remove floor" className="text-slate-400 hover:text-rose-500 disabled:opacity-30"><Trash2 className="w-3 h-3" /></button>
+                      </div>
+                      <div className="text-[10px] text-slate-500 pl-9">
+                        {picked.length} room{picked.length === 1 ? '' : 's'} picked
+                        {tot.rooms > 0 && <> · {tot.rooms} in project · {fmt(tot.area, 1)} m² · {tot.fixtures} luminaires · {Math.round(tot.watts)} W · LPD {fmt(tot.lpd)} W/m² · E<sub>avg</sub> {Math.round(tot.avgLux)} lx</>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-slate-500">
+                Each floor is a design layer: choose one to pick and edit its rooms; the eye shows or hides it. Levels are finished floor heights above the model's lowest point.
+              </div>
+            </div>
+          )}
+
+          {info && loaded && (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+              <div className="font-black uppercase tracking-widest text-[10px] text-slate-400">Room Detection{activeFloor && floors.length > 1 ? ` · ${activeFloor.name}` : ''}</div>
               <label className="block space-y-0.5">
                 <span className="text-slate-500">Section level: {fmt(info.sectionElevation)} m above the lowest point</span>
                 <input type="range" min={0.2} max={Math.max(0.5, (modelSize?.y ?? 3) - 0.1)} step={0.05} value={info.sectionElevation} onChange={e => updateInfo({ sectionElevation: Number(e.target.value) })} className="w-full" />
@@ -1458,20 +1679,26 @@ export default function ImportedModelViewer({
                 <input type="range" min={0} max={2} step={0.05} value={info.gapClose} onChange={e => updateInfo({ gapClose: Number(e.target.value) })} className="w-full" />
               </label>
               {info.rooms.length > 0 && (
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="flex items-center gap-1 font-bold text-slate-600 dark:text-slate-300">
                     <input
                       type="checkbox"
-                      checked={checkedRooms.length > 0 && checkedRooms.length === info.rooms.length}
-                      onChange={e => setCheckedRooms(e.target.checked ? info.rooms.map(r => r.id) : [])}
+                      checked={checkedRooms.length > 0 && floorRooms.every(r => checkedRooms.includes(r.id))}
+                      onChange={e => setCheckedRooms(e.target.checked ? floorRooms.map(r => r.id) : [])}
                     />
-                    {info.rooms.length} room{info.rooms.length === 1 ? '' : 's'} picked · {fmt(info.rooms.reduce((s, r) => s + r.area, 0), 1)} m²
+                    {floorRooms.length} room{floorRooms.length === 1 ? '' : 's'}{floors.length > 1 && !allFloorsList ? ` on ${activeFloor?.name}` : ''} · {fmt(floorRooms.reduce((s, r) => s + r.area, 0), 1)} m²
                   </label>
+                  {floors.length > 1 && (
+                    <label className="flex items-center gap-1 text-slate-500 whitespace-nowrap">
+                      <input type="checkbox" checked={allFloorsList} onChange={e => setAllFloorsList(e.target.checked)} /> All floors
+                    </label>
+                  )}
                 </div>
               )}
               <div className="space-y-1 max-h-60 overflow-y-auto">
                 {info.rooms.length === 0 && <div className="text-slate-500">No rooms yet. Choose Pick Room and click inside each room you want.</div>}
-                {info.rooms.map(r => (
+                {info.rooms.length > 0 && floorRooms.length === 0 && <div className="text-slate-500">No rooms picked on {activeFloor?.name || 'this floor'} yet.</div>}
+                {floorRooms.map(r => (
                   <div
                     key={r.id}
                     onMouseEnter={() => setFocusRoomId(r.id)}
@@ -1479,6 +1706,7 @@ export default function ImportedModelViewer({
                   >
                     <input type="checkbox" checked={checkedRooms.includes(r.id)} onChange={e => setCheckedRooms(c => (e.target.checked ? [...c, r.id] : c.filter(id => id !== r.id)))} />
                     <input value={r.name} onChange={e => renameRoom(r.id, e.target.value)} className="flex-1 min-w-0 bg-transparent font-bold text-slate-700 dark:text-slate-200" />
+                    {allFloorsList && floors.length > 1 && <span className="text-[9px] font-bold text-indigo-500 whitespace-nowrap">{roomFloor(r)?.name}</span>}
                     <span className="text-slate-500 font-mono whitespace-nowrap">{fmt(r.area, 1)} m²{r.ceilingHeight ? ` · ${fmt(r.ceilingHeight, 2)} m` : ''}</span>
                     {roomsInProject.includes(r.id) && <span title="In Rooms & Properties" className="text-indigo-500"><CheckCircle2 className="w-3 h-3" /></span>}
                     {r.id === info.activeRoomId

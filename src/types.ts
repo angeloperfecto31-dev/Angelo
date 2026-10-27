@@ -270,6 +270,11 @@ export interface SavedLightingDetail {
   circuitNo?: number; // optionally link to circuit
   /** Room of an imported 3D model this saved room was created from */
   sourceModelRoomId?: string;
+  /** Floor the room is on (kept in step with the imported model's floors; set by hand otherwise) */
+  floorId?: string;
+  floorName?: string;
+  /** Floor level (m) for ordering */
+  floorLevel?: number;
   /** Luminaires required by the lumen method (fixturesCount is what is installed) */
   requiredFixtures?: number;
   fixtureWattage?: number;
@@ -368,6 +373,16 @@ export interface ImportedModelRoom {
   area: number;
 }
 
+/** A storey of an imported model (one design layer in Room Physical Layout) */
+export interface ModelFloor {
+  id: string;
+  name: string;
+  /** Finished floor level, metres above the lowest point of the model */
+  elevation: number;
+  /** Shown in the viewer (layer visibility) */
+  visible: boolean;
+}
+
 export interface ImportedModelInfo {
   fileName: string;
   format: "glb" | "gltf" | "obj" | "dae";
@@ -398,6 +413,10 @@ export interface ImportedModelInfo {
   placementShift?: { x: number; y: number; z: number };
   /** Text, labels and dimensions read from a DXF exported with the model */
   annotations?: AnnotationSet;
+  /** Storeys of the model (detected or defined by the user), any order */
+  floors?: ModelFloor[];
+  /** Floor being worked on (section, room picking, room list) */
+  activeFloorId?: string;
 }
 
 /** One text-like entity from a DXF (coordinates in DXF units, Z up, as exported) */

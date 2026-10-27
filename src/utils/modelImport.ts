@@ -497,3 +497,64 @@ export function heightsAt(root: THREE.Object3D, point: RoomPoint, sectionElevati
 export function modelBounds(root: THREE.Object3D) {
   return new THREE.Box3().setFromObject(root);
 }
+
+/**
+ * Floor levels of a placed model: elevations of large upward-facing horizontal surfaces (slabs and
+ * floor finishes), at least 2.1 m apart. A top slab with less than 1.8 m of model above it is the roof
+ * and is left out. Always returns at least one level.
+ */
+export function detectFloorLevels(root: THREE.Object3D): number[] {
+  root.updateMatrixWorld(true);
+  const bins = new Map<number, number>(); // 5 cm bins -> upward area (m²)
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  let top = -Infinity;
+  for (const mesh of visibleMeshes(root)) {
+    const g = mesh.geometry as THREE.BufferGeometry;
+    const pos = g.attributes.position;
+    if (!pos) continue;
+    const idx = g.index;
+    const tris = idx ? idx.count / 3 : pos.count / 3;
+    const m = mesh.matrixWorld;
+    for (let t = 0; t < tris; t++) {
+      a.fromBufferAttribute(pos, idx ? idx.getX(t * 3) : t * 3).applyMatrix4(m);
+      b.fromBufferAttribute(pos, idx ? idx.getX(t * 3 + 1) : t * 3 + 1).applyMatrix4(m);
+      c.fromBufferAttribute(pos, idx ? idx.getX(t * 3 + 2) : t * 3 + 2).applyMatrix4(m);
+      top = Math.max(top, a.y, b.y, c.y);
+      n.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a));
+      const len = n.length();
+      if (len < 1e-9 || n.y / len < 0.95) continue; // upward-facing only
+      const y = (a.y + b.y + c.y) / 3;
+      const key = Math.round(y / 0.05);
+      bins.set(key, (bins.get(key) || 0) + len / 2);
+    }
+  }
+  if (!bins.size) return [0];
+  // Neighbouring bins (within 25 cm) form one level, at the height of its largest surface (the slab top)
+  const sorted = [...bins.entries()].sort((p, q) => p[0] - q[0]);
+  const clusters: { y: number; area: number }[] = [];
+  let cur: { peakK: number; peakA: number; area: number; last: number } | null = null;
+  for (const [k, area] of sorted) {
+    if (cur && k - cur.last <= 5) {
+      if (area > cur.peakA) { cur.peakA = area; cur.peakK = k; }
+      cur.area += area;
+      cur.last = k;
+    } else {
+      if (cur) clusters.push({ y: cur.peakK * 0.05, area: cur.area });
+      cur = { peakK: k, peakA: area, area, last: k };
+    }
+  }
+  if (cur) clusters.push({ y: cur.peakK * 0.05, area: cur.area });
+  const biggest = Math.max(...clusters.map((cl) => cl.area));
+  const accepted: { y: number; area: number }[] = [];
+  clusters
+    .filter((cl) => cl.area >= Math.max(3, biggest * 0.12))
+    .sort((p, q) => q.area - p.area)
+    .forEach((cl) => {
+      if (accepted.every((ac2) => Math.abs(ac2.y - cl.y) >= 2.1)) accepted.push(cl);
+    });
+  accepted.sort((p, q) => p.y - q.y);
+  if (accepted.length > 1 && top - accepted[accepted.length - 1].y < 1.8) accepted.pop();
+  const levels = accepted.map((cl) => Math.round(cl.y * 100) / 100);
+  return levels.length ? levels : [0];
+}
