@@ -12,6 +12,7 @@ import {
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, getBreakerFrameSize, calculateUnifiedVD } from "./computeEngine";
 import { serviceFaultStudy } from "./serviceFault";
+import { kaicAudit } from "./kaicAudit";
 import { analysePowerSystem } from "./powerAnalysis";
 import { buildImpedanceSld, drawSldOnDrawing, sldOptionsFor, type SldOptions } from "./impedanceSld";
 import { auth, db } from "../firebase";
@@ -1359,7 +1360,7 @@ export const exportToCAD = (
     : (panel?.system ? (panel.system.toLowerCase().includes("3ph") || panel.system.toLowerCase().includes("3ø") || panel.system.toLowerCase().includes("three-phase") || panel.system.toLowerCase().includes("three phase") ? "3PH" : "1PH") : "1PH");
   const isSC3Phase = selectedPhaseType === "3PH";
   // Service fault study shared with the Short Circuit page (utils/serviceFault.ts): the same values on screen and in CAD
-  const scStudy = serviceFaultStudy(scParams as ShortCircuitParams, isSC3Phase, circuits, subPanels, panel?.voltage);
+  const scStudy = serviceFaultStudy({ ...scParams, ...(iscParams || {}) } as ShortCircuitParams, isSC3Phase, circuits, subPanels, panel?.voltage);
   const baseKVA = scParams.transformerKVA;
   const totalTransformerKVA = scStudy.src.kva;
   const feederR = scStudy.eqFeeder.r;
@@ -3008,7 +3009,7 @@ export const exportToCAD = (
 
       writeEqSC([
         "\\textbf{4. Service Feeder Impedance (PEC 2017 Ch. 9 Table 9)}",
-        `\\text{Length } L = ${scParams.feederLength} \\text{ m, Runs } n = ${scParams.feederRuns}\\text{, Size = } ${scParams.feederSize} \\text{ mm}^2 \\text{ } ${scParams.conductorType}`,
+        `\\text{Length } L = ${scParams.feederLength} \\text{ m, Runs } n = ${scParams.feederRuns} \\text{ (${scStudy.connectionType})}\\text{, Size = } ${scParams.feederSize} \\text{ mm}^2 \\text{ } ${scParams.conductorType}`,
         `R_{75C} = ${feederR.toFixed(5)} \\ \\Omega, \\ X = ${feederX.toFixed(5)} \\ \\Omega \\ \\text{(R corrected to 20 deg C for maximum fault)}`,
         `Z_{f} = ${zr(scStudy.zFeederOhm)} \\ (${zFeederpu.toFixed(6)} \\text{ pu}${isSC3Phase ? "" : ", 2-wire loop"})`,
       ]);
@@ -3866,7 +3867,7 @@ export const exportToCAD = (
     const excelTotalTransformerKVA = scStudy.src.kva;
     const ptCount = scParams.parallelTransformersCount || 1;
     const feederRuns = scParams.feederRuns || 1;
-    const connType = scParams.connectionType || "Series";
+    const connType = scStudy.connectionType;
     const excelFeederR = feederR;
     const excelFeederX = feederX;
     const excelFeederZ = feederZ;
@@ -4054,125 +4055,11 @@ export const exportToCAD = (
 
     ty -= labelH;
 
-    // Generate Validation Rows matching exactly with ShortCircuitCalc.tsx
-    const auditRows: Array<{
-      location: string;
-      type: string;
-      faultCurrentA: number;
-      selectedKAIC: number;
-      status: "PASS" | "FAIL";
-      recommendation: string;
-    }> = [];
-
-    const standardKAICRatings = [5, 10, 14, 18, 22, 25, 30, 35, 42, 50, 65, 85, 100];
-
-    // 1. MDP Main Breaker
-    const mdpFaultA = fault2Isc || 10000;
-    const mdpKAICSelected = parseFloat(panel.icRating) || 10;
-    const mdpFaultKA = mdpFaultA / 1000;
-    const mdpPass = mdpKAICSelected >= mdpFaultKA;
-    const recMdp = standardKAICRatings.find(k => k >= mdpFaultKA) || 100;
-
-    auditRows.push({
-      location: panel.designation || "Main Panel (MDP) Main Breaker",
-      type: "Main Protective Device",
-      faultCurrentA: mdpFaultA,
-      selectedKAIC: mdpKAICSelected,
-      status: mdpPass ? "PASS" : "FAIL",
-      recommendation: mdpPass 
-        ? "Breaker is adequately sized for maximum short-circuit duty." 
-        : `INSUFFICIENT kAIC: Upgrade main breaker rating to at least ${recMdp} kAIC immediately.`,
-    });
-
-    // 2. MDP Branch Protective Devices
-    if (circuits && circuits.length > 0) {
-      circuits.forEach(c => {
-        if (isIdleSpareOrSpace(c)) return;
-        const branchFaultA = fault3Isc || 10000;
-        const branchFaultKA = branchFaultA / 1000;
-        const branchKAICSelected = c.mcbKAIC || 10;
-        const bPass = branchKAICSelected >= branchFaultKA;
-        const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
-
-        auditRows.push({
-          location: `${panel.designation || "MDP"} - Circuit ${c.circuitNo} (${c.description})`,
-          type: "Branch Circuit Breaker",
-          faultCurrentA: branchFaultA,
-          selectedKAIC: branchKAICSelected,
-          status: bPass ? "PASS" : "FAIL",
-          recommendation: bPass
-            ? "Circuit breaker is adequate."
-            : `Recommend upgrade to at least ${recB} kAIC.`,
-        });
-      });
-    }
-
-    // 3. Subpanels
-    if (subPanels && subPanels.length > 0) {
-      subPanels.forEach(sp => {
-        let spFaultA = 10000;
-        // Find if this subpanel is fed by another panel
-        let parentConn = circuits?.find(c => c.linkedSubPanelId === sp.id);
-        if (!parentConn && subPanels) {
-          parentConn = subPanels.flatMap(otherSp => otherSp.circuits).find(c => c.linkedSubPanelId === sp.id);
-        }
-
-        if (parentConn) {
-          const feederLen = iscParams.feederLength || 10;
-          const feederSize = parentConn.wireSize || "14";
-          const feederRuns = parentConn.quantity || 1;
-          const motorVA = sp.circuits.reduce((acc, curr) => 
-            (curr.loadType === LoadType.MOTOR || curr.loadType === LoadType.AIR_CON) ? acc + (curr.loadVA || 0) : acc, 0
-          );
-          spFaultA = calculatePanelFault(
-            sp.panel,
-            iscParams,
-            feederLen,
-            feederSize,
-            feederRuns,
-            motorVA
-          );
-        } else {
-          spFaultA = calculatePanelFault(sp.panel, iscParams, undefined, undefined, undefined, 0);
-        }
-
-        const spFaultKA = spFaultA / 1000;
-        const spKAICSelected = parseFloat(sp.panel.icRating) || 10;
-        const spPass = spKAICSelected >= spFaultKA;
-        const recSp = standardKAICRatings.find(k => k >= spFaultKA) || 100;
-
-        auditRows.push({
-          location: `${sp.panel.designation || `Subpanel ${sp.id}`} Main Breaker`,
-          type: "Subpanel Main Device",
-          faultCurrentA: spFaultA,
-          selectedKAIC: spKAICSelected,
-          status: spPass ? "PASS" : "FAIL",
-          recommendation: spPass
-            ? "Main breaker is adequate for short-circuit duty."
-            : `INSUFFICIENT kAIC: Upgrade to minimum ${recSp} kAIC protection.`,
-        });
-
-        // Subpanel branch circuits
-        sp.circuits.forEach(c => {
-          if (isIdleSpareOrSpace(c)) return;
-          const branchFaultKA = spFaultKA;
-          const branchKAICSelected = c.mcbKAIC || 10;
-          const bPass = branchKAICSelected >= branchFaultKA;
-          const recB = standardKAICRatings.find(k => k >= branchFaultKA) || 100;
-
-          auditRows.push({
-            location: `${sp.panel.designation || `Subpanel ${sp.id}`} - Circuit ${c.circuitNo} (${c.description})`,
-            type: "Branch Circuit Breaker",
-            faultCurrentA: spFaultA,
-            selectedKAIC: branchKAICSelected,
-            status: bPass ? "PASS" : "FAIL",
-            recommendation: bPass
-              ? "Circuit breaker is adequate."
-              : `Recommend upgrade to ${recB} kAIC.`,
-          });
-        });
-      });
-    }
+    // The same rows as the Short Circuit page (utils/kaicAudit.ts): per-panel fault levels of the impedance diagram
+    const auditRows = kaicAudit(
+      impedanceSld?.input.result ?? analysePowerSystem({ panel, circuits, subPanels, iscParams, vdCalculations, basis: "demand" }),
+      panel, circuits, subPanels,
+    );
 
     const continueAudit = () => {
       continueOnNewSheet(auditSheetIndex, panel, "KAIC COMPLIANCE AUDIT (CONTINUED)", "PEC SECTION 1.10.1.9 SAFETY EVALUATION");
@@ -4180,9 +4067,9 @@ export const exportToCAD = (
     };
     // Now render the rows in AutoCAD DXF format
     auditRows.forEach((row) => {
-      const valFaultStr = `${(row.faultCurrentA / 1000).toFixed(2)} kA`;
-      const valInstalledStr = `${row.selectedKAIC} kAIC`;
-      const valStatusStr = row.status === "PASS" ? "PASS" : "FAIL";
+      const valFaultStr = `${(row.faultCurrentA / 1000).toFixed(2)} kA${row.upperBound ? " (UB)" : ""}${row.dutyCurrentA > row.faultCurrentA * 1.005 ? ` / duty ${(row.dutyCurrentA / 1000).toFixed(2)}` : ""}`;
+      const valInstalledStr = row.selectedKAIC > 0 ? `${row.selectedKAIC} kAIC` : "NOT SPECIFIED";
+      const valStatusStr = row.status === "NOT SPECIFIED" ? "NO DATA" : row.status;
 
       // Compute dynamic row height based on content
       const charWidthFactor = 0.70;
@@ -4219,7 +4106,7 @@ export const exportToCAD = (
         ty - rowH / 2 - fontSize / 2, 
         fontSize, 
         0, 
-        row.status === "PASS" ? "TEXT_HEADER" : "SLD_FAULT", 
+        row.status === "PASS" ? "TEXT_HEADER" : row.status === "FAIL" ? "SLD_FAULT" : "SLD_FEEDER", 
         "center", 
         cols[4].w - 10
       );
@@ -4256,7 +4143,7 @@ export const exportToCAD = (
       "left"
     );
     b.addText(
-      "for the nominal circuit voltage and the current that is available at the line terminals of the equipment. System verified and stamped compliant.",
+      "for the nominal circuit voltage and the current that is available at the line terminals of the equipment. Fault values include motor contribution; (UB) = upper bound, feeder length not set.",
       tableLeft + 10,
       noteY - 17.0,
       3.2,

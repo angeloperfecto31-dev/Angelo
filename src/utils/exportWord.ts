@@ -28,6 +28,10 @@ import { illuminationDesignSummary } from './illuminationSizing';
 import { floorSummaryLine, floorTotals, groupSavedRoomsByFloor } from './modelFloors';
 import { renderRoomLayoutPng, roomGeometrySummary, roomShapeLabel } from './illuminationRoomExport';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
+import { serviceFaultStudy } from './serviceFault';
+import { analysePowerSystem } from './powerAnalysis';
+import { kaicAudit } from './kaicAudit';
+import { buildImpedanceSld, sldOptionsFor, sldToPngDataUrl } from './impedanceSld';
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, calculateUnifiedVD } from './computeEngine';
 
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
@@ -50,6 +54,10 @@ function getMathSymbol(macro: string): string {
     case "omega": return "ω";
     case "theta": return "θ";
     case "implies": return " ⟹ ";
+    case "Rightarrow": return " ⇒ ";
+    case "kappa": return "κ";
+    case "circ": return "°";
+    case "quad": return "   ";
     case "left":
     case "right": return "";
     case "max": return "max";
@@ -139,7 +147,7 @@ function parseLatex(str: string): any[] {
         if (pos < str.length) {
           const esc = str[pos++];
           if (esc === "%") items.push({ type: 'component', val: new MathRun("%") });
-          else if (esc === "," || esc === " ") items.push({ type: 'component', val: new MathRun(" ") });
+          else if (esc === "," || esc === " " || esc === ";") items.push({ type: 'component', val: new MathRun(" ") });
           else items.push({ type: 'component', val: new MathRun(esc) });
         }
       } else {
@@ -855,7 +863,7 @@ export const exportToWord = async (
   ].join(', ');
   addTOCEntry("2.0", `Electrical Load Schedules & Feeder Sizing Calculations`, `Individual schedules, main feeder calculations, system balancing indices, and PEC standard safety map for panels: ${panelNames}.`, "Page 4", true);
   
-  addTOCEntry("3.0", "Short Circuit Analysis & Subtransient Fault Sizing", "Per-unit impedance calculation, symmetrical and asymmetrical short circuit current evaluations, utility grids, transformer impedance, and breaker kAIC ratings conformance.", "Page 5", false);
+  addTOCEntry("3.0", "Short Circuit Analysis & Subtransient Fault Sizing", "Complex impedance calculation from the utility, transformer and feeders; three-phase, line-to-line and line-to-ground faults; fault levels at every panel; and the breaker kAIC audit.", "Page 5", false);
   addTOCEntry("4.0", "Voltage Drop Calculations & Conductor Thermal Audits", "Combined line descriptions, single-phase and three-phase mathematical formulas, impedance tables, drop percentage compliance checking, and recommended cross sectional upgrades.", "Page 6", true);
   addTOCEntry("5.0", "Indoor Illumination Sizing & Industrial Ergonomics Quality Report", "Standard Lumen Method calculations, workspace lux target validation, DOLE Rule 1075 working conditions, ASHRAE LPD density checks, and smart photodetector energy dims payback schedules.", "Page 7", false);
   
@@ -1227,70 +1235,6 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     conductorType: 'Copper'
   };
 
-  const baseKVA = params.transformerKVA || 500;
-  const baseKV = (params.transformerVoltage || 230) / 1000;
-  const zUtilitypu = baseKVA / ((params.utilityShortCircuitMVA || 500) * 1000);
-  
-  let connectionMultiplier = 1.0;
-  let groundFaultFactor = 1.0;
-  if (params.transformerConnection?.includes('Open') || false) {
-    connectionMultiplier = 0.866; 
-  }
-  
-  if (params.transformerConnection === 'Wye (Star) Connection' || 
-      params.transformerConnection === 'Delta-Wye (Δ-Y)' || 
-      params.transformerConnection === 'Wye-Wye (Y-Y)' ||
-      params.transformerConnection === 'Open Wye-Open Delta') {
-    groundFaultFactor = 1.25; 
-  }
-  
-  let zTranspu = (params.transformerZ / 100) / connectionMultiplier;
-  let totalTransformerKVA = baseKVA;
-  const ptCount = params.parallelTransformersCount || 1;
-  const ptZMatch = params.parallelTransformersZMatch !== false;
-  const ptkVAMatch = params.parallelTransformerskVAMatch !== false;
-
-  if (ptCount > 1) {
-    if (ptZMatch && ptkVAMatch) {
-      zTranspu = zTranspu / ptCount;
-      totalTransformerKVA = baseKVA * ptCount;
-    } else {
-      const z1pu = zTranspu;
-      const t2Rating = params.parallelTransformersRating || 100;
-      const t2Z = params.parallelTransformersZ || 5;
-      const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
-      
-      const y1 = 1 / z1pu;
-      const y2 = (ptCount - 1) / z2pu;
-      zTranspu = 1 / (y1 + y2);
-      totalTransformerKVA = baseKVA + (ptCount - 1) * t2Rating;
-    }
-  }
-
-  // Feeder attenuation resistances matching typical standards
-  const feederRuns = params.feederRuns || 1;
-  const condType = params.conductorType || 'Copper';
-  const connType = params.connectionType || 'Series';
-
-  const eqFeeder = calculateEquivalentFeederImpedance(
-    params.feederLength || 10,
-    params.feederSize || '30',
-    feederRuns,
-    condType,
-    connType,
-    params.parallelFeedersSizeMatch !== false,
-    params.parallelFeedersLengthMatch !== false,
-    params.parallelFeedersMaterialMatch !== false,
-    params.parallelFeedersCustomSizes,
-    params.parallelFeedersCustomLengths,
-    params.parallelFeedersCustomMaterials,
-  );
-
-  const feederR = eqFeeder.r;
-  const feederX = eqFeeder.x;
-  const feederZ = eqFeeder.z;
-  const zFeederpu = feederZ * (baseKVA / 1000) / (baseKV * baseKV);
-
   const detectPhaseTypeLocal = (system: string) => {
     if (!system) return '3PH';
     const clean = system.toUpperCase();
@@ -1307,28 +1251,32 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     ? params.phaseTypeOverride
     : detectedPhase;
   const is3Phase = selectedPhaseType === '3PH';
-  const phaseFactor = is3Phase ? 1.732 : 2.0;
 
-  const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = totalTransformerKVA / (phaseFactor * baseKV);
-  const iFullLoadBase = baseKVA / (phaseFactor * baseKV);
+  // Same calculation as the Short Circuit page, the AutoCAD drawing and the Excel workbook
+  const study = serviceFaultStudy(params, is3Phase, circuits, subPanels, panel?.voltage);
+  const baseKVA = params.transformerKVA || 500;
+  const totalTransformerKVA = study.src.kva;
+  const ptCount = params.parallelTransformersCount || 1;
+  const ptZMatch = params.parallelTransformersZMatch !== false;
+  const ptkVAMatch = params.parallelTransformerskVAMatch !== false;
+  const feederRuns = params.feederRuns || 1;
+  const connType = study.connectionType;
+  const { zUtilitypu, zTranspu, zFeederpu, totalZpu, iFullLoad, iscMainBreaker, iscFaultPoint, motorContribution } = study;
+  const feederR = study.eqFeeder.r;
+  const feederX = study.eqFeeder.x;
+  const combinedSymmetricalCurrent = study.iscTotal;
+  const zmo = (z: { r: number; x: number }) => `${(z.r * 1000).toFixed(3)} + j${(z.x * 1000).toFixed(3)}\\,\\text{m}\\Omega`;
 
-  const iscMainBreaker = iFullLoadBase / (zUtilitypu + zTranspu);
-  const iscFaultPoint = iFullLoadBase / totalZpu;
-
-  // Subtransient motor feedback contribution computation (4 * standard full load current)
-  const scMotorLoadVA = circuits.filter(c => c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON).reduce((sum, c) => sum + c.loadVA, 0);
-  const motorContribution = scMotorLoadVA > 0 ? (scMotorLoadVA / (phaseFactor * (params.transformerVoltage || 230))) * 4 : 0;
-  
-  const combinedSymmetricalCurrent = iscFaultPoint + motorContribution;
-  const combinedAsymmetricalCurrent = combinedSymmetricalCurrent * 1.25;
+  // Per-panel fault levels and the interrupting-rating audit (same rows as the page and the drawing)
+  const scResult = analysePowerSystem({ panel, circuits, subPanels, iscParams: params, vdCalculations, basis: "demand" });
+  const scAudit = kaicAudit(scResult, panel, circuits, subPanels);
 
   docChildren.push(createHeader(`3.0 Short Circuit Analysis & Subtransient Fault Sizing`, true));
   docChildren.push(
     createSubHeader(`A. Engineering Methodology Reference`),
-    createParagraph("Short circuit calculations deploy the standard Per-Unit (pu) impedance methodology on a consolidated base system capacity. The elements audited include utility grid infinite source capabilities, power transformer internal inductive resistance, distribution feeder conductor resistance/reactance decay, and transient rotational motor feedbacks back into fault points."),
+    createParagraph("Impedances are complex values (R + jX) referred to the secondary voltage and added as complex quantities: utility source from the available fault MVA (X/R 10, assumed), transformer from %Z at the typical X/R by kVA (IEEE Std 141), and conductors from PEC 2017 Ch. 9 Table 9 with the resistance corrected to 20 °C for the maximum fault. Unbalanced faults use symmetrical components (Z2 = Z1). Motor contribution is 4 × motor full-load current. Peak current follows IEC 60909."),
     new Paragraph({ spacing: { after: 150 } }),
-    
+
     createSubHeader(`B. Input Design Sizing Parameters`),
     new Paragraph({ spacing: { after: 100 } })
   );
@@ -1388,69 +1336,123 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
 
   docChildren.push(
     new Paragraph({ spacing: { before: 200 } }),
-    createSubHeader(`C. Step-by-Step Per-Unit Impedance & Symmetrical Calculations`),
-    
+    createSubHeader(`C. Step-by-Step Impedance & Symmetrical Calculations`),
+
     createParagraph(`1. Transformer Full Load Amperes ($I_{\\text{FLA}}$) - Based on total combined bank rating (${totalTransformerKVA} kVA) - ${is3Phase ? 'Three-Phase (3Ø)' : 'Single-Phase (1Ø)'}:`),
     createFormulaCallout(is3Phase
-      ? `I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary, LL}} \\times \\sqrt{3}} = \\frac{${totalTransformerKVA} \\times 1000}{${params.transformerVoltage || 230} \\times 1.732} = ${iFullLoad.toFixed(2)}\\text{ A}`
-      : `I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary}} \\times 2.0} = \\frac{${totalTransformerKVA} \\times 1000}{${params.transformerVoltage || 230} \\times 2.0} = ${iFullLoad.toFixed(2)}\\text{ A}`
+      ? `I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{\\sqrt{3} \\times V_{\\text{secondary}}} = \\frac{${totalTransformerKVA} \\times 1000}{1.732 \\times ${study.vSec}} = ${iFullLoad.toFixed(2)}\\text{ A}`
+      : `I_{\\text{FLA}} = \\frac{S_{\\text{trans, total}} \\times 1000}{V_{\\text{secondary}}} = \\frac{${totalTransformerKVA} \\times 1000}{${study.vSec}} = ${iFullLoad.toFixed(2)}\\text{ A}`
     ),
-    
-    createParagraph(`2. Utility Source Grid Impedance ($Z_{\\text{util, pu}}$):`),
-    createFormulaCallout(`Z_{\\text{util, pu}} = \\frac{S_{\\text{base, kVA}}}{MVA_{\\text{sc, utility}} \\times 1000} = \\frac{${baseKVA}}{${params.utilityShortCircuitMVA || 500} \\times 1000} = ${zUtilitypu.toFixed(6)}\\text{ pr. u.}`),
-    
-    createParagraph(`3. Combined Transformer Inductive Impedance ($Z_{\\text{trans, pu}}$) ${ptCount > 1 ? `incorporating ${ptCount} parallel banks (${ptZMatch && ptkVAMatch ? 'Matched' : 'Unbalanced'})` : ''}:`),
-    createFormulaCallout(`Z_{\\text{trans, pu}} = ${zTranspu.toFixed(6)}\\text{ pr. u.}`),
-    
-    createParagraph(`4. Feeder Conductor Ohmic Impedance Sizing decay ($Z_{\\text{feeder}}$) - Connection: ${connType}, Runs: ${feederRuns}:`),
-    createFormulaCallout(`|Z_{\\text{feeder}}| = ${feederZ.toFixed(5)}\\,\\Omega \\quad (R = ${feederR.toFixed(5)}\\,\\Omega, \\, X = ${feederX.toFixed(5)}\\,\\Omega)`),
-    
-    createParagraph(`   Converting ohmic impedance into per-unit equivalent format:`),
-    createFormulaCallout(`Z_{\\text{feeder, pu}} = Z_{\\text{feeder, } \\Omega} \\times \\frac{S_{\\text{base, kVA}} / 1000}{V_{\\text{base, kV}}^2} = ${zFeederpu.toFixed(6)}\\text{ pr. u.}`),
-    
-    createParagraph(`5. Combined System total per-unit impedance ($Z_{\\text{total, pu}}$):`),
-    createFormulaCallout(`Z_{\\text{total, pu}} = Z_{\\text{util, pu}} + Z_{\\text{trans, pu}} + Z_{\\text{feeder, pu}} = ${totalZpu.toFixed(6)}\\text{ pr. u.}`),
+
+    createParagraph(`2. Utility source impedance ($X/R = 10$, assumed):`),
+    createFormulaCallout(`|Z_{\\text{u}}| = \\frac{kV^2}{MVA_{\\text{sc}}} = \\frac{${(study.vSec / 1000).toFixed(3)}^2}{${params.utilityShortCircuitMVA || 500}}, \\quad Z_{\\text{u}} = ${zmo(study.src.zUtility)} \\; (${zUtilitypu.toFixed(6)}\\text{ pu})`),
+
+    createParagraph(`3. Transformer impedance ($X/R = ${study.src.txXr.toFixed(1)}$) ${ptCount > 1 ? `incorporating ${ptCount} parallel banks (${ptZMatch && ptkVAMatch ? 'Matched' : 'Unbalanced'})` : ''}:`),
+    createFormulaCallout(`|Z_{\\text{t}}| = \\frac{\\%Z}{100} \\times \\frac{kV^2 \\times 1000}{kVA}, \\quad Z_{\\text{t}} = ${zmo(study.src.zTransformer)} \\; (${zTranspu.toFixed(6)}\\text{ pu})`),
+
+    createParagraph(`4. Service feeder impedance - ${params.feederSize || "30"} mm², ${params.feederLength || 10} m, ${feederRuns} run(s) in ${connType.toLowerCase()}:`),
+    createFormulaCallout(`R_{75^\\circ C} = ${feederR.toFixed(5)}\\,\\Omega, \\; X = ${feederX.toFixed(5)}\\,\\Omega, \\quad Z_{\\text{f}} = ${zmo(study.zFeederOhm)} \\; (${zFeederpu.toFixed(6)}\\text{ pu}${is3Phase ? "" : ", 2-wire loop"})`),
+
+    createParagraph(`5. Total impedance to the fault point (complex sum, X/R = ${study.atPoint.xr.toFixed(2)}):`),
+    createFormulaCallout(`Z_{1} = Z_{\\text{u}} + Z_{\\text{t}} + Z_{\\text{f}} = ${zmo(study.atPoint.z1)} \\; (${totalZpu.toFixed(6)}\\text{ pu})`),
 
     new Paragraph({ spacing: { before: 200 } }),
-    createSubHeader(`D. Ultimate Symmetrical and Asymmetrical Fault Current Results`),
-    
-    createParagraph(`• Symmetrical Fault Current at Transformer Terminals ($I_{\\text{sc, Main}}$):`),
-    createFormulaCallout(`I_{\\text{sc, Main}} = \\frac{I_{\\text{FLA, base}}}{Z_{\\text{util, pu}} + Z_{\\text{trans, pu}}} = \\frac{${iFullLoadBase.toFixed(2)}}{${zUtilitypu.toFixed(6)} + ${zTranspu.toFixed(6)}} = ${iscMainBreaker.toFixed(2)}\\text{ A}`),
-    
-    createParagraph(`• Symmetrical Fault Current at Distribution Panelboard Terminals ($I_{\\text{sc, Panel}}$):`),
-    createFormulaCallout(`I_{\\text{sc, Panel}} = \\frac{I_{\\text{FLA, base}}}{Z_{\\text{total, pu}}} = \\frac{${iFullLoadBase.toFixed(2)}}{${totalZpu.toFixed(6)}} = ${iscFaultPoint.toFixed(2)}\\text{ A}`),
-    
-    createParagraph(`• Combined synchronous symmetrical fault current incorporating rotating motor feedback ($I_{\\text{sc, sym}}$):`),
-    createFormulaCallout(`I_{\\text{sc, sym}} = I_{\\text{sc, Panel}} + I_{\\text{motor}} = ${iscFaultPoint.toFixed(2)} + ${motorContribution.toFixed(2)} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A}`),
-    
-    createParagraph(`• Ultimate Asymmetrical Fault Current factoring DC offset transient displacement ($I_{\\text{sc, asym}}$):`),
-    createFormulaCallout(`I_{\\text{sc, asym}} = I_{\\text{sc, sym}} \\times 1.25 = ${combinedSymmetricalCurrent.toFixed(2)} \\times 1.25 = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A}`),
-    
+    createSubHeader(`D. Fault Current Results`),
+
+    createParagraph(`• Utility fault current at the primary ($I_{\\text{sc1}}$):`),
+    createFormulaCallout(`I_{\\text{sc1}} = \\frac{MVA_{\\text{sc}} \\times 10^6}{\\sqrt{3} \\times V_{\\text{primary}}} = ${study.fault1Isc.toFixed(2)}\\text{ A}`),
+
+    createParagraph(`• Symmetrical fault current at the transformer secondary terminals ($I_{\\text{sc2}}$):`),
+    createFormulaCallout(`I_{\\text{sc2}} = \\frac{E}{|Z_{\\text{u}} + Z_{\\text{t}}|} = ${iscMainBreaker.toFixed(2)}\\text{ A}`),
+
+    createParagraph(`• Bolted ${is3Phase ? 'three-phase' : 'single-phase'} fault at the end of the service feeder:`),
+    createFormulaCallout(`I_{\\text{sc, point}} = \\frac{E}{|Z_{1}|} = ${iscFaultPoint.toFixed(2)}\\text{ A}`),
+    ...(is3Phase
+      ? [
+          createParagraph(`• Unbalanced faults at the same point (symmetrical components):`),
+          createFormulaCallout(`I_{\\text{LL}} = \\frac{\\sqrt{3}}{2} I_{3\\phi} = ${study.atPoint.iLL.toFixed(2)}\\text{ A}, \\quad I_{\\text{LG}} = \\frac{3E}{|2Z_{1} + Z_{0}|} = ${Number.isFinite(study.atPoint.iLG) ? study.atPoint.iLG.toFixed(2) : "n/a"}\\text{ A}`),
+        ]
+      : []),
+
+    createParagraph(`• Symmetrical fault current including motor contribution ($I_{\\text{sc, sym}}$):`),
+    createFormulaCallout(`I_{\\text{sc, sym}} = I_{\\text{sc, point}} + 4 \\times I_{\\text{motor}} = ${iscFaultPoint.toFixed(2)} + ${motorContribution.toFixed(2)} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A}`),
+
+    createParagraph(`• Peak current (IEC 60909):`),
+    createFormulaCallout(`i_{\\text{p}} = \\kappa \\sqrt{2} I_{\\text{sc, sym}}, \\; \\kappa = 1.02 + 0.98 e^{-3/(X/R)} \\Rightarrow i_{\\text{p}} = ${study.iscPeak.toFixed(2)}\\text{ A}`),
+
     new Paragraph({ spacing: { before: 200 } }),
-    createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): Requires that OCPDs intended to interrupt fault currents have an interrupting rating (kAIC) greater than or equal to the maximum design symmetrical/asymmetrical fault currents at the terminals to protect lives and properties."),
+    createParagraph("• PEC Section 1.10.1.9 (Interrupting Rating): equipment intended to interrupt current at fault levels shall have an interrupting rating not less than the available current at its line terminals. Each device below is checked against the fault at its own panel, with the X/R correction against the device test X/R (UL 489 / IEC 60947-2)."),
     new Paragraph({ spacing: { before: 200 } })
   );
 
-  // Key Findings Callout
-  const breakingkAIC = combinedAsymmetricalCurrent / 1000;
-  const isSafe_10kA = breakingkAIC < 10.0;
-  const isSafe_22kA = breakingkAIC < 22.0;
-  
-  const scFindings = [
-    `Computed Symmetrical Fault current at distribution board terminals is $I_{\\text{sc, sym}} = ${combinedSymmetricalCurrent.toFixed(2)}\\text{ A}$. Factoring a $25\\\%$ DC offset margin yields a maximum asymmetrical limit of $I_{\\text{sc, asym}} = ${combinedAsymmetricalCurrent.toFixed(2)}\\text{ A}$ ($${breakingkAIC.toFixed(2)}\\text{ kAIC}$).`,
-    `Standard Commercial Circuit Breaker kAIC Ratings Safety Evaluation:`,
-    `  - Service entrance main panels MUST possess a safety withstand interrupting capacity of at least $I_{\\text{withstand}} \\ge ${breakingkAIC > 10 ? '22' : '10'}\\text{ kAIC}$ to prevent destruction.`,
-    isSafe_10kA 
-      ? `  - Active panels with the standard $10\\text{ kAIC}$ breaker class are FULLY COMPLIANT and protected against calculated electrical thermal explosion risks. Conformance Status: PASSED.`
-      : isSafe_22kA
-        ? `  - Standard $10\\text{ kAIC}$ OCPDs are INSUFFICIENT. Sizing MUST deploy minimum $22\\text{ kAIC}$ breaker units. Service entrance conformance: Compliant with $22\\text{ kAIC}$ specifications.`
-        : `  - High-stress fault zone requires minimum $30 / 35\\text{ kAIC}$ breaker configurations. Conformance status: Critical action required - upgrade panels to $35\\text{ kAIC}$ standard.`
-  ];
-  docChildren.push(createCallout("🔍 SHORT CIRCUIT FAULT MITIGATION SAFETY & AUDIT FINDINGS", scFindings));
+  // E. Fault levels at every panel (cascaded feeders)
+  const scCell = (t: string, opts: { bold?: boolean; color?: string; fill?: string; head?: boolean } = {}) => new TableCell({
+    children: [new Paragraph({ children: [new TextRun({ text: t, font: "Segoe UI", size: opts.head ? 16 : 16, bold: opts.bold || opts.head, color: opts.head ? "FFFFFF" : opts.color || "334155" })], alignment: AlignmentType.CENTER })],
+    shading: { fill: opts.head ? "1B365D" : opts.fill || "FFFFFF" },
+    verticalAlign: VerticalAlign.CENTER,
+    margins: { top: 40, bottom: 40, left: 50, right: 50 },
+  });
+  const scTable = (head: string[], body: string[][], colorOf?: (r: number) => string | undefined) => new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({ tableHeader: true, children: head.map((h) => scCell(h, { head: true })) }),
+      ...body.map((r, i) => new TableRow({ children: r.map((v) => scCell(v, { color: colorOf?.(i), fill: i % 2 ? "F8FAFC" : "FFFFFF" })) })),
+    ],
+    borders: {
+      top: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      bottom: { color: "CBD5E1", space: 1, style: BorderStyle.SINGLE, size: 4 },
+      insideHorizontal: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+      insideVertical: { color: "E2E8F0", space: 1, style: BorderStyle.SINGLE, size: 1 },
+    },
+  });
+  const kA = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "n/a");
+  docChildren.push(
+    createSubHeader(`E. Available Fault Current at Each Panel`),
+    createParagraph("Fault currents in kA at each panel bus, with the feeder impedances accumulated from the transformer. ↑ = upper bound (a feeder length or size upstream is not set, so its impedance is taken as zero)."),
+    scTable(
+      ["Panel", "Voltage", "3Φ / bolted", "L-L", "L-G", "Motors", "Max sym.", "X/R", "Peak", "Lowest device", "Status"],
+      scResult.buses.map((b) => [
+        `${"  ".repeat(b.level)}${b.name}${b.faultUpperBound ? " ↑" : ""}`, `${b.nominalV} V`, kA(b.i3ph), kA(b.iLL), kA(b.iLG), kA(b.motorKA), kA(b.iSym), b.xr.toFixed(1), kA(b.iPeak),
+        b.lowestDevice, !b.kaicKnown ? "kAIC not specified" : b.faultStatus === "fail" ? "FAIL" : b.faultStatus === "warning" ? "CHECK" : "PASS",
+      ]),
+      (i) => { const b = scResult.buses[i]; return !b.kaicKnown ? "C2410C" : b.faultStatus === "fail" ? "B91C1C" : undefined; },
+    ),
+    new Paragraph({ spacing: { after: 200 } }),
+  );
 
-  if (images?.isc) {
-    docChildren.push(createSubHeader(`Short Circuit Line Impedance Diagram`));
-    await addImageToDoc(images.isc);
+  // F. Interrupting-rating audit summary
+  const failRows = scAudit.filter((r) => r.status === "FAIL");
+  const missingRows = scAudit.filter((r) => r.status === "NOT SPECIFIED");
+  const passRows = scAudit.filter((r) => r.status === "PASS");
+  const scFindings = [
+    `Maximum available symmetrical fault at the service (with motors): $I_{\\text{sc, sym}} = ${(combinedSymmetricalCurrent / 1000).toFixed(2)}\\text{ kA}$, peak $${(study.iscPeak / 1000).toFixed(2)}\\text{ kA}$ at $X/R = ${study.atPoint.xr.toFixed(2)}$.`,
+    `Protective devices checked: ${scAudit.length} - ${passRows.length} adequate, ${failRows.length} insufficient, ${missingRows.length} without an entered kAIC rating.`,
+    ...failRows.slice(0, 12).map((r) => `  - FAIL: ${r.location}: ${r.selectedKAIC} kAIC installed, ${(r.dutyCurrentA / 1000).toFixed(2)} kA duty. ${r.recommendation}`),
+    ...(failRows.length > 12 ? [`  - ... and ${failRows.length - 12} more (see the KAIC compliance table in the drawings).`] : []),
+    ...(missingRows.length ? [`  - kAIC not specified for ${missingRows.length} device(s); enter the ratings in the Load Schedule. They are not assumed.`] : []),
+  ];
+  docChildren.push(createCallout("🔍 SHORT CIRCUIT INTERRUPTING RATING AUDIT", scFindings));
+  if (failRows.length + missingRows.length > 0) {
+    docChildren.push(
+      new Paragraph({ spacing: { before: 150 } }),
+      scTable(
+        ["Device", "Available kA", "Duty kA (X/R)", "Installed", "Status", "Action"],
+        [...failRows, ...missingRows].map((r) => [
+          r.location, `${kA(r.faultCurrentA / 1000)}${r.upperBound ? " ↑" : ""}`, kA(r.dutyCurrentA / 1000), r.selectedKAIC > 0 ? `${r.selectedKAIC} kAIC` : "Not specified", r.status, r.recommendation,
+        ]),
+        (i) => ([...failRows, ...missingRows][i].status === "FAIL" ? "B91C1C" : "C2410C"),
+      ),
+      new Paragraph({ spacing: { after: 200 } }),
+    );
+  }
+
+  // Single Line Impedance Diagram: the same sheet as the Short Circuit page and the AutoCAD drawing
+  const sldPng = await sldToPngDataUrl(
+    buildImpedanceSld({ result: scResult, panel, circuits, subPanels, iscParams: params }, sldOptionsFor(panel, params)),
+  );
+  if (sldPng) {
+    docChildren.push(createSubHeader(`Single Line Impedance Diagram`));
+    await addImageToDoc(sldPng, true);
   }
 
   // === 3. VOLTAGE DROP ===

@@ -632,3 +632,42 @@ function hexRgb(h: string): [number, number, number] {
   const n = parseInt(h.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
+
+/** The sheet as a standalone SVG document (same drawing as the page preview) */
+export function sldSvgString(sheet: SldSheet): string {
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const out = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sheet.w} ${sheet.h}" width="${sheet.w}mm" height="${sheet.h}mm" font-family="Helvetica, Arial, sans-serif"><rect width="100%" height="100%" fill="#ffffff"/>`];
+  for (const p of sheet.prims) {
+    const st = LAYER_STYLE[p.layer];
+    if (p.t === "line") out.push(`<line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" stroke="${st.color}" stroke-width="${p.w ?? st.w}"${p.dash ? ' stroke-dasharray="2 1.5"' : ""}/>`);
+    else if (p.t === "circle") out.push(`<circle cx="${p.cx}" cy="${p.cy}" r="${p.r}" fill="none" stroke="${st.color}" stroke-width="${p.w ?? st.w}"/>`);
+    else if (p.t === "arc") {
+      const a0 = (p.a0 * Math.PI) / 180, a1 = (p.a1 * Math.PI) / 180;
+      out.push(`<path d="M ${p.cx + p.r * Math.cos(a0)} ${p.cy - p.r * Math.sin(a0)} A ${p.r} ${p.r} 0 ${p.a1 - p.a0 > 180 ? 1 : 0} 0 ${p.cx + p.r * Math.cos(a1)} ${p.cy - p.r * Math.sin(a1)}" fill="none" stroke="${st.color}" stroke-width="${p.w ?? st.w}"/>`);
+    } else if (p.t === "rect") out.push(`<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" fill="${p.fill || "none"}" stroke="${st.color}" stroke-width="${p.lw ?? st.w}"/>`);
+    else out.push(`<text x="${p.x}" y="${p.y}" font-size="${p.s * 1.35}" fill="${st.color}" font-weight="${p.bold ? 700 : 400}" text-anchor="${p.anchor || "start"}">${esc(p.text)}</text>`);
+  }
+  out.push("</svg>");
+  return out.join("");
+}
+
+/** PNG data URL of the sheet (browser only), for the Word report */
+export async function sldToPngDataUrl(sheet: SldSheet, pxPerMm = 5): Promise<string | null> {
+  try {
+    const url = URL.createObjectURL(new Blob([sldSvgString(sheet)], { type: "image/svg+xml" }));
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(sheet.w * pxPerMm);
+    canvas.height = Math.round(sheet.h * pxPerMm);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}

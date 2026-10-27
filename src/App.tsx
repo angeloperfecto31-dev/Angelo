@@ -59,8 +59,12 @@ import LoadSchedule, {
   INITIAL_PANEL,
 } from "./components/LoadSchedule";
 import ShortCircuitCalc, {
+  detectPhaseType,
   getRunsBySystem,
 } from "./components/ShortCircuitCalc";
+import { serviceFaultStudy } from "./utils/serviceFault";
+import { analysePowerSystem } from "./utils/powerAnalysis";
+import { STANDARD_KAIC, kaicAudit } from "./utils/kaicAudit";
 import VoltageDropCalc from "./components/VoltageDropCalc";
 import PowerSystemAnalysis from "./components/PowerSystemAnalysis";
 import SystemSLD from "./components/SystemSLD";
@@ -3425,97 +3429,18 @@ export default function App() {
           conductorType: "Copper",
         };
 
+        // Same calculation as the Short Circuit page, the Word report and the AutoCAD drawing
+        const scIs3 = (scParams.phaseTypeOverrideEnabled && scParams.phaseTypeOverride
+          ? scParams.phaseTypeOverride
+          : detectPhaseType(panel?.system)) === "3PH";
+        const scStudy = serviceFaultStudy(scParams as ShortCircuitParams, scIs3, circuits, subPanels, panel?.voltage);
         const scBaseKVA = scParams.transformerKVA || 500;
-        const scBaseKV = (scParams.transformerVoltage || 230) / 1000;
-
-        let connectionMultiplier = 1.0;
-        if (scParams.transformerConnection?.includes("Open") || false) {
-          connectionMultiplier = 0.866;
-        }
-
-        let groundFaultFactor = 1.0;
-        if (
-          scParams.transformerConnection === "Wye (Star) Connection" ||
-          scParams.transformerConnection === "Delta-Wye (Δ-Y)" ||
-          scParams.transformerConnection === "Wye-Wye (Y-Y)" ||
-          scParams.transformerConnection === "Open Wye-Open Delta"
-        ) {
-          groundFaultFactor = 1.25;
-        }
-
-        const scZUtilitypu = scBaseKVA / ((scParams.utilityShortCircuitMVA || 500) * 1000);
-        
-        let scZTranspu = (scParams.transformerZ || 5) / 100 / connectionMultiplier;
-        let totalTransformerKVA = scBaseKVA;
+        const totalTransformerKVA = scStudy.src.kva;
         const ptCount = scParams.parallelTransformersCount || 1;
-        const ptZMatch = scParams.parallelTransformersZMatch !== false;
-        const ptkVAMatch = scParams.parallelTransformerskVAMatch !== false;
-
-        if (ptCount > 1) {
-          if (ptZMatch && ptkVAMatch) {
-            scZTranspu = scZTranspu / ptCount;
-            totalTransformerKVA = scBaseKVA * ptCount;
-          } else {
-            const z1pu = scZTranspu;
-            const t2Rating = scParams.parallelTransformersRating || 100;
-            const t2Z = scParams.parallelTransformersZ || 5;
-            const z2pu = ((t2Z / 100) / connectionMultiplier) * (scBaseKVA / t2Rating);
-            
-            const y1 = 1 / z1pu;
-            const y2 = (ptCount - 1) / z2pu;
-            scZTranspu = 1 / (y1 + y2);
-            totalTransformerKVA = scBaseKVA + (ptCount - 1) * t2Rating;
-          }
-        }
-
         const feederRuns = scParams.feederRuns || 1;
-        const condType = scParams.conductorType || "Copper";
-        const connType = scParams.connectionType || "Series";
-
-        const eqFeeder = calculateEquivalentFeederImpedance(
-          scParams.feederLength || 10,
-          scParams.feederSize || "30",
-          feederRuns,
-          condType,
-          connType,
-          scParams.parallelFeedersSizeMatch !== false,
-          scParams.parallelFeedersLengthMatch !== false,
-          scParams.parallelFeedersMaterialMatch !== false,
-          scParams.parallelFeedersCustomSizes,
-          scParams.parallelFeedersCustomLengths,
-          scParams.parallelFeedersCustomMaterials,
-        );
-
-        const scFeederR = eqFeeder.r;
-        const scFeederX = eqFeeder.x;
-        const scFeederZ = eqFeeder.z;
-        const scZFeederpu = (scFeederZ * (scBaseKVA / 1000)) / (scBaseKV * scBaseKV);
-
-        const scTotalZpu = scZUtilitypu + scZTranspu + scZFeederpu;
-        const scIFullLoad = totalTransformerKVA / (1.732 * scBaseKV);
-        const scIFullLoadBase = scBaseKVA / (1.732 * scBaseKV);
-
-        const scIscMainBreaker = scIFullLoadBase / (scZUtilitypu + scZTranspu);
-        const scIscFaultPoint = scIFullLoadBase / scTotalZpu;
-
-        const scMotorLoadVA = circuits
-          .filter(
-            (c) =>
-              c.loadType === LoadType.MOTOR || c.loadType === LoadType.AIR_CON,
-          )
-          .reduce((sum, c) => sum + c.loadVA, 0);
-        const scMotorContribution =
-          scMotorLoadVA > 0
-            ? (scMotorLoadVA / (1.732 * (scParams.transformerVoltage || 230))) * 4
-            : 0;
-
-        const scCombinedSymmetricalCurrent = scIscFaultPoint + scMotorContribution;
-        const scCombinedAsymmetricalCurrent = scCombinedSymmetricalCurrent * 1.25;
-        const scBreakingkAIC = scCombinedAsymmetricalCurrent / 1000;
-
-        const fault1Isc =
-          ((scParams.utilityShortCircuitMVA || 500) * 1000000) /
-          (1.732 * (scParams.primaryVoltage || 34500));
+        const connType = scStudy.connectionType;
+        const scResult = analysePowerSystem({ panel, circuits, subPanels, iscParams: scParams as ShortCircuitParams, vdCalculations, basis: "demand" });
+        const scAudit = kaicAudit(scResult, panel, circuits, subPanels);
 
         const scData: any[][] = [];
         scData.push(["SHORT CIRCUIT (POINT-TO-POINT) STUDY", "", ""]);
@@ -3600,105 +3525,36 @@ export default function App() {
           scParams.transformerConnection || "Delta-Wye (Δ-Y)",
           "Configuration",
         ]);
-        scData.push([
-          "Ground Fault Factor applied",
-          groundFaultFactor.toFixed(2),
-          "Multiplier",
-        ]);
         scData.push([]);
         scData.push([
-          "PER-UNIT IMPEDANCES (BASE S SYSTEM = " +
-            scBaseKVA +
-            " kVA)",
+          `IMPEDANCES (PER UNIT ON ${totalTransformerKVA} kVA, ${scStudy.vSec} V)`,
           "VALUE",
           "UNIT",
         ]);
-        scData.push([
-          "Transformer Full Load Current (FLA)",
-          scIFullLoad.toFixed(2),
-          "Amperes",
-        ]);
-        scData.push([
-          "Utility Grid Impedance (Z-utility)",
-          scZUtilitypu.toFixed(6),
-          "pu",
-        ]);
-        scData.push([
-          "Transformer Leakage Impedance (Z-transformer)",
-          scZTranspu.toFixed(6),
-          "pu",
-        ]);
-        scData.push([
-          "Main Feeder Ohmic Resistance (R)",
-          scFeederR.toFixed(5),
-          "Ohms",
-        ]);
-        scData.push([
-          "Main Feeder Ohmic Reactance (X)",
-          scFeederX.toFixed(5),
-          "Ohms",
-        ]);
-        scData.push([
-          "Main Feeder Absolute Ohmic Impedance (|Z|)",
-          scFeederZ.toFixed(5),
-          "Ohms",
-        ]);
-        scData.push([
-          "Feeder Integrated Impedance (Z-feeder)",
-          scZFeederpu.toFixed(6),
-          "pu",
-        ]);
-        scData.push([
-          "Total Consolidated System Impedance (Z-total)",
-          scTotalZpu.toFixed(6),
-          "pu",
-        ]);
+        scData.push(["System Phase Configuration", scIs3 ? "Three-Phase (3Ø)" : "Single-Phase (1Ø)", "Phases"]);
+        scData.push(["Transformer Full Load Current (FLA)", +scStudy.iFullLoad.toFixed(2), "Amperes"]);
+        scData.push(["Utility Source Impedance |Z-utility| (X/R 10, assumed)", +scStudy.zUtilitypu.toFixed(6), "pu"]);
+        scData.push([`Transformer Impedance |Z-transformer| (X/R ${scStudy.src.txXr.toFixed(1)}, IEEE 141)`, +scStudy.zTranspu.toFixed(6), "pu"]);
+        scData.push(["Service Feeder Resistance R (75 °C, PEC Table 9)", +scStudy.eqFeeder.r.toFixed(5), "Ohms"]);
+        scData.push(["Service Feeder Reactance X", +scStudy.eqFeeder.x.toFixed(5), "Ohms"]);
+        scData.push(["Service Feeder |Z| (R at 20 °C for maximum fault)", +Math.hypot(scStudy.zFeederOhm.r, scStudy.zFeederOhm.x).toFixed(5), "Ohms"]);
+        scData.push(["Service Feeder Impedance |Z-feeder|", +scStudy.zFeederpu.toFixed(6), "pu"]);
+        scData.push(["Total Impedance |Zu + Zt + Zf| (complex sum)", +scStudy.totalZpu.toFixed(6), "pu"]);
+        scData.push(["X/R Ratio at Fault Point", +scStudy.atPoint.xr.toFixed(2), "Ratio"]);
         scData.push([]);
         scData.push(["FAULT LEVEL CALCULATED RESULTS", "VALUE", "UNIT"]);
-        scData.push([
-          "Fault 1: Symmetrical Fault Current at Utility HV (Isc)",
-          fault1Isc.toFixed(2),
-          "Amps",
-        ]);
-        scData.push([
-          "Fault 2: Symmetrical Fault Current at Transformer (Isc Main)",
-          scIscMainBreaker.toFixed(2),
-          "Amps",
-        ]);
-        scData.push([
-          "Fault 3: Symmetrical Fault Current at Panel (Isc Panel)",
-          scIscFaultPoint.toFixed(2),
-          "Amps",
-        ]);
-        scData.push([
-          "Rotating Motor Feedback Symmetrical Contribution (Imotor)",
-          scMotorContribution.toFixed(2),
-          "Amps",
-        ]);
-        scData.push([
-          "Combined Total Symmetrical Fault Current (Isc sym)",
-          scCombinedSymmetricalCurrent.toFixed(2),
-          "Amps",
-        ]);
-        scData.push([
-          "Factored Asymmetrical Fault Current (Isc asym)",
-          scCombinedAsymmetricalCurrent.toFixed(2),
-          "Amps",
-        ]);
-        scData.push([
-          "Ultimate Fault Breaking Intensity Assessment",
-          scBreakingkAIC.toFixed(2),
-          "kAIC",
-        ]);
-        scData.push([
-          "Interrupting Protection Level Class",
-          scBreakingkAIC > 22
-            ? "35 kAIC Required"
-            : scBreakingkAIC > 10
-              ? "22 kAIC"
-              : "10 kAIC",
-          "",
-        ]);
+        scData.push(["Fault 1: Utility Fault Current at Primary (Isc1)", +scStudy.fault1Isc.toFixed(2), "Amps"]);
+        scData.push(["Fault 2: Symmetrical Fault at Transformer Secondary (Isc2)", +scStudy.iscMainBreaker.toFixed(2), "Amps"]);
+        scData.push([`Fault 3: ${scIs3 ? "Three-Phase" : "Single-Phase"} Bolted Fault at Service Feeder End`, +scStudy.iscFaultPoint.toFixed(2), "Amps"]);
+        if (scIs3) {
+          scData.push(["Line-to-Line Fault at Service Feeder End", +scStudy.atPoint.iLL.toFixed(2), "Amps"]);
+          scData.push(["Line-to-Ground Fault at Service Feeder End (3E / |2Z1 + Z0|)", Number.isFinite(scStudy.atPoint.iLG) ? +scStudy.atPoint.iLG.toFixed(2) : "n/a", "Amps"]);
+        }
+        scData.push(["Motor Contribution (4 x motor FLA)", +scStudy.motorContribution.toFixed(2), "Amps"]);
+        scData.push(["Total Symmetrical Fault Current (Isc3, with motors)", +scStudy.iscTotal.toFixed(2), "Amps"]);
+        scData.push(["Peak Current ip (IEC 60909 kappa)", +scStudy.iscPeak.toFixed(2), "Amps"]);
+        scData.push(["Minimum Interrupting Rating Required (symmetrical)", +(scStudy.iscTotal / 1000).toFixed(2), "kAIC"]);
+        scData.push(["Next Standard Interrupting Rating", `${STANDARD_KAIC.find((k) => k * 1000 >= scStudy.iscTotal) ?? ">100"} kAIC`, ""]);
 
         const wsSc = XLSX.utils.aoa_to_sheet(scData);
         const wscolsSc = [{ wch: 55 }, { wch: 25 }, { wch: 18 }];
@@ -3712,7 +3568,7 @@ export default function App() {
           const firstVal = scData[r]?.[0]?.toString() || "";
           const isSectHeader = r === 0 || 
                                firstVal === "INPUT DESIGN PARAMETERS" || 
-                               firstVal.startsWith("PER-UNIT IMPEDANCES") || 
+                               firstVal.startsWith("IMPEDANCES") || 
                                firstVal === "FAULT LEVEL CALCULATED RESULTS";
           if (r === 0) wsrowsSc.push({ hpt: 28 });
           else if (scData[r] && scData[r].length === 0)
@@ -3730,7 +3586,7 @@ export default function App() {
             const cellVal = wsSc[cellAddress]?.v?.toString() || "";
             const isHeader = R === 0 || 
                              cellVal === "INPUT DESIGN PARAMETERS" || 
-                             cellVal.startsWith("PER-UNIT IMPEDANCES") || 
+                             cellVal.startsWith("IMPEDANCES") || 
                              cellVal === "FAULT LEVEL CALCULATED RESULTS";
 
             if (!cellExists && !isHeader) {
@@ -3820,6 +3676,45 @@ export default function App() {
           }
         }
         XLSX.utils.book_append_sheet(wb, wsSc, "Short_Circuit");
+
+        // Fault levels at every panel and the interrupting-rating audit (same rows as the page and the drawing)
+        const num = (v: number, d = 2) => (Number.isFinite(v) ? +v.toFixed(d) : "n/a");
+        const kaicData: any[][] = [
+          ["FAULT LEVELS AT EACH PANEL (kA, cascaded feeder impedances; UB = upper bound, feeder length not set)"],
+          ["Panel", "Voltage (V)", "3Ø / bolted kA", "L-L kA", "L-G kA", "Motor kA", "Max sym. kA", "X/R", "Peak kA", "Lowest device", "Status"],
+          ...scResult.buses.map((b) => [
+            `${b.name}${b.faultUpperBound ? " (UB)" : ""}`, b.nominalV, num(b.i3ph), num(b.iLL), num(b.iLG), num(b.motorKA), num(b.iSym), num(b.xr, 1), num(b.iPeak), b.lowestDevice,
+            !b.kaicKnown ? "kAIC NOT SPECIFIED" : b.faultStatus === "fail" ? "FAIL" : b.faultStatus === "warning" ? "CHECK" : "PASS",
+          ]),
+          [],
+          ["KAIC COMPLIANCE AUDIT (PEC 1.10.1.9; duty corrected for X/R against the device test X/R)"],
+          ["Protective Device", "Classification", "Available kA", "Duty kA", "X/R", "Installed kAIC", "Status", "Action"],
+          ...scAudit.map((r) => [
+            r.location, r.type, `${num(r.faultCurrentA / 1000)}${r.upperBound ? " (UB)" : ""}`, num(r.dutyCurrentA / 1000), num(r.xr, 1),
+            r.selectedKAIC > 0 ? r.selectedKAIC : "NOT SPECIFIED", r.status, r.recommendation,
+          ]),
+        ];
+        const wsK = XLSX.utils.aoa_to_sheet(kaicData);
+        wsK["!cols"] = [{ wch: 44 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 46 }, { wch: 10 }, { wch: 30 }, { wch: 18 }];
+        const auditTitleRow = scResult.buses.length + 3;
+        const rangeK = XLSX.utils.decode_range(wsK["!ref"] || "A1:A1");
+        for (let R = rangeK.s.r; R <= rangeK.e.r; ++R) {
+          for (let C = rangeK.s.c; C <= rangeK.e.c; ++C) {
+            const addr = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsK[addr];
+            if (!cell) continue;
+            const isTitle = R === 0 || R === auditTitleRow;
+            const isHead = R === 1 || R === auditTitleRow + 1;
+            const v = String(cell.v);
+            cell.s = {
+              font: { name: "Segoe UI", sz: isTitle ? 11 : 10, bold: isTitle || isHead || v === "FAIL", color: { rgb: isTitle || isHead ? "FFFFFF" : v === "FAIL" ? "B91C1C" : /NOT SPECIFIED|UB/.test(v) ? "C2410C" : "334155" } },
+              fill: { fgColor: { rgb: isTitle ? "1E3A8A" : isHead ? "312E81" : R % 2 ? "FFFFFF" : "F8FAFC" } },
+              alignment: { vertical: "center", horizontal: C === 0 || isTitle ? "left" : "center", wrapText: !isTitle },
+              border: { bottom: { style: "thin", color: { rgb: "E2E8F0" } } },
+            };
+          }
+        }
+        XLSX.utils.book_append_sheet(wb, wsK, "SC_Panels_KAIC");
       }
 
       // -----------------------------------------------------
@@ -4432,7 +4327,6 @@ export default function App() {
       const images = {
         systemSLD: await getImg("sld-system-wide"),
         sld: sldImages,
-        isc: await getImg("short-circuit-diagram"),
         vdDiagrams: {} as Record<string, string | null>,
         vdFeederCascadeDiagram: await getImg("voltage-drop-cascade-diagram"),
         illumination: await getImg("illumination-diagram"), // The current one
@@ -6512,71 +6406,16 @@ export default function App() {
                     {getModuleStatus("isc") !== "hidden" &&
                       (() => {
                         const params = iscParams || INITIAL_SHORT_CIRCUIT_PARAMS;
-                        const baseKVA = params.transformerKVA || 500;
-                        const baseKV =
-                          (params.transformerVoltage || 230) / 1000;
+                        // Same study as the Short Circuit page: service fault with motor contribution
+                        const scCardIs3 = (params.phaseTypeOverrideEnabled && params.phaseTypeOverride
+                          ? params.phaseTypeOverride
+                          : detectPhaseType(panel?.system)) === "3PH";
+                        const iscKAIC = serviceFaultStudy(params, scCardIs3, circuits, subPanels, panel?.voltage).iscTotal / 1000;
+                        const iscKAICVal = Number.isFinite(iscKAIC) ? iscKAIC : 0;
 
-                        const connectionMultiplier =
-                          params.transformerConnection === "Open Delta (V-V)"
-                            ? 0.577
-                            : params.transformerConnection ===
-                                "Open Wye-Open Delta"
-                              ? 0.866
-                              : 1.0;
-
-                        // 1. Utility Impedance (pu)
-                        const zUtilitypu =
-                          baseKVA /
-                          ((params.utilityShortCircuitMVA || 250) * 1000);
-
-                        // 2. Transformer Impedance (pu)
-                        const zTranspu =
-                          (params.transformerZ || 5) /
-                          100 /
-                          connectionMultiplier;
-
-                        // 3. Feeder Impedance Estimate (Symmetrical pu)
-                        let feederR =
-                          (0.7 * ((params.feederLength || 30) / 1000)) /
-                          (params.feederRuns || 1);
-                        let feederX =
-                          (0.08 * ((params.feederLength || 30) / 1000)) /
-                          (params.feederRuns || 1);
-                        if (params.feederSize) {
-                          const tableVals =
-                            WIRE_IMPEDANCE_TABLE[
-                              params.feederSize.toString()
-                            ];
-                          if (tableVals) {
-                            feederR =
-                              (tableVals.r *
-                                ((params.feederLength || 30) / 1000)) /
-                              (params.feederRuns || 1);
-                            feederX =
-                              (tableVals.x *
-                                ((params.feederLength || 30) / 1000)) /
-                              (params.feederRuns || 1);
-                          }
-                        }
-                        const feederZ = Math.sqrt(
-                          feederR * feederR + feederX * feederX,
-                        );
-                        const zFeederpu =
-                          baseKV > 0
-                            ? (feederZ * (baseKVA / 1000)) / (baseKV * baseKV)
-                            : 0;
-
-                        const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-                        const iFullLoad = baseKV > 0 ? baseKVA / (1.732 * baseKV) : 0;
-
-                        // Symmetrical Short Circuit Current at Fault Point
-                        const iscFaultPointVal = totalZpu > 0 ? iFullLoad / totalZpu : 0;
-                        const iscKAIC = iscFaultPointVal / 1000;
-                        const iscKAICVal = Number.isFinite(iscKAIC) && !Number.isNaN(iscKAIC) ? iscKAIC : 0;
-
-                        const panelLimitKAIC = parseFloat(panel.icRating) || 10;
+                        const panelLimitKAIC = parseFloat(panel.icRating) || 0;
                         const scStatus =
-                          iscKAICVal <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
+                          panelLimitKAIC > 0 && iscKAICVal <= panelLimitKAIC ? "COMPLIANT" : "WARNING";
 
                         return (
                           <div
@@ -6637,7 +6476,7 @@ export default function App() {
                                   className={`w-2 h-2 rounded-full ${scStatus === "COMPLIANT" ? "bg-emerald-500" : "bg-rose-500 animate-pulse"}`}
                                 />
                                 {getModuleStatus("isc") === "active"
-                                  ? `${scStatus} Limit (${panelLimitKAIC}kA pf)`
+                                  ? panelLimitKAIC > 0 ? `${scStatus} Limit (${panelLimitKAIC} kAIC)` : "MAIN kAIC NOT SPECIFIED"
                                   : "No Active Audit"}
                               </span>
                               {getModuleStatus("isc") === "active" && (
