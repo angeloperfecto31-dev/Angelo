@@ -228,13 +228,17 @@ export function buildReportTables(meta: ReportMeta, r: PowerAnalysisResult, sel:
   });
   t.push({
     key: "vd", title: "5. Feeders and Voltage Drop", statusCol: 10,
-    note: "VD = k·I·L·(R cosφ + X sinφ) / sets (PEC 2017 Ch. 9 Table 9). Limits: feeder 3%, feeders plus branch circuit 5% (PEC 2.15.2 FPN No. 2). * length not set in the project (assumed).",
+    note: "VD = k·I·L·(R cosφ + X sinφ) / sets (PEC 2017 Ch. 9 Table 9). Limits: feeder 3%, feeders plus branch circuit 5% (PEC 2.15.2 FPN No. 2). n/a: feeder length not set, not evaluated. * cumulative value excludes feeders without a length.",
     head: ["Panel", "Feeder", "Length m", "Ampacity A", "Conductor load %", "VD V", "VD %", "Cumulative %", "Bus V", "Feeder source", "Status"],
     rows: r.buses.map((b) => {
       const st: Status = b.vdCumulativePct > 5 || b.vdFeederPct > 3 || b.feederLoadingPct > 100
         ? "fail"
         : b.vdCumulativePct > 3 || b.vdFeederPct > 2.5 || b.feederLoadingPct > 80 ? "warning" : "pass";
-      return [b.name, b.feeder.label, `${b.feeder.lengthM}${b.feeder.lengthAssumed ? "*" : ""}`, n(b.feeder.ampacityA, 0), n(b.feederLoadingPct, 1), n(b.vdFeederV), n(b.vdFeederPct), n(b.vdCumulativePct), n(b.busVoltage, 1), b.feeder.source, ST[st]];
+      return [
+        b.name, b.feeder.label, b.feeder.lengthAssumed ? "not set" : b.feeder.lengthM, n(b.feeder.ampacityA, 0), n(b.feederLoadingPct, 1),
+        b.vdEvaluated ? n(b.vdFeederV) : "n/a", b.vdEvaluated ? n(b.vdFeederPct) : "n/a", `${n(b.vdCumulativePct)}${b.vdComplete ? "" : "*"}`,
+        n(b.busVoltage, 1), b.feeder.source, ST[st],
+      ];
     }),
   });
   t.push({
@@ -253,7 +257,8 @@ export function buildReportTables(meta: ReportMeta, r: PowerAnalysisResult, sel:
     note: "Complex impedances from the utility to each panel. Peak per IEC 60909 (κ·√2·I); asymmetrical = half-cycle RMS. Duty is against the lowest-rated device in the panel, multiplied for X/R above the device test X/R (UL 489 / IEC 60947-2).",
     head: ["Panel", "I 3Φ kA", "I L-L kA", "I L-G kA", "Motor kA", "I sym kA", "X/R", "Peak kA", "Asym kA", "Lowest device", "Duty %", "Adj. duty %", "Status"],
     rows: r.buses.map((b) => [
-      b.name, n(b.i3ph), n(b.iLL), n(b.iLG), n(b.motorKA), n(b.iSym), n(b.xr), n(b.iPeak), n(b.iAsym), b.lowestDevice, n(b.dutyPct, 0), n(b.adjustedDutyPct, 0), ST[b.faultStatus],
+      `${b.name}${b.faultUpperBound ? " (upper bound)" : ""}`, n(b.i3ph), n(b.iLL), Number.isFinite(b.iLG) ? n(b.iLG) : "n/a", n(b.motorKA), n(b.iSym), n(b.xr), n(b.iPeak), n(b.iAsym),
+      b.lowestDevice, b.kaicKnown ? n(b.dutyPct, 0) : "-", b.kaicKnown ? n(b.adjustedDutyPct, 0) : "-", b.kaicKnown ? ST[b.faultStatus] : "WARNING: kAIC not specified",
     ]),
   });
   t.push({

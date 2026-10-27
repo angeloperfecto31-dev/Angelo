@@ -11,6 +11,7 @@ import {
   CONDUIT_LIBRARY,
 } from "../constants";
 import { getMotorFLC } from "./motorFLCHelper";
+import { R20_AL, R20_CU, cx, faultLevels, sourceImpedance } from "./faultMath";
 import {
   sizeConductor,
   getConductorAmpacity,
@@ -1569,45 +1570,11 @@ export const calculatePanelFault = (
         ? (iscParams.phaseTypeOverride === '3PH') 
         : !(panel.system?.toLowerCase().includes("1ph") || panel.system?.toLowerCase().includes("1ø") || panel.system?.toLowerCase().includes("single-phase") || panel.system?.toLowerCase().includes("single phase")));
         
-  const factor = is3Phase ? 1.732 : 2.0;
+  // Complex impedances in ohms at the secondary voltage (shared method, see faultMath.ts)
+  const v = iscParams.transformerVoltage || panel.voltage || 230;
+  const src = sourceImpedance(iscParams, v, is3Phase);
 
-  let connectionMultiplier = 1.0;
-  if (iscParams.transformerConnection?.includes("Open")) {
-    connectionMultiplier = 0.866;
-  }
-
-  const baseKVA = iscParams.transformerKVA || 500;
-  let baseKV = (iscParams.transformerVoltage || 230) / 1000;
-  if (baseKV === 0) {
-    baseKV = panel.voltage ? panel.voltage / 1000 : 0.23;
-  }
-
-  const zUtilitypu =
-    baseKVA / ((iscParams.utilityShortCircuitMVA || 500) * 1000);
-  
-  let zTranspu = (iscParams.transformerZ || 5) / 100 / connectionMultiplier;
-
-  // Support Parallel Transformers
-  if (iscParams.parallelTransformersCount && iscParams.parallelTransformersCount > 1) {
-    const ptCount = iscParams.parallelTransformersCount;
-    const ptZMatch = iscParams.parallelTransformersZMatch !== false;
-    const ptkVAMatch = iscParams.parallelTransformerskVAMatch !== false;
-
-    if (ptZMatch && ptkVAMatch) {
-      zTranspu = zTranspu / ptCount;
-    } else {
-      const z1pu = zTranspu;
-      const t2Rating = iscParams.parallelTransformersRating || 100;
-      const t2Z = iscParams.parallelTransformersZ || 5;
-      const z2pu = ((t2Z / 100) / connectionMultiplier) * (baseKVA / t2Rating);
-      
-      const y1 = 1 / z1pu;
-      const y2 = (ptCount - 1) / z2pu;
-      zTranspu = 1 / (y1 + y2);
-    }
-  }
-
-  let zFeederpu = 0;
+  let zFeeder = cx(0, 0);
   if (feederLength !== undefined && feederSize !== undefined) {
     const runs = feederRuns || iscParams.feederRuns || 1;
     const condType = iscParams.conductorType || 'Copper';
@@ -1627,15 +1594,13 @@ export const calculatePanelFault = (
       iscParams.parallelFeedersCustomMaterials,
     );
 
-    zFeederpu = (eqFeeder.z * (baseKVA / 1000)) / (baseKV * baseKV);
+    // Table R is at 75 °C: correct to 20 °C for the maximum fault current
+    zFeeder = cx(eqFeeder.r * (condType === "Aluminum" ? R20_AL : R20_CU), eqFeeder.x);
   }
 
-  const totalZpu = zUtilitypu + zTranspu + zFeederpu;
-  const iFullLoad = baseKVA / (factor * baseKV);
-  const iscFaultPoint = iFullLoad / totalZpu;
-
-  const motorContribution =
-    motorLoadVA > 0 ? (motorLoadVA / (factor * (baseKV * 1000))) * 4 : 0;
+  const iscFaultPoint = faultLevels(src, zFeeder).i3ph;
+  // Motor contribution 4 × full-load current
+  const motorContribution = motorLoadVA > 0 ? (motorLoadVA / ((is3Phase ? Math.sqrt(3) : 1) * v)) * 4 : 0;
   return iscFaultPoint + motorContribution;
 };
 

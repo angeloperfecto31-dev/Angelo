@@ -7625,6 +7625,7 @@ export default function App() {
                       isAdmin
                     }
                     onRequestUpgrade={() => setShowUpgrade(true)}
+                    vdCalculations={vdCalculations}
                   />}
                 </motion.div>
               </div>

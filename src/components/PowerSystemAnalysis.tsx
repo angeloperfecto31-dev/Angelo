@@ -227,10 +227,10 @@ export default function PowerSystemAnalysis({
                     <td className="p-2.5 text-right font-mono">{fx(b.demandVA / 1000)}</td>
                     <td className="p-2.5 text-right font-mono">{fx(b.current, 1)}</td>
                     <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.breakerLoadingPct, 80, 100))}`}>{b.feeder.breakerAT ? `${fx(b.breakerLoadingPct, 0)}%` : "-"}</td>
-                    <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.vdCumulativePct, 3, 5))}`}>{fx(b.vdCumulativePct)}%</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(pctStatus(b.vdCumulativePct, 3, 5))}`}>{fx(b.vdCumulativePct)}%{b.vdComplete ? "" : "*"}</td>
                     <td className={`p-2.5 text-right font-mono ${valueClass(b.is3Phase ? pctStatus(b.unbalancePct, 10, 20) : "pass")}`}>{b.is3Phase ? `${fx(b.unbalancePct, 1)}%` : "1Φ"}</td>
                     <td className="p-2.5 text-right font-mono text-yellow-300">{fx(b.iSym)}</td>
-                    <td className={`p-2.5 text-right font-mono ${valueClass(b.faultStatus)}`}>{fx(b.adjustedDutyPct, 0)}%</td>
+                    <td className={`p-2.5 text-right font-mono ${valueClass(b.faultStatus)}`}>{b.kaicKnown ? `${fx(b.adjustedDutyPct, 0)}%` : "kAIC n/a"}</td>
                     <td className="p-2.5 text-center"><Badge s={b.loadStatus} /></td>
                     <td className="p-2.5 text-center"><Badge s={worstOf([b.faultStatus, b.withstand.status])} /></td>
                   </tr>
@@ -401,10 +401,12 @@ export default function PowerSystemAnalysis({
               <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-3 text-xs space-y-1.5">
                 <span className="text-[10px] font-black uppercase text-slate-400 block">Feeder</span>
                 <Row k="Conductor" v={bus.feeder.label} />
-                <Row k="Length" v={`${bus.feeder.lengthM} m${bus.feeder.lengthAssumed ? " (assumed: set it in Voltage Drop)" : ""}`} warn={bus.feeder.lengthAssumed} />
+                <Row k="Length" v={bus.feeder.lengthAssumed ? "not set (add it in Voltage Drop)" : `${bus.feeder.lengthM} m`} warn={bus.feeder.lengthAssumed} />
                 <Row k="Ampacity / loading" v={`${fx(bus.feeder.ampacityA, 0)} A · ${fx(bus.feederLoadingPct, 1)}%`} s={pctStatus(bus.feederLoadingPct, 80, 100)} />
                 <Row k="Breaker / loading" v={bus.feeder.breakerAT ? `${bus.feeder.breakerAT} AT · ${fx(bus.breakerLoadingPct, 1)}%` : "-"} s={pctStatus(bus.breakerLoadingPct, 80, 100)} />
-                <Row k="Voltage drop" v={`${fx(bus.vdFeederV)} V · ${fx(bus.vdFeederPct)}% (limit 3%)`} s={pctStatus(bus.vdFeederPct, 2.5, 3)} />
+                {bus.vdEvaluated
+                  ? <Row k="Voltage drop" v={`${fx(bus.vdFeederV)} V · ${fx(bus.vdFeederPct)}% (limit 3%)`} s={pctStatus(bus.vdFeederPct, 2.5, 3)} />
+                  : <Row k="Voltage drop" v="not evaluated (length not set)" warn />}
                 <p className="text-[10px] text-slate-500 pt-1">{bus.feeder.source}</p>
               </div>
               <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-3 text-xs">
@@ -464,7 +466,7 @@ export default function PowerSystemAnalysis({
                     <td className="p-2 text-right font-mono">{fx(b.iPeak)}</td>
                     <td className="p-2 text-right font-mono">{fx(b.iAsym)}</td>
                     <td className="p-2 text-slate-300">{b.lowestDevice}</td>
-                    <td className={`p-2 text-right font-mono font-bold ${valueClass(b.faultStatus)}`} title={`Symmetrical ${fx(b.dutyPct, 0)}% × X/R factor ${fx(b.xrMultiplier)}`}>{fx(b.adjustedDutyPct, 0)}%</td>
+                    <td className={`p-2 text-right font-mono font-bold ${valueClass(b.faultStatus)}`} title={`Symmetrical ${fx(b.dutyPct, 0)}% × X/R factor ${fx(b.xrMultiplier)}`}>{b.kaicKnown ? `${fx(b.adjustedDutyPct, 0)}%` : "n/a"}</td>
                     <td className="p-2 text-center"><Badge s={b.faultStatus} /></td>
                   </tr>
                 ))}
