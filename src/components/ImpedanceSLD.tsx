@@ -121,7 +121,7 @@ export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vd
         </svg>
       </div>
       <p className="text-[11px] text-slate-500">
-        To change the diagram, edit the project: panels, breakers and kAIC in the Load Schedule, feeder lengths in Voltage Drop, utility and transformer data above. Study scope and title block are saved with the project and used by both this DXF and "Export AutoCAD Drawing". AutoCAD: the DXF opens directly (save as DWG if needed); every element is on its own SC-SLD-* layer.
+        To change the diagram, edit the project: panels, breakers and kAIC in the Load Schedule, feeder lengths in Voltage Drop, utility and transformer data above. Study scope and title block are saved with the project and used by both this DXF and "Export AutoCAD Drawing". AutoCAD: the DXF opens directly (save as DWG if needed); every element is on its own E-* layer, the same layers as the full drawing set.
       </p>
     </div>
   );

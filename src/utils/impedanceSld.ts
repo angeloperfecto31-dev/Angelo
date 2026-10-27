@@ -275,6 +275,7 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   for (const d of D) P.push(transform(d, ox, oy, scale));
 
   // ---- sheet frame and title strip
+  P.push({ t: "rect", x: 0, y: 0, w: W, h: H, layer: "BORDER", lw: 0.25 });
   P.push({ t: "rect", x: margin, y: margin, w: W - 2 * margin, h: H - 2 * margin, layer: "BORDER" });
   P.push({ t: "text", x: margin + 4, y: margin + 7, s: 4, text: "SINGLE LINE IMPEDANCE DIAGRAM AND SHORT-CIRCUIT STUDY", layer: "TITLE", bold: true });
   P.push({ t: "text", x: W - margin - sideW - 4, y: margin + 7, s: 2.6, text: `${R.source.secondaryV} V ${R.source.is3Phase ? "3PH" : "1PH"}, 60 Hz${scale < 1 ? ` · diagram scaled ${(scale * 100).toFixed(0)}%` : ""}`, anchor: "end", layer: "LABEL" });
@@ -366,21 +367,7 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   const tbW = 190;
   const tbx = W - margin - tbW;
   P.push({ t: "line", x1: tbx, y1: by, x2: tbx, y2: H - margin, layer: "BORDER" });
-  const t = opt.title;
-  const cells: Array<[string, string, number, number, number]> = [
-    ["PROJECT", t.project, 0, 0, 120], ["DRAWING NO.", t.drawingNo, 120, 0, 70],
-    ["LOCATION", t.location, 0, 1, 120], ["REVISION", t.revision, 120, 1, 70],
-    ["CLIENT", t.client, 0, 2, 120], ["DATE", t.date, 120, 2, 70],
-    ["PREPARED BY", t.preparedBy, 0, 3, 95], ["CHECKED BY", t.checkedBy, 95, 3, 95],
-  ];
-  const rowH = bottomH / 4;
-  cells.forEach(([label, value, dx, row, w]) => {
-    const cxp = tbx + dx;
-    const cyp = by + row * rowH;
-    P.push({ t: "rect", x: cxp, y: cyp, w, h: rowH, layer: "GRID" });
-    P.push({ t: "text", x: cxp + 1.5, y: cyp + 3, s: 1.8, text: label, layer: "LABEL" });
-    P.push({ t: "text", x: cxp + 1.5, y: cyp + rowH - 2.2, s: 3, text: clip(value || "-", w - 3, 3), layer: "TITLE", bold: true });
-  });
+  titleCells(P, tbx, by, tbW, bottomH, opt.title);
   // Left of the title block: drawing title and standards
   const lx = margin + 4;
   P.push({ t: "text", x: lx, y: by + 7, s: 3.6, text: "SINGLE LINE IMPEDANCE DIAGRAM", layer: "TITLE", bold: true });
@@ -525,6 +512,79 @@ function sldNotes(R: PowerAnalysisResult, o: SldOptions): string[] {
   return notes;
 }
 
+// ------------------------------------------------------------------------------------------ sheet template
+/**
+ * Title-block cells of the drawing set (project, drawing no., location, revision, client, date, prepared /
+ * checked by), drawn in a box of width w and height h at (x, y). Every AutoCAD sheet and the impedance
+ * diagram use this, so the whole set has one title block. Returns where the drawing number value sits.
+ */
+export function titleCells(P: Prim[], x: number, y: number, w: number, h: number, t: SldOptions["title"]) {
+  const a = Math.round((w * 120) / 190);
+  const half = w / 2;
+  const cells: Array<[string, string, number, number, number]> = [
+    ["PROJECT", t.project, 0, 0, a], ["DRAWING NO.", t.drawingNo, a, 0, w - a],
+    ["LOCATION", t.location, 0, 1, a], ["REVISION", t.revision, a, 1, w - a],
+    ["CLIENT", t.client, 0, 2, a], ["DATE", t.date, a, 2, w - a],
+    ["PREPARED BY", t.preparedBy, 0, 3, half], ["CHECKED BY", t.checkedBy, half, 3, half],
+  ];
+  const rowH = h / 4;
+  cells.forEach(([label, value, dx, row, cw]) => {
+    const cxp = x + dx;
+    const cyp = y + row * rowH;
+    P.push({ t: "rect", x: cxp, y: cyp, w: cw, h: rowH, layer: "GRID" });
+    P.push({ t: "text", x: cxp + 1.5, y: cyp + 3, s: 1.8, text: label, layer: "LABEL" });
+    if (label !== "DRAWING NO." || value) P.push({ t: "text", x: cxp + 1.5, y: cyp + rowH - 2.2, s: 3, text: clip(value || "-", cw - 3, 3), layer: "TITLE", bold: true });
+  });
+  return { drawingNoX: x + a + 1.5, drawingNoY: y + rowH - 2.2 };
+}
+
+/** General notes printed on every sheet of the drawing set */
+export const DRAWING_SET_NOTES = [
+  "All work shall comply with the Philippine Electrical Code (PEC) 2017 Part 1 and the local utility's requirements.",
+  "Conductor sizes, breaker ratings (AT / AF / poles / kAIC) and feeder lengths are as entered in the project Load Schedule, Voltage Drop and Short Circuit inputs.",
+  "Short-circuit values: complex impedances from the utility, transformer and feeders (see the Single Line Impedance Diagram and Short Circuit study sheets).",
+  "Verify all ratings against the equipment nameplates and the utility's available fault data before construction.",
+];
+
+/**
+ * The sheet template of the AutoCAD drawing set, in the same design as the impedance diagram sheet: 10 mm
+ * frame, a right-hand column with the notes and, at its foot, the drawing title and the title-block cells.
+ * The column is the 130 mm the sheet layouts already keep free, so no drawing content moves.
+ * Coordinates are millimetres, y down, for a sheet of w × h.
+ */
+export function drawingSetTemplate(w: number, h: number, o: { title: SldOptions["title"]; title1: string; title2: string; notes?: string[] }) {
+  const P: Prim[] = [];
+  const margin = 10;
+  const colX = w - 130;
+  const colW = 130 - margin;
+  P.push({ t: "rect", x: 0, y: 0, w, h, layer: "BORDER", lw: 0.25 });
+  P.push({ t: "rect", x: margin, y: margin, w: w - 2 * margin, h: h - 2 * margin, layer: "BORDER" });
+  P.push({ t: "line", x1: colX, y1: margin, x2: colX, y2: h - margin, layer: "BORDER" });
+
+  // Notes at the top of the column
+  let sy = margin + 8;
+  P.push({ t: "text", x: colX + 4, y: sy, s: 3, text: "GENERAL NOTES", layer: "TITLE", bold: true });
+  sy += 5;
+  (o.notes || DRAWING_SET_NOTES).forEach((n, i) => {
+    const lines = wrap(`${i + 1}. ${n}`, maxChars(colW - 8, 2.1));
+    lines.forEach((l, k) => P.push({ t: "text", x: colX + 4 + (k ? 3 : 0), y: sy + k * 2.9, s: 2.1, text: l, layer: "NOTE" }));
+    sy += lines.length * 2.9 + 1.2;
+  });
+
+  // Title-block cells at the foot of the column, the drawing title above them
+  const cellsH = 46;
+  const cellsY = h - margin - cellsH;
+  const titleH = 30;
+  const ty = cellsY - titleH;
+  P.push({ t: "line", x1: colX, y1: ty, x2: w - margin, y2: ty, layer: "BORDER" });
+  P.push({ t: "text", x: colX + 4, y: ty + 5, s: 1.8, text: "DRAWING TITLE", layer: "LABEL" });
+  P.push({ t: "text", x: colX + 4, y: ty + 12, s: 3.6, text: clip(o.title1, colW - 8, 3.6, true), layer: "TITLE", bold: true });
+  P.push({ t: "text", x: colX + 4, y: ty + 18, s: 2.4, text: clip(o.title2, colW - 8, 2.4), layer: "LABEL" });
+  P.push({ t: "text", x: colX + 4, y: ty + 25, s: 1.9, text: clip("SCALE: NOT TO SCALE · generated from the project data by ElectricalPH", colW - 8, 1.9), layer: "NOTE" });
+  const pos = titleCells(P, colX, cellsY, colW, cellsH, o.title);
+  return { prims: P, contentRight: colX, ...pos };
+}
+
 // ------------------------------------------------------------------------------------------ exports
 const PT = 72 / 25.4;
 
@@ -566,15 +626,16 @@ export function exportSldPdf(sheet: SldSheet, fileBase: string) {
 const pdfText = (t: string) => t.replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...").replace(/Ω/g, "ohm");
 const dxfText = (t: string) => t.replace(/²/g, "\\U+00B2").replace(/Ω/g, "\\U+03A9").replace(/↑/g, "(UB)").replace(/✗/g, "X").replace(/✓/g, "OK").replace(/…/g, "...");
 
-/** CAD layer name of a diagram layer; the same names in the standalone DXF and in the full project drawing */
-export const sldCadLayer = (l: Layer) => `SC-SLD-${l}`;
+/** CAD layer name of a drawing layer (E- prefix); the same names on every sheet of the drawing set and in the standalone DXF */
+export const sldCadLayer = (l: Layer) => `E-${l}`;
 
 /**
  * Draws the sheet into a dxf-writer drawing with its lower-left corner at (dx, dy), y up, in millimetres.
  * Used by the standalone DXF and by "Export AutoCAD Drawing" (utils/exportDxf.ts), so both are identical.
  */
 export function drawSldOnDrawing(d: Drawing, sheet: SldSheet, dx = 0, dy = 0) {
-  (Object.keys(LAYER_STYLE) as Layer[]).forEach((l) => d.addLayer(sldCadLayer(l), LAYER_STYLE[l].aci, "CONTINUOUS"));
+  // Register each layer once: adding a layer again replaces it and drops what is already drawn on it
+  (Object.keys(LAYER_STYLE) as Layer[]).forEach((l) => { if (!(d as any).layers?.[sldCadLayer(l)]) d.addLayer(sldCadLayer(l), LAYER_STYLE[l].aci, "CONTINUOUS"); });
   const X = (x: number) => x + dx;
   const Y = (y: number) => sheet.h - y + dy;
   for (const p of sheet.prims) {
