@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import "./pdfSafeText"; // printable PDF text (², ≥ ...)
 import autoTable from "jspdf-autotable";
 import { pdfFitText } from "./pdfLayout";
+import { needsLeader, resolveOverlaps, type RoomAnnotation } from "./modelAnnotations";
 import {
   RoomPoint,
   RoomShapeId,
@@ -37,6 +38,8 @@ export interface RoomLayoutData {
   uniformityU0?: number;
   /** 5 × 5 point grid at 10 %, 30 % … 90 % of the bounding box; null = outside the room */
   luxGrid?: (number | null)[][];
+  /** Text, labels and dimensions from the imported model (room coordinates) */
+  annotations?: RoomAnnotation[];
   /** Imported 3D model the room was taken from */
   importedModel?: {
     fileName: string;
@@ -166,6 +169,43 @@ export function drawRoomPlanPdf(doc: jsPDF, data: RoomLayoutData, x: number, y: 
     doc.setTextColor(...AMBER);
     doc.text(String(i + 1), fx + r + 0.6, fy - r * 0.4);
   });
+
+  // Imported text, labels and dimensions at true size (at least 4.5 pt), overlaps moved apart
+  if (data.annotations?.length) {
+    const PT_PER_MM = 2.835;
+    const items = data.annotations.map((a) => {
+      const [ax, ay] = P([a.x, a.z]);
+      const mm = Math.max(a.height * k, 4.5 / PT_PER_MM);
+      return { a, ax, ay, mm, lines: a.text.split("\n") };
+    });
+    const moves = resolveOverlaps(items.map(({ a, ax, ay, mm, lines }) => ({
+      id: a.id, x: ax, z: ay, width: Math.max(...lines.map((l) => l.length)) * mm * 0.6, height: mm * 1.2 * lines.length,
+      rotation: a.rotation, hAlign: a.hAlign, vAlign: a.vAlign,
+    })));
+    doc.setFont("helvetica", "normal");
+    items.forEach(({ a, ax, ay, mm, lines }) => {
+      const mv = moves.get(a.id) || { dx: 0, dz: 0 };
+      if (a.dim) {
+        const [d1x, d1y] = P([a.dim.x1, a.dim.z1]);
+        const [d2x, d2y] = P([a.dim.x2, a.dim.z2]);
+        doc.setDrawColor(2, 132, 199);
+        doc.setLineWidth(0.15);
+        doc.line(d1x, d1y, d2x, d2y);
+      }
+      if (needsLeader(mv, mm)) {
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.12);
+        doc.line(ax, ay, ax + mv.dx, ay + mv.dz);
+      }
+      doc.setFontSize(mm * PT_PER_MM);
+      doc.setTextColor(a.kind === "dimension" ? 2 : 30, a.kind === "dimension" ? 132 : 41, a.kind === "dimension" ? 199 : 59);
+      doc.text(lines, ax + mv.dx, ay + mv.dz, {
+        align: a.hAlign,
+        baseline: a.vAlign === "top" ? "top" : a.vAlign === "middle" ? "middle" : "bottom",
+        angle: a.rotation,
+      });
+    });
+  }
 
   // North arrow (z = 0 is the north wall) and scale bar
   const nx0 = x + w - 10;

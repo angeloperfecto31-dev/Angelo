@@ -53,6 +53,7 @@ import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTU
 import Illumination3DModel from './Illumination3DModel';
 import RoomShapeEditor from './RoomShapeEditor';
 import ImportedModelViewer, { DesignSummary } from './ImportedModelViewer';
+import { annotationsForRoom, needsLeader, resolveOverlaps } from '../utils/modelAnnotations';
 import { achievedLux, designLumensPerUnit, effectiveUtilizationFactor, roomIndexOf, sizeLumenMethod } from '../utils/illuminationSizing';
 import { RoomLayoutData, exportIlluminationLayoutPdf, roomGeometrySummary, roomShapeLabel } from '../utils/illuminationRoomExport';
 import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, normalizePolygon, polygonBounds, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
@@ -550,6 +551,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   // Room outline in metres: the W × L rectangle, or the L/T/U preset / custom polygon
   const roomOutline = useMemo(() => getRoomOutline(params), [params.roomShape, params.roomPolygon, params.roomWidth, params.roomLength]);
   const isIrregularRoom = hasIrregularOutline(params);
+  /** Text, labels and dimensions from the imported model's DXF that belong to the design room */
+  const roomAnnotations = useMemo(() => annotationsForRoom(params.importedModel, roomOutline), [params.importedModel, roomOutline]);
   const roomFloorArea = params.inputMode === 'area' ? params.userArea : polygonArea(roomOutline);
   const lastOutlineKeyRef = useRef<string | null>(null);
 
@@ -2495,6 +2498,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       maxLux: luxGridData.maxLux,
       uniformityU0: luxGridData.uniformityU0,
       luxGrid: luxGridData.grid,
+      ...(roomAnnotations.length ? { annotations: roomAnnotations } : {}),
       ...(params.importedModel ? {
         importedModel: {
           fileName: params.importedModel.fileName,
@@ -4011,6 +4015,36 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                 );
                               })()}
 
+                              {/* Imported SketchUp text, labels and dimensions (from the model's DXF) */}
+                              {roomAnnotations.length > 0 && (() => {
+                                const k = pixW / w;
+                                const items = roomAnnotations.map(a => ({ a, fs: Math.max(7, a.height * k * 1.35) }));
+                                const moves = params.importedModel?.annotations?.resolveOverlaps === false
+                                  ? new Map<string, { dx: number; dz: number }>()
+                                  : resolveOverlaps(items.map(({ a, fs }) => ({ id: a.id, x: a.x * k, z: a.z * k, width: Math.max(...a.text.split('\n').map(l => l.length)) * fs * 0.6, height: fs * 1.2 * a.text.split('\n').length, rotation: a.rotation, hAlign: a.hAlign, vAlign: a.vAlign })));
+                                return (
+                                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-20" viewBox={`0 0 ${pixW} ${pixL}`} preserveAspectRatio="none">
+                                    {items.map(({ a, fs }) => {
+                                      const mv = moves.get(a.id) || { dx: 0, dz: 0 };
+                                      const x = a.x * k + mv.dx;
+                                      const y = a.z * k + mv.dz;
+                                      const lines = a.text.split('\n');
+                                      const anchor = a.hAlign === 'center' ? 'middle' : a.hAlign === 'right' ? 'end' : 'start';
+                                      const dy0 = a.vAlign === 'top' ? fs * 0.9 : a.vAlign === 'middle' ? -((lines.length - 1) * fs * 1.15) / 2 + fs * 0.35 : -(lines.length - 1) * fs * 1.15;
+                                      return (
+                                        <g key={a.id}>
+                                          {a.dim && <line x1={a.dim.x1 * k} y1={a.dim.z1 * k} x2={a.dim.x2 * k} y2={a.dim.z2 * k} stroke="#7dd3fc" strokeWidth={1} />}
+                                          {needsLeader(mv, fs) ? <line x1={a.x * k} y1={a.z * k} x2={x} y2={y} stroke="#94a3b8" strokeWidth={0.8} /> : null}
+                                          <text x={x} y={y} transform={`rotate(${-a.rotation} ${x} ${y})`} textAnchor={anchor} fontSize={fs} fontFamily="Arial" fill={a.kind === 'dimension' ? '#7dd3fc' : '#e2e8f0'} stroke="#0f172a" strokeWidth={fs * 0.12} paintOrder="stroke">
+                                            {lines.map((l, i) => <tspan key={i} x={x} dy={i === 0 ? dy0 : fs * 1.15}>{l}</tspan>)}
+                                          </text>
+                                        </g>
+                                      );
+                                    })}
+                                  </svg>
+                                );
+                              })()}
+
                               {/* Floor Plan Objects (SVG Overlay) */}
                               <svg className="absolute inset-0 w-full h-full pointer-events-none z-15">
                                 {floorPlanObjects.map((obj) => {
@@ -5456,7 +5490,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                roomPolygon: toRoomVertices(roomOutline),
                                ceilingHeight,
                                workingPlaneHeight,
-                               customPositions: buildRoomLayoutData().fixtures
+                               customPositions: buildRoomLayoutData().fixtures,
+                               annotations: roomAnnotations
                              }
                            ];
                            const illumData = {
