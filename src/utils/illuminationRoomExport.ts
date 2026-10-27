@@ -53,8 +53,9 @@ export interface RoomLayoutData {
 export const roomShapeLabel = (shape?: RoomShapeId) => ROOM_SHAPES.find((s) => s.id === (shape || "rectangle"))?.label || "Rectangle";
 
 /** Area, perimeter, room index and wall schedule of an outline */
-export function roomGeometrySummary(outline: RoomPoint[], ceilingHeight: number, workingPlaneHeight: number) {
-  const hrc = Math.max(0.1, ceilingHeight - workingPlaneHeight);
+export function roomGeometrySummary(outline: RoomPoint[], ceilingHeight: number, workingPlaneHeight: number, mountingHeight?: number) {
+  // Room index uses hm, the luminaire height above the working plane (default: ceiling − working plane)
+  const hrc = mountingHeight !== undefined && Number.isFinite(mountingHeight) && mountingHeight > 0 ? mountingHeight : Math.max(0.1, ceilingHeight - workingPlaneHeight);
   const b = polygonBounds(outline);
   return {
     area: polygonArea(outline),
@@ -201,7 +202,7 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   const W = 420;
   const H = 297;
   const m = 10;
-  const geo = roomGeometrySummary(data.outline, data.ceilingHeight, data.workingPlaneHeight);
+  const geo = roomGeometrySummary(data.outline, data.ceilingHeight, data.workingPlaneHeight, data.mountingHeight);
 
   // Sheet border and header
   doc.setDrawColor(...NAVY);
@@ -236,7 +237,7 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
   const tw = W - m - 4 - tx;
   const head = { fillColor: NAVY, textColor: 255, fontStyle: "bold" as const, fontSize: 7.5 };
   const body = { fontSize: 7.5, cellPadding: 1.3, textColor: NAVY };
-  const hrc = Math.max(0.1, data.ceilingHeight - data.workingPlaneHeight);
+  const hrc = data.mountingHeight > 0 ? data.mountingHeight : Math.max(0.1, data.ceilingHeight - data.workingPlaneHeight);
   let y = planY;
 
   autoTable(doc, {
@@ -250,7 +251,7 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
       ["Perimeter P", `${geo.perimeter.toFixed(2)} m`],
       ["Bounding box", `${geo.width.toFixed(2)} × ${geo.length.toFixed(2)} m`],
       ["Ceiling / working plane / mounting", `${data.ceilingHeight.toFixed(2)} / ${data.workingPlaneHeight.toFixed(2)} / ${data.mountingHeight.toFixed(2)} m`],
-      ["Room index RI = 2A / (hrc·P)", `${geo.roomIndex.toFixed(2)} (hrc = ${hrc.toFixed(2)} m)`],
+      ["Room index RI = 2A / (hm·P)", `${geo.roomIndex.toFixed(2)} (hm = ${hrc.toFixed(2)} m)`],
     ],
     theme: "grid",
     headStyles: head,
@@ -283,7 +284,7 @@ export function exportIlluminationLayoutPdf(data: RoomLayoutData) {
       ["Target illuminance", `${data.targetLux} lx`],
       ["Luminaire", data.fixtureType],
       ["Quantity", `${count} units × ${data.fixtureLumens.toLocaleString()} lm × ${data.fixtureWattage} W`],
-      ...(data.coefficientOfUtilization ? [["CU / MF", `${data.coefficientOfUtilization.toFixed(2)} / ${(data.maintenanceFactor || 0.8).toFixed(2)}`]] : []),
+      ...(data.coefficientOfUtilization ? [["UF (CU) / MF",  `${data.coefficientOfUtilization.toFixed(2)} / ${(data.maintenanceFactor || 0.8).toFixed(2)}`]] : []),
       ...(data.averageLux !== undefined ? [["Average (point grid)", `${data.averageLux} lx`]] : []),
       ...(data.minLux !== undefined && data.maxLux !== undefined ? [["Emin / Emax", `${data.minLux} / ${data.maxLux} lx`]] : []),
       ...(data.uniformityU0 !== undefined ? [["Uniformity U0 = Emin/Eavg", data.uniformityU0.toFixed(2)]] : []),

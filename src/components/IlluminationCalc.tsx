@@ -53,6 +53,7 @@ import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTU
 import Illumination3DModel from './Illumination3DModel';
 import RoomShapeEditor from './RoomShapeEditor';
 import ImportedModelViewer, { DesignSummary } from './ImportedModelViewer';
+import { achievedLux, designLumensPerUnit, effectiveUtilizationFactor, roomIndexOf, sizeLumenMethod } from '../utils/illuminationSizing';
 import { RoomLayoutData, exportIlluminationLayoutPdf, roomGeometrySummary, roomShapeLabel } from '../utils/illuminationRoomExport';
 import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, normalizePolygon, polygonBounds, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
 
@@ -1094,27 +1095,16 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     // Target Lux
     const targetLux = params.targetLux || 500;
     
-    // Default baseline reflectances
-    const rc = 0.7; // ceiling
-    const rw = 0.5; // wall
-    const rf = 0.2; // floor
-    const maintenanceFactor = 0.8;
-    const initialCU = 0.6; // initial guess
-    
-    // Calculate Room Index & Adjusted CU
-    const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
-    // RI = 2A / (hrc · P): the same as L·W / (hrc · (L + W)) for a rectangle, and valid for L/T/U and polygon rooms
-    const roomIndex = (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0)
-      ? polygonRoomIndex(roomOutline, hrc)
-      : 2.0;
-    const riFactor = roomIndex / (roomIndex + 0.5);
-    const baselineRiFactor = 2.0 / 2.5;
-    const reflectanceFactor = (rc * 0.3 + rw * 0.5 + rf * 0.2) / 0.5;
-    const effectiveCU = Math.min(0.95, Math.max(0.1, initialCU * (riFactor / baselineRiFactor) * reflectanceFactor));
+    // Keep the room's own surfaces and maintenance factor (defaults 70/50/20 %, MF 0.80, CU 0.60)
+    const rc = params.ceilingReflectance ?? 0.7;
+    const rw = params.wallReflectance ?? 0.5;
+    const rf = params.floorReflectance ?? 0.2;
+    const maintenanceFactor = params.maintenanceFactor || 0.8;
+    const initialCU = params.coefficientOfUtilization || 0.6;
 
-    // Calculate count
-    const totalLumensRequired = (targetLux * area) / (effectiveCU * maintenanceFactor);
-    const fixturesCount = Math.max(1, Math.ceil(totalLumensRequired / fixtureLumens));
+    // Same lumen-method sizing as the calculator: RI from area, perimeter and mounting height
+    const effectiveCU = effectiveUtilizationFactor(initialCU, calculation.roomIndex, rc, rw, rf);
+    const fixturesCount = Math.max(1, sizeLumenMethod({ targetLux, area, utilizationFactor: effectiveCU, maintenanceFactor, lumensPerUnit: fixtureLumens }).fixturesRequired);
 
     // Spacing (Rows and Cols)
     let cols = 1;
@@ -1127,8 +1117,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       cols = Math.max(1, Math.round(Math.sqrt(fixturesCount)));
       rows = Math.ceil(fixturesCount / cols);
     }
-    // A full grid for rectangles; irregular rooms take the exact count (laid out inside the outline)
-    const finalCount = isIrregularRoom ? fixturesCount : cols * rows;
+    // Exactly the required count; the layout spreads a short last row symmetrically
+    const finalCount = fixturesCount;
 
     // Build active fixtures payload
     const defaultsSeed = getPredefinedFixtureDefaults(selectedF.id, false);
@@ -1164,7 +1154,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       customPositions: []
     });
 
-    setSuccessBanner(`Optimized layout: Arranged ${finalCount}x ${selectedF.lightType} in a ${cols}x${rows} grid!`);
+    setSuccessBanner(`Optimized layout: ${finalCount}x ${selectedF.lightType} (${isIrregularRoom ? 'spread inside the room outline' : `about ${cols} x ${rows}`}) for ${targetLux} lux.`);
     setTimeout(() => setSuccessBanner(null), 5000);
   };
 
@@ -2087,43 +2077,50 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   // Primary calculations
   const calculation = useMemo(() => {
-    const area = roomFloorArea;
-    
-    // Calculate Room Index to adjust CU dynamically based on ceiling height
-    const hrc = Math.max(0.1, (params.ceilingHeight || 2.7) - (params.workingPlaneHeight || 0.75));
-    // RI = 2A / (hrc · P): the same as L·W / (hrc · (L + W)) for a rectangle, and valid for L/T/U and polygon rooms
+    const area = roomFloorArea || 0;
+
+    // Room index RI = 2A / (hm · P), hm = luminaire height above the working plane
+    // (= L·W / (hm · (L + W)) for a rectangle; valid for L/T/U and polygon rooms). Area mode assumes RI 2.0.
+    const hm = Number.isFinite(mountingHeight) && mountingHeight > 0 ? mountingHeight : Math.max(0.1, ceilingHeight - workingPlaneHeight);
     const roomIndex = (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0)
-      ? polygonRoomIndex(roomOutline, hrc)
+      ? roomIndexOf(polygonArea(roomOutline), polygonPerimeter(roomOutline), hm)
       : 2.0;
 
-    let effectiveCU = params.coefficientOfUtilization;
-    if (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0) {
-      // Standardize the User's CU entry against a typical Room Index of 2.0
-      // This scaling ensures that higher ceilings (lower Room Index) reduce CU, requiring more fixtures.
-      const riFactor = roomIndex / (roomIndex + 0.5);
-      const baselineRiFactor = 2.0 / 2.5; // RI of 2.0
-      
-      // Incorporate reflectances (Ceiling, Wall, Floor)
-      const rc = params.ceilingReflectance !== undefined ? params.ceilingReflectance : 0.7;
-      const rw = params.wallReflectance !== undefined ? params.wallReflectance : 0.5;
-      const rf = params.floorReflectance !== undefined ? params.floorReflectance : 0.2;
-      const reflectanceFactor = (rc * 0.3 + rw * 0.5 + rf * 0.2) / 0.5;
+    // Utilization factor: the luminaire CU (reference room RI 2.0, 70/50/20 %) scaled by a typical
+    // utilization table to this room index and these reflectances
+    const effectiveCU = effectiveUtilizationFactor(
+      params.coefficientOfUtilization,
+      roomIndex,
+      params.ceilingReflectance ?? 0.7,
+      params.wallReflectance ?? 0.5,
+      params.floorReflectance ?? 0.2
+    );
 
-      effectiveCU = Math.min(0.95, Math.max(0.1, params.coefficientOfUtilization * (riFactor / baselineRiFactor) * reflectanceFactor));
-    }
+    // Lumens per luminaire of the design actually selected (quantity-weighted for a combined design)
+    const lumensPerUnit = designLumensPerUnit(params.activeFixtures, activeFixture.lumens);
 
-    // Basic Lumen Formula: N = (E * A) / (F * CU * MF)
-    const totalLumensRequired = (params.targetLux * area) / (effectiveCU * params.maintenanceFactor);
-    const fixturesNeeded = Math.ceil(totalLumensRequired / (activeFixture.lumens || 1));
+    // Lumen method: Φ = E·A / (UF·MF), N = ⌈Φ / Φ_luminaire⌉
+    const sizing = sizeLumenMethod({
+      targetLux: params.targetLux,
+      area,
+      utilizationFactor: effectiveCU,
+      maintenanceFactor: params.maintenanceFactor,
+      lumensPerUnit
+    });
 
     return {
       area: area.toFixed(2),
-      fixtures: fixturesNeeded,
-      totalLumens: Math.round(totalLumensRequired),
-      effectiveCU: Number(effectiveCU.toFixed(2)),
+      fixtures: sizing.fixturesRequired,
+      totalLumens: Math.round(sizing.totalLumensRequired),
+      effectiveCU: Number(sizing.utilizationFactor.toFixed(2)),
+      // Unrounded factors so the achieved illuminance is not skewed by display rounding
+      uf: sizing.utilizationFactor,
+      mf: params.maintenanceFactor || 0.8,
+      lumensPerUnit,
+      hm,
       roomIndex: Number(roomIndex.toFixed(2))
     };
-  }, [params, activeFixture.lumens]);
+  }, [params, activeFixture.lumens, roomOutline, roomFloorArea, mountingHeight, ceilingHeight, workingPlaneHeight]);
 
   const recommendedQuantity = calculation.fixtures;
 
@@ -2136,6 +2133,22 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     }
     return recommendedQuantity;
   }, [params.isManualQuantity, params.manualQuantity, params.activeFixtures, recommendedQuantity]);
+
+  // Installed lamp lumens and wattage of the design, and the average maintained illuminance (lumen method)
+  const installedDesign = useMemo(() => {
+    const list = params.activeFixtures || [];
+    const singleOrNone = list.length <= 1;
+    const lumens = singleOrNone
+      ? installedQuantity * calculation.lumensPerUnit
+      : list.reduce((s, f) => s + (f.quantity || 0) * (f.lumens || 0), 0);
+    const watts = list.length === 0
+      ? installedQuantity * (activeFixture.wattage || 0)
+      : singleOrNone
+        ? installedQuantity * (list[0].wattage || 0)
+        : list.reduce((s, f) => s + (f.quantity || 0) * (f.wattage || 0), 0);
+    const area = parseFloat(calculation.area) || 0;
+    return { lumens, watts, lux: Math.round(achievedLux(lumens, area, calculation.uf, calculation.mf)) };
+  }, [params.activeFixtures, installedQuantity, calculation, activeFixture.wattage]);
 
   // Keep single active fixture's quantity in sync with dynamically calculated quantity for the room
   const prevCalcFixtures = useRef(calculation.fixtures);
@@ -2591,10 +2604,12 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       const b = polygonBounds(outline);
       const area = polygonArea(outline);
       const ceil = room.ceilingHeight && room.ceilingHeight > 1.8 ? room.ceilingHeight : ceilingHeight;
-      const hrc = Math.max(0.1, ceil - workingPlaneHeight);
-      const ri = polygonRoomIndex(outline, hrc);
-      const cu = Math.min(0.95, Math.max(0.1, params.coefficientOfUtilization * ((ri / (ri + 0.5)) / (2.0 / 2.5)) * ((rc * 0.3 + rw * 0.5 + rf * 0.2) / 0.5)));
-      const n = Math.max(1, Math.ceil((params.targetLux * area) / (cu * mf * fixLumens)));
+      // Same lumen method as the design room: RI from area, perimeter and luminaire height above the
+      // working plane (limited by this room's ceiling), CU scaled for RI and reflectances
+      const hm = Math.max(0.1, Math.min(calculation.hm, ceil - workingPlaneHeight));
+      const ri = roomIndexOf(area, polygonPerimeter(outline), hm);
+      const cu = effectiveUtilizationFactor(params.coefficientOfUtilization, ri, rc, rw, rf);
+      const n = Math.max(1, sizeLumenMethod({ targetLux: params.targetLux, area, utilizationFactor: cu, maintenanceFactor: mf, lumensPerUnit: fixLumens }).fixturesRequired);
       const positions: PlacedFixtureDragPosition[] = placePointsInPolygon(outline, n).map(([x, z], i) => ({
         id: `fixture-${af?.fixtureId || activeFixture.id}-r${i}-${Math.random().toString(36).slice(2, 6)}`,
         fixtureId: af?.fixtureId || activeFixture.id,
@@ -2621,6 +2636,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
         fixtureId: af?.fixtureId || activeFixture.id,
         fixtureLightType: af?.lightType || activeFixture.lightType,
         fixturesCount: n,
+        requiredFixtures: n,
         totalLumens: n * fixLumens,
         totalWattage: n * fixWatts,
         fixtureLumens: fixLumens,
@@ -2644,13 +2660,11 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
   /** Results shown next to the imported model */
   const designSummary: DesignSummary = useMemo(() => {
+    // Same lumen-method figures as the calculator (installed lumens of the selected fixtures)
     const area = parseFloat(calculation.area) || 0;
-    const list = params.activeFixtures || [];
-    const installedLumens = list.length > 0
-      ? (list.length === 1 ? installedQuantity * (list[0].lumens || 0) : list.reduce((s, f) => s + (f.quantity || 0) * (f.lumens || 0), 0))
-      : installedQuantity * (activeFixture.lumens || 0);
-    const uf = Number(calculation.effectiveCU) || params.coefficientOfUtilization || 0.6;
-    const mf = params.maintenanceFactor || 0.8;
+    const installedLumens = installedDesign.lumens;
+    const uf = calculation.uf;
+    const mf = calculation.mf;
     return {
       area,
       roomIndex: Number(calculation.roomIndex) || 0,
@@ -2660,14 +2674,14 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       installedFixtures: installedQuantity,
       requiredLumens: calculation.totalLumens,
       installedLumens,
-      averageLux: area > 0 ? (installedLumens * uf * mf) / area : 0,
+      averageLux: installedDesign.lux,
       pointAverageLux: luxGridData.averageLux,
       connectedLoadW: energyAudit.totalPowerW,
       lpd: energyAudit.lpd,
       lpdLimit: lpdLimitInfo.limit,
       targetLux: params.targetLux,
     };
-  }, [calculation, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, params.targetLux, installedQuantity, activeFixture.lumens, luxGridData.averageLux, energyAudit, lpdLimitInfo.limit]);
+  }, [calculation, installedDesign, params.targetLux, installedQuantity, luxGridData.averageLux, energyAudit, lpdLimitInfo.limit]);
 
   const handleAddToSchedule = async () => {
     if (!setCircuits || !circuits) return;
@@ -2740,6 +2754,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       totalWattage: totalVA,
       fixtureWattage: isCombined ? Math.round(totalVA / totalQty) : activeFixture.wattage,
       fixtureLumens: isCombined ? Math.round(totalLumensVal / totalQty) : activeFixture.lumens,
+      coefficientOfUtilization: calculation.effectiveCU,
+      maintenanceFactor: params.maintenanceFactor || 0.8,
+      requiredFixtures: calculation.fixtures,
       roomWidth: params.roomWidth,
       roomLength: params.roomLength,
       ...(isIrregularRoom ? { roomShape: params.roomShape, roomPolygon: toRoomVertices(roomOutline) } : {}),
@@ -2788,22 +2805,24 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       if (r.id === id) {
         const updated = { ...r, [field]: value };
         const isCustom = updated.fixtureId === 'custom';
-        const fixWattage = isCustom ? (updated.fixtureWattage || params.customWattage || 15) : (getFixtureById(updated.fixtureId)?.wattage || 0);
-        const fixLumens = isCustom ? (updated.fixtureLumens || params.customLumens || 1500) : (getFixtureById(updated.fixtureId)?.lumens || 1000 || 1);
-        const cu = params.coefficientOfUtilization || 0.6;
-        const mf = params.maintenanceFactor || 0.8;
+        // The room's own luminaire data first (combined designs have no single library fixture)
+        const fixWattage = updated.fixtureWattage || (isCustom ? (params.customWattage || 15) : (getFixtureById(updated.fixtureId)?.wattage || 0));
+        const fixLumens = updated.fixtureLumens || (isCustom ? (params.customLumens || 1500) : (getFixtureById(updated.fixtureId)?.lumens || 1000));
+        // Utilization factor saved with the room (room index and reflectances already applied)
+        const cu = updated.coefficientOfUtilization || params.coefficientOfUtilization || 0.6;
+        const mf = updated.maintenanceFactor || params.maintenanceFactor || 0.8;
         const areaVal = Number(updated.area) || 1;
 
         if (field === 'targetLux' || field === 'area') {
           const targetLuxVal = Number(updated.targetLux) || 0;
-          const totalLumensRequiredForRoom = (targetLuxVal * areaVal) / (cu * mf);
-          updated.fixturesCount = Math.max(1, Math.ceil(totalLumensRequiredForRoom / (fixLumens || 1)));
+          updated.fixturesCount = Math.max(1, sizeLumenMethod({ targetLux: targetLuxVal, area: areaVal, utilizationFactor: cu, maintenanceFactor: mf, lumensPerUnit: fixLumens }).fixturesRequired);
+          updated.requiredFixtures = updated.fixturesCount;
           updated.totalWattage = fixWattage * updated.fixturesCount;
           updated.totalLumens = fixLumens * updated.fixturesCount;
         } else if (field === 'fixturesCount') {
           updated.totalWattage = fixWattage * updated.fixturesCount;
           updated.totalLumens = fixLumens * updated.fixturesCount;
-          updated.targetLux = Math.round((updated.fixturesCount * fixLumens * cu * mf) / areaVal);
+          updated.targetLux = Math.round(achievedLux(updated.fixturesCount * fixLumens, areaVal, cu, mf));
         }
         return updated;
       }
@@ -2964,7 +2983,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                 polygon={toRoomPoints(params.roomPolygon)}
                 width={params.roomWidth}
                 length={params.roomLength}
-                cavityHeight={Math.max(0.1, ceilingHeight - workingPlaneHeight)}
+                cavityHeight={Number.isFinite(mountingHeight) && mountingHeight > 0 ? mountingHeight : Math.max(0.1, ceilingHeight - workingPlaneHeight)}
                 onChange={(next) => setParams(prev => ({ ...prev, ...next, roomPolygon: toRoomVertices(next.roomPolygon) }))}
               />
              ) : (
@@ -3485,28 +3504,31 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
 
                  {/* Non-blocking compliance checks */}
                  <div className="w-full text-xs font-semibold text-left mb-4">
-                   {installedQuantity < recommendedQuantity ? (
+                   {installedDesign.lumens + 0.5 < calculation.totalLumens ? (
                      <div className="bg-amber-950/30 border border-amber-900/50 text-amber-300 p-3 rounded-2xl flex items-start gap-2">
                        <span className="text-sm shrink-0">⚠️</span>
                        <p className="leading-normal text-[11px]">
-                         Warning: Installed fixture quantity is below the recommended value. The required illuminance may not be achieved.
+                         Warning: installed lumens ({Math.round(installedDesign.lumens).toLocaleString()} lm) are below the required {calculation.totalLumens.toLocaleString()} lm. Average maintained illuminance <strong className="font-bold text-amber-200">{installedDesign.lux} lx</strong> vs target {params.targetLux} lx.
                        </p>
                      </div>
-                   ) : installedQuantity > recommendedQuantity ? (
-                     <div className="bg-emerald-950/30 border border-emerald-900/50 text-emerald-300 p-3 rounded-2xl flex items-start gap-2">
-                       <span className="text-sm shrink-0">✓</span>
-                       <p className="leading-normal text-[11px]">
-                         Design exceeds the minimum illumination requirement. Achieved: <strong className="font-bold text-emerald-200">{luxGridData.averageLux} Lux</strong>.
-                       </p>
-                     </div>
-                   ) : (
+                   ) : installedQuantity === recommendedQuantity ? (
                      <div className="bg-slate-850/30 border border-slate-800/80 text-slate-300 p-3 rounded-2xl flex items-start gap-2">
                        <span className="text-sm shrink-0">✓</span>
                        <p className="leading-normal text-[11px]">
-                         Installed quantity matches calculated recommendation exactly.
+                         Installed quantity matches the required quantity. Average maintained illuminance <strong className="font-bold text-slate-100">{installedDesign.lux} lx</strong> (target {params.targetLux} lx).
+                       </p>
+                     </div>
+                   ) : (
+                     <div className="bg-emerald-950/30 border border-emerald-900/50 text-emerald-300 p-3 rounded-2xl flex items-start gap-2">
+                       <span className="text-sm shrink-0">✓</span>
+                       <p className="leading-normal text-[11px]">
+                         Design meets the illumination requirement. Average maintained illuminance <strong className="font-bold text-emerald-200">{installedDesign.lux} lx</strong> (target {params.targetLux} lx; point-grid average {luxGridData.averageLux} lx).
                        </p>
                      </div>
                    )}
+                   <p className="mt-2 text-[10px] leading-snug text-slate-500 font-mono">
+                     N = E·A / (UF·MF·Φ) = {params.targetLux} × {calculation.area} / ({calculation.effectiveCU} × {(params.maintenanceFactor || 0.8).toFixed(2)} × {Math.round(calculation.lumensPerUnit).toLocaleString()} lm) = {(calculation.totalLumens / Math.max(1, calculation.lumensPerUnit)).toFixed(2)} → {recommendedQuantity} luminaires · RI {calculation.roomIndex} (hm {calculation.hm.toFixed(2)} m)
+                   </p>
                  </div>
                  
                  <div className="w-full mt-6 pt-5 border-t border-slate-800 grid grid-cols-2 gap-4 text-center">
@@ -3590,9 +3612,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                         id: crypto.randomUUID(),
                         roomName: params.roomName || params.targetRoomName || 'Unnamed Room',
                         area: roomFloorArea,
-                        fixturesCount: calculation.fixtures,
-                        totalLumens: calculation.fixtures * (activeFixture?.lumens || 0),
-                        totalWattage: calculation.fixtures * (activeFixture?.wattage || 0)
+                        fixturesCount: installedQuantity,
+                        requiredFixtures: calculation.fixtures,
+                        totalLumens: Math.round(installedDesign.lumens),
+                        totalWattage: Math.round(installedDesign.watts),
+                        fixtureLumens: Math.round(calculation.lumensPerUnit),
+                        fixtureWattage: installedQuantity > 0 ? Math.round(installedDesign.watts / installedQuantity) : (activeFixture?.wattage || 0),
+                        coefficientOfUtilization: calculation.effectiveCU
                       };
                       setParams({ ...params, savedRooms: [...(params.savedRooms || []), newRoom as any] });
                     }}
@@ -5254,11 +5280,13 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                       <tr><td>Floor Area (shoelace)</td><td style="font-weight: bold;">${polygonArea(roomOutline).toFixed(2)} m²</td></tr>
                       <tr><td>Perimeter</td><td>${polygonPerimeter(roomOutline).toFixed(2)} m</td></tr>
                       <tr><td>Bounding Box</td><td>${params.roomWidth.toFixed(2)} m × ${params.roomLength.toFixed(2)} m</td></tr>
-                      <tr><td>Room Index RI = 2A / (hrc × P)</td><td>${polygonRoomIndex(roomOutline, Math.max(0.1, ceilingHeight - workingPlaneHeight)).toFixed(2)}</td></tr>
+                      <tr><td>Room Index RI = 2A / (hm × P)</td><td>${calculation.roomIndex.toFixed(2)} (hm = ${calculation.hm.toFixed(2)} m)</td></tr>
+                      <tr><td>Utilization Factor / Maintenance Factor</td><td>${calculation.effectiveCU.toFixed(2)} / ${(params.maintenanceFactor || 0.8).toFixed(2)}</td></tr>
+                      <tr><td>Required Luminaires N = E·A / (UF·MF·Φ)</td><td style="font-weight: bold;">${calculation.fixtures} (installed ${installedQuantity}, ${installedDesign.lux} lx average maintained)</td></tr>
                     </table>
                     <table>
                       <tr><th>Wall</th><th>Length (m)</th><th>Interior Angle</th></tr>
-                      ${roomGeometrySummary(roomOutline, ceilingHeight, workingPlaneHeight).walls.map(wl => `<tr><td>${wl.name}</td><td>${wl.length.toFixed(2)}</td><td>${wl.angle.toFixed(1)}° at ${wl.endVertex}</td></tr>`).join('')}
+                      ${roomGeometrySummary(roomOutline, ceilingHeight, workingPlaneHeight, mountingHeight).walls.map(wl => `<tr><td>${wl.name}</td><td>${wl.length.toFixed(2)}</td><td>${wl.angle.toFixed(1)}° at ${wl.endVertex}</td></tr>`).join('')}
                     </table>
 
                     ${reportIncludeUniformity ? `
@@ -5418,9 +5446,9 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                targetLux: params.targetLux || 300,
                                area: roomArea,
                                fixtureLightType: activeFixture.lightType || 'LED',
-                               fixturesCount: params.customPositions?.length || calculation.fixtures || 0,
-                               totalLumens: (params.customPositions?.length || calculation.fixtures || 0) * (activeFixture.lumens || 3200),
-                               totalWattage: (params.customPositions?.length || calculation.fixtures || 0) * (activeFixture.wattage || 36),
+                               fixturesCount: installedQuantity || calculation.fixtures || 0,
+                               totalLumens: Math.round(installedDesign.lumens),
+                               totalWattage: Math.round(installedDesign.watts),
                                circuitNo: 1,
                                roomWidth: params.roomWidth,
                                roomLength: params.roomLength,

@@ -270,6 +270,8 @@ export interface SavedLightingDetail {
   circuitNo?: number; // optionally link to circuit
   /** Room of an imported 3D model this saved room was created from */
   sourceModelRoomId?: string;
+  /** Luminaires required by the lumen method (fixturesCount is what is installed) */
+  requiredFixtures?: number;
   fixtureWattage?: number;
   fixtureLumens?: number;
   activeFixtures?: ActiveFixtureSelection[];

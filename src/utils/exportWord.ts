@@ -23,7 +23,8 @@ import { Document, Packer, PageOrientation,
   TableOfContents
 } from 'docx';
 import { Circuit, PanelConfig, LoadType } from '../types';
-import { getRoomOutline, hasIrregularOutline, polygonArea, polygonRoomIndex } from './roomGeometry';
+import { getRoomOutline, hasIrregularOutline, polygonArea } from './roomGeometry';
+import { illuminationDesignSummary } from './illuminationSizing';
 import { renderRoomLayoutPng, roomGeometrySummary, roomShapeLabel } from './illuminationRoomExport';
 import { WIRE_AMPACITY_TABLE, STANDARD_CB_RATINGS, WIRE_IMPEDANCE_TABLE } from '../constants';
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, calculateUnifiedVD } from './computeEngine';
@@ -1795,30 +1796,25 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
   }
 
   // Active Parameters Section detail
-  // Room outline: W × L, or the L/T/U / custom polygon (area by shoelace, RI = 2A / (hrc · P))
+  // Room outline: W × L, or the L/T/U / custom polygon (area by shoelace, RI = 2A / (hm · P))
   const illumOutline = getRoomOutline(illumParams);
   const roomArea = illumParams.inputMode === 'area' ? illumParams.userArea : Number(polygonArea(illumOutline).toFixed(2));
-  let cu = illumParams.coefficientOfUtilization;
-  if (illumParams.inputMode === 'dimensions' && illumParams.roomWidth > 0 && illumParams.roomLength > 0) {
-    const hrc = Math.max(0.1, (illumParams.ceilingHeight || 2.7) - (illumParams.workingPlaneHeight || 0.75));
-    const roomIndex = polygonRoomIndex(illumOutline, hrc);
-    const riFactor = roomIndex / (roomIndex + 0.5);
-    const baselineRiFactor = 2.0 / 2.5; 
-    cu = Math.min(0.95, Math.max(0.1, illumParams.coefficientOfUtilization * (riFactor / baselineRiFactor)));
-  }
 
+  // Same lumen-method sizing as the Illumination module
+  const design = illuminationDesignSummary(illumParams);
+  const cu = design.utilizationFactor;
   const targetLux = illumParams.targetLux;
-  const lumensPerFix = illumParams.lumensPerFixture;
-  const mf = illumParams.maintenanceFactor;
-  const expectedLumens = (targetLux * roomArea) / (cu * mf);
-  const qty = Math.ceil(expectedLumens / lumensPerFix);
+  const lumensPerFix = Math.round(design.lumensPerUnit);
+  const mf = design.maintenanceFactor;
+  const qty = design.fixturesRequired;
+  const designWatts = design.installedWatts > 0 ? design.installedWatts : qty * 36;
   const workingPlaneHeight = illumParams.workingPlaneHeight || 0.75;
 
   const geometryParagraphs: Paragraph[] = [];
   if (illumParams.inputMode === 'dimensions' && hasIrregularOutline(illumParams)) {
-    const geo = roomGeometrySummary(illumOutline, illumParams.ceilingHeight || 2.7, illumParams.workingPlaneHeight || 0.75);
+    const geo = roomGeometrySummary(illumOutline, illumParams.ceilingHeight || 2.7, illumParams.workingPlaneHeight || 0.75, design.hm);
     geometryParagraphs.push(
-      createParagraph(`• Room Geometry: ${roomShapeLabel(illumParams.roomShape)} with ${geo.walls.length} walls, perimeter $P = ${geo.perimeter.toFixed(2)}\\text{ m}$, bounding box ${geo.width.toFixed(2)} m × ${geo.length.toFixed(2)} m, room index $RI = \\frac{2A}{h_{rc} P} = ${geo.roomIndex.toFixed(2)}$`),
+      createParagraph(`• Room Geometry: ${roomShapeLabel(illumParams.roomShape)} with ${geo.walls.length} walls, perimeter $P = ${geo.perimeter.toFixed(2)}\\text{ m}$, bounding box ${geo.width.toFixed(2)} m × ${geo.length.toFixed(2)} m, room index $RI = \\frac{2A}{h_m P} =  ${geo.roomIndex.toFixed(2)}$`),
       createParagraph(`• Wall Schedule: ${geo.walls.map(w => `${w.name} ${w.length.toFixed(2)} m (${w.angle.toFixed(0)}° at ${w.endVertex})`).join('; ')}`)
     );
   }
@@ -1829,15 +1825,17 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     ...geometryParagraphs,
     createParagraph(`• Task Required Illuminance: $E_{\\text{target}} = ${targetLux}\\text{ lx}$`),
     createParagraph(`• Luminaire Rated Luminous Flux: $\\Phi_{\\text{luminaire}} = ${lumensPerFix}\\text{ lm}$`),
-    createParagraph(`• Coefficient of Utilization (CU) Geometric Factor: $CU = ${cu.toFixed(2)}$`),
-    createParagraph(`• Sized Fixture Mount Quantity: $N_{\\text{fixtures}} = ${qty}\\text{ units}$ (Average Achieved Illuminance $E_{\\text{achieved}} = \\frac{N_{\\text{fixtures}} \\times \\Phi_{\\text{luminaire}}}{A_{\\text{floor}}} = ${(qty * lumensPerFix / roomArea).toFixed(0)}\\text{ lx}$)`),
+    createParagraph(`• Room Index: $RI = ${design.roomIndex.toFixed(2)}$ (luminaire height above working plane $h_m = ${design.hm.toFixed(2)}\\text{ m}$)`),
+    createParagraph(`• Utilization Factor (CU adjusted for room index and reflectances): $UF = ${cu.toFixed(2)}$, Maintenance Factor $MF = ${mf.toFixed(2)}$`),
+    createParagraph(`• Required Luminous Flux: $\\Phi_{\\text{req}} = \\frac{${targetLux} \\times ${roomArea}}{${cu.toFixed(2)} \\times ${mf.toFixed(2)}} = ${Math.round(design.totalLumensRequired).toLocaleString()}\\text{ lm}$`),
+    createParagraph(`• Required Fixture Quantity: $N_{\\text{fixtures}} = \\lceil \\frac{${Math.round(design.totalLumensRequired)}}{${lumensPerFix}} \\rceil = ${qty}\\text{ units}$ (installed ${design.installedCount}; average maintained illuminance $E = \\frac{N \\times \\Phi \\times UF \\times MF}{A} = ${design.achievedLux.toFixed(0)}\\text{ lx}$)`),
     
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`E. Ergonomics Audit - Uniformity, Glare & Sensory Smart Integrations`),
     createParagraph(`• POINT-BY-POINT UNIFORMITY INDEX: Target uniformity is $U_0 = \\frac{E_{\\text{min}}}{E_{\\text{avg}}} \\ge 0.40$ (to achieve uniform, shadow-free illumination).`),
     createParagraph(`• GLARE ANALYSIS (Unified Glare Rating): Configured arrays conform to standard guidelines yielding $UGR < 19.0$ to minimize visual discomfort.`),
     createParagraph(`• DAYLIGHT HARVESTING SENSORS: Automatic photocell controllers regulate lamp outputs to produce an estimated energy reduction of $\\Delta P_{\\text{dim}} \\approx 35\\%$.`),
-    createParagraph(`• SYSTEM LIGHTING POWER DENSITY (LPD): Sized active room LPD is $LPD = ${(qty * 36 / roomArea).toFixed(2)}\\text{ W/m}^2$, which is compliant with the maximum standards.`),
+    createParagraph(`• SYSTEM LIGHTING POWER DENSITY (LPD): Sized active room LPD is $LPD = ${(designWatts / Math.max(roomArea, 0.01)).toFixed(2)}\\text{ W/m}^2$, which is compliant with the maximum standards.`),
     
     new Paragraph({ spacing: { before: 200 } }),
     createSubHeader(`F. Solar Smart Financing Payback Sizing Forecast`),
@@ -1914,7 +1912,7 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
         docChildren.push(createParagraph(`   • Floor Area ($A_{\\text{floor}}$) = ${room.area.toFixed(2)} m²`));
         if (hasIrregularOutline(room)) {
           const roomOutline = getRoomOutline(room);
-          const geo = roomGeometrySummary(roomOutline, room.ceilingHeight || 2.7, room.workingPlaneHeight || 0.75);
+          const geo = roomGeometrySummary(roomOutline, room.ceilingHeight || 2.7, room.workingPlaneHeight || 0.75, room.mountingHeight);
           docChildren.push(createParagraph(`   • Room Geometry = ${roomShapeLabel(room.roomShape)}, ${geo.walls.length} walls, perimeter ${geo.perimeter.toFixed(2)} m, RI = ${geo.roomIndex.toFixed(2)}`));
           docChildren.push(createParagraph(`   • Walls = ${geo.walls.map(w => `${w.name} ${w.length.toFixed(2)} m`).join(', ')}`));
           const plan = renderRoomLayoutPng({
