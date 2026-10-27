@@ -180,6 +180,14 @@ export interface SolarBOMItem {
   unitCostPhp: number;
   markupPercent: number;
   totalCostPhp: number;
+  /** How the quantity follows from the design */
+  basis?: string;
+  /** "auto": generated from the design; "custom": added by the user */
+  source?: "auto" | "custom";
+  /** Fields of a generated line the user changed (kept when the design changes) */
+  overrides?: Partial<Record<"itemDescription" | "manufacturer" | "model" | "quantity" | "unitCostPhp" | "markupPercent", boolean>>;
+  /** A generated line the user removed */
+  excluded?: boolean;
 }
 
 export interface SolarSLDPosition {

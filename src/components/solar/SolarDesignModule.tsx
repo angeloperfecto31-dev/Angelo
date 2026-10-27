@@ -5,7 +5,7 @@ import {
   computeSolarDesign,
   DEFAULT_SOLAR_CONFIG,
   RESIDENTIAL_PRESETS,
-  generateSolarBOM,
+  resolveSolarBOM,
 } from "../../utils/solarEngine";
 import { computePanelScheduleValues } from "../../utils/computeEngine";
 import { exportSolarToDxf } from "../../utils/exportSolarDxf";
@@ -251,15 +251,11 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
 
   // Export actions with resolved BOM items
   const resolvedConfigForExport = useMemo(() => {
-    const items =
-      currentConfig.bomItems && currentConfig.bomItems.length > 0
-        ? currentConfig.bomItems
-        : calc.bomItems && calc.bomItems.length > 0
-        ? calc.bomItems
-        : generateSolarBOM(currentConfig, calc);
+    // The BOM as shown in the BOM tab (design quantities plus the user edits)
+    const items = resolveSolarBOM(currentConfig, calc);
     return {
       ...currentConfig,
-      bomItems: items,
+      bomItems: [...items, ...(currentConfig.bomItems || []).filter((s) => s.excluded)],
     };
   }, [currentConfig, calc]);
 

@@ -28,7 +28,7 @@ import {
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
 import { PanelConfig, Circuit } from "../types";
-import { generateSolarBOM } from "./solarEngine";
+import { resolveSolarBOM } from "./solarEngine";
 import { computePanelScheduleValues, getConductorLabel } from "./computeEngine";
 import { solarBackfeedAmps } from "./solarLinkedPanel";
 import { toPng } from "html-to-image";
@@ -262,11 +262,7 @@ export async function exportSolarToWord(
 ) {
   // 1. Resolve BOM Items
   const bomList: SolarBOMItem[] =
-    config.bomItems && config.bomItems.length > 0
-      ? config.bomItems
-      : calc.bomItems && calc.bomItems.length > 0
-      ? calc.bomItems
-      : generateSolarBOM(config, calc);
+    resolveSolarBOM(config, calc);
 
   let grandTotalPhp = 0;
   bomList.forEach((item) => {

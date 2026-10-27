@@ -5,7 +5,7 @@ import {
   SolarQuotationItem,
   SolarQuotationScopeItem,
 } from "../types/solar";
-import { generateSolarBOM } from "./solarEngine";
+import { resolveSolarBOM } from "./solarEngine";
 
 /**
  * Standard Scope of Work Checklist for Solar EPC & Contractor Installations
@@ -95,10 +95,7 @@ export function convertBOMToQuotationItems(
   config: SolarDesignConfig,
   calc: SolarCalculationResults
 ): SolarQuotationItem[] {
-  const bomList =
-    config.bomItems && config.bomItems.length > 0
-      ? config.bomItems
-      : generateSolarBOM(config, calc);
+  const bomList = resolveSolarBOM(config, calc);
 
   return bomList.map((item, idx) => {
     const unitCost = typeof item.unitCostPhp === "number" ? item.unitCostPhp : Number(item.unitCostPhp) || 0;

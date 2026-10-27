@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../../types/solar";
-import { generateSolarBOM } from "../../utils/solarEngine";
+import { resolveSolarBOM } from "../../utils/solarEngine";
 import { exportSolarToExcel } from "../../utils/exportSolarExcel";
 import { exportSolarToPdf } from "../../utils/exportSolarPdf";
 import { SolarQuotationModal } from "./SolarQuotationModal";
@@ -48,26 +48,46 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
     markupPercent: 15,
   });
 
-  // If BOM is empty, generate from engine
-  const items = config.bomItems && config.bomItems.length > 0 ? config.bomItems : generateSolarBOM(config, calc);
+  // Lines generated from the current design plus the user's edits and own lines (see resolveSolarBOM)
+  const items = resolveSolarBOM(config, calc);
+  const excluded = (config.bomItems || []).filter((s) => s.excluded);
+
+  // Only what the user changed is saved: edited fields of generated lines, removed lines, and added lines
+  const save = (next: SolarBOMItem[], extraExcluded: SolarBOMItem[] = []) =>
+    onChange({
+      bomItems: [
+        ...next.filter((it) => it.source === "custom" || (it.overrides && Object.keys(it.overrides).length > 0)),
+        ...excluded,
+        ...extraExcluded,
+      ],
+    });
 
   const handleUpdateItem = (index: number, updated: Partial<SolarBOMItem>) => {
     const nextItems = [...items];
-    const current = { ...nextItems[index], ...updated };
-    const unitPriceWithMarkup = current.unitCostPhp * (1 + current.markupPercent / 100);
-    current.totalCostPhp = Math.round(current.quantity * unitPriceWithMarkup);
+    const current: SolarBOMItem = { ...nextItems[index], ...updated };
+    if (current.source !== "custom") {
+      current.overrides = { ...(current.overrides || {}) };
+      Object.keys(updated).forEach((k) => ((current.overrides as any)[k] = true));
+    }
+    current.totalCostPhp = Math.round(current.quantity * current.unitCostPhp * (1 + current.markupPercent / 100));
     nextItems[index] = current;
-    onChange({ bomItems: nextItems });
+    save(nextItems);
   };
 
   const handleDeleteItem = (index: number) => {
+    const target = items[index];
     const nextItems = items.filter((_, idx) => idx !== index);
-    onChange({ bomItems: nextItems });
+    save(nextItems, target.source === "custom" ? [] : [{ ...target, excluded: true }]);
   };
 
+  /** Drops every edit and removed line: the BOM is again exactly what the design produces */
   const handleResetBOM = () => {
-    const generated = generateSolarBOM(config, calc);
-    onChange({ bomItems: generated });
+    onChange({ bomItems: (config.bomItems || []).filter((s) => s.source === "custom") });
+  };
+
+  const handleRevertItem = (index: number) => {
+    const target = items[index];
+    save(items.map((it, i) => (i === index ? { ...it, overrides: undefined } : it)).filter((it) => it.id !== target.id || it.source === "custom"));
   };
 
   const handleAddItem = () => {
@@ -81,14 +101,15 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
       quantity: newItem.quantity || 1,
       unit: newItem.unit || "lot",
       unitCostPhp: newItem.unitCostPhp || 0,
-      markupPercent: newItem.markupPercent || 15,
+      markupPercent: newItem.markupPercent ?? 15,
+      source: "custom",
       totalCostPhp: Math.round(
         (newItem.quantity || 1) *
           (newItem.unitCostPhp || 0) *
           (1 + (newItem.markupPercent || 15) / 100)
       ),
     };
-    onChange({ bomItems: [...items, item] });
+    save([...items, item]);
     setNewItem({
       category: "Wiring & Conduit",
       itemDescription: "",
@@ -180,7 +201,7 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
               <span>Generate Quotation / Proposal</span>
             </button>
             <button
-              onClick={() => exportSolarToExcel({ ...config, bomItems: items }, calc)}
+              onClick={() => exportSolarToExcel(config, calc)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl transition"
               title="Export Solar BOM to Excel (.xlsx)"
             >
@@ -188,7 +209,7 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
               <span>Export Excel</span>
             </button>
             <button
-              onClick={() => exportSolarToPdf({ ...config, bomItems: items }, calc)}
+              onClick={() => exportSolarToPdf(config, calc)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl transition"
               title="Export Solar Engineering PDF Report"
             >
@@ -200,7 +221,7 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl transition"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Recalculate & Sync BOM</span>
+              <span>Reset to Design</span>
             </button>
           </div>
         </div>
@@ -239,6 +260,16 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
                         {it.manufacturer} • {it.model}
                       </div>
                     )}
+                    {it.basis && <div className="text-[10px] text-sky-600 dark:text-sky-400 mt-0.5">Qty: {it.basis}</div>}
+                    {it.source === "custom" ? (
+                      <div className="text-[10px] font-bold text-violet-600 dark:text-violet-400 mt-0.5">Added item</div>
+                    ) : it.overrides && Object.keys(it.overrides).length > 0 ? (
+                      <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                        Edited: {Object.keys(it.overrides).map((k) => ({ quantity: "qty", unitCostPhp: "price", markupPercent: "markup", manufacturer: "brand", model: "model", itemDescription: "description" } as any)[k] || k).join(", ")}
+                        {" · "}
+                        <button onClick={() => handleRevertItem(idx)} className="underline hover:text-amber-800">use design value</button>
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-2 px-3">
                     <input
