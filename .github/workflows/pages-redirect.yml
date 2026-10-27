@@ -1,0 +1,43 @@
+# GitHub Pages: publish a small page that forwards visitors to the live app on Vercel.
+# The app needs its server (payments, export checks, uploads), so it is hosted on Vercel only;
+# publishing the repository files as they are would show a blank page.
+# One-time setting: Settings > Pages > Build and deployment > Source = "GitHub Actions".
+name: Pages redirect to live app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/pages/**"
+      - ".github/workflows/pages-redirect.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare the redirect site
+        run: |
+          mkdir -p _site
+          cp .github/pages/index.html _site/index.html
+          cp .github/pages/index.html _site/404.html
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
