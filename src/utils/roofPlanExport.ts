@@ -56,7 +56,7 @@ export async function roofPlanImage(plan: RoofPlanConfig, bounds: RoofPlanLayout
 export function roofPlanInfo(config: SolarDesignConfig, calc: SolarCalculationResults, N: number, paper: string) {
   const plan = config.roofPlan!;
   const stats = roofPlanStats(plan, calc);
-  const dims = moduleDims(calc);
+  const dims = moduleDims(calc, plan);
   const cap = plan.capture!;
   const rows: Array<[string, string]> = [
     ["PROJECT", (config.projectName || "Solar PV Installation").toUpperCase()],
@@ -125,7 +125,7 @@ export function drawRoofPlanPdf(
 
   const stats = roofPlanStats(plan, calc);
   const strings = assignStrings(plan, calc);
-  const dims = moduleDims(calc);
+  const dims = moduleDims(calc, plan);
 
   // Modules
   plan.modules.forEach((m) => {

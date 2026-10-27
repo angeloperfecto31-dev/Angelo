@@ -627,4 +627,7 @@ export interface RoofPlanConfig {
   calibration?: { faceId: string; edgeIndex: number; measuredM: number };
   faces: RoofPlanFace[];
   modules: RoofPlanModule[];
+  /** Actual module length / width (mm) used on the plan; unset = the selected module's datasheet */
+  moduleLengthMm?: number;
+  moduleWidthMm?: number;
 }
