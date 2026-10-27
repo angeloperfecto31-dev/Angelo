@@ -227,9 +227,13 @@ export interface ModuleDims {
   widthM: number;
 }
 
-export function moduleDims(calc: SolarCalculationResults): ModuleDims {
+/** Module size on the plan: the size entered on the roof plan, else the selected module's datasheet */
+export function moduleDims(calc: SolarCalculationResults, plan?: RoofPlanConfig): ModuleDims {
   const m = calc.selectedModule;
-  return { lengthM: (m?.lengthMm || 2278) / 1000, widthM: (m?.widthMm || 1134) / 1000 };
+  const L = plan?.moduleLengthMm && plan.moduleLengthMm >= 300 ? plan.moduleLengthMm : m?.lengthMm || 2278;
+  const W = plan?.moduleWidthMm && plan.moduleWidthMm >= 300 ? plan.moduleWidthMm : m?.widthMm || 1134;
+  // Length is always the long side
+  return { lengthM: Math.max(L, W) / 1000, widthM: Math.min(L, W) / 1000 };
 }
 
 /** Module rotation (long side) for a face: landscape along the rows, portrait across them */
@@ -479,7 +483,7 @@ export interface RoofPlanStats {
 
 export function roofPlanStats(plan: RoofPlanConfig, calc: SolarCalculationResults): RoofPlanStats {
   const mpp = metersPerPx(plan);
-  const dims = moduleDims(calc);
+  const dims = moduleDims(calc, plan);
   const faces = plan.faces.map((face) => ({
     face,
     areaM2: polygonAreaPx(face.points) * mpp * mpp,
@@ -530,7 +534,7 @@ export function planBounds(plan: RoofPlanConfig, calc: SolarCalculationResults, 
   const cap = plan.capture;
   const pts: Pt[] = plan.faces.flatMap((f) => f.points);
   const mpp = metersPerPx(plan);
-  const dims = moduleDims(calc);
+  const dims = moduleDims(calc, plan);
   plan.modules.forEach((m) => pts.push(...moduleCorners(m, dims, mpp)));
   if (!pts.length || !cap) return { x1: 0, y1: 0, x2: cap?.widthPx || 1000, y2: cap?.heightPx || 700 };
   const mg = marginM / mpp;

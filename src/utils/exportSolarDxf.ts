@@ -1386,7 +1386,7 @@ export function buildSolarDxf(
     };
 
     // Modules with string labels
-    const dims = moduleDims(calc);
+    const dims = moduleDims(calc, plan);
     const strings = assignStrings(plan, calc);
     const shortMm = Math.min(dims.lengthM, dims.widthM) * (1000 / N);
     plan.modules.forEach((m) => {

@@ -368,7 +368,7 @@ const RoofEditor: React.FC<{
   const latest = useRef(plan);
   latest.current = plan;
   const mpp = metersPerPx(plan);
-  const dims = moduleDims(calc);
+  const dims = moduleDims(calc, plan);
   const stats = useMemo(() => roofPlanStats(plan, calc), [plan, calc]);
   const strings = useMemo(() => assignStrings(plan, calc), [plan, calc]);
 
@@ -775,6 +775,47 @@ const RoofEditor: React.FC<{
               ))}
             </div>
           )}
+        </Panel>
+
+        <Panel title="PV module size (actual)">
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Length (mm)">
+              <input
+                className={input}
+                type="number"
+                step="1"
+                min="300"
+                value={plan.moduleLengthMm ?? calc.selectedModule?.lengthMm ?? 2278}
+                onChange={(e) => commit({ ...plan, moduleLengthMm: Math.max(0, Number(e.target.value)) || undefined })}
+              />
+            </Field>
+            <Field label="Width (mm)">
+              <input
+                className={input}
+                type="number"
+                step="1"
+                min="300"
+                value={plan.moduleWidthMm ?? calc.selectedModule?.widthMm ?? 1134}
+                onChange={(e) => commit({ ...plan, moduleWidthMm: Math.max(0, Number(e.target.value)) || undefined })}
+              />
+            </Field>
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            Datasheet: {calc.selectedModule?.manufacturer} {calc.selectedModule?.model} — {calc.selectedModule?.lengthMm} x {calc.selectedModule?.widthMm} mm.
+            {(plan.moduleLengthMm || plan.moduleWidthMm) ? " Using the size entered here." : " Enter the actual size if your module differs."}
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {(plan.moduleLengthMm || plan.moduleWidthMm) ? (
+              <button className={btnGhost} onClick={() => commit({ ...plan, moduleLengthMm: undefined, moduleWidthMm: undefined })}>
+                Use datasheet size
+              </button>
+            ) : null}
+            {plan.modules.length > 0 && plan.faces.length > 0 && (
+              <button className={btnGhost} onClick={autoPlaceAll}>
+                <Wand2 className="w-3.5 h-3.5" /> Re-place modules at this size
+              </button>
+            )}
+          </div>
         </Panel>
 
         <Panel title={`Roof faces (${plan.faces.length})`}>
