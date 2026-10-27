@@ -7,6 +7,7 @@ import {
 } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
 import { SingleLineDiagramContent } from "./SingleLineDiagram";
+import { computeSolarDesign } from "../utils/solarEngine";
 import { toPng } from "html-to-image";
 import {
   Printer,
@@ -74,6 +75,15 @@ export default function SystemSLD({
   const [isExporting, setIsExporting] = useState(false);
   const [showPrintWarning, setShowPrintWarning] = useState(false);
   const [showSolar, setShowSolar] = useState<boolean>(true);
+  // Same sizing as the Solar Design module (with the load schedule for load-based sizing)
+  const solarCalc = useMemo(() => {
+    if (!solarConfig) return null;
+    try {
+      return computeSolarDesign(solarConfig, panel, circuits, subPanels as any[]);
+    } catch {
+      return null;
+    }
+  }, [solarConfig, panel, circuits, subPanels]);
 
   // Panning and Zooming State for Maximize/Full-Screen Feature
   const [isMaximized, setIsMaximized] = useState(false);
@@ -732,6 +742,7 @@ export default function SystemSLD({
                 isSubPanel={false}
                 iscParams={iscParams}
                 solarConfig={showSolar ? solarConfig : undefined}
+                solarCalc={showSolar ? solarCalc : undefined}
                 xOffset={MdpXOffset}
                 yOffset={50}
               />
@@ -1034,6 +1045,7 @@ export default function SystemSLD({
                     isSubPanel={false}
                     iscParams={iscParams}
                     solarConfig={showSolar ? solarConfig : undefined}
+                solarCalc={showSolar ? solarCalc : undefined}
                     xOffset={MdpXOffset}
                     yOffset={50}
                   />

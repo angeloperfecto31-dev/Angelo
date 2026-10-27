@@ -2,6 +2,12 @@
 import React from 'react';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { parseSystemVoltage, getActivePoles, getTotalPoles, getConductorLabel } from '../utils/computeEngine';
+import { computeSolarDesign } from '../utils/solarEngine';
+import type { SolarCalculationResults } from '../types/solar';
+
+/** Standard breaker frame (AF) for a trip rating */
+const frameFor = (at: number) => [100, 225, 400, 600, 800, 1200, 1600, 2000, 2500, 3000, 4000, 5000, 6300].find((f) => f >= at) || at;
+const fmtKw = (v: number) => (Math.round(v * 100) / 100).toString();
 
 interface SingleLineDiagramProps {
   panel: PanelConfig;
@@ -12,9 +18,11 @@ interface SingleLineDiagramProps {
   iscParams?: any;
   parentDesignation?: string;
   solarConfig?: any;
+  /** Solar Design results for solarConfig (computed here from solarConfig when not given) */
+  solarCalc?: SolarCalculationResults | null;
 }
 
-export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, solarConfig, xOffset = 0, yOffset = 0 }) => {
+export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, solarConfig, solarCalc, xOffset = 0, yOffset = 0 }) => {
   // SVG Dimensions Calculation
   const startY = 320;
   const rowHeight = 60;
@@ -30,17 +38,50 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   
   const wireNumber = parsedSys.wireCount; 
 
+  // Solar PV feeder: the Solar Design's own sizing (inverters, array, back-feed device, cables, DC protection)
   const solarDetails = React.useMemo(() => {
     if (!solarConfig) return null;
-    const invKw = Math.round((solarConfig.inverter?.ratedPowerKw * (solarConfig.inverter?.quantity || 1) || 10) * 10) / 10;
-    const pvKwp = Math.round((solarConfig.targetCapacityKwp || (solarConfig.pvModule?.powerWatts * (solarConfig.pvModule?.stringsCount || 1) * (solarConfig.pvModule?.modulesPerString || 1) / 1000) || 12) * 10) / 10;
-    const at = solarConfig.acProtection?.atAmps || 40;
-    const af = solarConfig.acProtection?.afAmps || 100;
-    const poles = solarConfig.acProtection?.poles || (panel.system.includes("3PH") ? 3 : 2);
-    const cable = solarConfig.cabling?.acCable?.conductorSizeMm2 || 14.0;
-    const conduit = solarConfig.cabling?.acCable?.conduitSizeMm || 25;
-    return { invKw, pvKwp, at, af, poles, cable, conduit };
-  }, [solarConfig, panel.system]); 
+    let calc = solarCalc || null;
+    if (!calc) {
+      try {
+        calc = computeSolarDesign(solarConfig, panel);
+      } catch {
+        return null;
+      }
+    }
+    const eff = calc.effective;
+    const inv = calc.selectedInverter;
+    const mod = calc.selectedModule;
+    const qty = calc.inverterQuantity || eff.inverterQuantity || 1;
+    const source = calc.interconnectionBackfeedSource;
+    // Back-feed device at this panel (PEC 6.90.7.2(D)): the inverter breaker for one inverter, else the
+    // solar main disconnect combining all inverters, or the transformer secondary breaker
+    const at = calc.interconnectionBackfeedAmps || eff.acBreakerAtAmps;
+    const single = source === "inverter-breaker";
+    const af = single ? eff.acBreakerAfAmps : frameFor(at);
+    const poles = single ? eff.acBreakerPoles : calc.acSystem?.mainDisconnectPoles || eff.acBreakerPoles;
+    const ocpdNote = source === "solar-main-disconnect"
+      ? `SOLAR MAIN DISCONNECT, PEC 6.90.7.2(D) (${qty} × ${eff.acBreakerAtAmps} AT inverter breakers)`
+      : source === "transformer-secondary"
+        ? "TRANSFORMER SECONDARY BREAKER, PEC 6.90.7.2(D) BACKFEED"
+        : "PEC 6.90.7.2(D) BACKFEED OCPD";
+    const ac = solarConfig.cabling?.acCable || {};
+    const conductors = calc.acSystem?.currentCarryingConductors || (poles >= 3 ? 4 : 2);
+    const acCable = `${qty > 1 ? 'Each inverter: ' : ''}${conductors}-${eff.acCableSizeMm2} mm² ${ac.insulation || 'THHN'} + 1-${eff.acEgcSizeMm2} mm² EGC, ${eff.acConduitSizeMm} mmØ ${ac.conduitType || 'PVC'}`;
+    const dcVolts = (calc.stringVoc || 0) > 1000 ? 1500 : 1000;
+    const dcProtection = `${dcVolts}V DC Isolator ${eff.dcIsolatorRatingAmps} A + ${eff.dcFuseRatingAmps} A gPV Fuses + Type II SPD (Uc ≥ ${eff.dcSpdUcVolts} V)`;
+    return {
+      // Short label inside the inverter symbol; make, model and total beside it
+      inverterLabel: qty > 1 ? `${qty} × ${fmtKw(inv.ratedAcPowerKw)} kW` : `${fmtKw(inv.ratedAcPowerKw)} kW INV`,
+      inverterModel: `${qty > 1 ? `${qty} inverters: ` : ''}${inv.manufacturer} ${inv.model}${qty > 1 ? ` · ${fmtKw(calc.totalInverterAcKw)} kW AC total` : ''}`,
+      pvKwp: fmtKw(calc.totalDcCapacityKwp),
+      arrayDetail: `${calc.totalModules} × ${mod.ratedPowerWp} Wp (${calc.numberOfStrings} strings × ${calc.modulesPerString}) · DC/AC ${calc.dcAcRatio.toFixed(2)}`,
+      at, af, poles, ocpdNote,
+      acIsolator: `${eff.acIsolatorRatingAmps} A`,
+      acCable,
+      dcProtection,
+    };
+  }, [solarConfig, solarCalc, panel]);
 
   // Helpers to describe sub-panel dynamic connection configurations
   const getFeederText = (c: Circuit) => {
@@ -366,7 +407,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
             {solarDetails.at} AT / {solarDetails.af} AF ({solarDetails.poles}P)
           </text>
           <text x="420" y={boxBottom + 48} className="sld-text-small fill-slate-500" style={{ fontSize: '9px' }}>
-            PEC 6.90.7.2(D) BACKFEED OCPD
+            {solarDetails.ocpdNote}
           </text>
 
           {/* Line to AC Disconnect */}
@@ -376,7 +417,10 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <rect x="388" y={boxBottom + 75} width="24" height="16" rx="2" className="sld-line stroke-amber-600" fill="#fffbeb" />
           <text x="400" y={boxBottom + 86} className="sld-text fill-amber-800" style={{ fontSize: '8px', fontWeight: 'bold' }} textAnchor="middle">AC ISO</text>
           <text x="420" y={boxBottom + 86} className="sld-text-small fill-slate-600" style={{ fontSize: '9px' }}>
-            {solarDetails.cable} mm² THHN in {solarDetails.conduit} mmØ PVC
+            {solarDetails.acIsolator} AC Isolator
+          </text>
+          <text x="420" y={boxBottom + 98} className="sld-text-small fill-slate-600" style={{ fontSize: '8px' }}>
+            {solarDetails.acCable}
           </text>
 
           {/* Line to Inverter */}
@@ -388,7 +432,10 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <text x="366" y={boxBottom + 125} className="sld-text fill-amber-900" style={{ fontSize: '9px', fontWeight: 'bold' }}>DC</text>
           <text x="424" y={boxBottom + 140} className="sld-text fill-amber-900" style={{ fontSize: '9px', fontWeight: 'bold' }}>AC</text>
           <text x="400" y={boxBottom + 133} className="sld-text fill-amber-950 font-black" style={{ fontSize: '10px' }} textAnchor="middle">
-            {solarDetails.invKw} kW INV
+            {solarDetails.inverterLabel}
+          </text>
+          <text x="458" y={boxBottom + 133} className="sld-text-small fill-slate-600" style={{ fontSize: '9px' }}>
+            {solarDetails.inverterModel}
           </text>
 
           {/* Line to DC Isolator */}
@@ -398,7 +445,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <rect x="388" y={boxBottom + 168} width="24" height="16" rx="2" className="sld-line stroke-amber-600" fill="#fffbeb" />
           <text x="400" y={boxBottom + 179} className="sld-text fill-amber-800" style={{ fontSize: '8px', fontWeight: 'bold' }} textAnchor="middle">DC ISO</text>
           <text x="420" y={boxBottom + 179} className="sld-text-small fill-slate-600" style={{ fontSize: '9px' }}>
-            1000V DC Isolator + gPV Fuses + Type II SPD
+            {solarDetails.dcProtection}
           </text>
 
           {/* Line to Solar PV Array */}
@@ -413,7 +460,10 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <text x="400" y={boxBottom + 248} className="sld-text fill-amber-900 font-bold" style={{ fontSize: '10px' }} textAnchor="middle">
             SOLAR PV ARRAY: {solarDetails.pvKwp} kWp DC
           </text>
-          <text x="400" y={boxBottom + 260} className="sld-text-small fill-slate-500" style={{ fontSize: '8px' }} textAnchor="middle">
+          <text x="400" y={boxBottom + 260} className="sld-text-small fill-slate-600" style={{ fontSize: '9px' }} textAnchor="middle">
+            {solarDetails.arrayDetail}
+          </text>
+          <text x="400" y={boxBottom + 272} className="sld-text-small fill-slate-500" style={{ fontSize: '8px' }} textAnchor="middle">
             Grid-Tied Solar Interconnection (PEC 2017 Article 6.90)
           </text>
         </g>
