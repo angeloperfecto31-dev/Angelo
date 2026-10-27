@@ -4,9 +4,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
   Upload, Box, Eye, EyeOff, Maximize2, Layers, MousePointer2, Ruler, PlusCircle, Copy, RotateCw, RotateCcw,
   Trash2, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter, Columns3, ShieldCheck, AlertTriangle,
-  Loader2, Camera, Grid3x3, Info, X, CheckCircle2, Scan, Sun,
+  Loader2, Camera, Grid3x3, Info, X, CheckCircle2, Scan, Sun, Type, FileText, Crosshair,
 } from 'lucide-react';
-import { IlluminationParams, ImportedModelInfo, ImportedModelRoom, PlacedFixtureDragPosition } from '../types';
+import { AnnotationSet, IlluminationParams, ImportedModelInfo, ImportedModelRoom, ModelAnnotation, PlacedFixtureDragPosition } from '../types';
+import { DxfAnnotationError, parseDxfAnnotations } from '../utils/dxfAnnotations';
+import { annotationMetres, dxfToScene, isShown, needsLeader, resolveOverlaps, sceneToDxf } from '../utils/modelAnnotations';
 import {
   MODEL_ACCEPT, ModelImportError, ModelUnit, PlanSegment, UNIT_LABEL, UNIT_SCALE, UpAxis,
   detectRoomAt, guessUnitAndAxis, heightsAt, loadModel, modelBounds, placeModel, sectionAt, validateModelFiles, visibleMeshes,
@@ -48,9 +50,13 @@ interface Props {
   summary: DesignSummary;
   /** Image of the current view for the reports */
   onSnapshot: (dataUrl: string | null) => void;
+  /** Add (or update) model rooms in Rooms & Properties, each sized by the lumen method; returns how many */
+  onAddRoomsToProject: (rooms: ImportedModelRoom[]) => number;
+  /** Model room ids already in Rooms & Properties */
+  roomsInProject: string[];
 }
 
-type Mode = 'orbit' | 'room' | 'measure' | 'place' | 'select';
+type Mode = 'orbit' | 'room' | 'measure' | 'place' | 'select' | 'text';
 type View = 'persp' | 'top';
 
 interface Candidate {
@@ -87,6 +93,7 @@ function luxColor(lux: number, target: number): [number, number, number] {
 
 export default function ImportedModelViewer({
   params, setParams, ceilingHeight, workingPlaneHeight, mountingHeight, roomOutline, luxAt, summary, onSnapshot,
+  onAddRoomsToProject, roomsInProject,
 }: Props) {
   const info = params.importedModel;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -101,12 +108,17 @@ export default function ImportedModelViewer({
     controls: OrbitControls;
     modelHolder: THREE.Group;
     overlay: THREE.Group;
+    labels: THREE.Group;
     fixtures: THREE.Group;
     clip: THREE.Plane;
   } | null>(null);
   const rawModel = useRef<THREE.Object3D | null>(null);
   const placedModel = useRef<THREE.Group | null>(null);
   const sectionCache = useRef<{ key: string; segs: PlanSegment[] } | null>(null);
+  const shiftRef = useRef<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 });
+  const dxfRef = useRef<HTMLInputElement>(null);
+  const [annSearch, setAnnSearch] = useState('');
+  const [annSelected, setAnnSelected] = useState<string | null>(null);
 
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +135,10 @@ export default function ImportedModelViewer({
   const [placeTypeId, setPlaceTypeId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
+  /** Rooms ticked in the list (for adding several to Rooms & Properties at once) */
+  const [checkedRooms, setCheckedRooms] = useState<string[]>([]);
+  /** Room most recently picked or clicked, highlighted in the model */
+  const [focusRoomId, setFocusRoomId] = useState<string | null>(null);
   const [measure, setMeasure] = useState<THREE.Vector3[]>([]);
   const [calibrateTo, setCalibrateTo] = useState('');
   const [parts, setParts] = useState<{ path: string; name: string; visible: boolean }[]>([]);
@@ -179,14 +195,15 @@ export default function ImportedModelViewer({
 
     const modelHolder = new THREE.Group();
     const overlay = new THREE.Group();
+    const labels = new THREE.Group();
     const fixtures = new THREE.Group();
-    scene.add(modelHolder, overlay, fixtures);
+    scene.add(modelHolder, overlay, fixtures, labels);
     const grid = new THREE.GridHelper(200, 200, 0x1e293b, 0x172033);
     grid.userData.isHelper = true;
     scene.add(grid);
 
     const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e6);
-    three.current = { scene, renderer, persp, ortho, controls, modelHolder, overlay, fixtures, clip };
+    three.current = { scene, renderer, persp, ortho, controls, modelHolder, overlay, labels, fixtures, clip };
 
     let raf = 0;
     const loop = () => {
@@ -288,6 +305,14 @@ export default function ImportedModelViewer({
     raw.parent?.remove(raw);
     const placed = placeModel(raw, scale, upAxis);
     placedModel.current = placed;
+    const sp = placed.children[0].position;
+    shiftRef.current = { x: Number(sp.x.toFixed(4)), y: Number(sp.y.toFixed(4)), z: Number(sp.z.toFixed(4)) };
+    const shift = shiftRef.current;
+    setParams(prev => {
+      const old = prev.importedModel?.placementShift;
+      if (!prev.importedModel || (old && old.x === shift.x && old.y === shift.y && old.z === shift.z)) return prev;
+      return { ...prev, importedModel: { ...prev.importedModel, placementShift: shift } };
+    });
     t.modelHolder.add(placed);
     // Visibility of parts
     const list: { path: string; name: string; visible: boolean }[] = [];
@@ -304,7 +329,7 @@ export default function ImportedModelViewer({
     sectionCache.current = null;
     fitPersp();
     fitOrtho();
-  }, [fitOrtho, fitPersp]);
+  }, [fitOrtho, fitPersp, setParams]);
 
   // Section clipping on the model's materials
   useEffect(() => {
@@ -365,6 +390,7 @@ export default function ImportedModelViewer({
         verified: false,
         importedAt: new Date().toISOString(),
         storageNote: 'Saving the model...',
+        placementShift: { ...shiftRef.current },
       };
       setParams(prev => ({ ...prev, importedModel: next }));
       setLoaded(true);
@@ -513,10 +539,37 @@ export default function ImportedModelViewer({
       ls.userData.isHelper = true;
       t.overlay.add(ls);
     }
-    // Detected rooms
+    // Picked rooms: outline and name label (design room green, last picked amber, others grey)
+    const labelSize = Math.max(0.8, Math.min(4, (modelSize ? Math.max(modelSize.x, modelSize.z) : 10) / 11));
     info.rooms.forEach(r => {
       const pts = toRoomPoints(r.polygon) || [];
-      lineAt(pts, r.floorElevation + 0.02, r.id === info.activeRoomId ? 0x22c55e : 0x94a3b8);
+      const color = r.id === info.activeRoomId ? 0x22c55e : r.id === focusRoomId ? 0xf59e0b : 0x94a3b8;
+      lineAt(pts, r.floorElevation + 0.02, color);
+      if (!pts.length) return;
+      // Label at a point inside the room (centroid, or the first vertex nudged inward)
+      let cx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
+      let cz = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+      if (!pointInPolygon(cx, cz, pts)) [cx, cz] = clampPointToPolygon(cx, cz, pts, 0.5);
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = 'rgba(15,23,42,0.82)';
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+      ctx.font = 'bold 26px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.name.slice(0, 18), 128, 22);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '20px Arial';
+      ctx.fillText(`${r.area.toFixed(1)} m²`, 128, 48);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }));
+      sprite.scale.set(labelSize * 2, labelSize * 0.5, 1);
+      sprite.position.set(cx, Math.max(r.floorElevation + 0.1, sectionView || mode === 'room' ? (info.sectionElevation + 0.05) : r.floorElevation + 0.1), cz);
+      sprite.renderOrder = 13;
+      sprite.userData.isHelper = true;
+      t.overlay.add(sprite);
     });
     // Current design outline (it may have been edited after import)
     if (activeRoom) lineAt(roomOutline.map(([x, z]) => [x + offset.x, z + offset.z] as RoomPoint), floorElev + 0.03, 0x38bdf8);
@@ -564,7 +617,7 @@ export default function ImportedModelViewer({
       mesh.userData.isHelper = true;
       t.overlay.add(mesh);
     }
-  }, [loaded, info, mode, sectionView, candidate, measure, activeRoom, roomOutline, offset.x, offset.z, floorElev, showLux, luxAt, params.targetLux, getSection]);
+  }, [loaded, info, mode, sectionView, candidate, measure, activeRoom, roomOutline, offset.x, offset.z, floorElev, showLux, luxAt, params.targetLux, getSection, focusRoomId, modelSize]);
 
   // ------------------------------------------------------------------ fixtures in the model
   const positions = params.customPositions || [];
@@ -619,6 +672,178 @@ export default function ImportedModelViewer({
       }
     }
   }, [loaded, positions, activeRoom, offset.x, offset.z, floorElev, roomCeiling, selected, fixtureMountY]);
+
+  // ------------------------------------------------------------------ annotations (DXF text, labels, dimensions)
+  const annSet = info?.annotations;
+  const updateAnn = useCallback((patch: Partial<AnnotationSet>) => {
+    setParams(prev => (prev.importedModel?.annotations
+      ? { ...prev, importedModel: { ...prev.importedModel, annotations: { ...prev.importedModel.annotations, ...patch } } }
+      : prev));
+  }, [setParams]);
+  const updateItem = (id: string, patch: Partial<ModelAnnotation>) => {
+    if (!annSet) return;
+    updateAnn({ items: annSet.items.map(a => (a.id === id ? { ...a, ...patch } : a)) });
+  };
+
+  const importDxf = async (file: File) => {
+    setError(null);
+    if (!info) return;
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (ext === 'dwg') {
+      setError('DWG is a closed binary format. In SketchUp Pro (or AutoCAD) save or export the same drawing as AutoCAD DXF and import that file.');
+      return;
+    }
+    if (ext !== 'dxf') {
+      setError('Choose the DXF exported from the same SketchUp model (File > Export > 3D Model > AutoCAD DXF).');
+      return;
+    }
+    if (file.size > 60 * 1024 * 1024) {
+      setError('The DXF is larger than 60 MB. Export only the visible layers, or the plan view, from SketchUp.');
+      return;
+    }
+    setBusy(true);
+    setStatus(`Reading text from ${file.name}...`);
+    try {
+      const res = parseDxfAnnotations(await file.text());
+      if (!res.annotations.length) {
+        setError('No text, labels or dimensions were found in this DXF. In SketchUp, make sure the Text and Dimensions are visible (not on hidden tags) when exporting.');
+      } else {
+        // Units: the DXF's own setting, else the model's unit (SketchUp exports both in the same units)
+        const unitMetres = res.unitMetres ?? UNIT_SCALE[info.unit];
+        const items = res.annotations.slice(0, 3000);
+        const next: AnnotationSet = {
+          fileName: file.name,
+          unitMetres,
+          rotation: 0,
+          offset: { x: 0, y: 0, z: 0 },
+          items,
+          hiddenLayers: [],
+          resolveOverlaps: true,
+          displayScale: 1,
+        };
+        updateInfo({ annotations: next });
+        if (res.annotations.length > 3000) setWarnings(w => [...w, `The DXF has ${res.annotations.length} text entities; the first 3,000 were imported.`]);
+        if (res.unitMetres === null) setWarnings(w => [...w, `The DXF does not state its units; ${UNIT_LABEL[info.unit].toLowerCase()} (the model's units) were assumed. Change them under Text & Dimensions if the text is out of place.`]);
+        setStatus(`${items.length} text item${items.length === 1 ? '' : 's'} imported${res.skipped ? ` (${res.skipped} empty skipped)` : ''}.`);
+        setTimeout(() => setStatus(null), 3000);
+      }
+    } catch (err: any) {
+      setError(err instanceof DxfAnnotationError ? err.message : `Could not read the DXF: ${err?.message || err}`);
+      setStatus(null);
+    }
+    setBusy(false);
+  };
+
+  /** Move the annotations so their centre matches the model's (for DXFs exported with another origin) */
+  const centreAnnotations = () => {
+    if (!annSet || !info || !placedModel.current) return;
+    const pts = annSet.items.filter(a => isShown(a, annSet)).map(a => dxfToScene(a, { ...annSet, offset: { x: 0, y: 0, z: 0 } }, info));
+    if (!pts.length) return;
+    const box = modelBounds(placedModel.current);
+    const cx = (Math.min(...pts.map(p => p.x)) + Math.max(...pts.map(p => p.x))) / 2;
+    const cz = (Math.min(...pts.map(p => p.z)) + Math.max(...pts.map(p => p.z))) / 2;
+    updateAnn({ offset: { x: Number(((box.min.x + box.max.x) / 2 - cx).toFixed(3)), y: annSet.offset.y, z: Number(((box.min.z + box.max.z) / 2 - cz).toFixed(3)) } });
+  };
+
+  // Draw the annotations: flat and rotated as in the plan (Top view), facing the viewer in 3D
+  useEffect(() => {
+    const t = three.current;
+    if (!t) return;
+    t.labels.children.forEach((c: any) => { c.material?.map?.dispose?.(); c.material?.dispose?.(); c.geometry?.dispose?.(); });
+    t.labels.clear();
+    if (!loaded || !info || !annSet) return;
+    const ds = annSet.displayScale || 1;
+    const shown = annSet.items.filter(a => isShown(a, annSet));
+    const flat = view === 'top';
+    // Overlaps are resolved in plan, per storey band
+    const placedItems = shown.map(a => {
+      const p = dxfToScene(a, annSet, info);
+      const m = annotationMetres(a, annSet, info);
+      const h = Math.max(m.height * ds, 0.02);
+      const lines = a.text.split('\n');
+      return { a, p, rot: m.rotation, h, lines };
+    });
+    const moves = annSet.resolveOverlaps
+      ? resolveOverlaps(placedItems.map(it => ({
+          id: it.a.id, x: it.p.x, z: it.p.z + Math.round(it.p.y / 2.5) * 10000, // separate storeys
+          width: Math.max(...it.lines.map(l => l.length), 1) * it.h * 0.62, height: it.h * 1.3 * it.lines.length,
+          rotation: it.rot, hAlign: it.a.hAlign, vAlign: it.a.vAlign,
+        })))
+      : new Map();
+    const sectionTop = sectionView ? info.sectionElevation + 0.02 : Infinity;
+    placedItems.forEach(({ a, p, rot, h, lines }) => {
+      // Text above the section cut is shown at the cut level in Top view so it stays readable
+      const y = flat ? Math.min(p.y, sectionTop) + 0.03 : p.y;
+      const mv = moves.get(a.id) || { dx: 0, dz: 0 };
+      const font = 48;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      ctx.font = `${font}px Arial`;
+      const w = Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width), 8)) + 12;
+      canvas.width = w;
+      canvas.height = Math.ceil(lines.length * font * 1.25) + 8;
+      const c2 = canvas.getContext('2d')!;
+      const selectedNow = a.id === annSelected;
+      c2.fillStyle = selectedNow ? 'rgba(250,204,21,0.35)' : 'rgba(255,255,255,0.0)';
+      c2.fillRect(0, 0, canvas.width, canvas.height);
+      c2.font = `${font}px Arial`;
+      c2.textBaseline = 'top';
+      c2.textAlign = a.hAlign === 'center' ? 'center' : a.hAlign === 'right' ? 'right' : 'left';
+      c2.lineWidth = 6;
+      c2.strokeStyle = 'rgba(15,23,42,0.85)';
+      c2.fillStyle = a.kind === 'dimension' ? '#7dd3fc' : a.kind === 'user' ? '#fde68a' : '#f8fafc';
+      const tx = a.hAlign === 'center' ? canvas.width / 2 : a.hAlign === 'right' ? canvas.width - 6 : 6;
+      lines.forEach((l, i) => { c2.strokeText(l, tx, 4 + i * font * 1.25); c2.fillText(l, tx, 4 + i * font * 1.25); });
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.anisotropy = 4;
+      // Text height h (cap height) -> one line of the canvas is about 1.25 x font size
+      const planeH = h * 1.25 * lines.length * 1.35;
+      const planeW = planeH * (canvas.width / canvas.height);
+      const ax = a.hAlign === 'left' ? 0.5 : a.hAlign === 'right' ? -0.5 : 0;
+      const ay = a.vAlign === 'bottom' ? 0.5 : a.vAlign === 'top' ? -0.5 : 0;
+      if (flat) {
+        const geo = new THREE.PlaneGeometry(planeW, planeH);
+        geo.translate(ax * planeW, ay * planeH, 0);
+        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, side: THREE.DoubleSide }));
+        mesh.rotation.order = 'YXZ';
+        mesh.rotation.y = (rot * Math.PI) / 180;
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(p.x + mv.dx, y, p.z + mv.dz);
+        mesh.renderOrder = 20;
+        mesh.userData.annId = a.id;
+        t.labels.add(mesh);
+      } else {
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+        sprite.center.set(0.5 - ax, 0.5 - ay);
+        sprite.scale.set(planeW, planeH, 1);
+        sprite.position.set(p.x + mv.dx, y, p.z + mv.dz);
+        sprite.renderOrder = 20;
+        sprite.userData.annId = a.id;
+        t.labels.add(sprite);
+      }
+      // Leader back to the original point when the text was moved off an overlap
+      if (needsLeader(mv, h * 1.25)) {
+        const l = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p.x, y, p.z), new THREE.Vector3(p.x + mv.dx, y, p.z + mv.dz)]),
+          new THREE.LineBasicMaterial({ color: 0x94a3b8, depthTest: false })
+        );
+        l.renderOrder = 19;
+        t.labels.add(l);
+      }
+      // Dimension line between its measuring points
+      if (a.dim) {
+        const p1 = dxfToScene({ x: a.dim.x1, y: a.dim.y1, z: a.dim.z1 }, annSet, info);
+        const p2 = dxfToScene({ x: a.dim.x2, y: a.dim.y2, z: a.dim.z2 }, annSet, info);
+        const dy = flat ? y : p1.y;
+        const l = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p1.x, dy, p1.z), new THREE.Vector3(p2.x, flat ? y : p2.y, p2.z)]),
+          new THREE.LineBasicMaterial({ color: 0x7dd3fc, depthTest: false })
+        );
+        l.renderOrder = 19;
+        t.labels.add(l);
+      }
+    });
+  }, [loaded, info, annSet, view, sectionView, annSelected]);
 
   // ------------------------------------------------------------------ picking
   const ndc = (e: React.PointerEvent | PointerEvent) => {
@@ -721,10 +946,42 @@ export default function ImportedModelViewer({
     if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5 || !loaded || !info) return;
 
     if (mode === 'select') {
-      if (!pickFixture(e)) setSelected([]);
+      if (!pickFixture(e)) {
+        setSelected([]);
+        // A click on a text selects it in the Text & Dimensions list
+        const t3 = three.current;
+        if (t3 && annSet) {
+          raycaster.setFromCamera(ndc(e), t3.controls.object as THREE.Camera);
+          const hit = raycaster.intersectObjects(t3.labels.children, false).find(h => h.object.userData.annId);
+          setAnnSelected(hit ? hit.object.userData.annId : null);
+        }
+      }
+    } else if (mode === 'text') {
+      const p = pickModel(e) || pickPlane(e, sectionView ? info.sectionElevation : floorElev);
+      if (!p) return;
+      const value = window.prompt('Text to add at this point:', '');
+      if (!value || !value.trim()) return;
+      const base: AnnotationSet = annSet || { fileName: '(added in ElectricalPH)', unitMetres: 1, rotation: 0, offset: { x: 0, y: 0, z: 0 }, items: [], hiddenLayers: [], resolveOverlaps: true, displayScale: 1 };
+      const d = sceneToDxf({ x: p.x, y: p.y, z: p.z }, base, info);
+      const item: ModelAnnotation = {
+        id: `u${uid()}`, kind: 'user', text: value.trim(), x: d.x, y: d.y, z: d.z,
+        height: 0.15 / (base.unitMetres * (info.scale / (UNIT_SCALE[info.unit] || 1))), rotation: 0, layer: 'ElectricalPH',
+        hAlign: 'center', vAlign: 'middle', visible: true, edited: true,
+      };
+      updateInfo({ annotations: { ...base, items: [...base.items, item] } });
+      setAnnSelected(item.id);
     } else if (mode === 'room') {
       const p = pickModel(e) || pickPlane(e, info.sectionElevation);
       if (!p) return;
+      // A room already picked: select it instead of detecting it again
+      const existing = info.rooms.find(r => pointInPolygon(p.x, p.z, toRoomPoints(r.polygon) || []));
+      if (existing) {
+        setFocusRoomId(existing.id);
+        setCheckedRooms(c => (c.includes(existing.id) ? c : [...c, existing.id]));
+        setStatus(`${existing.name} is already picked.`);
+        setTimeout(() => setStatus(null), 1800);
+        return;
+      }
       setBusy(true);
       setStatus('Detecting the room...');
       await new Promise(r => setTimeout(r, 20));
@@ -733,13 +990,13 @@ export default function ImportedModelViewer({
         const inside = room.polygon.reduce((a, q) => [a[0] + q[0] / room.polygon.length, a[1] + q[1] / room.polygon.length], [0, 0]) as RoomPoint;
         const probe = pointInPolygon(inside[0], inside[1], room.polygon) ? inside : ([p.x, p.z] as RoomPoint);
         const h = heightsAt(placedModel.current!, probe, info.sectionElevation);
-        setCandidate({ polygon: room.polygon, area: room.area, floorElevation: h.floorY, ceilingHeight: h.ceilingHeight });
+        addPickedRoom({ polygon: room.polygon, area: room.area, floorElevation: h.floorY, ceilingHeight: h.ceilingHeight });
         setError(null);
+        setStatus(null);
       } catch (err: any) {
-        setCandidate(null);
         setError(err?.message || String(err));
+        setStatus(null);
       }
-      setStatus(null);
       setBusy(false);
     } else if (mode === 'measure') {
       const p = pickModel(e);
@@ -831,23 +1088,31 @@ export default function ImportedModelViewer({
   });
 
   // ------------------------------------------------------------------ rooms
-  const acceptCandidate = () => {
-    if (!candidate || !info) return;
+  /** Next free "Room n" name */
+  const nextRoomName = (rooms: ImportedModelRoom[]) => {
+    const used = rooms.map(r => Number((/^Room (\d+)$/.exec(r.name) || [])[1] || 0));
+    return `Room ${Math.max(0, ...used) + 1}`;
+  };
+
+  /** Add a detected room to the list (picking continues); the first room becomes the design room */
+  const addPickedRoom = (c: Candidate) => {
+    if (!info) return;
     const room: ImportedModelRoom = {
       id: uid(),
-      name: `Room ${info.rooms.length + 1}`,
-      polygon: toRoomVertices(candidate.polygon)!,
-      floorElevation: Number(candidate.floorElevation.toFixed(3)),
-      ceilingHeight: candidate.ceilingHeight !== null ? Number(candidate.ceilingHeight.toFixed(2)) : null,
-      area: Number(candidate.area.toFixed(2)),
+      name: nextRoomName(info.rooms),
+      polygon: toRoomVertices(c.polygon)!,
+      floorElevation: Number(c.floorElevation.toFixed(3)),
+      ceilingHeight: c.ceilingHeight !== null ? Number(c.ceilingHeight.toFixed(2)) : null,
+      area: Number(c.area.toFixed(2)),
     };
     updateInfo({ rooms: [...info.rooms, room] });
-    setCandidate(null);
-    applyRoom(room);
+    setFocusRoomId(room.id);
+    setCheckedRooms(cr => [...cr, room.id]);
+    if (!info.activeRoomId) applyRoom(room, true);
   };
 
   /** Make a detected room the design room (outline, size and ceiling go to the Illumination design) */
-  const applyRoom = (room: ImportedModelRoom) => {
+  const applyRoom = (room: ImportedModelRoom, keepPicking = false) => {
     const world = toRoomPoints(room.polygon) || [];
     const norm = normalizePolygon(world);
     const b = polygonBounds(world);
@@ -865,14 +1130,25 @@ export default function ImportedModelViewer({
         : prev.importedModel,
     }));
     setSelected([]);
-    setMode('select');
+    setFocusRoomId(room.id);
+    if (!keepPicking) setMode('select');
     // Cut the model at the section level so the ceiling does not hide the fixtures
     setSectionView(true);
   };
 
-  const removeRoom = (id: string) => {
+  const removeRooms = (ids: string[]) => {
+    if (!info || !ids.length) return;
+    updateInfo({ rooms: info.rooms.filter(r => !ids.includes(r.id)), ...(info.activeRoomId && ids.includes(info.activeRoomId) ? { activeRoomId: undefined } : {}) });
+    setCheckedRooms(c => c.filter(id => !ids.includes(id)));
+  };
+  const removeRoom = (id: string) => removeRooms([id]);
+  const addCheckedToProject = () => {
     if (!info) return;
-    updateInfo({ rooms: info.rooms.filter(r => r.id !== id), ...(info.activeRoomId === id ? { activeRoomId: undefined } : {}) });
+    const rooms = info.rooms.filter(r => checkedRooms.includes(r.id));
+    if (!rooms.length) return;
+    const n = onAddRoomsToProject(rooms);
+    setStatus(`${n} room${n === 1 ? '' : 's'} added to Rooms & Properties (sized by the lumen method).`);
+    setTimeout(() => setStatus(null), 3000);
   };
   const renameRoom = (id: string, name: string) => {
     if (!info) return;
@@ -983,6 +1259,7 @@ export default function ImportedModelViewer({
                 <button type="button" onClick={() => { setMode('measure'); setMeasure([]); }} className={mode === 'measure' ? btnOn : btnIdle}><Ruler className="w-3.5 h-3.5" /> Measure</button>
                 <button type="button" disabled={!activeRoom} onClick={() => setMode('select')} className={mode === 'select' ? btnOn : btnIdle}><MousePointer2 className="w-3.5 h-3.5" /> Select / Move</button>
                 <button type="button" disabled={!activeRoom} onClick={() => setMode('place')} className={mode === 'place' ? btnOn : btnIdle}><PlusCircle className="w-3.5 h-3.5" /> Add Fixture</button>
+                <button type="button" onClick={() => setMode('text')} className={mode === 'text' ? btnOn : btnIdle} title="Click in the model to place a new text"><Type className="w-3.5 h-3.5" /> Add Text</button>
               </div>
               <div className="flex gap-1 ml-auto">
                 <button type="button" disabled={!activeRoom} onClick={() => setShowLux(!showLux)} className={showLux ? btnOn : btnIdle} title="Estimated illuminance on the floor"><Sun className="w-3.5 h-3.5" /> Lux</button>
@@ -1015,10 +1292,11 @@ export default function ImportedModelViewer({
               <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-2 pointer-events-none">
                 <span className="rounded bg-slate-900/85 px-2 py-1 text-[10px] text-slate-300">
                   {mode === 'orbit' && 'Drag to orbit, right-drag to pan, scroll to zoom.'}
-                  {mode === 'room' && 'Click inside a room (Top view is easiest). Red lines show the plan section used for detection.'}
+                  {mode === 'room' && 'Click inside each room to pick it; keep clicking to add more rooms (Top view is easiest). Red lines show the plan section used for detection.'}
                   {mode === 'measure' && (measure.length < 2 ? `Click ${measure.length === 0 ? 'the first' : 'the second'} point on the model.` : `Distance: ${fmt(measured || 0, 3)} m`)}
                   {mode === 'select' && 'Click a fixture to select (Shift for several), drag to move. Delete removes.'}
                   {mode === 'place' && 'Click on the floor of the design room to add a fixture.'}
+                  {mode === 'text' && 'Click where the new text should go.'}
                 </span>
                 <span className="rounded bg-slate-900/85 px-2 py-1 text-[10px] text-slate-400">
                   <span className="text-emerald-400">green</span> design room, <span className="text-sky-400">blue</span> current outline, <span className="text-amber-400">amber</span> detected, grey other rooms
@@ -1053,18 +1331,87 @@ export default function ImportedModelViewer({
             </div>
           )}
 
-          {/* Detected room awaiting confirmation */}
-          {candidate && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
-              <span><b>Detected room:</b> {fmt(candidate.area)} m², {candidate.polygon.length} walls, {fmt(polygonBounds(candidate.polygon).width)} × {fmt(polygonBounds(candidate.polygon).length)} m, ceiling {candidate.ceilingHeight !== null ? `${fmt(candidate.ceilingHeight)} m` : 'not found (keeps the current value)'}</span>
-              <button type="button" onClick={acceptCandidate} className={`${btn} bg-emerald-600 border-emerald-600 text-white ml-auto`}><CheckCircle2 className="w-3.5 h-3.5" /> Use for Design</button>
-              <button type="button" onClick={() => setCandidate(null)} className={btnIdle}>Discard</button>
-            </div>
-          )}
         </div>
 
         {/* Side panel */}
         <div className="space-y-3 text-[11px]">
+          {info && loaded && (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="font-black uppercase tracking-widest text-[10px] text-slate-400">Text & Dimensions</div>
+                <input ref={dxfRef} type="file" accept=".dxf,.dwg" className="hidden" onChange={e => { const fl = e.target.files?.[0]; e.target.value = ''; if (fl) importDxf(fl); }} />
+                <button type="button" disabled={busy} onClick={() => dxfRef.current?.click()} className={btnIdle} title="DXF exported from the same SketchUp model"><FileText className="w-3.5 h-3.5" /> {annSet ? 'Replace DXF' : 'Import DXF'}</button>
+              </div>
+              {!annSet && (
+                <div className="text-slate-500 leading-snug">
+                  SketchUp's 3D exports leave out text, labels and dimensions. To bring them in, export the same model from SketchUp Pro as <b>AutoCAD DXF</b> (File &gt; Export &gt; 3D Model) and import it here; the text is placed over the model in its original positions.
+                </div>
+              )}
+              {annSet && (() => {
+                const layers = [...new Set(annSet.items.map(a => a.layer))].sort();
+                const shownCount = annSet.items.filter(a => isShown(a, annSet)).length;
+                const q = annSearch.trim().toLowerCase();
+                const listed = annSet.items.filter(a => !q || a.text.toLowerCase().includes(q) || a.layer.toLowerCase().includes(q)).slice(0, 300);
+                return (
+                  <>
+                    <div className="text-slate-500 break-all">{annSet.fileName} · {annSet.items.length} items, {shownCount} shown</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <label className="space-y-0.5">
+                        <span className="text-[9px] font-black uppercase text-slate-400">DXF units</span>
+                        <select value={String(annSet.unitMetres)} onChange={e => updateAnn({ unitMetres: Number(e.target.value) })} className="w-full px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                          {(Object.keys(UNIT_SCALE) as ModelUnit[]).map(u => <option key={u} value={String(UNIT_SCALE[u])}>{UNIT_LABEL[u]}</option>)}
+                          {!Object.values(UNIT_SCALE).includes(annSet.unitMetres) && <option value={String(annSet.unitMetres)}>{annSet.unitMetres} m/unit</option>}
+                        </select>
+                      </label>
+                      <label className="space-y-0.5">
+                        <span className="text-[9px] font-black uppercase text-slate-400">Rotate (°)</span>
+                        <input type="number" step={90} value={annSet.rotation} onChange={e => updateAnn({ rotation: Number(e.target.value) || 0 })} className="w-full px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                      </label>
+                      {(['x', 'z', 'y'] as const).map(axis => (
+                        <label key={axis} className="space-y-0.5">
+                          <span className="text-[9px] font-black uppercase text-slate-400">Shift {axis === 'x' ? 'east' : axis === 'z' ? 'south' : 'up'} (m)</span>
+                          <input type="number" step={0.05} value={annSet.offset[axis]} onChange={e => updateAnn({ offset: { ...annSet.offset, [axis]: Number(e.target.value) || 0 } })} className="w-full px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                        </label>
+                      ))}
+                      <button type="button" onClick={centreAnnotations} className={btnIdle} title="Only for a DXF exported with a different origin (e.g. a 2D export)"><Crosshair className="w-3.5 h-3.5" /> Centre on model</button>
+                    </div>
+                    <label className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                      <input type="checkbox" checked={annSet.resolveOverlaps} onChange={e => updateAnn({ resolveOverlaps: e.target.checked })} /> Move overlapping text apart (leader to its original point)
+                    </label>
+                    <label className="block space-y-0.5">
+                      <span className="text-slate-500">On-screen text size × {(annSet.displayScale || 1).toFixed(1)} (exports use the true size)</span>
+                      <input type="range" min={0.5} max={5} step={0.1} value={annSet.displayScale || 1} onChange={e => updateAnn({ displayScale: Number(e.target.value) })} className="w-full" />
+                    </label>
+                    {layers.length > 1 && (
+                      <div className="flex flex-wrap gap-1">
+                        {layers.map(l => {
+                          const hidden = (annSet.hiddenLayers || []).includes(l);
+                          return (
+                            <button key={l} type="button" onClick={() => updateAnn({ hiddenLayers: hidden ? (annSet.hiddenLayers || []).filter(x => x !== l) : [...(annSet.hiddenLayers || []), l] })} className={`px-1.5 py-0.5 rounded border text-[10px] ${hidden ? 'border-slate-200 text-slate-400 line-through' : 'border-indigo-300 text-indigo-700 dark:text-indigo-300'}`}>
+                              {l}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <input value={annSearch} onChange={e => setAnnSearch(e.target.value)} placeholder="Search text or layer" className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" />
+                    <div className="max-h-56 overflow-y-auto space-y-0.5">
+                      {listed.map(a => (
+                        <div key={a.id} onClick={() => setAnnSelected(a.id)} className={`flex items-center gap-1 rounded px-1 py-0.5 ${a.id === annSelected ? 'bg-amber-50 dark:bg-amber-500/10 ring-1 ring-amber-300' : ''}`}>
+                          <input type="checkbox" checked={a.visible} onChange={e => updateItem(a.id, { visible: e.target.checked })} title="Show" />
+                          <span className={`text-[9px] font-black uppercase w-8 shrink-0 ${a.kind === 'dimension' ? 'text-sky-600' : a.kind === 'user' ? 'text-amber-600' : 'text-slate-400'}`}>{a.kind === 'dimension' ? 'DIM' : a.kind === 'user' ? 'NEW' : a.kind === 'attrib' ? 'ATT' : 'TXT'}</span>
+                          <input value={a.text.replace(/\n/g, ' ⏎ ')} onChange={e => updateItem(a.id, { text: e.target.value.replace(/ ⏎ /g, '\n'), edited: true })} className="flex-1 min-w-0 bg-transparent text-slate-700 dark:text-slate-200" />
+                          <button type="button" title="Delete" onClick={() => updateAnn({ items: annSet.items.filter(x => x.id !== a.id) })} className="text-slate-400 hover:text-rose-500"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      ))}
+                      {annSet.items.length > listed.length && <div className="text-slate-400">Showing {listed.length} of {annSet.items.length}; search to narrow the list.</div>}
+                    </div>
+                    <button type="button" onClick={() => { if (window.confirm('Remove all imported text from this model?')) updateInfo({ annotations: undefined }); }} className={btnIdle}><Trash2 className="w-3.5 h-3.5" /> Remove text</button>
+                  </>
+                );
+              })()}
+            </div>
+          )}
           {info && (
             <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2">
               <div className="font-black uppercase tracking-widest text-[10px] text-slate-400">Model</div>
@@ -1110,17 +1457,45 @@ export default function ImportedModelViewer({
                 <span className="text-slate-500">Close openings up to {fmt(info.gapClose)} m (doorways)</span>
                 <input type="range" min={0} max={2} step={0.05} value={info.gapClose} onChange={e => updateInfo({ gapClose: Number(e.target.value) })} className="w-full" />
               </label>
-              <div className="space-y-1 max-h-48 overflow-y-auto">
-                {info.rooms.length === 0 && <div className="text-slate-500">No rooms yet. Choose Pick Room and click inside a room.</div>}
+              {info.rooms.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1 font-bold text-slate-600 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={checkedRooms.length > 0 && checkedRooms.length === info.rooms.length}
+                      onChange={e => setCheckedRooms(e.target.checked ? info.rooms.map(r => r.id) : [])}
+                    />
+                    {info.rooms.length} room{info.rooms.length === 1 ? '' : 's'} picked · {fmt(info.rooms.reduce((s, r) => s + r.area, 0), 1)} m²
+                  </label>
+                </div>
+              )}
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {info.rooms.length === 0 && <div className="text-slate-500">No rooms yet. Choose Pick Room and click inside each room you want.</div>}
                 {info.rooms.map(r => (
-                  <div key={r.id} className={`flex items-center gap-1 rounded border px-1.5 py-1 ${r.id === info.activeRoomId ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : 'border-slate-200 dark:border-slate-700'}`}>
+                  <div
+                    key={r.id}
+                    onMouseEnter={() => setFocusRoomId(r.id)}
+                    className={`flex items-center gap-1 rounded border px-1.5 py-1 ${r.id === info.activeRoomId ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : r.id === focusRoomId ? 'border-amber-300 bg-amber-50/60 dark:bg-amber-500/10' : 'border-slate-200 dark:border-slate-700'}`}
+                  >
+                    <input type="checkbox" checked={checkedRooms.includes(r.id)} onChange={e => setCheckedRooms(c => (e.target.checked ? [...c, r.id] : c.filter(id => id !== r.id)))} />
                     <input value={r.name} onChange={e => renameRoom(r.id, e.target.value)} className="flex-1 min-w-0 bg-transparent font-bold text-slate-700 dark:text-slate-200" />
-                    <span className="text-slate-500 font-mono">{fmt(r.area, 1)} m²</span>
-                    <button type="button" title="Use as the design room" onClick={() => applyRoom(r)} className="text-emerald-600 font-bold px-1">Use</button>
+                    <span className="text-slate-500 font-mono whitespace-nowrap">{fmt(r.area, 1)} m²{r.ceilingHeight ? ` · ${fmt(r.ceilingHeight, 2)} m` : ''}</span>
+                    {roomsInProject.includes(r.id) && <span title="In Rooms & Properties" className="text-indigo-500"><CheckCircle2 className="w-3 h-3" /></span>}
+                    {r.id === info.activeRoomId
+                      ? <span className="text-emerald-600 font-bold px-1">Design</span>
+                      : <button type="button" title="Use as the design room" onClick={() => applyRoom(r)} className="text-emerald-600 font-bold px-1">Use</button>}
                     <button type="button" title="Remove" onClick={() => removeRoom(r.id)} className="text-slate-400 hover:text-rose-500"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 ))}
               </div>
+              {info.rooms.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" disabled={!checkedRooms.length} onClick={addCheckedToProject} className={`${btn} bg-indigo-600 border-indigo-600 text-white`} title="Each ticked room is sized by the lumen method with the current fixture and target lux">
+                    <PlusCircle className="w-3.5 h-3.5" /> Add {checkedRooms.length || ''} to Rooms & Properties
+                  </button>
+                  <button type="button" disabled={!checkedRooms.length} onClick={() => removeRooms(checkedRooms)} className={btnIdle}><Trash2 className="w-3.5 h-3.5" /> Remove</button>
+                </div>
+              )}
             </div>
           )}
 

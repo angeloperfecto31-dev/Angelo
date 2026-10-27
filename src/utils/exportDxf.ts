@@ -5416,6 +5416,29 @@ export const exportToCAD = (
             b.addLine(px - r * 0.7, py + r * 0.7, px + r * 0.7, py - r * 0.7, "ILLUM_LUMINAIRES");
             b.addText(String(i + 1), px + r + 0.8, py + r * 0.4, 1.8, 0, "ILLUM_LUMINAIRES", "left");
           });
+          // Imported SketchUp text, labels and dimensions at true size and rotation
+          const anns: any[] = Array.isArray(room.annotations) ? room.annotations : [];
+          if (anns.length) {
+            b.addLayer("SKP_TEXT", 6);
+            anns.forEach((a) => {
+              const [ax, ay] = P(a.x, a.z);
+              const h = Math.max(0.8, a.height * k);
+              const lines = String(a.text).split("\n");
+              const lineGap = h * 1.25;
+              const rr = (a.rotation * Math.PI) / 180;
+              lines.forEach((line: string, li: number) => {
+                // Offset of this line's centre from the anchor along the text's "up" direction
+                const base = a.vAlign === "top" ? -h / 2 - li * lineGap : a.vAlign === "bottom" ? h / 2 + (lines.length - 1 - li) * lineGap : ((lines.length - 1) / 2 - li) * lineGap;
+                // addText centres vertically on y + h / 2
+                b.addText(line, ax - Math.sin(rr) * base, ay + Math.cos(rr) * base - h / 2, h, a.rotation, "SKP_TEXT", a.hAlign === "center" ? "center" : a.hAlign === "right" ? "right" : "left");
+              });
+              if (a.dim) {
+                const [d1x, d1y] = P(a.dim.x1, a.dim.z1);
+                const [d2x, d2y] = P(a.dim.x2, a.dim.z2);
+                b.addLine(d1x, d1y, d2x, d2y, "SKP_TEXT");
+              }
+            });
+          }
           b.addText(
             `${fixtures.length > 0 ? fixtures.length : room.fixturesCount} x ${room.fixtureLightType || "LUMINAIRE"} | N ^`,
             cx0 + 6, cyTop - cellH + 9, 3.0, 0, "TEXT_DATA", "left", cellW - 60

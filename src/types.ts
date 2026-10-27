@@ -268,6 +268,8 @@ export interface SavedLightingDetail {
   totalLumens: number;
   totalWattage: number;
   circuitNo?: number; // optionally link to circuit
+  /** Room of an imported 3D model this saved room was created from */
+  sourceModelRoomId?: string;
   /** Luminaires required by the lumen method (fixturesCount is what is installed) */
   requiredFixtures?: number;
   fixtureWattage?: number;
@@ -392,6 +394,47 @@ export interface ImportedModelInfo {
   /** The user has checked the imported dimensions */
   verified: boolean;
   importedAt: string;
+  /** Shift applied when placing the model (lowest corner at 0, metres); used to place annotations */
+  placementShift?: { x: number; y: number; z: number };
+  /** Text, labels and dimensions read from a DXF exported with the model */
+  annotations?: AnnotationSet;
+}
+
+/** One text-like entity from a DXF (coordinates in DXF units, Z up, as exported) */
+export interface ModelAnnotation {
+  id: string;
+  kind: "text" | "mtext" | "attrib" | "dimension" | "leader" | "user";
+  text: string;
+  x: number;
+  y: number;
+  z: number;
+  /** Text height in DXF units */
+  height: number;
+  /** Degrees, counter-clockwise from +X in plan */
+  rotation: number;
+  layer: string;
+  hAlign: "left" | "center" | "right";
+  vAlign: "top" | "middle" | "bottom";
+  visible: boolean;
+  /** Text changed in ElectricalPH */
+  edited?: boolean;
+  /** Dimension measuring points (DXF units) */
+  dim?: { x1: number; y1: number; z1: number; x2: number; y2: number; z2: number };
+}
+
+export interface AnnotationSet {
+  fileName: string;
+  /** Metres per DXF unit */
+  unitMetres: number;
+  /** Extra alignment: rotation about the DXF origin (deg), then a shift in metres (x east, y up, z south) */
+  rotation: number;
+  offset: { x: number; y: number; z: number };
+  items: ModelAnnotation[];
+  hiddenLayers?: string[];
+  /** Move overlapping text apart (with a leader to its original point) */
+  resolveOverlaps: boolean;
+  /** Display size multiplier (screen only; exports use the true size) */
+  displayScale?: number;
 }
 
 export interface FloorPlanImage {

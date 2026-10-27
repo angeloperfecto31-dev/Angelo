@@ -48,14 +48,15 @@ import { exportToCAD } from '../utils/exportDxf';
 import { auth, db } from '../firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { toPng } from 'html-to-image';
-import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition, PanelConfig } from '../types';
+import { IlluminationParams, Circuit, MCBType, LoadType, ActiveFixtureSelection, PlacedFixtureDragPosition, PanelConfig, ImportedModelRoom, SavedLightingDetail } from '../types';
 import { RECOMMENDED_LUX_LEVELS, RECOMMENDED_LUX_LEVELS_CATEGORIZED, LIGHT_FIXTURES_LIBRARY } from '../constants';
 import Illumination3DModel from './Illumination3DModel';
 import RoomShapeEditor from './RoomShapeEditor';
 import ImportedModelViewer, { DesignSummary } from './ImportedModelViewer';
+import { annotationsForRoom, needsLeader, resolveOverlaps } from '../utils/modelAnnotations';
 import { achievedLux, designLumensPerUnit, effectiveUtilizationFactor, roomIndexOf, sizeLumenMethod } from '../utils/illuminationSizing';
 import { RoomLayoutData, exportIlluminationLayoutPdf, roomGeometrySummary, roomShapeLabel } from '../utils/illuminationRoomExport';
-import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
+import { RoomPoint, ROOM_SHAPES, clampPointToPolygon, getRoomOutline, normalizePolygon, polygonBounds, hasIrregularOutline, placePointsInPolygon, pointInPolygon, polygonArea, polygonPerimeter, polygonRoomIndex, toRoomPoints, toRoomVertices } from '../utils/roomGeometry';
 
 export interface IlluminationCalcProps {
   panel?: PanelConfig;
@@ -550,6 +551,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   // Room outline in metres: the W × L rectangle, or the L/T/U preset / custom polygon
   const roomOutline = useMemo(() => getRoomOutline(params), [params.roomShape, params.roomPolygon, params.roomWidth, params.roomLength]);
   const isIrregularRoom = hasIrregularOutline(params);
+  /** Text, labels and dimensions from the imported model's DXF that belong to the design room */
+  const roomAnnotations = useMemo(() => annotationsForRoom(params.importedModel, roomOutline), [params.importedModel, roomOutline]);
   const roomFloorArea = params.inputMode === 'area' ? params.userArea : polygonArea(roomOutline);
   const lastOutlineKeyRef = useRef<string | null>(null);
 
@@ -2495,6 +2498,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
       maxLux: luxGridData.maxLux,
       uniformityU0: luxGridData.uniformityU0,
       luxGrid: luxGridData.grid,
+      ...(roomAnnotations.length ? { annotations: roomAnnotations } : {}),
       ...(params.importedModel ? {
         importedModel: {
           fileName: params.importedModel.fileName,
@@ -2585,6 +2589,78 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     (params.customPositions || []).reduce((sum, cp) =>
       sum + calcSinglePointLux(x, z, cp, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens), 0),
     [params.customPositions, params.activeFixtures, params.coefficientOfUtilization, params.maintenanceFactor, mountingHeight, activeFixture.lumens]);
+
+  /**
+   * Model rooms -> Rooms & Properties. Each room is sized with the same lumen method as the design
+   * room (room index from its outline and ceiling, CU scaled for RI and reflectances), the current
+   * target lux and the first selected fixture; its fixtures are spread inside its outline.
+   */
+  const addModelRoomsToProject = (rooms: ImportedModelRoom[]) => {
+    const af = params.activeFixtures?.[0];
+    const fixLumens = af?.lumens || activeFixture.lumens || 1;
+    const fixWatts = af?.wattage || activeFixture.wattage || 0;
+    const mf = params.maintenanceFactor || 0.8;
+    const rc = params.ceilingReflectance !== undefined ? params.ceilingReflectance : 0.7;
+    const rw = params.wallReflectance !== undefined ? params.wallReflectance : 0.5;
+    const rf = params.floorReflectance !== undefined ? params.floorReflectance : 0.2;
+    const built = rooms.map((room): SavedLightingDetail => {
+      const outline = normalizePolygon(toRoomPoints(room.polygon) || []);
+      const b = polygonBounds(outline);
+      const area = polygonArea(outline);
+      const ceil = room.ceilingHeight && room.ceilingHeight > 1.8 ? room.ceilingHeight : ceilingHeight;
+      // Same lumen method as the design room: RI from area, perimeter and luminaire height above the
+      // working plane (limited by this room's ceiling), CU scaled for RI and reflectances
+      const hm = Math.max(0.1, Math.min(calculation.hm, ceil - workingPlaneHeight));
+      const ri = roomIndexOf(area, polygonPerimeter(outline), hm);
+      const cu = effectiveUtilizationFactor(params.coefficientOfUtilization, ri, rc, rw, rf);
+      const n = Math.max(1, sizeLumenMethod({ targetLux: params.targetLux, area, utilizationFactor: cu, maintenanceFactor: mf, lumensPerUnit: fixLumens }).fixturesRequired);
+      const positions: PlacedFixtureDragPosition[] = placePointsInPolygon(outline, n).map(([x, z], i) => ({
+        id: `fixture-${af?.fixtureId || activeFixture.id}-r${i}-${Math.random().toString(36).slice(2, 6)}`,
+        fixtureId: af?.fixtureId || activeFixture.id,
+        lightType: af?.lightType || activeFixture.lightType,
+        x, z,
+        lumens: fixLumens,
+        wattage: fixWatts,
+        activeFixtureId: af?.id,
+      }));
+      return {
+        id: crypto.randomUUID(),
+        sourceModelRoomId: room.id,
+        roomName: room.name,
+        roomType: params.roomType,
+        targetLux: params.targetLux,
+        area: Number(area.toFixed(2)),
+        roomWidth: Number(b.width.toFixed(3)),
+        roomLength: Number(b.length.toFixed(3)),
+        ceilingHeight: ceil,
+        workingPlaneHeight,
+        mountingHeight,
+        coefficientOfUtilization: Number(cu.toFixed(2)),
+        maintenanceFactor: mf,
+        fixtureId: af?.fixtureId || activeFixture.id,
+        fixtureLightType: af?.lightType || activeFixture.lightType,
+        fixturesCount: n,
+        requiredFixtures: n,
+        totalLumens: n * fixLumens,
+        totalWattage: n * fixWatts,
+        fixtureLumens: fixLumens,
+        fixtureWattage: fixWatts,
+        roomShape: 'custom',
+        roomPolygon: toRoomVertices(outline),
+        customPositions: positions,
+      };
+    });
+    setParams(prev => {
+      const kept = (prev.savedRooms || []).filter(r => !rooms.some(m => m.id === r.sourceModelRoomId));
+      // Rooms added again replace their earlier entry and keep its circuit link
+      const withCircuits = built.map(nr => {
+        const old = (prev.savedRooms || []).find(r => r.sourceModelRoomId === nr.sourceModelRoomId);
+        return old?.circuitNo ? { ...nr, circuitNo: old.circuitNo } : nr;
+      });
+      return { ...prev, savedRooms: [...kept, ...withCircuits] };
+    });
+    return built.length;
+  };
 
   /** Results shown next to the imported model */
   const designSummary: DesignSummary = useMemo(() => {
@@ -3618,6 +3694,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                     luxAt={luxAtPoint}
                     summary={designSummary}
                     onSnapshot={setModelSnapshot}
+                    onAddRoomsToProject={addModelRoomsToProject}
+                    roomsInProject={(params.savedRooms || []).map(r => r.sourceModelRoomId).filter((id): id is string => !!id)}
                   />
                 ) : params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0 ? (
                   <>
@@ -3931,6 +4009,36 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                         <text key={`wl${i}`} x={mx} y={mz} transform={`rotate(${deg} ${mx} ${mz})`} textAnchor="middle" dominantBaseline="middle" fill="#7dd3fc" style={{ fontSize: 9, fontWeight: 800, fontFamily: 'ui-monospace, monospace' }}>
                                           {len.toFixed(2)} m
                                         </text>
+                                      );
+                                    })}
+                                  </svg>
+                                );
+                              })()}
+
+                              {/* Imported SketchUp text, labels and dimensions (from the model's DXF) */}
+                              {roomAnnotations.length > 0 && (() => {
+                                const k = pixW / w;
+                                const items = roomAnnotations.map(a => ({ a, fs: Math.max(7, a.height * k * 1.35) }));
+                                const moves = params.importedModel?.annotations?.resolveOverlaps === false
+                                  ? new Map<string, { dx: number; dz: number }>()
+                                  : resolveOverlaps(items.map(({ a, fs }) => ({ id: a.id, x: a.x * k, z: a.z * k, width: Math.max(...a.text.split('\n').map(l => l.length)) * fs * 0.6, height: fs * 1.2 * a.text.split('\n').length, rotation: a.rotation, hAlign: a.hAlign, vAlign: a.vAlign })));
+                                return (
+                                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-20" viewBox={`0 0 ${pixW} ${pixL}`} preserveAspectRatio="none">
+                                    {items.map(({ a, fs }) => {
+                                      const mv = moves.get(a.id) || { dx: 0, dz: 0 };
+                                      const x = a.x * k + mv.dx;
+                                      const y = a.z * k + mv.dz;
+                                      const lines = a.text.split('\n');
+                                      const anchor = a.hAlign === 'center' ? 'middle' : a.hAlign === 'right' ? 'end' : 'start';
+                                      const dy0 = a.vAlign === 'top' ? fs * 0.9 : a.vAlign === 'middle' ? -((lines.length - 1) * fs * 1.15) / 2 + fs * 0.35 : -(lines.length - 1) * fs * 1.15;
+                                      return (
+                                        <g key={a.id}>
+                                          {a.dim && <line x1={a.dim.x1 * k} y1={a.dim.z1 * k} x2={a.dim.x2 * k} y2={a.dim.z2 * k} stroke="#7dd3fc" strokeWidth={1} />}
+                                          {needsLeader(mv, fs) ? <line x1={a.x * k} y1={a.z * k} x2={x} y2={y} stroke="#94a3b8" strokeWidth={0.8} /> : null}
+                                          <text x={x} y={y} transform={`rotate(${-a.rotation} ${x} ${y})`} textAnchor={anchor} fontSize={fs} fontFamily="Arial" fill={a.kind === 'dimension' ? '#7dd3fc' : '#e2e8f0'} stroke="#0f172a" strokeWidth={fs * 0.12} paintOrder="stroke">
+                                            {lines.map((l, i) => <tspan key={i} x={x} dy={i === 0 ? dy0 : fs * 1.15}>{l}</tspan>)}
+                                          </text>
+                                        </g>
                                       );
                                     })}
                                   </svg>
@@ -5382,7 +5490,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                                roomPolygon: toRoomVertices(roomOutline),
                                ceilingHeight,
                                workingPlaneHeight,
-                               customPositions: buildRoomLayoutData().fixtures
+                               customPositions: buildRoomLayoutData().fixtures,
+                               annotations: roomAnnotations
                              }
                            ];
                            const illumData = {
