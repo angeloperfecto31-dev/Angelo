@@ -1078,92 +1078,6 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
     setTimeout(() => setSuccessBanner(null), 3000);
   };
 
-  const handleAutoRecommend = () => {
-    const area = roomFloorArea;
-    const roomNameUpper = (params.roomName || params.targetRoomName || 'General Office').toUpperCase();
-    
-    // Choose fixture type from library
-    let recommendedFixtureId = 'ind-panel'; // default
-    if (roomNameUpper.includes('OFFICE') || roomNameUpper.includes('CLASS') || roomNameUpper.includes('MEETING') || roomNameUpper.includes('CONFERENCE') || roomNameUpper.includes('STUDY') || roomNameUpper.includes('SCHOOL')) {
-      recommendedFixtureId = 'ind-panel'; // LED Panel 600x600 36W
-    } else if (roomNameUpper.includes('WAREHOUSE') || roomNameUpper.includes('INDUSTRIAL') || roomNameUpper.includes('FABRICATION') || roomNameUpper.includes('WORKSHOP') || roomNameUpper.includes('MECHANICAL') || roomNameUpper.includes('GENERATOR')) {
-      recommendedFixtureId = 'ind-highbay'; // Industrial High-Bay 120W
-    } else if (roomNameUpper.includes('RESIDENTIAL') || roomNameUpper.includes('BEDROOM') || roomNameUpper.includes('BATH') || roomNameUpper.includes('LIVING') || roomNameUpper.includes('DINING') || roomNameUpper.includes('HOTEL') || roomNameUpper.includes('KITCHEN') || roomNameUpper.includes('REST')) {
-      recommendedFixtureId = 'ind-downlight'; // LED Downlight 12W
-    } else {
-      recommendedFixtureId = 'surf-ceiling-18w'; // default
-    }
-
-    // Verify it exists in allFixtures, if not fallback to first
-    const selectedF = allFixtures.find(f => f.id === recommendedFixtureId) || allFixtures[0];
-    const fixtureLumens = selectedF.lumens || 1500;
-    
-    // Target Lux
-    const targetLux = params.targetLux || 500;
-    
-    // Keep the room's own surfaces and maintenance factor (defaults 70/50/20 %, MF 0.80, CU 0.60)
-    const rc = params.ceilingReflectance ?? 0.7;
-    const rw = params.wallReflectance ?? 0.5;
-    const rf = params.floorReflectance ?? 0.2;
-    const maintenanceFactor = params.maintenanceFactor || 0.8;
-    const initialCU = params.coefficientOfUtilization || 0.6;
-
-    // Same lumen-method sizing as the calculator: RI from area, perimeter and mounting height
-    const effectiveCU = effectiveUtilizationFactor(initialCU, calculation.roomIndex, rc, rw, rf);
-    const fixturesCount = Math.max(1, sizeLumenMethod({ targetLux, area, utilizationFactor: effectiveCU, maintenanceFactor, lumensPerUnit: fixtureLumens }).fixturesRequired);
-
-    // Spacing (Rows and Cols)
-    let cols = 1;
-    let rows = 1;
-    if (params.inputMode === 'dimensions' && params.roomWidth > 0 && params.roomLength > 0) {
-      const ratio = params.roomWidth / params.roomLength;
-      cols = Math.max(1, Math.round(Math.sqrt(fixturesCount * ratio)));
-      rows = Math.ceil(fixturesCount / cols);
-    } else {
-      cols = Math.max(1, Math.round(Math.sqrt(fixturesCount)));
-      rows = Math.ceil(fixturesCount / cols);
-    }
-    // Exactly the required count; the layout spreads a short last row symmetrically
-    const finalCount = fixturesCount;
-
-    // Build active fixtures payload
-    const defaultsSeed = getPredefinedFixtureDefaults(selectedF.id, false);
-    const recommendedActiveFixture = {
-      id: crypto.randomUUID(),
-      fixtureId: selectedF.id,
-      lightType: selectedF.lightType,
-      quantity: finalCount,
-      wattage: selectedF.wattage,
-      lumens: selectedF.lumens,
-      brands: selectedF.brands || 'Recommended Brand',
-      isCustom: false,
-      fixtureShape: defaultsSeed.fixtureShape,
-      fixtureWidth: defaultsSeed.fixtureWidth,
-      fixtureLength: defaultsSeed.fixtureLength,
-      fixtureDiameter: defaultsSeed.fixtureDiameter,
-      fixtureThickness: defaultsSeed.fixtureThickness,
-      fixtureBeamAngle: defaultsSeed.fixtureBeamAngle,
-      fixtureDistributionType: defaultsSeed.fixtureDistributionType
-    };
-
-    // Update state with highly optimized recommended values!
-    setParams({
-      ...params,
-      selectedFixtureId: selectedF.id,
-      lumensPerFixture: selectedF.lumens,
-      coefficientOfUtilization: initialCU,
-      maintenanceFactor: maintenanceFactor,
-      ceilingReflectance: rc,
-      wallReflectance: rw,
-      floorReflectance: rf,
-      activeFixtures: [recommendedActiveFixture],
-      customPositions: []
-    });
-
-    setSuccessBanner(`Optimized layout: ${finalCount}x ${selectedF.lightType} (${isIrregularRoom ? 'spread inside the room outline' : `about ${cols} x ${rows}`}) for ${targetLux} lux.`);
-    setTimeout(() => setSuccessBanner(null), 5000);
-  };
-
   const handleExportLibrary = () => {
     // Export all custom fixtures + standard favorites
     const customList = allFixtures.filter(f => f.isCustom || f.isFavorite);
@@ -3148,13 +3062,6 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
            </div>
            
            <div className="flex flex-wrap items-center gap-3">
-             <button
-               type="button"
-               onClick={handleAutoRecommend}
-               className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800 text-white font-extrabold rounded-lg text-xs flex items-center gap-1.5 shadow-md transition-all hover:scale-[1.02] active:scale-[0.98] uppercase tracking-wider"
-             >
-               <Sparkles className="w-3.5 h-3.5 animate-pulse" /> AI Smart Optimize
-             </button>
              <button
                onClick={() => setIsFullscreen(true)}
                className="hidden md:flex px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-md items-center gap-2 transition-colors uppercase tracking-wider"
