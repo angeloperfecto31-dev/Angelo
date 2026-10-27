@@ -294,7 +294,12 @@ export default function ImportedModelViewer({
     const box = modelBounds(placedModel.current);
     const c = box.getCenter(new THREE.Vector3());
     const r = box.getSize(new THREE.Vector3()).length() / 2 || 10;
-    t.persp.position.set(c.x + r * 0.9, c.y + r * 0.9, c.z + r * 1.1);
+    // Far enough for the bounding sphere to fit the narrower of the two view angles, with a small margin
+    const vFov = (t.persp.fov * Math.PI) / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * t.persp.aspect);
+    const dist = (r / Math.sin(Math.min(vFov, hFov) / 2)) * 1.05;
+    const dir = new THREE.Vector3(0.9, 0.9, 1.1).normalize();
+    t.persp.position.set(c.x + dir.x * dist, c.y + dir.y * dist, c.z + dir.z * dist);
     t.persp.near = Math.max(0.01, r / 1000);
     t.persp.far = r * 50;
     t.persp.updateProjectionMatrix();
@@ -1445,7 +1450,7 @@ export default function ImportedModelViewer({
             </div>
           )}
 
-          <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-950" style={{ height: 'min(70vh, 560px)', minHeight: 360 }}>
+          <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-950" style={{ height: 'min(80vh, 780px)', minHeight: 420 }}>
             <div
               ref={mountRef}
               className={`absolute inset-0 ${mode === 'orbit' || mode === 'select' ? '' : 'cursor-crosshair'}`}

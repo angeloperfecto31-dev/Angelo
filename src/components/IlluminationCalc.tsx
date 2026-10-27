@@ -42,7 +42,9 @@ import {
   Printer,
   Move,
   Settings,
-  Sliders
+  Sliders,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { exportToCAD } from '../utils/exportDxf';
 import { auth, db } from '../firebase';
@@ -1398,6 +1400,8 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
   };
 
   const [activeSubTab, setActiveSubTab] = useState<'rooms' | '3d' | 'grid' | 'daylight' | 'glare' | 'energy' | 'reports'>('3d');
+  /** Room Physical Layout across the full width (the results column is hidden) */
+  const [layoutExpanded, setLayoutExpanded] = useState(false);
   const [layoutViewMode, setLayoutViewMode] = useState<'3d' | 'drag' | 'model'>('3d');
   /** View of the imported model chosen for the Room Layout PDF */
   const [modelSnapshot, setModelSnapshot] = useState<string | null>(null);
@@ -3589,10 +3593,10 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+        <div className={`grid grid-cols-1 gap-6 items-start ${layoutExpanded ? '' : 'lg:grid-cols-[minmax(0,1fr)_320px]'}`}>
           
-          {/* Main lumen estimation left box */}
-          <div className="md:col-span-1 space-y-6">
+          {/* Lumen estimation results (right-hand column; hidden while the layout is expanded) */}
+          <div className={`space-y-6 lg:order-2 ${layoutExpanded ? 'hidden' : ''}`}>
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
@@ -3798,7 +3802,7 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
           </div>
 
           {/* Interactive view main column */}
-          <div className="md:col-span-2 border border-slate-200 rounded-2xl p-6 bg-slate-50/50">
+          <div className="lg:order-1 min-w-0 border border-slate-200 rounded-2xl p-4 sm:p-6 bg-slate-50/50">
 
             {/* TAB: Rooms & Properties */}
             {activeSubTab === 'rooms' && (
@@ -3937,6 +3941,16 @@ export default function IlluminationCalc({ panel, circuits, subPanels, vdCalcula
                          <Upload className="w-2.5 h-2.5" /> Imported 3D Model{params.importedModel ? ' •' : ''}
                        </button>
                      </div>
+
+                     {/* Full-width layout */}
+                     <button
+                       type="button"
+                       onClick={() => setLayoutExpanded(v => !v)}
+                       title={layoutExpanded ? 'Show the results column again' : 'Use the full width for the layout'}
+                       className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:border-indigo-400"
+                     >
+                       {layoutExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />} {layoutExpanded ? 'Show Panel' : 'Expand'}
+                     </button>
 
                      {/* False Color Render */}
                      <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg">
