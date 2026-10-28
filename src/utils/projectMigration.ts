@@ -403,7 +403,7 @@ export function migrateProjectData(data: any): ProjectData {
     utilityFrequency: activePanel.frequency || 60,
     selectedMdpId: rawSolar.selectedMdpId || (activePanel as any).id || activePanel.designation || "MDP",
     ...rawSolar,
-    projectType: isResPanel ? "residential" : (rawSolar.projectType || (is3PhasePanel ? "commercial" : "residential")),
+    projectType: isResPanel ? "residential" : (rawSolar.projectType || ((activePanel.projectType || "").toLowerCase().includes("ind") ? "industrial" : is3PhasePanel ? "commercial" : "residential")),
     selectedModuleId: isAutoMod ? "auto" : rawSolar.selectedModuleId,
     autoModuleSelection: isAutoMod,
     selectedInverterId: isAutoInv ? "auto" : rawSolar.selectedInverterId,
