@@ -113,6 +113,51 @@ import {
   getThreePhaseFLCColumn,
 } from "../utils/motorFLCHelper";
 
+
+/** Load Type codes (the Load Type column) and how the Load Schedule treats each one */
+const LOAD_TYPE_LEGEND: Array<{ code: string; name: string; note: string }> = [
+  {
+    code: "L",
+    name: "Lighting",
+    note: "Luminaire load as entered (W / PF). Continuous load: conductors and breaker at 125% (PEC 2.10.2.19(A)(1), 2.10.2.20(A)). Feeder demand per PEC Table 2.20.3.42.",
+  },
+  {
+    code: "S",
+    name: "Convenience Outlets",
+    note: "180 VA per single or multiple receptacle on one yoke (PEC 2.20.2.14(I)). Breaker 20 A minimum. Feeder demand per PEC Table 2.20.3.42.",
+  },
+  {
+    code: "AC",
+    name: "Air Conditioning Units",
+    note: "Hermetic motor-compressor: conductors at 125% of the rated-load current (PEC 4.40.4.32); breaker 175% of it, up to 225% if needed for starting (PEC 4.40.3.22(A)). Counted as a motor in the feeder.",
+  },
+  {
+    code: "M",
+    name: "Motors / Pumps",
+    note: "FLC from horsepower (PEC Tables 4.30.14.248 / 4.30.14.250). Conductors at 125% (PEC 4.30.2.22); inverse-time breaker at 250% FLC, next standard size (PEC Table 4.30.4.52). Feeder: largest motor at 125% (PEC 4.30.2.24).",
+  },
+  {
+    code: "P",
+    name: "Power / Fixed Appliances",
+    note: "Water heaters, ranges, ovens and other equipment at nameplate rating (W / PF), non-continuous (no 125% factor). Included with L and S in the feeder demand of PEC Table 2.20.3.42.",
+  },
+  {
+    code: "SP",
+    name: "Spare",
+    note: "Installed breaker with no load connected. Not counted in the load unless a load is entered.",
+  },
+  {
+    code: "SPACE",
+    name: "Space",
+    note: "Empty breaker position on the bus for future use. No breaker and no load.",
+  },
+  {
+    code: "SUB",
+    name: "Sub-Panel Feeder",
+    note: "Feeder to a sub-panel or sub-sub-panel: the load of the linked panel is carried here. Feeder sizing per PEC Article 2.15.",
+  },
+];
+
 export const INITIAL_CIRCUITS: Circuit[] = [
   {
     id: crypto.randomUUID(),
@@ -6577,91 +6622,21 @@ export default function LoadSchedule({
               <h5 className="text-[10px] uppercase tracking-widest font-black text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800/60 pb-2">
                 Classification Abbreviations
               </h5>
+              {/* Codes as in the Load Type column; notes follow how each type is calculated */}
               <div className="space-y-2.5 font-mono text-[11px]">
-                <div className="flex items-start gap-2">
-                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
-                    L / LO
-                  </span>
-                  <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
-                      Lighting Outlets
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      100VA per active lamp outlet / fixed luminaire strap (PEC
-                      2.20.2.3(C))
-                    </p>
+                {LOAD_TYPE_LEGEND.map((item) => (
+                  <div key={item.code} className="flex items-start gap-2">
+                    <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
+                      {item.code}
+                    </span>
+                    <div className="space-y-0.5">
+                      <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
+                        {item.name}
+                      </p>
+                      <p className="text-[10px] text-slate-400">{item.note}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
-                    S / CO
-                  </span>
-                  <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
-                      Convenience Outlets
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Duplex receptacle rated at 180VA per simplex / strap
-                      assembly (PEC 2.20.2.3(I))
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
-                    ACU
-                  </span>
-                  <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
-                      Air Conditioning Units
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Hermetic refrigerant motor-compressors sized at 125% FLC
-                      (PEC Article 4.40)
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
-                    M / WP
-                  </span>
-                  <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
-                      Motors / Pumps
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Continuous motor loads sized per FLC values in PEC Tables
-                      4.30 (largest motor @ 125%)
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
-                    WH / RE
-                  </span>
-                  <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
-                      Water Heaters & Ranges
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Fixed appliances rated at nameplate VA. Range demand
-                      factor PEC Table 2.20.3.16
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold px-1.5 py-0.5 rounded text-[10px] min-w-[50px] text-center shrink-0">
-                    SP/SPAC
-                  </span>
-                  <div className="space-y-0.5">
-                    <p className="font-sans font-bold text-slate-700 dark:text-slate-300">
-                      Spare & Space
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      Spare (active overcurrent protector) or Space (empty
-                      enclosure bus physical slot)
-                    </p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
