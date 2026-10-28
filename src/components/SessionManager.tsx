@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, deleteDoc, onSnapshot } from "firebase/firestore";
+import { addDoc, collection, onSnapshot } from "firebase/firestore";
 import { MonitorSmartphone, LogOut, RefreshCw } from "lucide-react";
 import { auth, db } from "../firebase";
-import { FIRESTORE_DATABASE_ID, MAX_SESSION_TTL_S, MIN_SESSION_TTL_S, adminSessionRef, getEnforcementState, loadSessionTimeout, saveSessionTimeout, type ActiveSession } from "../utils/sessionGuard";
+import { FIRESTORE_DATABASE_ID, MAX_SESSION_TTL_S, MIN_SESSION_TTL_S, adminEndSession, getEnforcementState, loadSessionTimeout, saveSessionTimeout, type ActiveSession } from "../utils/sessionGuard";
 
 /**
  * Administrator view of the single-device sessions: who is signed in, on which device, and when the device
- * was last seen. "Force sign out" ends a session (for example a lost device) so the account can sign in
+ * was last seen. A new sign-in on another device or browser replaces the previous session automatically.
+ * "Force sign out" ends a session (for example a lost device): the device is signed out at once, and the account can sign in
  * again elsewhere; the device is signed out at its next heartbeat. Actions are logged like other admin actions.
  */
 export default function SessionManager() {
@@ -68,7 +69,7 @@ export default function SessionManager() {
     return sessions
       .map((s) => {
         const last = s.lastSeen?.toMillis?.() ?? 0;
-        return { ...s, email: emails[s.uid] || s.uid, last, active: last > 0 && now - last <= ttlMs };
+        return { ...s, email: emails[s.uid] || s.uid, last, active: !s.ended && last > 0 && now - last <= ttlMs };
       })
       .filter((r) => !q || r.email.toLowerCase().includes(q) || r.device.toLowerCase().includes(q))
       .sort((a, b) => Number(b.active) - Number(a.active) || b.last - a.last);
@@ -78,7 +79,7 @@ export default function SessionManager() {
     setBusy(uid);
     setError("");
     try {
-      await deleteDoc(adminSessionRef(uid));
+      await adminEndSession(uid);
       await addDoc(collection(db, "admin_activity_logs"), {
         action: "force_sign_out",
         adminEmail: auth.currentUser?.email || "Unknown Admin",
@@ -109,7 +110,7 @@ export default function SessionManager() {
             <MonitorSmartphone className="w-4 h-4 text-indigo-600" /> Active Sessions (one device per account)
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            {activeCount} active · a session with no activity for {Math.round(ttlMs / 60000)} minutes expires and the account can sign in on another device.
+            {activeCount} active · a new sign-in on another device or browser ends the previous session at once · a session with no activity for {Math.round(ttlMs / 60000)} minutes is paused until that device returns.
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
             <label className="font-bold text-slate-600">Session timeout (minutes)</label>
@@ -176,19 +177,21 @@ export default function SessionManager() {
                 <td className="py-2 pr-3 text-slate-500">{ago(r.last)}</td>
                 <td className="py-2 pr-3">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${r.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                    {r.active ? "Active" : "Expired"}
+                    {r.ended ? (r.endedBy === "admin" ? "Ended (admin)" : "Logged out") : r.active ? "Active" : "Idle"}
                   </span>
                 </td>
                 <td className="py-2 text-right">
+                  {!r.ended && (
                   <button
                     onClick={() => forceSignOut(r.uid, r.email, r.device)}
                     disabled={busy === r.uid}
                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 disabled:opacity-50"
-                    title={r.uid === auth.currentUser?.uid ? "This is your own session: you will be signed out" : "End this session so the account can sign in on another device"}
+                    title={r.uid === auth.currentUser?.uid ? "This is your own session: you will be signed out" : "End this session: the device is signed out at once"}
                   >
                     {busy === r.uid ? <RefreshCw className="w-3 h-3 animate-spin" /> : <LogOut className="w-3 h-3" />}
-                    {r.active ? "Force sign out" : "Clear"}
+                    Force sign out
                   </button>
+                  )}
                 </td>
               </tr>
             ))}
