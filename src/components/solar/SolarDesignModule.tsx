@@ -349,15 +349,15 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
             <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black shadow-md">
               <Sun className="w-6 h-6 animate-pulse" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-base font-black tracking-tight text-white">
                   Solar PV Design & Net-Metering Engine
                 </h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 whitespace-nowrap text-amber-300 border border-amber-500/30">
                   PEC 2017 ART 6.90
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 whitespace-nowrap text-emerald-300 border border-emerald-500/30">
                   RA 9513 COMPLIANT
                 </span>
               </div>

@@ -114,6 +114,7 @@ export const SolarStudiesTab: React.FC<Props> = ({ mode, config, studies, onChan
         </div>
       )}
 
+      <p className="sm:hidden text-[11px] text-slate-500 dark:text-slate-400">Swipe the diagram sideways to see all of it.</p>
       <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white p-3 overflow-x-auto">
         <svg viewBox={`0 0 ${mode === "sc" ? SC_W : VD_W} ${mode === "sc" ? SC_H : VD_H}`} className="w-full min-w-[720px] h-auto" style={{ background: "#ffffff" }}>
           {mode === "sc" ? (

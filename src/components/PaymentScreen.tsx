@@ -6683,7 +6683,7 @@ export default function PaymentScreen({
                         The user account database has been safely restored. All specified plan states, active expirations, and user profiles are now updated and synchronized.
                       </p>
 
-                      <div className="grid grid-cols-4 gap-4 w-full max-w-lg">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full max-w-lg">
                         <div className="bg-white p-3.5 rounded-xl border border-emerald-100 text-center">
                           <span className="text-xs font-black text-slate-500 block uppercase tracking-wide">Pristine</span>
                           <span className="text-lg font-black text-slate-800">{importResultsSummary.success}</span>
@@ -6721,7 +6721,7 @@ export default function PaymentScreen({
                     )}
 
                     {/* Stats Summary Panel */}
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl">
                         <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">Total Users Found</span>
                         <span className="text-lg font-black text-slate-800 mt-0.5 block">{importUsersPreview.length} records</span>
@@ -6784,7 +6784,7 @@ export default function PaymentScreen({
                     {/* User Rows High Density Table Preview */}
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Checkpoint Content Preview</label>
-                      <div className="border border-slate-150 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+                      <div className="border border-slate-150 rounded-xl overflow-auto max-h-56">
                         <table className="w-full text-left border-collapse min-w-[650px]">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-150 sticky top-0 z-10">
