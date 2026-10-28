@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, onSnapshot } from "firebase/firestore";
 import { MonitorSmartphone, LogOut, RefreshCw } from "lucide-react";
 import { auth, db } from "../firebase";
-import { MAX_SESSION_TTL_S, MIN_SESSION_TTL_S, adminSessionRef, loadSessionTimeout, saveSessionTimeout, type ActiveSession } from "../utils/sessionGuard";
+import { FIRESTORE_DATABASE_ID, MAX_SESSION_TTL_S, MIN_SESSION_TTL_S, adminSessionRef, getEnforcementState, loadSessionTimeout, saveSessionTimeout, type ActiveSession } from "../utils/sessionGuard";
 
 /**
  * Administrator view of the single-device sessions: who is signed in, on which device, and when the device
@@ -16,6 +16,8 @@ export default function SessionManager() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
+  // Enforcement is active only when the session rules are deployed on this app's database
+  const [enforced, setEnforced] = useState<"checking" | "active" | "inactive">("checking");
   // Session timeout (configurable; the Firestore rules read the same setting)
   const [ttlMs, setTtlMs] = useState(240_000);
   const [ttlInput, setTtlInput] = useState("4");
@@ -42,8 +44,15 @@ export default function SessionManager() {
   useEffect(() => {
     const unsubS = onSnapshot(
       collection(db, "activeSessions"),
-      (snap) => setSessions(snap.docs.map((d) => d.data() as ActiveSession)),
-      (e) => setError(`Could not load sessions: ${e.message}`),
+      (snap) => {
+        setSessions(snap.docs.map((d) => d.data() as ActiveSession));
+        setEnforced(getEnforcementState() === "inactive" ? "inactive" : "active");
+      },
+      (e: any) => {
+        // Without the session rules nobody, not even an administrator, can read this collection
+        if (e?.code === "permission-denied") setEnforced("inactive");
+        else setError(`Could not load sessions: ${e.message}`);
+      },
     );
     const unsubU = onSnapshot(collection(db, "users"), (snap) => {
       const m: Record<string, string> = {};
@@ -125,6 +134,23 @@ export default function SessionManager() {
           className="w-full md:w-64 px-3 py-2 text-xs rounded-lg border border-slate-200"
         />
       </div>
+      {enforced === "inactive" ? (
+        <div className="p-4 rounded-xl border-2 border-rose-300 bg-rose-50 text-rose-900 text-xs space-y-2">
+          <p className="font-black uppercase tracking-wide">One-device-per-account is NOT enforced</p>
+          <p>
+            The session rules are not active on this app's Firestore database <code className="font-mono font-bold">{FIRESTORE_DATABASE_ID || "(named database)"}</code>.
+            Until they are, accounts can still sign in on several devices.
+          </p>
+          <p className="font-bold">To turn it on, publish the project's firestore.rules to that database:</p>
+          <ol className="list-decimal pl-5 space-y-1">
+            <li>Firebase console → Firestore Database → use the database selector at the top to open <code className="font-mono font-bold">{FIRESTORE_DATABASE_ID}</code> (not "(default)") → Rules → paste the full firestore.rules → Publish; or</li>
+            <li>in the project folder: <code className="font-mono">npx firebase-tools login</code>, then <code className="font-mono">npm run deploy:rules</code>.</li>
+          </ol>
+          <p>Then refresh this page: this box disappears and the sessions are listed. Open tabs pick it up within a minute.</p>
+        </div>
+      ) : enforced === "active" ? (
+        <p className="text-xs font-bold text-emerald-700">● Enforced: one active device per account (session rules active on {FIRESTORE_DATABASE_ID}).</p>
+      ) : null}
       {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
