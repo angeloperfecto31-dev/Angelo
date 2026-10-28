@@ -9,7 +9,8 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:rules": "npx firebase-tools@13 deploy --only firestore:rules --project gen-lang-client-0922536866"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

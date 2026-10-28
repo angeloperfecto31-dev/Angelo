@@ -16,6 +16,7 @@
 import { User, signOut } from "firebase/auth";
 import { deleteDoc, doc, getDoc, onSnapshot, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import firebaseConfig from "../../firebase-applet-config.json";
 
 export const DEFAULT_SESSION_TTL_S = 240;
 export const MIN_SESSION_TTL_S = 120;
@@ -94,6 +95,16 @@ const isExpired = (s: { lastSeen?: Timestamp | null }) =>
 let current: { uid: string; sessionId: string; authTime: number } | null = null;
 
 /**
+ * Whether the server enforces single sessions. "inactive" means the session rules are not deployed on this
+ * app's Firestore database, so nothing is enforced; shown to administrators in the Sessions tab.
+ */
+export type EnforcementState = "unknown" | "active" | "inactive";
+let enforcement: EnforcementState = "unknown";
+export const getEnforcementState = () => enforcement;
+/** The Firestore database the rules must be deployed to (named database, not "(default)") */
+export const FIRESTORE_DATABASE_ID: string = (firebaseConfig as any).firestoreDatabaseId || "(default)";
+
+/**
  * Claims the account's single session for this sign-in. Throws SessionBlockedError when another device holds
  * an active session. Concurrent claims are serialized by the transaction and, authoritatively, by the rules.
  */
@@ -128,7 +139,10 @@ export async function claimSession(user: User): Promise<void> {
         // With the session rules deployed an account can always read its own session record. If it cannot,
         // the rules are not deployed yet (rollout): carry on without a session, as before this feature.
         if (readErr?.code === "permission-denied") {
-          console.warn("Single-device session rules are not active yet; continuing without a session.");
+          console.error(
+            `Single-device sessions are NOT enforced: the session rules are not deployed on Firestore database "${FIRESTORE_DATABASE_ID}". Deploy firestore.rules to that database (npm run deploy:rules).`,
+          );
+          enforcement = "inactive";
           current = null;
           return;
         }
@@ -139,6 +153,7 @@ export async function claimSession(user: User): Promise<void> {
     }
     throw e;
   }
+  enforcement = "active";
   const saved = await getDoc(ref);
   current = { uid: user.uid, sessionId: (saved.data() as ActiveSession)?.sessionId || sessionId, authTime };
 }
@@ -183,8 +198,18 @@ export function watchSession(user: User, onEnd: (reason: SessionEndReason, devic
   };
 
   const beat = async () => {
-    if (stopped || ended || !current) return;
+    if (stopped || ended) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    if (!current) {
+      // No session yet (rules were not active when this tab signed in): claim one now; if another device
+      // already holds the session, this tab must sign out.
+      try {
+        await claimSession(user);
+      } catch (err: any) {
+        if (err instanceof SessionBlockedError) end("replaced", err.device);
+      }
+      return;
+    }
     try {
       await updateDoc(ref, { lastSeen: serverTimestamp() });
     } catch (e: any) {
