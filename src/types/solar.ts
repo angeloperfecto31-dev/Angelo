@@ -1,4 +1,4 @@
-export type SolarProjectType = "residential" | "commercial";
+export type SolarProjectType = "residential" | "commercial" | "industrial";
 export type SolarSystemType = "on-grid" | "off-grid" | "hybrid";
 export type RoofType = "gi_sheet" | "concrete_slab" | "tile_roof" | "ground_mount" | "carport_canopy";
 export type MountingType = "flush_mount" | "tilted_rack" | "ballasted" | "ground_structure" | "bipv";

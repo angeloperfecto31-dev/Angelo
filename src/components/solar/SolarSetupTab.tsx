@@ -6,6 +6,7 @@ import { computePanelScheduleValues } from "../../utils/computeEngine";
 import {
   Sun,
   Building,
+  Factory,
   Home,
   Zap,
   MapPin,
@@ -170,11 +171,12 @@ export const SolarSetupTab: React.FC<SolarSetupTabProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Project Type
                 </label>
-                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-900/60 rounded-xl">
+                <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-900/60 rounded-xl">
                   <button
                     type="button"
+                    title="Residential"
                     onClick={() => onChange({ projectType: "residential" })}
-                    className={`flex items-center justify-center gap-1 py-1.5 text-xs font-bold rounded-lg transition ${
+                    className={`flex items-center justify-center gap-1 px-1 py-1.5 text-xs font-bold rounded-lg transition ${
                       config.projectType === "residential"
                         ? "bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-2xs"
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
@@ -185,8 +187,9 @@ export const SolarSetupTab: React.FC<SolarSetupTabProps> = ({
                   </button>
                   <button
                     type="button"
+                    title="Commercial"
                     onClick={() => onChange({ projectType: "commercial" })}
-                    className={`flex items-center justify-center gap-1 py-1.5 text-xs font-bold rounded-lg transition ${
+                    className={`flex items-center justify-center gap-1 px-1 py-1.5 text-xs font-bold rounded-lg transition ${
                       config.projectType === "commercial"
                         ? "bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-2xs"
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
@@ -194,6 +197,19 @@ export const SolarSetupTab: React.FC<SolarSetupTabProps> = ({
                   >
                     <Building className="w-3.5 h-3.5" />
                     <span>Comm</span>
+                  </button>
+                  <button
+                    type="button"
+                    title="Industrial"
+                    onClick={() => onChange({ projectType: "industrial" })}
+                    className={`flex items-center justify-center gap-1 px-1 py-1.5 text-xs font-bold rounded-lg transition ${
+                      config.projectType === "industrial"
+                        ? "bg-white dark:bg-slate-800 text-sky-600 dark:text-sky-400 shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    <Factory className="w-3.5 h-3.5" />
+                    <span>Ind</span>
                   </button>
                 </div>
               </div>

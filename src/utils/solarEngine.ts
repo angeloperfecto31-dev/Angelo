@@ -4324,7 +4324,7 @@ export function determineRecommendedModule(
 
   // 2. Large Industrial / Ground-Mount / Utility-scale (> 80 kWp or ground-mount/carport)
   // Requires high-power density 600W - 635W+ bifacial/monofacial 72/78-cell modules
-  if (targetKwp > 80.0 || isGroundMountOrCarport) {
+  if (targetKwp > 80.0 || isGroundMountOrCarport || (config.projectType === "industrial" && targetKwp > 15.0)) {
     if (isGroundMountOrCarport) {
       const bifacialPreferred = [
         "longi-himo7-600",
@@ -4785,7 +4785,7 @@ export function computeSolarDesign(
       ? overrides.acIsolatorRatingAmps
       : autoAcIsolatorRatingAmps;
 
-  const autoAcKaic = config.projectType === "commercial" ? 35 : 18;
+  const autoAcKaic = config.projectType === "commercial" || config.projectType === "industrial" ? 35 : 18;
   const effectiveAcKaic =
     overrides.acKaic !== undefined && overrides.acKaic > 0
       ? overrides.acKaic

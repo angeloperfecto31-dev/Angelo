@@ -283,7 +283,7 @@ export const SolarPVTab: React.FC<SolarPVTabProps> = ({
                 <span className="text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-medium">
                   <Sparkles className="w-3 h-3 shrink-0" />
                   <span>
-                    Auto-selected for <strong>{config.projectType === "residential" ? "Residential" : "Commercial"}</strong> requirements ({calc.totalDcCapacityKwp || config.targetCapacityKwp} kWp needed): <strong>{recommendedModule.manufacturer} {recommendedModule.model}</strong> ({recommendedModule.ratedPowerWp}Wp, {recommendedModule.efficiencyPercent}% Eff, {recommendedModule.weightKg}kg).
+                    Auto-selected for <strong>{config.projectType === "residential" ? "Residential" : config.projectType === "industrial" ? "Industrial" : "Commercial"}</strong> requirements ({calc.totalDcCapacityKwp || config.targetCapacityKwp} kWp needed): <strong>{recommendedModule.manufacturer} {recommendedModule.model}</strong> ({recommendedModule.ratedPowerWp}Wp, {recommendedModule.efficiencyPercent}% Eff, {recommendedModule.weightKg}kg).
                   </span>
                 </span>
               ) : (
