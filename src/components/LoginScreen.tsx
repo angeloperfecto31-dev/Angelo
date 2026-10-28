@@ -3,6 +3,7 @@ import { auth } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { Zap, AlertCircle, Eye, EyeOff, CheckCircle2, Lock, Mail, ChevronRight, AlertTriangle, ShieldCheck, Cpu, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { SESSION_NOTICE_EVENT, takeSessionNotice } from '../utils/sessionGuard';
 
 export default function LoginScreen() {
   const [isLogin, setIsLogin] = useState(true);
@@ -25,8 +26,22 @@ export default function LoginScreen() {
     } catch (e) {
       console.error(e);
     }
-    return "";
+    // Single-device session messages (blocked sign-in, session taken over or ended)
+    return takeSessionNotice();
   });
+
+  // A sign-in blocked by the single-device rule returns here without remounting this screen
+  useEffect(() => {
+    const onNotice = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (!text) return;
+      takeSessionNotice();
+      setSubEndedNotice(text);
+      setLoading(false);
+    };
+    window.addEventListener(SESSION_NOTICE_EVENT, onNotice);
+    return () => window.removeEventListener(SESSION_NOTICE_EVENT, onNotice);
+  }, []);
   
   const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
@@ -78,6 +93,7 @@ export default function LoginScreen() {
     }
 
     setLoading(true);
+    setSubEndedNotice('');
 
     try {
       if (isLogin) {
