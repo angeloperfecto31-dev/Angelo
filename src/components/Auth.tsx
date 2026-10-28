@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
+import { logout } from '../utils/sessionGuard';
 
 export function Auth() {
   const [user, setUser] = useState<User | null>(null);
@@ -30,7 +31,7 @@ export function Auth() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await logout();
     } catch (error: any) {
       console.error('Logout error:', error);
     }

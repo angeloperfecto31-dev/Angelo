@@ -5,6 +5,7 @@ import { groupSavedRoomsByFloor } from "./utils/modelFloors";
 import { isEqual } from "lodash";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
+import { SessionBlockedError, blockedMessage, claimSession, logout, setSessionNotice, watchSession } from "./utils/sessionGuard";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
@@ -191,19 +192,50 @@ export default function App() {
   const isActiveRef = useRef(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
+        setUser(null);
         setIsActive(false);
         isActiveRef.current = false;
         setAuthLoading(false);
-      } else {
-        // Prevent layout/payment screen flickering during authentication/subscription checks
-        setAuthLoading(true);
+        return;
       }
+      // Prevent layout/payment screen flickering during authentication/subscription checks
+      setAuthLoading(true);
+      // Single-device sessions: claim this account's session before any user data is loaded
+      // (the Firestore rules refuse user data to a sign-in that does not hold the session)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await claimSession(currentUser);
+          if (auth.currentUser?.uid === currentUser.uid) setUser(currentUser);
+          return;
+        } catch (e) {
+          if (e instanceof SessionBlockedError) {
+            setSessionNotice(blockedMessage(e));
+            await signOut(auth);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        }
+      }
+      setSessionNotice("Could not start a secure session. Check your internet connection, then sign in again.");
+      await signOut(auth);
     });
     return () => unsubscribe();
   }, []);
+
+  // Keep this device's session alive; sign out here if it is taken over or ended by an administrator
+  useEffect(() => {
+    if (!user) return;
+    return watchSession(user, (reason, device) => {
+      setSessionNotice(
+        reason === "revoked"
+          ? "Your session was ended by an administrator. Please sign in again."
+          : `This account was signed in on ${device || "another device"} after this device had been inactive, so you were signed out here.`,
+      );
+      signOut(auth);
+    });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -254,7 +286,7 @@ export default function App() {
               setAuthLoading(false);
 
               if (previouslyActive && !isAdmin) {
-                signOut(auth)
+                logout()
                   .then(() => {
                     localStorage.setItem("subscription_ended_logout", "true");
                   })
@@ -494,7 +526,7 @@ export default function App() {
         isActiveRef.current = false;
         setShowRenew(true);
         if (!isAdmin) {
-          signOut(auth)
+          logout()
             .then(() => {
               localStorage.setItem("subscription_ended_logout", "true");
             })
@@ -5329,7 +5361,7 @@ export default function App() {
                       onClick={async () => {
                         setIsProfileDropdownOpen(false);
                         try {
-                          await signOut(auth);
+                          await logout();
                         } catch (err) {
                           console.error(err);
                         }
@@ -5606,7 +5638,7 @@ export default function App() {
                     onClick={async () => {
                       setIsMobileMenuOpen(false);
                       try {
-                        await signOut(auth);
+                        await logout();
                       } catch (err) {
                         console.error(err);
                       }

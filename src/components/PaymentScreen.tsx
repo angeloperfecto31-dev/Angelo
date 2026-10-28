@@ -4,6 +4,7 @@ import * as XLSX from "xlsx-js-style";
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel, BorderStyle } from "docx";
 import { saveAs } from "file-saver";
 import { User, signOut } from "firebase/auth";
+import { logout, releaseSession } from "../utils/sessionGuard";
 import { auth, db } from "../firebase";
 import {
   doc,
@@ -60,6 +61,7 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import InvoiceManager, { createOrGetInvoiceData } from "./InvoiceManager";
+import SessionManager from "./SessionManager";
 import SubscriptionManager from "./SubscriptionManager";
 
 /** Bank / e-wallet account names in capital letters, single-spaced (older records may be mixed case) */
@@ -186,7 +188,7 @@ export default function PaymentScreen({
   const [confirmResetMaribank, setConfirmResetMaribank] = useState(false);
   const [confirmResetMaya, setConfirmResetMaya] = useState(false);
   const [confirmClearPromo, setConfirmClearPromo] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions" | "backup_restore">("verifications");
+  const [adminSubTab, setAdminSubTab] = useState<"verifications" | "invoices" | "subscriptions" | "backup_restore" | "sessions">("verifications");
 
   // Admin Backup & Restore System States
   const [backupHistory, setBackupHistory] = useState<any[]>([]);
@@ -1215,6 +1217,7 @@ export default function PaymentScreen({
           } catch (dbErr) {
             // ignore
           }
+          await releaseSession();
           await auth.currentUser?.delete();
           window.history.replaceState(
             {},
@@ -1225,7 +1228,7 @@ export default function PaymentScreen({
         }
       } catch (e: any) {
         console.error(e);
-        signOut(auth);
+        logout();
         window.history.replaceState(
           {},
           document.title,
@@ -2427,7 +2430,7 @@ export default function PaymentScreen({
   };
 
   const handleLogout = () => {
-    signOut(auth);
+    logout();
   };
 
   // Helper to determine subscription/registration date for sorting & filtering
@@ -3887,6 +3890,16 @@ export default function PaymentScreen({
             >
               📥 Backup & Restore
             </button>
+            <button
+              onClick={() => setAdminSubTab("sessions")}
+              className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+                adminSubTab === "sessions"
+                  ? "border-indigo-600 text-indigo-600 font-extrabold"
+                  : "border-transparent text-slate-400 hover:text-slate-600 font-bold"
+              }`}
+            >
+              🔐 Sessions
+            </button>
           </div>
 
           {adminStatusMsg && (
@@ -3901,6 +3914,8 @@ export default function PaymentScreen({
             <InvoiceManager user={user} isAdminPanel={true} />
           ) : adminSubTab === "subscriptions" ? (
             <SubscriptionManager />
+          ) : adminSubTab === "sessions" ? (
+            <SessionManager />
           ) : adminSubTab === "backup_restore" ? (
             <div className="space-y-8 animate-fade-in">
               {/* Core Controls Header Card */}

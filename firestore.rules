@@ -11,14 +11,33 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Check if user is the owner of the document
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    // ---- Single-device sessions (see src/utils/sessionGuard.ts)
+    // One record per account, activeSessions/{uid}, bound to the sign-in (auth_time) of the ID token that
+    // claimed it. A request is allowed only from that sign-in, and only while its heartbeat is fresh.
+    // Keep sessionTtl() equal to SESSION_TTL_MS in sessionGuard.ts.
+    function sessionTtl() {
+      return duration.value(240, 's');
     }
 
-    // Verify if the user matches our master admin email
+    function hasActiveSession() {
+      let path = /databases/$(database)/documents/activeSessions/$(request.auth.uid);
+      return exists(path)
+        && get(path).data.authTime == request.auth.token.auth_time
+        && request.time <= get(path).data.lastSeen + sessionTtl();
+    }
+
+    // Check if user is the owner of the document (from the account's active session)
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId && hasActiveSession();
+    }
+
+    // Verify if the user matches our master admin email (administrators also hold a single session)
     function isAdmin() {
-      return request.auth != null && 
+      return isAdminEmail() && hasActiveSession();
+    }
+
+    function isAdminEmail() {
+      return request.auth != null &&
              request.auth.token != null &&
              request.auth.token.email != null &&
              request.auth.token.email is string &&
@@ -227,6 +246,29 @@ service cloud.firestore {
         && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
     }
 
+    // 2.5 Active sessions: one per account. Claimed only when there is none, it is the caller's own sign-in,
+    // or it has timed out; refreshed by its own sign-in; ended by its own sign-in or by an administrator.
+    function isValidSession(data, uid) {
+      return data.keys().hasOnly(["uid", "sessionId", "authTime", "device", "createdAt", "lastSeen"])
+        && data.keys().hasAll(["uid", "sessionId", "authTime", "device", "createdAt", "lastSeen"])
+        && data.uid == uid
+        && data.sessionId is string && data.sessionId.size() >= 16 && data.sessionId.size() <= 64
+        && data.authTime == request.auth.token.auth_time
+        && data.device is string && data.device.size() <= 200
+        && data.createdAt is timestamp
+        && data.lastSeen == request.time;
+    }
+
+    match /activeSessions/{uid} {
+      allow read: if (isSignedIn() && request.auth.uid == uid) || isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == uid && isValidId(uid) && isValidSession(incoming(), uid);
+      allow update: if isSignedIn() && request.auth.uid == uid && isValidSession(incoming(), uid) && (
+        existing().authTime == request.auth.token.auth_time ||
+        request.time > existing().lastSeen + sessionTtl()
+      );
+      allow delete: if (isSignedIn() && request.auth.uid == uid && existing().authTime == request.auth.token.auth_time) || isAdmin();
+    }
+
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
     match /users/{userId} {
       // Safe list query (Pillar 8: Secure List Queries)
@@ -336,8 +378,8 @@ service cloud.firestore {
 
     // 7. System Invoices (ABAC Multi-tenant isolation)
     match /invoices/{invoiceId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create: if isAdmin() || (isSignedIn() && request.resource.data.userId == request.auth.uid && isValidInvoice(request.resource.data));
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid && hasActiveSession());
+      allow create: if isAdmin() || (isSignedIn() && request.resource.data.userId == request.auth.uid && hasActiveSession() && isValidInvoice(request.resource.data));
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -349,7 +391,7 @@ service cloud.firestore {
     }
     
     match /transactions/{transactionId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid && hasActiveSession());
       allow write: if isAdmin();
     }
 
