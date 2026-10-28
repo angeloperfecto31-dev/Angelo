@@ -4,7 +4,8 @@ import { pdfFitText } from "./pdfLayout";
 import autoTable from "jspdf-autotable";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
 import { resolveSolarBOM } from "./solarEngine";
-import { captureSolarBlockDiagram } from "./solarSldCapture";
+import { captureSolarBlockDiagram, captureSolarShortCircuitDiagram, captureSolarVoltageDropDiagram } from "./solarSldCapture";
+import { computeSolarStudies, type SolarStudies } from "./solarStudies";
 import { drawCaptureToPdf } from "./pdfCapturedDrawing";
 import { hasRoofPlan, roofPlanLayout, roofPlanImage, roofPlanInfo, drawRoofPlanPdf, drawRoofPlanInfoPdf } from "./roofPlanExport";
 
@@ -17,8 +18,11 @@ export async function exportSolarToPdf(
   config: SolarDesignConfig,
   calc: SolarCalculationResults,
   /** Panel board the house loads are fed from (shown on the block diagram) */
-  panelDesignation?: string
+  panelDesignation?: string,
+  /** Short-circuit and voltage-drop studies (project service data); computed with defaults when absent */
+  studies?: SolarStudies
 ) {
+  const study = studies || computeSolarStudies(config, calc, null, { designation: panelDesignation });
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -724,6 +728,32 @@ export async function exportSolarToPdf(
     w: contentWidth - 8,
     h: 142,
   });
+
+  // -------------------------------------------------------------
+  // SHORT CIRCUIT ANALYSIS (POINT-TO-POINT) & VOLTAGE DROP (own page, the same diagrams as in Solar Design)
+  // -------------------------------------------------------------
+  doc.addPage();
+  doc.setFont("Helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(C_NAVY[0], C_NAVY[1], C_NAVY[2]);
+  doc.text("SHORT CIRCUIT ANALYSIS & VOLTAGE DROP CALCULATION", margin, 22);
+  doc.setFont("Helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(C_MUTED[0], C_MUTED[1], C_MUTED[2]);
+  doc.text(
+    `Point-to-point fault currents with the device interrupting-rating check, and the voltage drop from the PV array to the service entrance (${study.sc.allOk && study.vd.allOk ? "all checks pass" : "review required"})`,
+    margin,
+    26,
+    { maxWidth: contentWidth }
+  );
+  doc.setDrawColor(C_BORDER[0], C_BORDER[1], C_BORDER[2]);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, 31, contentWidth, 114, 2, 2, "S");
+  drawCaptureToPdf(doc, captureSolarShortCircuitDiagram(study), { x: margin + 3, y: 34, w: contentWidth - 6, h: 108 });
+  doc.setDrawColor(C_BORDER[0], C_BORDER[1], C_BORDER[2]);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(margin, 150, contentWidth, 104, 2, 2, "S");
+  drawCaptureToPdf(doc, captureSolarVoltageDropDiagram(study), { x: margin + 3, y: 153, w: contentWidth - 6, h: 98 });
 
   // -------------------------------------------------------------
   // ROOF PLAN (when a roof has been captured and outlined)

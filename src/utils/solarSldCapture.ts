@@ -10,6 +10,8 @@ import {
   PictorialTheme,
 } from "../components/solar/SolarSLDPictorial";
 import { SolarBlockDiagram, BLOCK_W, BLOCK_H } from "../components/solar/SolarBlockDiagram";
+import { SolarShortCircuitDiagram, SolarVoltageDropDiagram, SC_W, SC_H, VD_W, VD_H } from "../components/solar/SolarStudyDiagrams";
+import type { SolarStudies } from "./solarStudies";
 
 /**
  * Captures the on-screen pictorial Solar SLD as plain geometry so the AutoCAD (DXF) export can
@@ -107,6 +109,24 @@ export function captureSolarBlockDiagram(
     BLOCK_W,
     BLOCK_H,
     React.createElement(SolarBlockDiagram, { config, calc, theme: CAD_WHITE_THEME, panelDesignation })
+  );
+}
+
+/** The POINT-TO-POINT SHORT CIRCUIT DIAGRAM (same drawing as on screen), for the PDF and DXF exports. */
+export function captureSolarShortCircuitDiagram(studies: SolarStudies): SldCapture {
+  return captureSvgDrawing(
+    SC_W,
+    SC_H,
+    React.createElement(SolarShortCircuitDiagram, { study: studies.sc, theme: CAD_WHITE_THEME, panelName: studies.panelName })
+  );
+}
+
+/** The VOLTAGE DROP DIAGRAM (same drawing as on screen), for the PDF and DXF exports. */
+export function captureSolarVoltageDropDiagram(studies: SolarStudies): SldCapture {
+  return captureSvgDrawing(
+    VD_W,
+    VD_H,
+    React.createElement(SolarVoltageDropDiagram, { study: studies.vd, theme: CAD_WHITE_THEME, panelName: studies.panelName })
   );
 }
 

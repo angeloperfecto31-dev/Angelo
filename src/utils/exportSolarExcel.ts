@@ -2,6 +2,7 @@ import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
 import { resolveSolarBOM } from "./solarEngine";
+import { computeSolarStudies, type SolarStudies } from "./solarStudies";
 
 /**
  * Generates an executive-grade, multi-sheet Solar PV Engineering Workbook (.xlsx)
@@ -10,8 +11,11 @@ import { resolveSolarBOM } from "./solarEngine";
  */
 export function exportSolarToExcel(
   config: SolarDesignConfig,
-  calc: SolarCalculationResults
+  calc: SolarCalculationResults,
+  /** Short-circuit and voltage-drop studies (project service data); computed with defaults when absent */
+  studies?: SolarStudies
 ) {
+  const study = studies || computeSolarStudies(config, calc);
   const wb = XLSX.utils.book_new();
 
   // Color Definitions
@@ -401,6 +405,62 @@ export function exportSolarToExcel(
   }
 
   XLSX.utils.book_append_sheet(wb, wsCable, "Cable Sizing & V-Drop");
+
+  // -------------------------------------------------------------
+  // SHEET: SHORT CIRCUIT ANALYSIS (POINT-TO-POINT) & VOLTAGE DROP (same values as the SLD diagrams)
+  // -------------------------------------------------------------
+  const { sc, vd } = study;
+  const scHead = ["PT.", "FAULT LOCATION", "FAULT", "AVAILABLE (A)", "X/R", "PROTECTIVE DEVICE", "RATING (kA)", "BASIS", "STATUS"];
+  const vdHead = ["SEGMENT", "CABLE", "LENGTH (M)", "SIZE (mm²)", "CURRENT (A)", "V BASE (V)", "V-DROP (V)", "V-DROP (%) / CUMUL.", "STATUS"];
+  const studyAOA: any[][] = [
+    ["SHORT CIRCUIT ANALYSIS (POINT-TO-POINT) & VOLTAGE DROP CALCULATION", "", "", "", "", "", "", "", ""],
+    [
+      `Service ${sc.serviceLabel}, utility ${sc.utilityMva} MVA @ ${sc.primaryKv} kV, transformer ${sc.transformerKva} kVA Z ${sc.transformerZPct}%, service feeder ${sc.feeder.lengthM} m ${sc.feeder.size} mm² x${sc.feeder.runs} (${sc.usesProjectData ? "Short Circuit module" : "default values"})`,
+      "", "", "", "", "", "", "", "",
+    ],
+    [],
+    scHead,
+    ...sc.points.map((p) => [p.tag, p.location, p.faultType, p.amps, p.xr ?? "-", p.device, p.ratingKa, p.basis, p.ok ? "PASSED" : "FAILED"]),
+    [],
+    vdHead,
+    ...vd.segments.map((g, i) => [
+      `${g.from} - ${g.to}`,
+      g.cable,
+      g.lengthM,
+      g.runs > 1 ? `${g.sizeMm2} x${g.runs}` : g.sizeMm2,
+      g.currentA,
+      g.basisV,
+      g.vdV,
+      `${g.vdPct.toFixed(2)}% / ${vd.cumulativePct[i].toFixed(2)}% (Max ${g.limitPct}%)`,
+      g.ok ? "PASSED" : "FAILED",
+    ]),
+    ["TOTAL: PV ARRAY TO SERVICE ENTRANCE", "", vd.segments.reduce((a, g) => a + g.lengthM, 0), "", "", "", "", `${vd.totalPct.toFixed(2)}% (Max ${vd.totalLimitPct}%)`, vd.totalOk ? "PASSED" : "FAILED"],
+  ];
+  const wsStudy = XLSX.utils.aoa_to_sheet(studyAOA);
+  wsStudy["!cols"] = [{ wch: 42 }, { wch: 44 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 40 }, { wch: 22 }, { wch: 52 }, { wch: 14 }];
+  const scHeadRow = 4;
+  const vdHeadRow = scHeadRow + sc.points.length + 2;
+  for (let c = 0; c < 9; c++) {
+    const col = XLSX.utils.encode_col(c);
+    setCellStyle(wsStudy, `${col}1`, styleHeaderBanner);
+    setCellStyle(wsStudy, `${col}2`, styleSubBanner);
+    setCellStyle(wsStudy, `${col}${scHeadRow}`, styleTableHead);
+    setCellStyle(wsStudy, `${col}${vdHeadRow}`, styleTableHead);
+  }
+  const bodyRows = [
+    ...sc.points.map((_, i) => scHeadRow + 1 + i),
+    ...Array.from({ length: vd.segments.length + 1 }, (_, i) => vdHeadRow + 1 + i),
+  ];
+  bodyRows.forEach((row, i) => {
+    const rowBg = i % 2 === 0 ? "FFFFFF" : COLOR_ZEBRA_BG;
+    for (let c = 0; c < 8; c++) {
+      const col = XLSX.utils.encode_col(c);
+      setCellStyle(wsStudy, `${col}${row}`, { ...(c === 0 ? styleDataLabel : styleDataValue), fill: { fgColor: { rgb: rowBg } } });
+    }
+    const statusVal = studyAOA[row - 1][8];
+    setCellStyle(wsStudy, `I${row}`, statusVal === "PASSED" ? stylePassBadge : { ...stylePassBadge, fill: { fgColor: { rgb: COLOR_WARN_BG } }, font: { ...stylePassBadge.font, color: { rgb: COLOR_WARN_TEXT } } });
+  });
+  XLSX.utils.book_append_sheet(wb, wsStudy, "Short Circuit & V-Drop");
 
   // -------------------------------------------------------------
   // SHEET 5: SOLAR BILL OF MATERIALS (BOM) & COST ESTIMATE

@@ -7772,6 +7772,7 @@ export default function App() {
                     panels={allPanelsList}
                     circuits={circuits}
                     subPanels={uniqueSubPanels}
+                    iscParams={iscParams}
                     projectName={panel?.project || "Solar PV Installation"}
                     projectLocation={panel?.location || "Philippines"}
                     clientName={panel?.owner || "Valued Client"}

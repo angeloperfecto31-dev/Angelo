@@ -37,6 +37,8 @@ import { exportSolarToDxf } from "../../utils/exportSolarDxf";
 import { exportSolarToWord } from "../../utils/exportSolarWord";
 import { SolarSLDPictorial, computePictorialLayout, sldDesignIssues, epsOutputInfo } from "./SolarSLDPictorial";
 import { SolarBlockDiagram, BLOCK_W, BLOCK_H } from "./SolarBlockDiagram";
+import { SolarShortCircuitDiagram, SolarVoltageDropDiagram, SC_W, SC_H, VD_W, VD_H } from "./SolarStudyDiagrams";
+import { computeSolarStudies, kaText, type SolarStudies } from "../../utils/solarStudies";
 import { hasRoofPlan, roofPlanLayout, roofPlanImage, roofPlanInfo, drawRoofPlanPdf, drawRoofPlanInfoPdf } from "../../utils/roofPlanExport";
 import { computeLinkedPanelData, solarBackfeedAmps, acConductorParts } from "../../utils/solarLinkedPanel";
 
@@ -47,6 +49,8 @@ interface SolarSLDProps {
   circuits?: Circuit[];
   subPanels?: any[];
   vdCalculations?: VoltageDropCalculation[];
+  /** Short-circuit and voltage-drop studies (computed with the project service data by the Solar module) */
+  studies?: SolarStudies;
   onUpdateConfig?: (newConfig: SolarDesignConfig) => void;
   onSetOverride?: (field: keyof SolarDesignOverrides, value: any) => void;
 }
@@ -58,6 +62,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   circuits,
   subPanels,
   vdCalculations,
+  studies: studiesProp,
   onUpdateConfig,
   onSetOverride,
 }) => {
@@ -114,6 +119,10 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
     false;
 
   const stringsCount = Math.max(1, calc.effective.numberOfStrings || 1);
+  const studies = useMemo(
+    () => studiesProp || computeSolarStudies(config, calc, null, linkedPanelData),
+    [studiesProp, config, calc, linkedPanelData]
+  );
   const designIssues = useMemo(() => sldDesignIssues(config, calc), [config, calc]);
   const epsInfo = useMemo(() => epsOutputInfo(config, calc), [config, calc]);
 
@@ -128,6 +137,13 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const bdScale = BD_PANEL_W / BLOCK_W;
   const bdPanelH = Math.round(BLOCK_H * bdScale) + 10;
   const bdX = svgWidth - 44 - BD_PANEL_W;
+  // Below the block diagram, same column: SHORT CIRCUIT (point-to-point) and VOLTAGE DROP diagrams
+  const STUDY_GAP = 24;
+  const scPanelH = Math.round(SC_H * bdScale) + 10;
+  const vdPanelH = Math.round(VD_H * bdScale) + 10;
+  const scPanelTop = pictorialTop + bdPanelH + STUDY_GAP;
+  const vdPanelTop = scPanelTop + scPanelH + STUDY_GAP;
+  const rightColumnBottom = vdPanelTop + vdPanelH;
 
   // ---------- Sheet notes & title block band (wrapped monospace text; the band grows to fit) ----------
   const SHEET_FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -281,7 +297,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
   const tbHeight = titleBlock.height;
 
   const bandHeight = Math.max(showGeneralNotes ? sheetNotes.height : 0, showTitleBlock ? tbHeight : 0);
-  const svgHeight = Math.max(1100, pictorialLayout.bottom + (bandHeight ? bandHeight + 40 : 0) + 50);
+  const svgHeight = Math.max(1100, Math.max(pictorialLayout.bottom, rightColumnBottom) + (bandHeight ? bandHeight + 40 : 0) + 50);
   // Canvas height follows the sheet proportions so "Fit" uses the full width (text stays legible)
   const canvasHeight = canvasWidth
     ? Math.round(Math.min(Math.max(520, ((canvasWidth - 32) * svgHeight) / svgWidth + 40), 1600))
@@ -473,6 +489,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
         subPanels,
         vdCalculations,
         linkedPanelData,
+        studies,
       });
     } catch (err) {
       console.error("Word Export failed:", err);
@@ -497,7 +514,7 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
       showEpsLoad: effectiveShowEpsLoad,
       showGrounding,
       showConductorSpecs,
-    });
+    }, studies);
   };
 
   // Color Theme definitions for CAD drafting
@@ -716,6 +733,20 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
               panelDesignation={linkedPanelData.designation}
               onSelect={setSelectedElement}
             />
+          </g>
+        </g>
+
+        {/* SHORT CIRCUIT (point-to-point) and VOLTAGE DROP diagrams, under the block diagram */}
+        <g id="sld-short-circuit-diagram" transform={`translate(${bdX}, ${scPanelTop})`} className="cursor-pointer" onClick={() => setSelectedElement("short_circuit")}>
+          <rect x="0" y="0" width={BD_PANEL_W} height={scPanelH} fill={themeColors.equipmentFill} stroke={themeColors.border} strokeWidth="1.8" />
+          <g transform={`translate(0, 4) scale(${bdScale})`}>
+            <SolarShortCircuitDiagram study={studies.sc} theme={themeColors} panelName={studies.panelName} />
+          </g>
+        </g>
+        <g id="sld-voltage-drop-diagram" transform={`translate(${bdX}, ${vdPanelTop})`} className="cursor-pointer" onClick={() => setSelectedElement("voltage_drop")}>
+          <rect x="0" y="0" width={BD_PANEL_W} height={vdPanelH} fill={themeColors.equipmentFill} stroke={themeColors.border} strokeWidth="1.8" />
+          <g transform={`translate(0, 4) scale(${bdScale})`}>
+            <SolarVoltageDropDiagram study={studies.vd} theme={themeColors} panelName={studies.panelName} />
           </g>
         </g>
 
@@ -1133,6 +1164,8 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
                 {selectedElement === "eps_panel" && "Essential Loads Panel (EPS Backup Output)"}
                 {selectedElement === "design_validation" && "Design Validation"}
                 {selectedElement === "ct_sensor" && "CT / Smart Meter (Load & Export Monitoring)"}
+                {selectedElement === "short_circuit" && "Short Circuit Analysis (Point-to-Point)"}
+                {selectedElement === "voltage_drop" && "Voltage Drop Calculation"}
               </h4>
             </div>
             <button
@@ -1217,6 +1250,35 @@ export const SolarSLD: React.FC<SolarSLDProps> = ({
                 <div>
                   <span className="text-slate-400 block">Cable:</span>
                   <span className="font-bold text-slate-700 dark:text-slate-200">Signal / communication only (per inverter manual)</span>
+                </div>
+              </>
+            )}
+
+            {selectedElement === "short_circuit" &&
+              studies.sc.points.map((p) => (
+                <div key={p.id}>
+                  <span className="text-slate-400 block">{p.tag}: {p.location}</span>
+                  <span className={`font-bold ${p.ok ? "text-slate-700 dark:text-slate-200" : "text-red-600"}`}>
+                    {kaText(p.amps)} ({p.faultType}) - {p.device}, {p.ratingKa} kA {p.ok ? "OK" : "INADEQUATE"}
+                  </span>
+                </div>
+              ))}
+
+            {selectedElement === "voltage_drop" && (
+              <>
+                {studies.vd.segments.map((g) => (
+                  <div key={g.id}>
+                    <span className="text-slate-400 block">{g.from} - {g.to}:</span>
+                    <span className={`font-bold ${g.ok ? "text-slate-700 dark:text-slate-200" : "text-red-600"}`}>
+                      {g.vdV.toFixed(2)} V ({g.vdPct.toFixed(2)}%), limit {g.limitPct}%
+                    </span>
+                  </div>
+                ))}
+                <div>
+                  <span className="text-slate-400 block">Total (PV array to service):</span>
+                  <span className={`font-bold ${studies.vd.totalOk ? "text-emerald-600" : "text-red-600"}`}>
+                    {studies.vd.totalPct.toFixed(2)}% (limit {studies.vd.totalLimitPct}%)
+                  </span>
                 </div>
               </>
             )}
