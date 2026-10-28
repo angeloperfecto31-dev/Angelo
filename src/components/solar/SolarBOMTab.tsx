@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../../types/solar";
+import type { SolarStudies } from "../../utils/solarStudies";
 import { resolveSolarBOM } from "../../utils/solarEngine";
 import { exportSolarToExcel } from "../../utils/exportSolarExcel";
 import { exportSolarToPdf } from "../../utils/exportSolarPdf";
@@ -22,6 +23,8 @@ interface SolarBOMTabProps {
   config: SolarDesignConfig;
   calc: SolarCalculationResults;
   onChange: (updated: Partial<SolarDesignConfig>) => void;
+  /** Short-circuit and voltage-drop studies, for the exports */
+  studies?: SolarStudies;
   projectInfo?: {
     projectName?: string;
     projectLocation?: string;
@@ -34,6 +37,7 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
   config,
   calc,
   onChange,
+  studies,
   projectInfo,
 }) => {
   const [isQuotationOpen, setIsQuotationOpen] = useState(false);
@@ -201,7 +205,7 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
               <span>Generate Quotation / Proposal</span>
             </button>
             <button
-              onClick={() => exportSolarToExcel(config, calc)}
+              onClick={() => exportSolarToExcel(config, calc, studies)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl transition"
               title="Export Solar BOM to Excel (.xlsx)"
             >
@@ -209,7 +213,7 @@ export const SolarBOMTab: React.FC<SolarBOMTabProps> = ({
               <span>Export Excel</span>
             </button>
             <button
-              onClick={() => exportSolarToPdf(config, calc)}
+              onClick={() => exportSolarToPdf(config, calc, studies?.panelName, studies)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl transition"
               title="Export Solar Engineering PDF Report"
             >

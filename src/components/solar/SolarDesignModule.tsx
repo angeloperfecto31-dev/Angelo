@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { SolarDesignConfig, SolarDesignOverrides } from "../../types/solar";
-import { PanelConfig, Circuit } from "../../types";
+import { PanelConfig, Circuit, ShortCircuitParams } from "../../types";
 import {
   computeSolarDesign,
   DEFAULT_SOLAR_CONFIG,
@@ -20,6 +20,8 @@ import { SolarProtectionTab } from "./SolarProtectionTab";
 import { SolarSLD } from "./SolarSLD";
 import { SolarRoofPlanTab } from "./SolarRoofPlanTab";
 import { SolarBOMTab } from "./SolarBOMTab";
+import { SolarStudiesTab } from "./SolarStudiesTab";
+import { computeSolarStudies } from "../../utils/solarStudies";
 import { SolarQuotationModal } from "./SolarQuotationModal";
 import {
   Sun,
@@ -40,6 +42,7 @@ import {
   RotateCcw,
   Receipt,
   Map as MapIcon,
+  Activity,
 } from "lucide-react";
 
 interface SolarDesignModuleProps {
@@ -49,6 +52,8 @@ interface SolarDesignModuleProps {
   circuits: Circuit[];
   subPanels?: any[];
   vdCalculations?: any[];
+  /** Project short-circuit data (utility, transformer, service feeder) from the Short Circuit module */
+  iscParams?: ShortCircuitParams;
   projectName?: string;
   projectLocation?: string;
   clientName?: string;
@@ -62,6 +67,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   circuits,
   subPanels,
   vdCalculations,
+  iscParams,
   projectName,
   projectLocation,
   clientName,
@@ -195,7 +201,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   ]);
 
   const [activeSubTab, setActiveSubTab] = useState<
-    "setup" | "pv" | "inverter" | "protection" | "sld" | "roof" | "bom"
+    "setup" | "pv" | "inverter" | "protection" | "sc" | "vd" | "sld" | "roof" | "bom"
   >("setup");
   const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
 
@@ -203,6 +209,16 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   const calc = useMemo(() => {
     return computeSolarDesign(currentConfig, linkedPanel, circuits, subPanels);
   }, [currentConfig, linkedPanel, circuits, subPanels]);
+
+  // Panel the system connects to and the short-circuit / voltage-drop studies (shared by the tabs, the SLD and the exports)
+  const linkedPanelData = useMemo(
+    () => computeLinkedPanelData(currentConfig, panels, circuits, subPanels, vdCalculations),
+    [currentConfig, panels, circuits, subPanels, vdCalculations]
+  );
+  const studies = useMemo(
+    () => computeSolarStudies(currentConfig, calc, iscParams, linkedPanelData),
+    [currentConfig, calc, iscParams, linkedPanelData]
+  );
 
   const handleUpdate = (updated: Partial<SolarDesignConfig>) => {
     const nextConfig = { ...currentConfig, ...updated };
@@ -262,11 +278,11 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
   const handleExportDxf = () => {
     // Same linked panel data (main breaker, busbar, feeder, panel name) as the SLD page export
     const linkedPanelData = computeLinkedPanelData(resolvedConfigForExport, panels, circuits, subPanels, vdCalculations);
-    exportSolarToDxf(resolvedConfigForExport, calc, linkedPanelData);
+    exportSolarToDxf(resolvedConfigForExport, calc, linkedPanelData, undefined, studies);
   };
 
   const handleExportExcel = () => {
-    exportSolarToExcel(resolvedConfigForExport, calc);
+    exportSolarToExcel(resolvedConfigForExport, calc, studies);
   };
 
   const handleExportWord = async () => {
@@ -275,13 +291,14 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
       circuits,
       subPanels,
       vdCalculations,
+      studies,
     });
   };
 
   const handleExportPdf = () => {
     // Same panel name as the SLD, for the block diagram page
     const linkedPanelData = computeLinkedPanelData(resolvedConfigForExport, panels, circuits, subPanels, vdCalculations);
-    exportSolarToPdf(resolvedConfigForExport, calc, linkedPanelData.designation);
+    exportSolarToPdf(resolvedConfigForExport, calc, linkedPanelData.designation, studies);
   };
 
   const handlePrint = () => {
@@ -571,6 +588,32 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab("sc")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            activeSubTab === "sc"
+              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          }`}
+        >
+          <Zap className="w-4 h-4" />
+          <span>5. Short Circuit Analysis</span>
+          {!studies.sc.allOk && <span className="ml-1 w-2 h-2 rounded-full bg-rose-500 inline-block" title="Review required" />}
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab("vd")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            activeSubTab === "vd"
+              ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>6. Voltage Drop</span>
+          {!studies.vd.allOk && <span className="ml-1 w-2 h-2 rounded-full bg-rose-500 inline-block" title="Review required" />}
+        </button>
+
+        <button
           onClick={() => setActiveSubTab("sld")}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
             activeSubTab === "sld"
@@ -579,7 +622,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>5. Single Line Diagram (SLD)</span>
+          <span>7. Single Line Diagram (SLD)</span>
         </button>
 
         <button
@@ -591,7 +634,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
           }`}
         >
           <MapIcon className="w-4 h-4" />
-          <span>6. Roof Plan</span>
+          <span>8. Roof Plan</span>
         </button>
 
         <button
@@ -603,7 +646,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
-          <span>7. Bill of Materials (BOM)</span>
+          <span>9. Bill of Materials (BOM)</span>
         </button>
       </div>
 
@@ -695,6 +738,10 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
         />
       )}
 
+      {(activeSubTab === "sc" || activeSubTab === "vd") && (
+        <SolarStudiesTab mode={activeSubTab} config={currentConfig} studies={studies} onChange={handleUpdate} />
+      )}
+
       {activeSubTab === "sld" && (
         <SolarSLD
           config={currentConfig}
@@ -702,6 +749,8 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
           panels={panels}
           circuits={circuits}
           subPanels={subPanels}
+          vdCalculations={vdCalculations}
+          studies={studies}
           onUpdateConfig={handleUpdate}
           onSetOverride={handleSetOverride}
         />
@@ -713,6 +762,7 @@ export const SolarDesignModule: React.FC<SolarDesignModuleProps> = ({
         <SolarBOMTab
           config={currentConfig}
           calc={calc}
+          studies={studies}
           onChange={handleUpdate}
           projectInfo={{ projectName, projectLocation, clientName, designerName }}
         />

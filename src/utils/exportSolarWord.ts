@@ -27,6 +27,7 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults, SolarBOMItem } from "../types/solar";
+import { computeSolarStudies, kaText, type SolarStudies } from "./solarStudies";
 import { PanelConfig, Circuit } from "../types";
 import { resolveSolarBOM } from "./solarEngine";
 import { computePanelScheduleValues, getConductorLabel } from "./computeEngine";
@@ -42,6 +43,8 @@ export interface SolarWordExportOptions {
   sldImageBuffer?: Uint8Array;
   /** Drawing size (any unit) of sldImageBuffer, used to keep its proportions */
   sldImageSize?: { width: number; height: number };
+  /** Short-circuit and voltage-drop studies (project service data); computed with defaults when absent */
+  studies?: SolarStudies;
 }
 
 // =============================================================================
@@ -936,7 +939,7 @@ export async function exportSolarToWord(
   addTOCEntry("4.0", "Solar Inverter Design & MPPT Tracking Coordination", "Inverter voltage windows, MPPT tracker configurations, continuous AC current, and grid relay.", "Page 6", true);
   addTOCEntry("5.0", "DC-Side Engineering Calculations & Sizing", "String cold Voc limits, gPV string fuses (1.56x Isc), DC isolator switches, and DC voltage drop.", "Page 7", false);
   addTOCEntry("6.0", "AC-Side Engineering Calculations & Feeder Sizing", "Backfeed breaker sizing (1.25x Iac), copper feeder ampacity, voltage drop, and raceway fill.", "Page 8", true);
-  addTOCEntry("7.0", "Solar Electrical Protection & Safety Coordination", "Coordination matrix for fuses, SPDs, breakers, anti-islanding, and grounding electrode.", "Page 9", false);
+  addTOCEntry("7.0", "Solar Electrical Protection & Safety Coordination", "Protection coordination matrix, point-to-point short circuit analysis and voltage drop calculation.", "Page 9", false);
   addTOCEntry("8.0", "Battery Energy Storage System (BESS)", "Battery chemistry, storage capacity, backup autonomy, and DC disconnects (if applicable).", "Page 10", true);
   addTOCEntry("9.0", "System Single Line Diagram (SLD) & Component Schedule", "Embedded high-resolution SLD drawing sheet, power flow, and itemized node equipment.", "Page 11", false);
   addTOCEntry("10.0", "Consumer Breaker Panelboard (MDP) & Interconnection", "PEC 120% busbar rule calculation, main feeder verification, and branch circuits schedule.", "Page 12", true);
@@ -1663,6 +1666,81 @@ export async function exportSolarToWord(
       rows: protectionRows,
     })
   );
+
+  // 7.1 / 7.2: short circuit (point-to-point) and voltage drop - the same values as the SLD diagrams
+  {
+    const study = options.studies || computeSolarStudies(config, calc, null, options.linkedPanelData);
+    const { sc, vd } = study;
+    const head = (cols: string[]) =>
+      new TableRow({ tableHeader: true, children: cols.map((c) => createCell(c, true, AlignmentType.CENTER, PRIMARY_COLOR, "FFFFFF", 16)) });
+    const status = (ok: boolean) => createCell(ok ? "PASSED" : "FAILED", true, AlignmentType.CENTER, ok ? "D1FAE5" : "FEE2E2", ok ? "065F46" : "991B1B", 16);
+    docChildren.push(
+      createSubHeader("7.1 Short Circuit Analysis (Point-to-Point)"),
+      createParagraph(
+        `Source: utility ${sc.utilityMva} MVA at ${sc.primaryKv} kV, transformer ${sc.transformerKva} kVA (Z ${sc.transformerZPct}%, X/R ${sc.transformerXr}), service feeder ${sc.feeder.lengthM} m of ${sc.feeder.size} mm² x${sc.feeder.runs} ${sc.feeder.material}${sc.usesProjectData ? " (Short Circuit module)" : " (default values - enter the actual service data in the Short Circuit module)"}. Impedances per PEC 2017 Chapter 9 Table 9 with R at 20°C for the maximum fault; each inverter adds ${sc.inverterContributionEachA} A (1.5 x maximum AC current). DC fault currents: 1.25 x string Isc (PEC 6.90.8(A)(1)).`
+      ),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: tableBorderGrid,
+        rows: [
+          head(["PT.", "FAULT LOCATION", "FAULT", "AVAILABLE", "X/R", "PROTECTIVE DEVICE", "RATING", "CHECK"]),
+          ...sc.points.map(
+            (p) =>
+              new TableRow({
+                children: [
+                  createCell(p.tag, true, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(p.location, false, AlignmentType.LEFT, "", TEXT_MAIN_COLOR, 16),
+                  createCell(p.faultType, false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(kaText(p.amps), true, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(p.xr != null ? p.xr.toFixed(2) : "-", false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(p.device, false, AlignmentType.LEFT, "", TEXT_MAIN_COLOR, 16),
+                  createCell(`${p.ratingKa} kA`, false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  status(p.ok),
+                ],
+              })
+          ),
+        ],
+      }),
+      createSubHeader("7.2 Voltage Drop Calculation"),
+      createParagraph(
+        `VD = k x I x R x L / 1000 (k = 2 for DC and single-phase, 1.732 for three-phase) at unity power factor, R per PEC 2017 Chapter 9 (75°C). Total from the PV array to the service entrance: ${vd.totalPct.toFixed(2)}% (limit ${vd.totalLimitPct}%, PEC 2017 2.15.2(A) FPN No. 2).`
+      ),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: tableBorderGrid,
+        rows: [
+          head(["SEGMENT", "SIZE", "L (m)", "I (A)", "V BASE", "VD (V)", "VD (%)", "LIMIT", "CUMUL.", "CHECK"]),
+          ...vd.segments.map(
+            (g, i) =>
+              new TableRow({
+                children: [
+                  createCell(`${g.from} - ${g.to}`, false, AlignmentType.LEFT, "", TEXT_MAIN_COLOR, 16),
+                  createCell(`${g.sizeMm2} mm²${g.runs > 1 ? ` x${g.runs}` : ""}`, false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(String(g.lengthM), false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(String(g.currentA), false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(String(g.basisV), false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(g.vdV.toFixed(2), false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(`${g.vdPct.toFixed(2)}%`, true, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(`${g.limitPct}%`, false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  createCell(`${vd.cumulativePct[i].toFixed(2)}%`, false, AlignmentType.CENTER, "", TEXT_MAIN_COLOR, 16),
+                  status(g.ok),
+                ],
+              })
+          ),
+          new TableRow({
+            children: [
+              createCell("TOTAL: PV ARRAY TO SERVICE ENTRANCE", true, AlignmentType.LEFT, "F2F4F7", TEXT_MAIN_COLOR, 16),
+              ...["", "", "", "", ""].map(() => createCell("", false, AlignmentType.CENTER, "F2F4F7", TEXT_MAIN_COLOR, 16)),
+              createCell(`${vd.totalPct.toFixed(2)}%`, true, AlignmentType.CENTER, "F2F4F7", TEXT_MAIN_COLOR, 16),
+              createCell(`${vd.totalLimitPct}%`, false, AlignmentType.CENTER, "F2F4F7", TEXT_MAIN_COLOR, 16),
+              createCell(`${vd.totalPct.toFixed(2)}%`, false, AlignmentType.CENTER, "F2F4F7", TEXT_MAIN_COLOR, 16),
+              status(vd.totalOk),
+            ],
+          }),
+        ],
+      })
+    );
+  }
 
   // -------------------------------------------------------------
   // SECTION 8.0: BATTERY ENERGY STORAGE SYSTEM (BESS)

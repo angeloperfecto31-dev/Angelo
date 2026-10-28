@@ -6,7 +6,8 @@ import TextStyle from "dxf-writer/src/TextStyle.js";
 import { saveAs } from "file-saver";
 import { SolarDesignConfig, SolarCalculationResults } from "../types/solar";
 import { sanitizeStringForDxf, MText } from "./exportDxf";
-import { captureSolarSld, captureSolarBlockDiagram, SldCapture } from "./solarSldCapture";
+import { captureSolarSld, captureSolarBlockDiagram, captureSolarShortCircuitDiagram, captureSolarVoltageDropDiagram, SldCapture } from "./solarSldCapture";
+import { computeSolarStudies, kaText, type SolarStudies } from "./solarStudies";
 import { hasRoofPlan, roofPlanLayout, roofPlanInfo, edgeLabelOffset } from "./roofPlanExport";
 import { metersPerPx, moduleDims, moduleCorners, assignStrings, roofPlanStats } from "./roofPlan";
 import { solarBackfeedAmps, backfeedLabel, acConductorParts } from "./solarLinkedPanel";
@@ -31,14 +32,16 @@ try {
  * Implements disciplined automated CAD layout spacing:
  * - Prevents all text overlapping, colliding equipment annotations, or line cut-throughs
  * - Guarantees 100% border containment: zero elements bleed outside sheet margins
- * - Structured 4-Sheet Engineering Drawing Package (ISO A3):
+ * - Structured Engineering Drawing Package (ISO A3):
  *   - SHEET 1 OF 4: Solar PV Single Line Diagram & Block Diagram - the same combined template as the
  *     on-screen SLD (captured from the components and scaled to fit) - with a symbols legend
  *   - SHEET 2 OF 4: Solar Design Data, Sizing Calculations & Equipment Schedule
  *   - SHEET 3 OF 4: General Notes, PEC Mandates, Safety Warning Placards & Checklist
  *   - SHEET 4 OF 4: PV Module, Inverter & Battery Datasheet Tables
- *   - SHEET 5 OF 5 (when a roof plan exists): Roof Plan - roof outlines and the module layout at a
+ *   - SHEET 5 OF 6 (when a roof plan exists): Roof Plan - roof outlines and the module layout at a
  *     true drawing scale (1:N); the satellite photo is not embedded (DXF links images as external files)
+ *   - LAST SHEET: Short Circuit Analysis (point-to-point diagram) & Voltage Drop Diagram - the same
+ *     drawings as on the SLD sheet and in Solar Design, with their results tables
  *
  * The drawing reflects the actual design: off-grid systems omit utility interconnection,
  * the 120% busbar status follows the calculation, and commissioning tests are left blank.
@@ -63,9 +66,10 @@ export function exportSolarToDxf(
   config: SolarDesignConfig,
   calc: SolarCalculationResults,
   panelData?: SolarDxfPanelData,
-  sldView?: Partial<PictorialOptions>
+  sldView?: Partial<PictorialOptions>,
+  studies?: SolarStudies
 ) {
-  const dxfString = buildSolarDxf(config, calc, panelData, sldView);
+  const dxfString = buildSolarDxf(config, calc, panelData, sldView, studies);
   const blob = new Blob([dxfString], { type: "application/dxf;charset=utf-8" });
   const safeProjectName = sanitizeStringForDxf(config.projectName || "Solar_PV_Design")
     .replace(/[^a-zA-Z0-9_-]/g, "_")
@@ -78,7 +82,9 @@ export function buildSolarDxf(
   config: SolarDesignConfig,
   calc: SolarCalculationResults,
   panelData?: SolarDxfPanelData,
-  sldView?: Partial<PictorialOptions>
+  sldView?: Partial<PictorialOptions>,
+  /** Short-circuit and voltage-drop studies (project service data); computed with defaults when absent */
+  studies?: SolarStudies
 ): string {
   const d = new Drawing();
   // Set Millimeters units (INSUNITS = 4), identical to System SLD
@@ -273,7 +279,8 @@ export function buildSolarDxf(
     day: "2-digit",
   }).format(new Date());
   const withRoofPlan = hasRoofPlan(config);
-  const TOTAL_SHEETS = withRoofPlan ? 5 : 4;
+  // The short circuit & voltage drop sheet is always last
+  const TOTAL_SHEETS = withRoofPlan ? 6 : 5;
   const pName = sanitizeStringForDxf(panelData?.designation || "MAIN DISTRIBUTION PANEL (MDP)");
   const pMain = panelData?.mainFeeder?.cb || config.serviceCapacityAmps || 100;
   const pAf =
@@ -1479,6 +1486,43 @@ export function buildSolarDxf(
     styleTable.elements.forEach((elem: any) => {
       elem.fontFileName = "arial.ttf";
     });
+  }
+
+  // ==========================================
+  // LAST SHEET: SHORT CIRCUIT ANALYSIS (POINT-TO-POINT) & VOLTAGE DROP DIAGRAM
+  // Origin X: right of the previous sheet
+  // ==========================================
+  {
+    const study = studies || computeSolarStudies(config, calc, null, { designation: panelData?.designation });
+    const sheetNo = TOTAL_SHEETS;
+    const o = s4OriginX + 445 * (withRoofPlan ? 2 : 1);
+    drawStandardSheet(o, sheetNo, "SHORT CIRCUIT ANALYSIS & VOLTAGE DROP CALCULATION");
+    drawStandardTitleBlock(o, sheetNo, "SC & VOLTAGE DROP");
+    // Two framed panels side by side above the title block; each drawing is fitted and centred
+    const place = (cap: SldCapture, box: { x1: number; x2: number; y1: number; y2: number }) => {
+      drawBox("EPH-BORDER", box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1);
+      const b = cap.bbox;
+      const pad = 3;
+      const k = Math.min((box.x2 - box.x1 - 2 * pad) / (b.x2 - b.x1), (box.y2 - box.y1 - 2 * pad) / (b.y2 - b.y1));
+      const left = box.x1 + (box.x2 - box.x1 - (b.x2 - b.x1) * k) / 2;
+      const top = box.y2 - (box.y2 - box.y1 - (b.y2 - b.y1) * k) / 2;
+      drawCaptured(cap, (x) => left + (x - b.x1) * k, (y) => top - (y - b.y1) * k, k);
+    };
+    place(captureSolarShortCircuitDiagram(study), { x1: o + 18, x2: o + 209, y1: 96, y2: 262 });
+    place(captureSolarVoltageDropDiagram(study), { x1: o + 213, x2: o + 404, y1: 96, y2: 262 });
+
+    // Summary left of the title block
+    const sumBox = { x1: o + 18, x2: o + 270, y1: 18, y2: 92 };
+    drawBox("EPH-BORDER", sumBox.x1, sumBox.y1, sumBox.x2 - sumBox.x1, sumBox.y2 - sumBox.y1);
+    drawText("EPH-TITLE", sumBox.x1 + 3, sumBox.y2 - 5, 2.2, "SUMMARY OF RESULTS");
+    const worst = study.sc.points.filter((p) => p.side === "AC").reduce((a, p) => (p.amps > a.amps ? p : a));
+    const lines = [
+      `MAXIMUM AVAILABLE AC FAULT: ${kaText(worst.amps)} AT ${worst.tag} (${worst.location}).`,
+      ...study.sc.points.map((p) => `${p.tag}: ${kaText(p.amps)} - ${p.device} RATED ${p.ratingKa} kA - ${p.ok ? "OK" : "INADEQUATE"}`),
+      `VOLTAGE DROP: DC ${study.vd.dcPct.toFixed(2)}% + AC ${study.vd.acPct.toFixed(2)}% = ${study.vd.totalPct.toFixed(2)}% (LIMIT ${study.vd.totalLimitPct}%) - ${study.vd.totalOk ? "OK" : "EXCEEDS"}`,
+      study.sc.usesProjectData ? "SERVICE DATA: SHORT CIRCUIT MODULE OF THIS PROJECT." : "SERVICE DATA: DEFAULT VALUES - VERIFY THE UTILITY FAULT LEVEL AND TRANSFORMER.",
+    ];
+    lines.forEach((ln, i) => drawText("EPH-TEXT", sumBox.x1 + 3, sumBox.y2 - 12 - i * 7.2, 1.7, sanitizeStringForDxf(ln), "left", sumBox.x2 - sumBox.x1 - 6));
   }
 
   return d.toDxfString();
