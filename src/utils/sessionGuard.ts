@@ -8,17 +8,45 @@
  *   - user data can be read or written only by the token whose auth_time matches the active session, and
  *     only while its heartbeat is fresh.
  * auth_time is part of the signed ID token, so another device cannot present it. The heartbeat
- * (lastSeen = server time) keeps the session alive; a session with no heartbeat for SESSION_TTL_MS
+ * (lastSeen = server time) keeps the session alive; a session with no heartbeat for the session timeout
  * (browser closed, network lost, device asleep) expires and the account can sign in elsewhere.
- * The rules use the same SESSION_TTL_MS; change both together.
+ * The timeout is configurable by administrators (sessionConfig/global.ttlSeconds, 2 to 60 minutes) and read
+ * by both the rules and this module; without it both use DEFAULT_SESSION_TTL_S.
  */
 import { User, signOut } from "firebase/auth";
-import { deleteDoc, doc, getDoc, onSnapshot, runTransaction, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, onSnapshot, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
-export const SESSION_TTL_MS = 4 * 60 * 1000;
-const HEARTBEAT_MS = 60 * 1000;
+export const DEFAULT_SESSION_TTL_S = 240;
+export const MIN_SESSION_TTL_S = 120;
+export const MAX_SESSION_TTL_S = 3600;
 const COLLECTION = "activeSessions";
+const CONFIG_PATH = ["sessionConfig", "global"] as const;
+
+/** Current session timeout (ms); refreshed from sessionConfig/global at every claim */
+export let SESSION_TTL_MS = DEFAULT_SESSION_TTL_S * 1000;
+/** Heartbeat: a third of the timeout, at most once a minute, so two missed beats do not end a session */
+const heartbeatMs = () => Math.min(60_000, Math.max(20_000, Math.floor(SESSION_TTL_MS / 3)));
+
+/** Reads the administrator-set timeout (the rules use the same document) */
+export async function loadSessionTimeout(): Promise<number> {
+  try {
+    const snap = await getDoc(doc(db, ...CONFIG_PATH));
+    const t = Number(snap.exists() ? snap.data()?.ttlSeconds : NaN);
+    SESSION_TTL_MS = (Number.isInteger(t) && t >= MIN_SESSION_TTL_S && t <= MAX_SESSION_TTL_S ? t : DEFAULT_SESSION_TTL_S) * 1000;
+  } catch {
+    SESSION_TTL_MS = DEFAULT_SESSION_TTL_S * 1000;
+  }
+  return SESSION_TTL_MS;
+}
+
+/** Administrators: sets the session timeout for every account (seconds, 2 to 60 minutes) */
+export async function saveSessionTimeout(seconds: number, adminEmail: string): Promise<void> {
+  const t = Math.round(seconds);
+  if (!(t >= MIN_SESSION_TTL_S && t <= MAX_SESSION_TTL_S)) throw new Error("Timeout must be between 2 and 60 minutes.");
+  await setDoc(doc(db, ...CONFIG_PATH), { ttlSeconds: t, updatedBy: adminEmail, updatedAt: serverTimestamp() });
+  SESSION_TTL_MS = t * 1000;
+}
 
 export interface ActiveSession {
   uid: string;
@@ -71,6 +99,7 @@ let current: { uid: string; sessionId: string; authTime: number } | null = null;
  */
 export async function claimSession(user: User): Promise<void> {
   const authTime = await tokenAuthTime(user);
+  await loadSessionTimeout();
   const ref = doc(db, COLLECTION, user.uid);
   const sessionId = randomId();
   try {
@@ -184,7 +213,7 @@ export function watchSession(user: User, onEnd: (reason: SessionEndReason, devic
       /* read denied once the session is no longer ours; the heartbeat decides */
     },
   );
-  const timer = setInterval(beat, HEARTBEAT_MS);
+  const timer = setInterval(beat, heartbeatMs());
   const onVisible = () => {
     if (document.visibilityState === "visible") beat();
   };
@@ -222,9 +251,12 @@ export function takeSessionNotice(): string {
   }
 }
 
+/** The message shown to a device whose sign-in was refused because another device holds the session */
+export const BLOCKED_MESSAGE = "Your account is currently active on another device. Please log out from your existing device before logging in here.";
+
 export function blockedMessage(e: SessionBlockedError): string {
   const mins = Math.ceil(SESSION_TTL_MS / 60000);
-  return `This account is already signed in on ${e.device}. Log out from that device first, then sign in here. If that device was closed or lost its connection, the session ends automatically after ${mins} minutes without activity.`;
+  return `${BLOCKED_MESSAGE} (Active on: ${e.device}. If that device was closed or lost its connection, its session ends after ${mins} minutes without activity; an administrator can also end it.)`;
 }
 
 // ---- admin

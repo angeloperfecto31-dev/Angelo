@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, deleteDoc, onSnapshot } from "firebase/firestore";
 import { MonitorSmartphone, LogOut, RefreshCw } from "lucide-react";
 import { auth, db } from "../firebase";
-import { SESSION_TTL_MS, adminSessionRef, type ActiveSession } from "../utils/sessionGuard";
+import { MAX_SESSION_TTL_S, MIN_SESSION_TTL_S, adminSessionRef, loadSessionTimeout, saveSessionTimeout, type ActiveSession } from "../utils/sessionGuard";
 
 /**
  * Administrator view of the single-device sessions: who is signed in, on which device, and when the device
@@ -16,6 +16,28 @@ export default function SessionManager() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("");
+  // Session timeout (configurable; the Firestore rules read the same setting)
+  const [ttlMs, setTtlMs] = useState(240_000);
+  const [ttlInput, setTtlInput] = useState("4");
+  const [ttlMsg, setTtlMsg] = useState("");
+  useEffect(() => {
+    loadSessionTimeout().then((ms) => { setTtlMs(ms); setTtlInput(String(ms / 60000)); });
+  }, []);
+  const saveTtl = async () => {
+    setTtlMsg("");
+    try {
+      const secs = Math.round(parseFloat(ttlInput) * 60);
+      await saveSessionTimeout(secs, auth.currentUser?.email || "Unknown Admin");
+      setTtlMs(secs * 1000);
+      setTtlMsg("Saved. It applies to all accounts at their next request.");
+      await addDoc(collection(db, "admin_activity_logs"), {
+        action: "session_timeout_changed", adminEmail: auth.currentUser?.email || "Unknown Admin",
+        timestamp: new Date().toISOString(), details: { ttlSeconds: secs },
+      }).catch(() => undefined);
+    } catch (e: any) {
+      setTtlMsg(`Not saved: ${e.message}`);
+    }
+  };
 
   useEffect(() => {
     const unsubS = onSnapshot(
@@ -37,11 +59,11 @@ export default function SessionManager() {
     return sessions
       .map((s) => {
         const last = s.lastSeen?.toMillis?.() ?? 0;
-        return { ...s, email: emails[s.uid] || s.uid, last, active: last > 0 && now - last <= SESSION_TTL_MS };
+        return { ...s, email: emails[s.uid] || s.uid, last, active: last > 0 && now - last <= ttlMs };
       })
       .filter((r) => !q || r.email.toLowerCase().includes(q) || r.device.toLowerCase().includes(q))
       .sort((a, b) => Number(b.active) - Number(a.active) || b.last - a.last);
-  }, [sessions, emails, now, filter]);
+  }, [sessions, emails, now, filter, ttlMs]);
 
   const forceSignOut = async (uid: string, email: string, device: string) => {
     setBusy(uid);
@@ -78,8 +100,23 @@ export default function SessionManager() {
             <MonitorSmartphone className="w-4 h-4 text-indigo-600" /> Active Sessions (one device per account)
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            {activeCount} active · a session with no activity for {Math.round(SESSION_TTL_MS / 60000)} minutes expires and the account can sign in on another device.
+            {activeCount} active · a session with no activity for {Math.round(ttlMs / 60000)} minutes expires and the account can sign in on another device.
           </p>
+          <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+            <label className="font-bold text-slate-600">Session timeout (minutes)</label>
+            <input
+              type="number"
+              min={MIN_SESSION_TTL_S / 60}
+              max={MAX_SESSION_TTL_S / 60}
+              step={1}
+              value={ttlInput}
+              onChange={(e) => setTtlInput(e.target.value)}
+              className="w-20 px-2 py-1 rounded-lg border border-slate-200"
+            />
+            <button onClick={saveTtl} className="px-3 py-1 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-500">Save</button>
+            <span className="text-slate-400">{MIN_SESSION_TTL_S / 60} to {MAX_SESSION_TTL_S / 60} minutes</span>
+            {ttlMsg && <span className={ttlMsg.startsWith("Saved") ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>{ttlMsg}</span>}
+          </div>
         </div>
         <input
           value={filter}

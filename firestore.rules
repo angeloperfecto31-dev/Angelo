@@ -14,9 +14,13 @@ service cloud.firestore {
     // ---- Single-device sessions (see src/utils/sessionGuard.ts)
     // One record per account, activeSessions/{uid}, bound to the sign-in (auth_time) of the ID token that
     // claimed it. A request is allowed only from that sign-in, and only while its heartbeat is fresh.
-    // Keep sessionTtl() equal to SESSION_TTL_MS in sessionGuard.ts.
+    // The timeout is set by administrators in sessionConfig/global.ttlSeconds (120 to 3600 s), 240 s by
+    // default; sessionGuard.ts reads the same document (DEFAULT_SESSION_TTL_S there is this default).
     function sessionTtl() {
-      return duration.value(240, 's');
+      let cfg = /databases/$(database)/documents/sessionConfig/global;
+      let t = exists(cfg) ? get(cfg).data.ttlSeconds : 240;
+      // Same range and default as the client, so both always agree on when a session has expired
+      return duration.value(t is int && t >= 120 && t <= 3600 ? t : 240, 's');
     }
 
     function hasActiveSession() {
@@ -267,6 +271,17 @@ service cloud.firestore {
         request.time > existing().lastSeen + sessionTtl()
       );
       allow delete: if (isSignedIn() && request.auth.uid == uid && existing().authTime == request.auth.token.auth_time) || isAdmin();
+    }
+
+    // Session timeout setting (read by every signed-in client and by sessionTtl() above)
+    match /sessionConfig/{configId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && configId == "global"
+        && request.resource.data.keys().hasOnly(["ttlSeconds", "updatedBy", "updatedAt"])
+        && request.resource.data.ttlSeconds is int
+        && request.resource.data.ttlSeconds >= 120 && request.resource.data.ttlSeconds <= 3600
+        && request.resource.data.updatedBy is string && request.resource.data.updatedBy.size() <= 128
+        && request.resource.data.updatedAt == request.time;
     }
 
     // 3. User Collection Matched Rules (Pillar 4: Tiered Identity & Pillar 12: Immortal field)
