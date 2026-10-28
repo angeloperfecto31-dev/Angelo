@@ -1,6 +1,6 @@
 import React from "react";
 import { SolarDesignConfig, SolarCalculationResults } from "../../types/solar";
-import type { PictorialTheme } from "./SolarSLDPictorial";
+import { stringsPerInverter, type PictorialTheme } from "./SolarSLDPictorial";
 
 /**
  * Solar PV BLOCK DIAGRAM: the power flow at a glance (PV array -> inverter -> protection ->
@@ -12,6 +12,9 @@ import type { PictorialTheme } from "./SolarSLDPictorial";
  *   Hybrid  : as on-grid, plus the BATTERY BANK and the ESSENTIAL LOADS (EPS) fed by the inverter
  *   Off-grid: UTILITY GRID -> kWh METER -> inverter AC INPUT (no export); the inverter output
  *             feeds the LOADS PANEL; the utility meter also feeds the existing loads
+ *
+ * With several inverters every inverter is drawn (as on the SLD): the PV array splits to each
+ * inverter, and their outputs join on the AC COLLECTOR BUS. Battery and EPS sit on inverter 1.
  */
 
 export const BLOCK_W = 980;
@@ -55,7 +58,9 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
 
   const inv = calc.selectedInverter;
   const invQty = eff.inverterQuantity;
-  const invTitle = isOffGrid ? ["OFF-GRID", "INVERTER"] : isHybrid ? ["HYBRID", "INVERTER"] : ["GRID TIE", "INVERTER"];
+  const multi = invQty > 1;
+  const invWord = multi ? "INVERTERS" : "INVERTER";
+  const invTitle = isOffGrid ? ["OFF-GRID", invWord] : isHybrid ? ["HYBRID", invWord] : ["GRID TIE", invWord];
   const invRating = `${invQty > 1 ? `${invQty} x ` : ""}${inv.ratedAcPowerKw} kW, ${inv.phase} ${inv.acVoltage}V`;
 
   // ---------- layout (fixed sheet, positions chosen so labels never meet) ----------
@@ -66,6 +71,21 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
   const houseCx = meter2Cx, houseTop = 500;
   const loadsCx = 490; // essential / inverter-output loads (hybrid, off-grid)
   const batTop = 470;
+
+  // Several inverters: one row, centred under the PV array, each drawn smaller as the count grows
+  const rowL = 170, rowR = 430, rowCx = 300;
+  const pitch = Math.min(120, (rowR - rowL) / invQty);
+  const sc = Math.max(0.3, Math.min(0.8, (pitch - 16) / 84));
+  const invXs = multi ? Array.from({ length: invQty }, (_, i) => rowCx + (i - (invQty - 1) / 2) * pitch) : [invCx];
+  const invStrings = stringsPerInverter(eff.numberOfStrings, invQty);
+  const invBottom = rowY + 58 * sc;
+  const splitY = 232; // PV array -> every inverter
+  const busY = invBottom + 28; // AC collector bus
+  const dropX = (x: number) => x + 20 * sc; // inverter AC output drop
+  const batX = invXs[0] - 20 * sc; // inverter 1 battery port
+  const firstX = invXs[0], lastX = invXs[invXs.length - 1];
+  const rowRightEdge = lastX + 42 * sc;
+  const batCx = 90;
 
   // ---------- primitives ----------
   const T = (p: { x: number; y: number; t: string; size?: number; anchor?: "start" | "middle" | "end"; bold?: boolean; muted?: boolean }) => (
@@ -134,14 +154,21 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
     );
   };
 
-  const Inverter = ({ cx, cy }: { cx: number; cy: number }) => (
-    <g data-cad-layer="EPH-INVERTER" className={onSelect ? "cursor-pointer" : undefined} onClick={select("inverter")}>
-      <rect x={cx - 42} y={cy - 58} width={84} height={116} rx={6} fill={theme.equipmentFill} stroke={stroke} strokeWidth={2} />
-      <rect x={cx - 24} y={cy - 44} width={48} height={32} rx={3} fill="none" stroke={stroke} strokeWidth={1.5} />
-      <rect x={cx - 16} y={cy - 37} width={32} height={12} fill="none" stroke={stroke} strokeWidth={1.2} />
-      <line x1={cx - 42} y1={cy + 34} x2={cx + 42} y2={cy + 34} stroke={stroke} strokeWidth={1.2} />
-    </g>
-  );
+  const Inverter = ({ cx, cy, s = 1, lines = [] }: { cx: number; cy: number; s?: number; lines?: string[] }) => {
+    const fs = s >= 0.6 ? 11 : 10;
+    return (
+      <g data-cad-layer="EPH-INVERTER" className={onSelect ? "cursor-pointer" : undefined} onClick={select("inverter")}>
+        <rect x={cx - 42 * s} y={cy - 58 * s} width={84 * s} height={116 * s} rx={6 * s} fill={theme.equipmentFill} stroke={stroke} strokeWidth={2} />
+        <rect x={cx - 24 * s} y={cy - 44 * s} width={48 * s} height={32 * s} rx={3 * s} fill="none" stroke={stroke} strokeWidth={1.5} />
+        <rect x={cx - 16 * s} y={cy - 37 * s} width={32 * s} height={12 * s} fill="none" stroke={stroke} strokeWidth={1.2} />
+        <line x1={cx - 42 * s} y1={cy + 34 * s} x2={cx + 42 * s} y2={cy + 34 * s} stroke={stroke} strokeWidth={1.2} />
+        {/* Inverter number (and its strings) in the body, between the display and the base line */}
+        {lines.map((t, i) => (
+          <T key={t} x={cx} y={cy + 11 * s + (i - (lines.length - 1) / 2) * (fs + 3) + fs * 0.36} t={t} size={fs} bold={i === 0} muted={i > 0} />
+        ))}
+      </g>
+    );
+  };
 
   const Meter = ({ cx, cy, k }: { cx: number; cy: number; k: string }) => (
     <g data-cad-layer="EPH-PANEL" className={onSelect ? "cursor-pointer" : undefined} onClick={select(k)}>
@@ -202,6 +229,13 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
   const loadsName = panelDesignation || "MAIN DISTRIBUTION PANEL";
   const meter2Label = netMetering ? ["BI-DIRECTIONAL", "METER"] : ["UTILITY", "kWh METER"];
   const protection = `${eff.acBreakerAtAmps} AT, ${eff.acBreakerPoles}P`;
+  // Inverter title sits left of the inverter (row)
+  const titleX = multi ? firstX - 42 * sc - 14 : invCx - 56;
+  const titleW = Math.min(150, titleX - 16);
+  const acInMidX = multi ? (rowRightEdge + 8 + meter2Cx - 54) / 2 : (invCx + meter2Cx) / 2;
+  const noMeterJoinX = 470; // collector bus -> protection -> utility meter (no REC meter)
+  const batPathY = busY + 36;
+  const protY = Math.max(busY, rowY + 62) + 20; // below the REC meter, beside the riser into it
   const sysLabel = isOffGrid ? "OFF-GRID SYSTEM (UTILITY AS BACKUP INPUT)" : isHybrid ? "HYBRID SYSTEM (WITH BATTERY BACKUP)" : "ON-GRID (GRID-TIED) SYSTEM";
 
   return (
@@ -218,13 +252,41 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
       <T x={invCx + 112} y={pvTop + 34} t={`${calc.totalDcCapacityKwp} kWp`} size={13} anchor="start" muted />
       <T x={invCx + 112} y={pvTop + 51} t={`${calc.totalModules} x ${calc.selectedModule.ratedPowerWp} W`} size={13} anchor="start" muted />
       <T x={invCx + 112} y={pvTop + 68} t={`${eff.numberOfStrings} STRING${eff.numberOfStrings > 1 ? "S" : ""}`} size={13} anchor="start" muted />
-      <Arrow x1={invCx} y1={pvTop + 96} x2={invCx} y2={rowY - 66} />
-
-      <Inverter cx={invCx} cy={rowY} />
-      <T x={invCx - 56} y={rowY - 8} t={invTitle[0]} anchor="end" bold />
-      <T x={invCx - 56} y={rowY + 10} t={invTitle[1]} anchor="end" bold />
-      {wrap(invRating, 150, 12).map((ln, i) => (
-        <T key={ln} x={invCx - 56} y={rowY + 30 + i * 15} t={ln} size={12} anchor="end" muted />
+      {multi ? (
+        <>
+          {/* PV array -> every inverter (each inverter takes its own strings) */}
+          <g data-cad-layer="EPH-SLD">
+            <line x1={invCx} y1={pvTop + 96} x2={invCx} y2={splitY} stroke={stroke} strokeWidth={3} />
+            <line x1={firstX} y1={splitY} x2={lastX} y2={splitY} stroke={stroke} strokeWidth={3} />
+          </g>
+          {invXs.map((x, i) => (
+            <g key={`inv-${i}`}>
+              <Arrow x1={x} y1={splitY} x2={x} y2={rowY - 58 * sc - 2} />
+              <Inverter cx={x} cy={rowY} s={sc} lines={sc >= 0.6 ? [`INV. ${i + 1}`, `${invStrings[i]} STR.`] : [`${i + 1}`]} />
+            </g>
+          ))}
+          {/* Every inverter output drops to the AC collector bus */}
+          <g data-cad-layer="EPH-SLD">
+            {invXs.map((x, i) => (
+              <g key={`drop-${i}`}>
+                <line x1={dropX(x)} y1={invBottom} x2={dropX(x)} y2={busY} stroke={stroke} strokeWidth={3} />
+                {i > 0 && <circle cx={dropX(x)} cy={busY} r={4.5} fill={stroke} />}
+              </g>
+            ))}
+          </g>
+          <T x={rowCx + 12} y={busY + 20} t="AC COLLECTOR BUS" size={12} bold />
+          <T x={rowCx + 12} y={busY + 35} t={`${invQty} INVERTER OUTPUTS`} size={12} muted />
+        </>
+      ) : (
+        <>
+          <Arrow x1={invCx} y1={pvTop + 96} x2={invCx} y2={rowY - 66} />
+          <Inverter cx={invCx} cy={rowY} />
+        </>
+      )}
+      <T x={titleX} y={rowY - 8} t={invTitle[0]} anchor="end" bold />
+      <T x={titleX} y={rowY + 10} t={invTitle[1]} anchor="end" bold />
+      {wrap(invRating, titleW, 12).map((ln, i) => (
+        <T key={ln} x={titleX} y={rowY + 30 + i * 15} t={ln} size={12} anchor="end" muted />
       ))}
 
       {isOffGrid ? (
@@ -236,9 +298,9 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
           <Meter cx={meter2Cx} cy={rowY} k="utility_meter" />
           <T x={meter2Cx + 58} y={rowY - 4} t={meter2Label[0]} anchor="start" bold />
           <T x={meter2Cx + 58} y={rowY + 14} t={meter2Label[1]} anchor="start" bold />
-          <Arrow x1={meter2Cx - 54} y1={rowY} x2={invCx + 50} y2={rowY} />
-          <T x={(invCx + meter2Cx) / 2} y={rowY - 14} t="AC INPUT (CHARGING / BYPASS)" bold />
-          <T x={(invCx + meter2Cx) / 2} y={rowY + 24} t="NO EXPORT TO UTILITY" size={12} muted />
+          <Arrow x1={meter2Cx - 54} y1={rowY} x2={multi ? rowRightEdge + 8 : invCx + 50} y2={rowY} />
+          <T x={acInMidX} y={rowY - 14} t="AC INPUT (CHARGING / BYPASS)" bold />
+          <T x={acInMidX} y={rowY + 24} t="NO EXPORT TO UTILITY" size={12} muted />
           {/* Utility meter also serves the existing (non-solar) loads */}
           <Arrow x1={meter2Cx} y1={rowY + 62} x2={meter2Cx} y2={houseTop - 8} />
           <House cx={houseCx} top={houseTop} k="consumer_panel" />
@@ -246,16 +308,33 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
         </>
       ) : (
         <>
-          {/* Inverter -> protection -> (production meter) -> bi-directional meter <-> utility */}
+          {/* Inverter(s) -> protection -> (production meter) -> bi-directional meter <-> utility */}
           {netMetering ? (
             <>
-              <Arrow x1={invCx + 50} y1={rowY} x2={meter1Cx - 54} y2={rowY} />
-              <T x={(invCx + meter1Cx) / 2} y={rowY - 14} t="PROTECTION" bold />
-              <T x={(invCx + meter1Cx) / 2} y={rowY + 24} t={protection} size={12} muted />
+              {multi ? (
+                <>
+                  <PathArrow pts={[[dropX(firstX), busY], [meter1Cx, busY], [meter1Cx, rowY + 57]]} />
+                  <T x={meter1Cx + 12} y={protY} t="PROTECTION" anchor="start" bold />
+                  <T x={meter1Cx + 12} y={protY + 16} t={protection} size={12} anchor="start" muted />
+                  <T x={meter1Cx} y={rowY - 66} t="REC METER" size={12} muted />
+                </>
+              ) : (
+                <>
+                  <Arrow x1={invCx + 50} y1={rowY} x2={meter1Cx - 54} y2={rowY} />
+                  <T x={(invCx + meter1Cx) / 2} y={rowY - 14} t="PROTECTION" bold />
+                  <T x={(invCx + meter1Cx) / 2} y={rowY + 24} t={protection} size={12} muted />
+                  <T x={meter1Cx} y={rowY + 76} t="REC METER" size={12} muted />
+                </>
+              )}
               <Meter cx={meter1Cx} cy={rowY} k="solar_meter" />
-              <T x={meter1Cx} y={rowY + 76} t="REC METER" size={12} muted />
               <Arrow x1={meter1Cx + 54} y1={rowY} x2={meter2Cx - 54} y2={rowY} />
               <T x={(meter1Cx + meter2Cx) / 2} y={rowY - 14} t="PRODUCTION" bold />
+            </>
+          ) : multi ? (
+            <>
+              <PathArrow pts={[[dropX(firstX), busY], [noMeterJoinX, busY], [noMeterJoinX, rowY], [meter2Cx - 54, rowY]]} />
+              <T x={(noMeterJoinX + meter2Cx - 54) / 2} y={rowY - 14} t="PROTECTION" bold />
+              <T x={(noMeterJoinX + meter2Cx - 54) / 2} y={rowY + 24} t={protection} size={12} muted />
             </>
           ) : (
             <>
@@ -280,25 +359,54 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
       ))}
 
       {/* Hybrid / off-grid: battery bank and the loads fed by the inverter output */}
-      {hasBattery && (
-        <>
-          <Arrow x1={invCx} y1={rowY + 64} x2={invCx} y2={batTop - 4} both />
-          <Battery cx={invCx} top={batTop} />
-          <T x={invCx} y={batTop + 88} t="BATTERY BANK" bold />
-          <T x={invCx} y={batTop + 106} t={`${calc.batteryUsableEnergyKwh} kWh USABLE`} size={12} muted />
-        </>
-      )}
+      {hasBattery &&
+        (multi ? (
+          <>
+            {/* Battery on inverter 1, drawn to the left of the inverter row */}
+            <Arrow x1={batX} y1={batPathY} x2={batX} y2={invBottom + 2} />
+            <g data-cad-layer="EPH-SLD">
+              <line x1={batX} y1={batPathY} x2={batCx} y2={batPathY} stroke={stroke} strokeWidth={3} />
+            </g>
+            <Arrow x1={batCx} y1={batPathY} x2={batCx} y2={batTop - 4} />
+            <Battery cx={batCx} top={batTop} />
+            <T x={batCx} y={batTop + 88} t="BATTERY BANK" bold />
+            <T x={batCx} y={batTop + 106} t={`${calc.batteryUsableEnergyKwh} kWh USABLE`} size={12} muted />
+          </>
+        ) : (
+          <>
+            <Arrow x1={invCx} y1={rowY + 64} x2={invCx} y2={batTop - 4} both />
+            <Battery cx={invCx} top={batTop} />
+            <T x={invCx} y={batTop + 88} t="BATTERY BANK" bold />
+            <T x={invCx} y={batTop + 106} t={`${calc.batteryUsableEnergyKwh} kWh USABLE`} size={12} muted />
+          </>
+        ))}
       {(isHybrid || isOffGrid) && (
         <>
-          <PathArrow
-            pts={[
-              [invCx + 42, rowY + 44],
-              [invCx + 100, rowY + 44],
-              [invCx + 100, houseTop + 80],
-              [loadsCx - 72, houseTop + 80],
-            ]}
-          />
-          <T x={invCx + 108} y={rowY + 80} t={isOffGrid ? "AC OUTPUT" : "EPS OUTPUT"} size={12} anchor="start" muted />
+          {!multi ? (
+            <>
+              <PathArrow
+                pts={[
+                  [invCx + 42, rowY + 44],
+                  [invCx + 100, rowY + 44],
+                  [invCx + 100, houseTop + 80],
+                  [loadsCx - 72, houseTop + 80],
+                ]}
+              />
+              <T x={invCx + 108} y={rowY + 80} t={isOffGrid ? "AC OUTPUT" : "EPS OUTPUT"} size={12} anchor="start" muted />
+            </>
+          ) : isOffGrid ? (
+            <>
+              {/* Off-grid: the paralleled outputs on the collector bus feed the loads panel */}
+              <PathArrow pts={[[dropX(firstX), busY], [loadsCx, busY], [loadsCx, houseTop - 8]]} />
+              <T x={loadsCx + 10} y={busY + 50} t="AC OUTPUT" size={12} anchor="start" muted />
+            </>
+          ) : (
+            <>
+              {/* Hybrid: the EPS (backup) port of inverter 1 */}
+              <PathArrow pts={[[firstX, invBottom], [firstX, houseTop + 80], [loadsCx - 72, houseTop + 80]]} />
+              <T x={firstX + 10} y={houseTop + 66} t="EPS OUTPUT (INV. 1)" size={12} anchor="start" muted />
+            </>
+          )}
           <House cx={loadsCx} top={houseTop} k="eps_panel" />
           <T x={loadsCx} y={houseTop + 142} t={isOffGrid ? "LOADS PANEL" : "ESSENTIAL LOADS"} bold />
           <T x={loadsCx} y={houseTop + 160} t={isOffGrid ? "(INVERTER OUTPUT)" : "(EPS BACKUP)"} size={12} muted />
