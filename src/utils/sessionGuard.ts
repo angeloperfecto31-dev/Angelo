@@ -1,20 +1,24 @@
 /**
- * Single-device sessions.
+ * Single active session per account: the newest sign-in wins.
  *
- * Each account has one record, activeSessions/{uid}, holding the active session: a random session id, the
- * device, and the sign-in time ("auth_time") of the Firebase ID token that owns it. The Firestore security
- * rules (firestore.rules) are the enforcement point, evaluated on Google's servers:
- *   - a session can be claimed only when there is none, it is the caller's own, or it has timed out;
- *   - user data can be read or written only by the token whose auth_time matches the active session, and
- *     only while its heartbeat is fresh.
- * auth_time is part of the signed ID token, so another device cannot present it. The heartbeat
- * (lastSeen = server time) keeps the session alive; a session with no heartbeat for the session timeout
- * (browser closed, network lost, device asleep) expires and the account can sign in elsewhere.
- * The timeout is configurable by administrators (sessionConfig/global.ttlSeconds, 2 to 60 minutes) and read
- * by both the rules and this module; without it both use DEFAULT_SESSION_TTL_S.
+ * Each account has one record, activeSessions/{uid}: a random session id, the device, the sign-in time
+ * ("auth_time") of the Firebase ID token that owns it, a heartbeat time and an "ended" flag. The Firestore
+ * security rules (firestore.rules) enforce it on Google's servers:
+ *   - a sign-in can take the session over only from an OLDER sign-in (larger auth_time), so a device that
+ *     was replaced can never take it back without signing in again;
+ *   - user data can be read or written only by the token whose auth_time matches the active session, while
+ *     the session is not ended and its heartbeat is fresh.
+ * auth_time is part of the signed ID token: no device can claim to be newer than it is. The moment a newer
+ * sign-in takes over, the rules refuse every request from the previous one (open listeners included, because
+ * the record they depend on changed), and its watcher signs it out with TERMINATED_MESSAGE.
+ * Tabs of one browser share one sign-in and one session id, so they do not replace each other.
+ * Logout and an administrator's "Force sign out" mark the session ended (the record is kept as the
+ * watermark of the newest sign-in, so an older device cannot create a new session afterwards).
+ * The heartbeat timeout is configurable by administrators (sessionConfig/global.ttlSeconds, 2 to 60
+ * minutes) and read by both the rules and this module; without it both use DEFAULT_SESSION_TTL_S.
  */
 import { User, signOut } from "firebase/auth";
-import { deleteDoc, doc, getDoc, onSnapshot, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, runTransaction, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import firebaseConfig from "../../firebase-applet-config.json";
 
@@ -56,16 +60,31 @@ export interface ActiveSession {
   device: string;
   createdAt: Timestamp;
   lastSeen: Timestamp;
+  /** Logged out or ended by an administrator; the record stays as the watermark of the newest sign-in */
+  ended?: boolean;
+  endedBy?: "logout" | "admin";
 }
 
-export class SessionBlockedError extends Error {
-  constructor(public device: string, public lastSeen: Date | null) {
-    super("This account is already signed in on another device.");
-    this.name = "SessionBlockedError";
+/** Shown on a device whose session was taken over by a newer sign-in */
+export const TERMINATED_MESSAGE =
+  "Your session has been terminated because your account was signed in on another device or browser. Please log in again to continue.";
+export const REVOKED_MESSAGE = "Your session was ended by an administrator. Please log in again to continue.";
+
+export type SessionEndReason = "replaced" | "revoked" | "loggedOut";
+
+/** This browser's sign-in no longer holds the session */
+export class SessionEndedError extends Error {
+  constructor(public reason: SessionEndReason, public device?: string) {
+    super(reason === "replaced" ? TERMINATED_MESSAGE : reason === "revoked" ? REVOKED_MESSAGE : "Signed out.");
+    this.name = "SessionEndedError";
   }
 }
 
-/** Short, readable description of this browser / device (stored with the session, shown to the user) */
+export function messageFor(reason: SessionEndReason): string {
+  return reason === "replaced" ? TERMINATED_MESSAGE : reason === "revoked" ? REVOKED_MESSAGE : "";
+}
+
+/** Short, readable description of this browser / device (stored with the session, shown to administrators) */
 export function describeDevice(): string {
   if (typeof navigator === "undefined") return "Unknown device";
   const ua = navigator.userAgent;
@@ -83,14 +102,33 @@ const randomId = () => {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 };
 
-/** auth_time (seconds) of the current ID token: the sign-in this browser holds */
+/** auth_time (seconds) of the current ID token: the sign-in this browser holds (unchanged by token refresh) */
 async function tokenAuthTime(user: User): Promise<number> {
   const r = await user.getIdTokenResult();
   return Number(r.claims.auth_time);
 }
 
-const isExpired = (s: { lastSeen?: Timestamp | null }) =>
-  !s.lastSeen || Date.now() - s.lastSeen.toMillis() > SESSION_TTL_MS;
+// Session id of this browser's sign-in, shared by its tabs (same storage, same sign-in)
+const idKey = (uid: string, authTime: number) => `ephSession:${uid}:${authTime}`;
+const memoryIds: Record<string, string> = {};
+function storedSessionId(uid: string, authTime: number): string | null {
+  try {
+    return localStorage.getItem(idKey(uid, authTime)) || memoryIds[idKey(uid, authTime)] || null;
+  } catch {
+    return memoryIds[idKey(uid, authTime)] || null;
+  }
+}
+function storeSessionId(uid: string, authTime: number, id: string | null) {
+  const k = idKey(uid, authTime);
+  if (id) memoryIds[k] = id;
+  else delete memoryIds[k];
+  try {
+    if (id) localStorage.setItem(k, id);
+    else localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable: kept in memory for this tab */
+  }
+}
 
 let current: { uid: string; sessionId: string; authTime: number } | null = null;
 
@@ -104,43 +142,63 @@ export const getEnforcementState = () => enforcement;
 /** The Firestore database the rules must be deployed to (named database, not "(default)") */
 export const FIRESTORE_DATABASE_ID: string = (firebaseConfig as any).firestoreDatabaseId || "(default)";
 
+/** Why this sign-in may not hold the session, given the record (null: it may) */
+function refusal(s: ActiveSession | null, authTime: number, mine: string | null): SessionEndedError | null {
+  if (!s) return null;
+  if (s.authTime > authTime) return new SessionEndedError("replaced", s.device); // a newer sign-in holds it
+  if (s.authTime === authTime) {
+    if (s.ended) return new SessionEndedError(s.endedBy === "admin" ? "revoked" : "loggedOut");
+    // Same sign-in second on two devices (practically never): the device that registered first keeps it
+    if (mine && s.sessionId !== mine) return new SessionEndedError("replaced", s.device);
+  }
+  return null; // an older or ended sign-in: this one takes over
+}
+
 /**
- * Claims the account's single session for this sign-in. Throws SessionBlockedError when another device holds
- * an active session. Concurrent claims are serialized by the transaction and, authoritatively, by the rules.
+ * Makes this sign-in the account's single active session, taking it over from any older sign-in (which
+ * is signed out at once). Throws SessionEndedError when this browser's sign-in is itself older than the
+ * session's, or was ended. Concurrent claims are serialized by the transaction and, authoritatively, by the
+ * rules: whatever the order of the writes, the newest sign-in ends up holding the session.
  */
 export async function claimSession(user: User): Promise<void> {
   const authTime = await tokenAuthTime(user);
   await loadSessionTimeout();
   const ref = doc(db, COLLECTION, user.uid);
-  const sessionId = randomId();
+  let sessionId = storedSessionId(user.uid, authTime);
   try {
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
       const s = snap.exists() ? (snap.data() as ActiveSession) : null;
-      if (s && s.authTime !== authTime && !isExpired(s)) throw new SessionBlockedError(s.device, s.lastSeen?.toDate() ?? null);
-      const own = s && s.authTime === authTime;
+      const refused = refusal(s, authTime, sessionId);
+      if (refused) throw refused;
+      const same = s && s.authTime === authTime;
+      // A record left by this sign-in before session ids were kept per browser: adopt its id
+      if (!sessionId) sessionId = same ? s!.sessionId : randomId();
       tx.set(ref, {
         uid: user.uid,
-        sessionId: own ? s!.sessionId : sessionId,
+        sessionId,
         authTime,
         device: describeDevice(),
-        createdAt: own ? s!.createdAt : serverTimestamp(),
+        createdAt: same ? s!.createdAt : serverTimestamp(),
         lastSeen: serverTimestamp(),
+        ended: false,
       });
     });
   } catch (e: any) {
-    if (e instanceof SessionBlockedError) throw e;
-    // The rules refused the claim: another device holds the session (or the clocks disagree on expiry)
+    if (e instanceof SessionEndedError) {
+      current = null;
+      throw e;
+    }
     if (e?.code === "permission-denied") {
       let snap;
       try {
         snap = await getDoc(ref);
       } catch (readErr: any) {
         // With the session rules deployed an account can always read its own session record. If it cannot,
-        // the rules are not deployed yet (rollout): carry on without a session, as before this feature.
+        // the rules are not deployed on this database: carry on without a session, as before this feature.
         if (readErr?.code === "permission-denied") {
           console.error(
-            `Single-device sessions are NOT enforced: the session rules are not deployed on Firestore database "${FIRESTORE_DATABASE_ID}". Deploy firestore.rules to that database (npm run deploy:rules).`,
+            `Single-session enforcement is NOT active: the session rules are not deployed on Firestore database "${FIRESTORE_DATABASE_ID}". Deploy firestore.rules to that database (npm run deploy:rules).`,
           );
           enforcement = "inactive";
           current = null;
@@ -148,43 +206,46 @@ export async function claimSession(user: User): Promise<void> {
         }
         throw readErr;
       }
-      const s = snap.exists() ? (snap.data() as ActiveSession) : null;
-      throw new SessionBlockedError(s?.device || "another device", s?.lastSeen?.toDate() ?? null);
+      const refused = refusal(snap.exists() ? (snap.data() as ActiveSession) : null, authTime, sessionId);
+      current = null;
+      throw refused || new SessionEndedError("replaced");
     }
     throw e;
   }
+  storeSessionId(user.uid, authTime, sessionId);
   enforcement = "active";
-  const saved = await getDoc(ref);
-  current = { uid: user.uid, sessionId: (saved.data() as ActiveSession)?.sessionId || sessionId, authTime };
+  current = { uid: user.uid, sessionId: sessionId!, authTime };
 }
 
-/** Ends this device's session (before signing out) so the account can sign in elsewhere at once */
+/** Ends this browser's session (before signing out); the record stays as the watermark of this sign-in */
 export async function releaseSession(): Promise<void> {
   const u = auth.currentUser;
   if (!u) return;
   try {
+    const authTime = current?.authTime ?? (await tokenAuthTime(u));
     const ref = doc(db, COLLECTION, u.uid);
     const snap = await getDoc(ref);
-    if (snap.exists() && (snap.data() as ActiveSession).authTime === (current?.authTime ?? (await tokenAuthTime(u)))) await deleteDoc(ref);
+    const s = snap.exists() ? (snap.data() as ActiveSession) : null;
+    if (s && s.authTime === authTime && !s.ended) await updateDoc(ref, { ended: true, endedBy: "logout", lastSeen: serverTimestamp() });
+    storeSessionId(u.uid, authTime, null);
   } catch (e) {
-    console.warn("Session release failed; it will expire on its own.", e);
+    console.warn("Session release failed; it ends with the next sign-in or the timeout.", e);
   } finally {
     current = null;
   }
 }
 
-/** Sign out everywhere in the app: releases the session first, then signs out of Firebase Auth */
+/** Sign out everywhere in the app: ends the session first, then signs out of Firebase Auth */
 export async function logout(): Promise<void> {
   await releaseSession();
   await signOut(auth);
 }
 
-export type SessionEndReason = "replaced" | "revoked";
-
 /**
- * Keeps this device's session alive (heartbeat every minute, and when the tab is shown or the network
- * returns) and watches the record. onEnd is called when the session is gone: taken over after it timed out
- * ("replaced") or ended by an administrator ("revoked"). Returns a stop function.
+ * Keeps this browser's session alive (heartbeat every minute, and when the tab is shown or the network
+ * returns) and watches the record. onEnd is called as soon as the session is no longer this browser's:
+ * taken over by a newer sign-in ("replaced"), ended by an administrator ("revoked") or logged out from
+ * another tab ("loggedOut"). Returns a stop function.
  */
 export function watchSession(user: User, onEnd: (reason: SessionEndReason, device?: string) => void): () => void {
   const ref = doc(db, COLLECTION, user.uid);
@@ -196,46 +257,40 @@ export function watchSession(user: User, onEnd: (reason: SessionEndReason, devic
     current = null;
     onEnd(reason, device);
   };
+  const reclaim = async () => {
+    try {
+      await claimSession(user);
+    } catch (err: any) {
+      if (err instanceof SessionEndedError) end(err.reason, err.device);
+    }
+  };
 
   const beat = async () => {
     if (stopped || ended) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-    if (!current) {
-      // No session yet (rules were not active when this tab signed in): claim one now; if another device
-      // already holds the session, this tab must sign out.
-      try {
-        await claimSession(user);
-      } catch (err: any) {
-        if (err instanceof SessionBlockedError) end("replaced", err.device);
-      }
-      return;
-    }
+    // No session yet (rules were not active when this tab signed in): claim it now
+    if (!current) return reclaim();
     try {
       await updateDoc(ref, { lastSeen: serverTimestamp() });
     } catch (e: any) {
-      if (e?.code === "not-found") return end("revoked");
-      if (e?.code === "permission-denied") {
-        // Our session timed out (e.g. device asleep). Reclaim it unless another device has it now.
-        try {
-          await claimSession(user);
-        } catch (err: any) {
-          if (err instanceof SessionBlockedError) end("replaced", err.device);
-        }
-      }
+      // Refused: timed out while asleep (reclaimed if still ours) or taken over (signed out)
+      if (e?.code === "permission-denied" || e?.code === "not-found") return reclaim();
       // Network errors: retried on the next beat / when back online
     }
   };
 
+  // Immediate sign-out when a newer sign-in takes over (no need to wait for a heartbeat)
   const unsub = onSnapshot(
     ref,
     (snap) => {
       if (!current) return;
-      if (!snap.exists()) return end("revoked");
+      if (!snap.exists()) return reclaim();
       const s = snap.data() as ActiveSession;
-      if (s.authTime !== current.authTime) end("replaced", s.device);
+      const refused = refusal(s, current.authTime, current.sessionId);
+      if (refused) end(refused.reason, refused.device);
     },
     () => {
-      /* read denied once the session is no longer ours; the heartbeat decides */
+      /* read refused once the session is no longer ours: the heartbeat confirms and signs out */
     },
   );
   const timer = setInterval(beat, heartbeatMs());
@@ -258,12 +313,13 @@ export function watchSession(user: User, onEnd: (reason: SessionEndReason, devic
 const NOTICE_KEY = "session_notice";
 export const SESSION_NOTICE_EVENT = "electricalph-session-notice";
 export function setSessionNotice(text: string) {
+  if (!text) return;
   try {
     localStorage.setItem(NOTICE_KEY, text);
   } catch {
     /* storage unavailable */
   }
-  // The login screen may already be showing (a blocked sign-in never leaves it)
+  // The login screen may already be showing
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(SESSION_NOTICE_EVENT, { detail: text }));
 }
 export function takeSessionNotice(): string {
@@ -276,15 +332,12 @@ export function takeSessionNotice(): string {
   }
 }
 
-/** The message shown to a device whose sign-in was refused because another device holds the session */
-export const BLOCKED_MESSAGE = "Your account is currently active on another device. Please log out from your existing device before logging in here.";
-
-export function blockedMessage(e: SessionBlockedError): string {
-  const mins = Math.ceil(SESSION_TTL_MS / 60000);
-  return `${BLOCKED_MESSAGE} (Active on: ${e.device}. If that device was closed or lost its connection, its session ends after ${mins} minutes without activity; an administrator can also end it.)`;
-}
-
 // ---- admin
 export function adminSessionRef(uid: string) {
   return doc(db, COLLECTION, uid);
+}
+
+/** Administrators: ends a user's session (the device is signed out at once) */
+export async function adminEndSession(uid: string): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, uid), { ended: true, endedBy: "admin" });
 }

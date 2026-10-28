@@ -11,9 +11,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // ---- Single-device sessions (see src/utils/sessionGuard.ts)
+    // ---- Single active session per account, newest sign-in wins (see src/utils/sessionGuard.ts)
     // One record per account, activeSessions/{uid}, bound to the sign-in (auth_time) of the ID token that
-    // claimed it. A request is allowed only from that sign-in, and only while its heartbeat is fresh.
+    // holds it. A request is allowed only from that sign-in, while the session is not ended and its heartbeat
+    // is fresh. A newer sign-in takes over at once; an older one can never take it back.
     // The timeout is set by administrators in sessionConfig/global.ttlSeconds (120 to 3600 s), 240 s by
     // default; sessionGuard.ts reads the same document (DEFAULT_SESSION_TTL_S there is this default).
     function sessionTtl() {
@@ -27,6 +28,7 @@ service cloud.firestore {
       let path = /databases/$(database)/documents/activeSessions/$(request.auth.uid);
       return exists(path)
         && get(path).data.authTime == request.auth.token.auth_time
+        && get(path).data.get("ended", false) != true
         && request.time <= get(path).data.lastSeen + sessionTtl();
     }
 
@@ -250,27 +252,54 @@ service cloud.firestore {
         && (!("updatedAt" in data) || data.updatedAt == null || data.updatedAt is string);
     }
 
-    // 2.5 Active sessions: one per account. Claimed only when there is none, it is the caller's own sign-in,
-    // or it has timed out; refreshed by its own sign-in; ended by its own sign-in or by an administrator.
+    // 2.5 Active sessions: one per account. A sign-in may hold it when there is none, when it already holds it
+    // (heartbeat, or coming back after a timeout), or when the current one is OLDER (takeover): the newest
+    // sign-in always wins and an older one can never take it back. Logout and an administrator mark it ended;
+    // the record is never deleted, so it stays the watermark of the newest sign-in.
     function isValidSession(data, uid) {
-      return data.keys().hasOnly(["uid", "sessionId", "authTime", "device", "createdAt", "lastSeen"])
-        && data.keys().hasAll(["uid", "sessionId", "authTime", "device", "createdAt", "lastSeen"])
+      return data.keys().hasOnly(["uid", "sessionId", "authTime", "device", "createdAt", "lastSeen", "ended", "endedBy"])
+        && data.keys().hasAll(["uid", "sessionId", "authTime", "device", "createdAt", "lastSeen", "ended"])
         && data.uid == uid
         && data.sessionId is string && data.sessionId.size() >= 16 && data.sessionId.size() <= 64
         && data.authTime == request.auth.token.auth_time
         && data.device is string && data.device.size() <= 200
         && data.createdAt is timestamp
-        && data.lastSeen == request.time;
+        && data.lastSeen == request.time
+        && data.ended == false
+        && (!("endedBy" in data) || data.endedBy is string);
+    }
+
+    function isSessionTakeover() {
+      return request.auth.token.auth_time > existing().authTime;
+    }
+
+    function isOwnSessionUpdate() {
+      return request.auth.token.auth_time == existing().authTime
+        && existing().get("ended", false) != true
+        && incoming().sessionId == existing().sessionId;
+    }
+
+    function isOwnLogout() {
+      return existing().authTime == request.auth.token.auth_time
+        && incoming().diff(existing()).affectedKeys().hasOnly(["ended", "endedBy", "lastSeen"])
+        && incoming().ended == true && incoming().endedBy == "logout"
+        && incoming().lastSeen == request.time;
+    }
+
+    function isAdminEnd() {
+      return isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(["ended", "endedBy"])
+        && incoming().ended == true && incoming().endedBy == "admin";
     }
 
     match /activeSessions/{uid} {
       allow read: if (isSignedIn() && request.auth.uid == uid) || isAdmin();
       allow create: if isSignedIn() && request.auth.uid == uid && isValidId(uid) && isValidSession(incoming(), uid);
-      allow update: if isSignedIn() && request.auth.uid == uid && isValidSession(incoming(), uid) && (
-        existing().authTime == request.auth.token.auth_time ||
-        request.time > existing().lastSeen + sessionTtl()
-      );
-      allow delete: if (isSignedIn() && request.auth.uid == uid && existing().authTime == request.auth.token.auth_time) || isAdmin();
+      allow update: if (isSignedIn() && request.auth.uid == uid && (
+          (isValidSession(incoming(), uid) && (isSessionTakeover() || isOwnSessionUpdate())) ||
+          isOwnLogout()
+        )) || isAdminEnd();
+      allow delete: if false;
     }
 
     // Session timeout setting (read by every signed-in client and by sessionTtl() above)

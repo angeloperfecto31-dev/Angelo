@@ -5,7 +5,7 @@ import { groupSavedRoomsByFloor } from "./utils/modelFloors";
 import { isEqual } from "lodash";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { SessionBlockedError, blockedMessage, claimSession, logout, setSessionNotice, watchSession } from "./utils/sessionGuard";
+import { SessionEndedError, claimSession, logout, messageFor, setSessionNotice, watchSession } from "./utils/sessionGuard";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "./utils/firestoreError";
 import LoginScreen from "./components/LoginScreen";
@@ -202,16 +202,17 @@ export default function App() {
       }
       // Prevent layout/payment screen flickering during authentication/subscription checks
       setAuthLoading(true);
-      // Single-device sessions: claim this account's session before any user data is loaded
-      // (the Firestore rules refuse user data to a sign-in that does not hold the session)
+      // Single active session: this sign-in takes the account's session over (any older sign-in is signed out
+      // at once) before any user data is loaded; the Firestore rules refuse user data to every other sign-in.
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           await claimSession(currentUser);
           if (auth.currentUser?.uid === currentUser.uid) setUser(currentUser);
           return;
         } catch (e) {
-          if (e instanceof SessionBlockedError) {
-            setSessionNotice(blockedMessage(e));
+          if (e instanceof SessionEndedError) {
+            // This browser's sign-in is older than the active session (replaced while it was closed) or ended
+            setSessionNotice(messageFor(e.reason));
             await signOut(auth);
             return;
           }
@@ -224,15 +225,12 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Keep this device's session alive; sign out here if it is taken over or ended by an administrator
+  // Keep this browser's session alive; sign out here the moment it is taken over or ended
   useEffect(() => {
     if (!user) return;
-    return watchSession(user, (reason, device) => {
-      setSessionNotice(
-        reason === "revoked"
-          ? "Your session was ended by an administrator. Please sign in again."
-          : `This account was signed in on ${device || "another device"} after this device had been inactive, so you were signed out here.`,
-      );
+    return watchSession(user, (reason) => {
+      // "replaced": a newer sign-in on another device or browser took over; "revoked": an administrator
+      setSessionNotice(messageFor(reason));
       signOut(auth);
     });
   }, [user]);
