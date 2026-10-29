@@ -6,7 +6,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
-import { SingleLineDiagramContent, PANEL_SLD_EXTRA_BOTTOM } from "./SingleLineDiagram";
+import { SingleLineDiagramContent, SLD_GEOM, panelSldHeight } from "./SingleLineDiagram";
 import { computeSolarDesign } from "../utils/solarEngine";
 import { toPng } from "html-to-image";
 import {
@@ -214,7 +214,7 @@ export default function SystemSLD({
     [circuits, panel.system],
   );
 
-  const mdpHeight = 320 + mdpRows.length * 60 + PANEL_SLD_EXTRA_BOTTOM;
+  const mdpHeight = panelSldHeight(mdpRows.length);
 
   const spLayouts = useMemo(() => {
     return allSubPanels.map((sp, idx) => {
@@ -224,7 +224,7 @@ export default function SystemSLD({
         availableSubPanels: allSubPanels,
       });
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
-      const spHeight = 320 + spRows.length * 60 + PANEL_SLD_EXTRA_BOTTOM;
+      const spHeight = panelSldHeight(spRows.length);
 
       let parentId: "mdp" | string = "mdp";
       let feedingCircuit: Circuit | null = null;
@@ -476,9 +476,10 @@ export default function SystemSLD({
 
     const endLeftX =
       leftRoots.length > 0 ? currentLeftX - borderSpace : currentLeftX;
-    const mdpX = leftRoots.length > 0 ? endLeftX + 100 : 50;
+    // The service-entrance text extends left of the MDP drawing
+    const mdpX = leftRoots.length > 0 ? endLeftX + 100 : 50 + SLD_GEOM.LEFT_OVERFLOW;
 
-    let currentRightX = mdpX + 800 + (rightRoots.length > 0 ? 100 : 0);
+    let currentRightX = mdpX + SLD_GEOM.WIDTH + (rightRoots.length > 0 ? 100 : 0);
     rightRoots.forEach((r) => {
       const w = widths.get(r.sp.id) || W_COLUMN;
       const x = currentRightX + w / 2 - 400;
@@ -780,21 +781,22 @@ export default function SystemSLD({
                 isLeftBranchInParent = layout.tempIsLeft;
               }
 
-              const y1 = parentYOffset + 320 + layout.rowIndex * 60;
-              const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
+              const y1 = parentYOffset + SLD_GEOM.ROW1_Y + layout.rowIndex * SLD_GEOM.ROW_H;
+              const x1 = parentXOffset + (isLeftBranchInParent ? SLD_GEOM.TIP_LEFT : SLD_GEOM.TIP_RIGHT);
 
               // Staggered drop column
               let dropX = 0;
               if (isLeftBranchInParent) {
-                dropX = parentXOffset + 150 - ((i % 10) + 1) * 20;
+                dropX = parentXOffset + SLD_GEOM.TIP_LEFT - 40 - ((i % 10) + 1) * 20;
               } else {
-                dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
+                // Beyond the board's right-hand callouts (grounding, feeder)
+                dropX = parentXOffset + SLD_GEOM.WIDTH - 60 + ((i % 10) + 1) * 20;
               }
 
               // Staggered horizontal channels
               const yChannel = yOffset - 75 + (i % 10) * 12;
-              const spFeedX = spXOffset + 270;
-              const spFeedY = yOffset + 150;
+              const spFeedX = spXOffset + SLD_GEOM.SUB_FEED_X;
+              const spFeedY = yOffset + 50 + SLD_GEOM.FEED_Y;
 
               const pathY = y1 + 25;
               let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
@@ -1083,21 +1085,22 @@ export default function SystemSLD({
                     isLeftBranchInParent = layout.tempIsLeft;
                   }
 
-                  const y1 = parentYOffset + 320 + layout.rowIndex * 60;
-                  const x1 = parentXOffset + (isLeftBranchInParent ? 190 : 610);
+                  const y1 = parentYOffset + SLD_GEOM.ROW1_Y + layout.rowIndex * SLD_GEOM.ROW_H;
+                  const x1 = parentXOffset + (isLeftBranchInParent ? SLD_GEOM.TIP_LEFT : SLD_GEOM.TIP_RIGHT);
 
                   // Staggered drop column
                   let dropX = 0;
                   if (isLeftBranchInParent) {
-                    dropX = parentXOffset + 150 - ((i % 10) + 1) * 20;
+                    dropX = parentXOffset + SLD_GEOM.TIP_LEFT - 40 - ((i % 10) + 1) * 20;
                   } else {
-                    dropX = parentXOffset + 650 + ((i % 10) + 1) * 20;
+                    // Beyond the board's right-hand callouts (grounding, feeder)
+                dropX = parentXOffset + SLD_GEOM.WIDTH - 60 + ((i % 10) + 1) * 20;
                   }
 
                   // Staggered horizontal channels
                   const yChannel = yOffset - 75 + (i % 10) * 12;
-                  const spFeedX = spXOffset + 270;
-                  const spFeedY = yOffset + 150;
+                  const spFeedX = spXOffset + SLD_GEOM.SUB_FEED_X;
+                  const spFeedY = yOffset + 50 + SLD_GEOM.FEED_Y;
 
                   const pathY = y1 + 25;
                   let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
