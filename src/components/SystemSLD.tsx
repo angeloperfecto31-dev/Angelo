@@ -6,7 +6,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
-import { SingleLineDiagramContent, SLD_GEOM, panelSldHeight, panelSldExtents } from "./SingleLineDiagram";
+import { SingleLineDiagramContent, SLD_GEOM, panelSldHeight, panelSldExtents, subPanelFeedX } from "./SingleLineDiagram";
 import { computeSolarDesign } from "../utils/solarEngine";
 import { toPng } from "html-to-image";
 import {
@@ -528,7 +528,7 @@ export default function SystemSLD({
   const feederRoutes = useMemo(() => {
     const LANE = 14;
     const GAP = 18;
-    const routes = new Map<string, string>();
+    const routes = new Map<string, { d: string; from: "left" | "right"; feedX: number }>();
     const mdpExt = panelSldExtents({
       panel,
       panelRows: mdpRows,
@@ -561,7 +561,9 @@ export default function SystemSLD({
         tipX: o.x + (side === "left" ? SLD_GEOM.TIP_LEFT : SLD_GEOM.TIP_RIGHT),
         rowY: o.y + SLD_GEOM.ROW1_Y + l.rowIndex * SLD_GEOM.ROW_H,
         laneBase: o.x + (side === "left" ? ext.left - GAP : ext.right + GAP),
-        targetX: (layoutPositions.get(l.sp.id)?.x ?? 0) + SLD_GEOM.SUB_FEED_X,
+        spX: layoutPositions.get(l.sp.id)?.x ?? 0,
+        from: "left" as "left" | "right",
+        targetX: 0,
         targetY: yOff + 50 + SLD_GEOM.FEED_Y,
         laneX: 0,
         chanY: 0,
@@ -582,6 +584,12 @@ export default function SystemSLD({
       });
     });
 
+    // The feed point (and its "CONNECTED TO" label) faces the board the panel is connected to
+    feeders.forEach((f) => {
+      f.from = originOf(f.parentId).x > f.spX ? "right" : "left";
+      f.targetX = f.spX + subPanelFeedX(f.from);
+    });
+
     // Channels per fed depth, in the gap above the fed panels
     const byDepth = new Map<number, typeof feeders>();
     feeders.forEach((f) => byDepth.set(f.depth, [...(byDepth.get(f.depth) || []), f]));
@@ -597,7 +605,7 @@ export default function SystemSLD({
     });
 
     feeders.forEach((f) => {
-      routes.set(f.id, `M ${f.tipX},${f.rowY} H ${f.laneX} V ${f.chanY} H ${f.targetX} V ${f.targetY}`);
+      routes.set(f.id, { d: `M ${f.tipX},${f.rowY} H ${f.laneX} V ${f.chanY} H ${f.targetX} V ${f.targetY}`, from: f.from, feedX: f.targetX });
     });
     return routes;
   }, [resolvedLayouts, layoutPositions, yOffsets, depths, MdpXOffset, panel, mdpRows, solarConfig, solarCalc, showSolar]);
@@ -879,9 +887,11 @@ export default function SystemSLD({
               }
 
               // Feeder route: own lane outside the parent board's labels, own channel above this panel
-              const spFeedX = spXOffset + SLD_GEOM.SUB_FEED_X;
+              const route = feederRoutes.get(id);
+              const feedFrom = route?.from || "left";
+              const spFeedX = route?.feedX ?? spXOffset + SLD_GEOM.SUB_FEED_X;
               const spFeedY = yOffset + 50 + SLD_GEOM.FEED_Y;
-              const path = feederRoutes.get(id) || "";
+              const path = route?.d || "";
               void isLeftBranchInParent;
 
               const label =
@@ -937,6 +947,7 @@ export default function SystemSLD({
                     panelRows={layout.spRows}
                     formatWireSize={formatWireSize}
                     isSubPanel={true}
+                    feedFrom={feedFrom}
                     parentDesignation={parentDesignation}
                     xOffset={spXOffset}
                     yOffset={yOffset + 50}
@@ -1169,9 +1180,11 @@ export default function SystemSLD({
                   }
 
                   // Feeder route: own lane outside the parent board's labels, own channel above this panel
-                  const spFeedX = spXOffset + SLD_GEOM.SUB_FEED_X;
+                  const route = feederRoutes.get(id);
+                  const feedFrom = route?.from || "left";
+                  const spFeedX = route?.feedX ?? spXOffset + SLD_GEOM.SUB_FEED_X;
                   const spFeedY = yOffset + 50 + SLD_GEOM.FEED_Y;
-                  const path = feederRoutes.get(id) || "";
+                  const path = route?.d || "";
                   void isLeftBranchInParent;
 
                   const label =
@@ -1228,6 +1241,7 @@ export default function SystemSLD({
                         panelRows={layout.spRows}
                         formatWireSize={formatWireSize}
                         isSubPanel={true}
+                        feedFrom={feedFrom}
                         parentDesignation={parentDesignation}
                         xOffset={spXOffset}
                         yOffset={yOffset + 50}

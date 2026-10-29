@@ -31,6 +31,10 @@ export const SLD_GEOM = {
   WIDTH: 880,
 };
 
+/** Sub-panel feed point (local x) for a feeder arriving from the left or the right */
+export const subPanelFeedX = (from: "left" | "right" = "left") =>
+  from === "right" ? 2 * SLD_GEOM.BUS_X - SLD_GEOM.SUB_FEED_X : SLD_GEOM.SUB_FEED_X;
+
 /** Circuit tag (drawing units, from the tag centre): circle radius, triangle back edge, half height and point */
 export const TAG = { R: 13, BACK_X: -2.2, HALF_H: 20.4, TIP_X: 17 };
 
@@ -179,7 +183,14 @@ export function panelSldExtents(args: {
   return { left: left - 6, right: right + 6 };
 }
 
-export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, solarConfig, solarCalc, xOffset = 0, yOffset = 0 }) => {
+export const SingleLineDiagramContent: React.FC<
+  SingleLineDiagramProps & {
+    xOffset?: number;
+    yOffset?: number;
+    /** Sub-panel: the side its feeder arrives from (the feed point and its label are drawn on that side) */
+    feedFrom?: "left" | "right";
+  }
+> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, solarConfig, solarCalc, xOffset = 0, yOffset = 0, feedFrom = "left" }) => {
   // SVG Dimensions Calculation
   const numRows = panelRows.length;
   // Board box bottom (the solar feeder starts here)
@@ -217,6 +228,9 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   // ---------- drawing data ----------
   const G = SLD_GEOM;
   const BUS = G.BUS_X;
+  const subFeedX = subPanelFeedX(feedFrom);
+  const subLabelX = feedFrom === "right" ? 2 * BUS - 250 : 250;
+  const subLabelAnchor = feedFrom === "right" ? "start" : "end";
   const polesText = (p: any) => {
     const s = String(p ?? "").toUpperCase().replace(/\s+/g, "");
     return s.endsWith("P") || s.includes("+N") ? s : `${s}P`;
@@ -305,11 +319,12 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
       {/* ===================== SOURCE ===================== */}
       {isSubPanel ? (
         <>
-          <circle cx={G.SUB_FEED_X} cy={G.FEED_Y} r="5" fill="#1e293b" />
-          <T x={250} y={G.FEED_Y - 15} t={`CONNECTED TO ${parentDesignation || 'MDP'}`} size={13} anchor="end" />
-          <T x={250} y={G.FEED_Y + 5} t={`${voltage}V ${phaseText}`} size={13} anchor="end" />
-          <T x={250} y={G.FEED_Y + 23} t="60Hz" size={13} anchor="end" />
-          <line x1={G.SUB_FEED_X} y1={G.FEED_Y} x2={BUS} y2={G.FEED_Y} className="sld-line" strokeWidth="1.8" />
+          {/* Feed point on the side the feeder arrives from, its label outside it */}
+          <circle cx={subFeedX} cy={G.FEED_Y} r="5" fill="#1e293b" />
+          <T x={subLabelX} y={G.FEED_Y - 15} t={`CONNECTED TO ${parentDesignation || 'MDP'}`} size={13} anchor={subLabelAnchor} />
+          <T x={subLabelX} y={G.FEED_Y + 5} t={`${voltage}V ${phaseText}`} size={13} anchor={subLabelAnchor} />
+          <T x={subLabelX} y={G.FEED_Y + 23} t="60Hz" size={13} anchor={subLabelAnchor} />
+          <line x1={subFeedX} y1={G.FEED_Y} x2={BUS} y2={G.FEED_Y} className="sld-line" strokeWidth="1.8" />
         </>
       ) : (
         <>
