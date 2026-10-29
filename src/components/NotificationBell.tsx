@@ -22,7 +22,10 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
+import { useAppUpdate, reloadForUpdate, RUNNING_BUILD } from "../utils/appUpdate";
 import { motion, AnimatePresence } from "motion/react";
 import {
   handleFirestoreError,
@@ -199,7 +202,13 @@ export const NotificationBell: React.FC<Props> = ({
     return matchesCategory && matchesSearch;
   });
 
-  const unreadCount = updates.filter((u) => !readStates[u.id]).length;
+  // A newer deployed build counts as one more unread notification until the page is reloaded
+  const { available: appUpdate } = useAppUpdate();
+  const unreadCount = updates.filter((u) => !readStates[u.id]).length + (appUpdate ? 1 : 0);
+  const builtText = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  };
 
   // Mark single update as read
   const handleMarkAsRead = async (updateId: string) => {
@@ -293,7 +302,7 @@ export const NotificationBell: React.FC<Props> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-2.5 w-[360px] md:w-[420px] max-h-[580px] bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xl z-50 flex flex-col overflow-hidden"
+            className="absolute right-0 mt-2.5 w-[min(360px,calc(100vw-1.5rem))] md:w-[420px] max-h-[580px] bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xl z-50 flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="p-4 border-b border-slate-150 dark:border-slate-850 flex items-center justify-between bg-slate-50/55 dark:bg-slate-950/25">
@@ -342,7 +351,7 @@ export const NotificationBell: React.FC<Props> = ({
               </div>
 
               {/* Categorization chips slider */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-thin">
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {categories.map((cat) => (
                   <button
                     key={cat}
@@ -361,13 +370,43 @@ export const NotificationBell: React.FC<Props> = ({
 
             {/* Scrollable Notification Stream */}
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-850 max-h-[380px] p-1.5 space-y-1">
-              {filteredUpdates.length === 0 ? (
-                <div className="py-12 text-center">
-                  <Bell className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700 mb-2.5" />
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    No matching update notifications found.
-                  </p>
+              {/* New deployed version: always first, whatever the filter */}
+              {appUpdate && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-500/30">
+                  <div className="flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white">New version of ElectricalPH available</p>
+                      {appUpdate.summary && (
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 break-words">{appUpdate.summary}</p>
+                      )}
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        {builtText(appUpdate.builtAt) ? `Released ${builtText(appUpdate.builtAt)}. ` : ""}Save any open work, then reload.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={reloadForUpdate}
+                        className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Reload now
+                      </button>
+                    </div>
+                  </div>
                 </div>
+              )}
+              {filteredUpdates.length === 0 ? (
+                !appUpdate && (
+                  <div className="py-12 text-center">
+                    <Bell className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700 mb-2.5" />
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {updates.length === 0 && !searchQuery ? "You're using the latest version of ElectricalPH." : "No matching update notifications found."}
+                    </p>
+                    {updates.length === 0 && !searchQuery && builtText(RUNNING_BUILD.builtAt) && (
+                      <p className="text-[10px] text-slate-400 mt-1">Version of {builtText(RUNNING_BUILD.builtAt)}</p>
+                    )}
+                  </div>
+                )
               ) : (
                 filteredUpdates.map((u) => {
                   const isRead = readStates[u.id] || false;
