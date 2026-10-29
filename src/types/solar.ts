@@ -340,6 +340,8 @@ export interface SolarCalculationResults {
   batteryEnergyKwhRequired: number;
   batteryCapacityAhRequired: number;
   batteryUnitsCalculated: number;
+  /** Recommended library battery for this inverter and backup (null without a battery system) */
+  recommendedBattery?: import("../utils/solarEngine").BatteryRecommendation | null;
   batteryUsableEnergyKwh: number;
   batteryBackupHoursActual: number;
   /** Units needed for the backup energy alone */

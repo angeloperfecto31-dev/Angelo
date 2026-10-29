@@ -283,6 +283,33 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
     });
   };
 
+  const recBattery = calc.recommendedBattery || null;
+  const isRecommended = (b: SolarBattery) =>
+    Boolean(recBattery && b.manufacturer === recBattery.battery.manufacturer && b.model === recBattery.battery.model);
+  const recommendedInUse = Boolean(recBattery && config.battery.model === recBattery.battery.model && config.battery.manufacturer === recBattery.battery.manufacturer);
+  const handleUseRecommendedBattery = () => {
+    if (!recBattery) return;
+    const b = recBattery.battery;
+    const nextOverrides = { ...(config.overrides || {}) };
+    delete nextOverrides.batteryUnits; // the unit count follows the design again
+    onChange({
+      battery: {
+        ...config.battery,
+        manufacturer: b.manufacturer,
+        model: b.model,
+        voltageV: b.voltageV,
+        capacityAh: b.capacityAh,
+        energyKwh: b.energyKwh,
+        dodPercent: b.dodPercent,
+        efficiencyPercent: b.efficiencyPercent,
+        chemistry: b.chemistry || "LiFePO4",
+        voltageType: b.voltageType || (b.voltageV > 100 ? "high_voltage" : "low_voltage"),
+        maxDischargeCurrentA: b.maxDischargeCurrentA,
+      },
+      overrides: nextOverrides,
+    });
+  };
+
   const handleAddCustomBattery = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customBatt.manufacturer || !customBatt.model || !customBatt.energyKwh) return;
@@ -908,6 +935,46 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
 
         {config.battery.enabled ? (
           <div className="space-y-4">
+            {/* Recommended battery for this inverter and backup (automatic, from the design) */}
+            {recBattery && (
+              <div
+                className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+                  recommendedInUse
+                    ? "bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60"
+                    : "bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60"
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    ★ Recommended battery for this setup
+                  </div>
+                  <div className="font-black text-slate-900 dark:text-white mt-0.5">
+                    {recBattery.battery.manufacturer} {recBattery.battery.model}
+                  </div>
+                  <div className="text-slate-700 dark:text-slate-200 font-semibold mt-0.5">
+                    {recBattery.units} unit{recBattery.units > 1 ? "s" : ""}
+                    {recBattery.unitsInSeries > 1 ? ` (${recBattery.unitsInSeries}S x ${recBattery.unitsInParallel}P)` : " in parallel"} x{" "}
+                    {recBattery.battery.energyKwh} kWh = {recBattery.totalKwh} kWh ({recBattery.usableKwh} kWh usable) for{" "}
+                    {config.battery.requiredBackupLoadKw} kW x {config.battery.backupHours} h backup
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{recBattery.reason}.</div>
+                </div>
+                {recommendedInUse ? (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> In use
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleUseRecommendedBattery}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold transition cursor-pointer"
+                  >
+                    Use recommended
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Battery Presets & Filters */}
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -931,7 +998,8 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
                           .filter((b) => (b.isCustom ? "Custom" : b.manufacturer) === brand)
                           .map((b) => (
                             <option key={b.model} value={b.model}>
-                              {b.manufacturer} {b.model} ({b.energyKwh} kWh • {b.voltageV}V)
+                              {isRecommended(b) ? "★ " : ""}
+                              {b.manufacturer} {b.model} ({b.energyKwh} kWh • {b.voltageV}V){isRecommended(b) ? " - RECOMMENDED" : ""}
                             </option>
                           ))}
                       </optgroup>
@@ -1029,7 +1097,7 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
                 batteryFilterVoltageType !== "all" ||
                 batterySearchQuery.trim()
                   ? filteredBatteries
-                  : filteredBatteries.slice(0, 8)
+                  : [...filteredBatteries].sort((a, b2) => Number(isRecommended(b2)) - Number(isRecommended(a))).slice(0, 8)
                 ).map((b, idx) => {
                   const isSelected = config.battery.model === b.model;
                   const isHighVoltage = b.voltageV > 100;
@@ -1047,7 +1115,12 @@ export const SolarInverterTab: React.FC<SolarInverterTabProps> = ({
                     >
                       <div>
                         <div className="flex items-center justify-between gap-1 mb-1">
-                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{b.manufacturer}</span>
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                            {b.manufacturer}
+                            {isRecommended(b) && (
+                              <span className="ml-1.5 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-400 text-amber-950 align-middle">★ RECOMMENDED</span>
+                            )}
+                          </span>
                           <span
                             className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                               isCommercial

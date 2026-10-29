@@ -3736,6 +3736,517 @@ export const DEFAULT_BATTERIES: SolarBattery[] = [
     maxDischargeCurrentA: 500,
     cycleLife: 8000,
   },
+  // ==================== MORE MODELS AND SIZES ====================
+  {
+    id: "pylontech-pelio-l-5",
+    manufacturer: "Pylontech",
+    model: "Pelio-L 5.12 Wall/Floor LFP (5.12 kWh)",
+    voltageV: 51.2,
+    capacityAh: 100,
+    energyKwh: 5.12,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "wall_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "pylontech-us5000-1c",
+    manufacturer: "Pylontech",
+    model: "US5000-1C LFP Module (4.8 kWh)",
+    voltageV: 48,
+    capacityAh: 100,
+    energyKwh: 4.8,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-se-f5-pro",
+    manufacturer: "Deye",
+    model: "SE-F5 Pro-C LFP Module (5.12 kWh)",
+    voltageV: 51.2,
+    capacityAh: 100,
+    energyKwh: 5.12,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-se-f10",
+    manufacturer: "Deye",
+    model: "SE-F10 LFP Module (10.24 kWh)",
+    voltageV: 51.2,
+    capacityAh: 200,
+    energyKwh: 10.24,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "floor_standing",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-se-f16",
+    manufacturer: "Deye",
+    model: "SE-F16 LFP Module (16.08 kWh)",
+    voltageV: 51.2,
+    capacityAh: 314,
+    energyKwh: 16.08,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "floor_standing",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-rw-f10-2",
+    manufacturer: "Deye",
+    model: "RW-F10.2 Wall-Mount LFP (10.24 kWh)",
+    voltageV: 51.2,
+    capacityAh: 200,
+    energyKwh: 10.24,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "wall_mount",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-rw-f16",
+    manufacturer: "Deye",
+    model: "RW-F16 Wall-Mount LFP (16.08 kWh)",
+    voltageV: 51.2,
+    capacityAh: 314,
+    energyKwh: 16.08,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "wall_mount",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "dyness-a48100",
+    manufacturer: "Dyness",
+    model: "A48100 19-inch Rack LFP (4.8 kWh)",
+    voltageV: 48,
+    capacityAh: 100,
+    energyKwh: 4.8,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "dyness-b4850",
+    manufacturer: "Dyness",
+    model: "B4850 19-inch Rack LFP (2.4 kWh)",
+    voltageV: 48,
+    capacityAh: 50,
+    energyKwh: 2.4,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "growatt-ark-7-6l",
+    manufacturer: "Growatt",
+    model: "ARK 7.6L Low Voltage LFP Stack (7.68 kWh)",
+    voltageV: 51.2,
+    capacityAh: 150,
+    energyKwh: 7.68,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 150,
+    cycleLife: 6000,
+  },
+  {
+    id: "growatt-ark-10-2l",
+    manufacturer: "Growatt",
+    model: "ARK 10.2L Low Voltage LFP Stack (10.24 kWh)",
+    voltageV: 51.2,
+    capacityAh: 200,
+    energyKwh: 10.24,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "goodwe-lynx-u-10-8",
+    manufacturer: "GoodWe",
+    model: "Lynx Home U Series LV LFP (10.8 kWh)",
+    voltageV: 51.2,
+    capacityAh: 211,
+    energyKwh: 10.8,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "byd-lvs-20",
+    manufacturer: "BYD",
+    model: "Battery-Box Premium LVS 20.0",
+    voltageV: 51.2,
+    capacityAh: 390,
+    energyKwh: 20,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 250,
+    cycleLife: 6000,
+  },
+  {
+    id: "felicity-lpbf48200",
+    manufacturer: "Felicity Solar",
+    model: "LPBF48200 Floor-Standing LiFePO4 (10.0 kWh)",
+    voltageV: 51.2,
+    capacityAh: 200,
+    energyKwh: 10,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "floor_standing",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "hubble-am5",
+    manufacturer: "Hubble Lithium",
+    model: "AM-5 Wall-Mount LFP (5.5 kWh)",
+    voltageV: 51.2,
+    capacityAh: 108,
+    energyKwh: 5.5,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "wall_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "hubble-x101",
+    manufacturer: "Hubble Lithium",
+    model: "X-101 Wall-Mount LFP (10.24 kWh)",
+    voltageV: 51.2,
+    capacityAh: 200,
+    energyKwh: 10.24,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "wall_mount",
+    maxDischargeCurrentA: 200,
+    cycleLife: 6000,
+  },
+  {
+    id: "pytes-ebox-48100r",
+    manufacturer: "Pytes",
+    model: "E-Box 48100R 19-inch Rack LFP (4.8 kWh)",
+    voltageV: 48,
+    capacityAh: 100,
+    energyKwh: 4.8,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "pytes-v5",
+    manufacturer: "Pytes",
+    model: "V5 Rack / Wall LFP (5.12 kWh)",
+    voltageV: 51.2,
+    capacityAh: 100,
+    energyKwh: 5.12,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "shoto-sda10-48100",
+    manufacturer: "Shoto",
+    model: "SDA10-48100 19-inch Rack LFP (4.8 kWh)",
+    voltageV: 48,
+    capacityAh: 100,
+    energyKwh: 4.8,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "low_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "byd-hvs-12-8",
+    manufacturer: "BYD",
+    model: "Battery-Box Premium HVS 12.8 High Voltage",
+    voltageV: 512,
+    capacityAh: 25,
+    energyKwh: 12.8,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 25,
+    cycleLife: 6000,
+  },
+  {
+    id: "byd-hvm-8-3",
+    manufacturer: "BYD",
+    model: "Battery-Box Premium HVM 8.3 High Voltage",
+    voltageV: 153.6,
+    capacityAh: 54,
+    energyKwh: 8.28,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "byd-hvm-13-8",
+    manufacturer: "BYD",
+    model: "Battery-Box Premium HVM 13.8 High Voltage",
+    voltageV: 256,
+    capacityAh: 54,
+    energyKwh: 13.8,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "byd-hvm-19-3",
+    manufacturer: "BYD",
+    model: "Battery-Box Premium HVM 19.3 High Voltage",
+    voltageV: 358.4,
+    capacityAh: 54,
+    energyKwh: 19.32,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "sungrow-sbr224",
+    manufacturer: "Sungrow",
+    model: "SBR224 High Voltage LiFePO4 (22.4 kWh)",
+    voltageV: 448,
+    capacityAh: 50,
+    energyKwh: 22.4,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 30,
+    cycleLife: 6000,
+  },
+  {
+    id: "growatt-ark-7-6h",
+    manufacturer: "Growatt",
+    model: "ARK 7.6H High Voltage ESS Stack (7.68 kWh)",
+    voltageV: 153.6,
+    capacityAh: 50,
+    energyKwh: 7.68,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "growatt-ark-12-8h",
+    manufacturer: "Growatt",
+    model: "ARK 12.8H High Voltage ESS Stack (12.8 kWh)",
+    voltageV: 256,
+    capacityAh: 50,
+    energyKwh: 12.8,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "growatt-ark-15-3h",
+    manufacturer: "Growatt",
+    model: "ARK 15.3H High Voltage ESS Stack (15.36 kWh)",
+    voltageV: 307.2,
+    capacityAh: 50,
+    energyKwh: 15.36,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 50,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-bos-g-pro-20",
+    manufacturer: "Deye",
+    model: "BOS-G Pro High Voltage Rack (20.48 kWh)",
+    voltageV: 204.8,
+    capacityAh: 100,
+    energyKwh: 20.48,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "deye-bos-g-pro-30",
+    manufacturer: "Deye",
+    model: "BOS-G Pro High Voltage Rack (30.72 kWh)",
+    voltageV: 307.2,
+    capacityAh: 100,
+    energyKwh: 30.72,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "rack_mount",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
+  {
+    id: "pylontech-force-h2-10",
+    manufacturer: "Pylontech",
+    model: "Force-H2 High Voltage ESS (10.65 kWh)",
+    voltageV: 288,
+    capacityAh: 37,
+    energyKwh: 10.65,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 37,
+    cycleLife: 6000,
+  },
+  {
+    id: "pylontech-force-h2-14",
+    manufacturer: "Pylontech",
+    model: "Force-H2 High Voltage ESS (14.2 kWh)",
+    voltageV: 384,
+    capacityAh: 37,
+    energyKwh: 14.2,
+    dodPercent: 95,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "high_voltage",
+    formFactor: "stackable",
+    maxDischargeCurrentA: 37,
+    cycleLife: 6000,
+  },
+  {
+    id: "huawei-luna2000-97",
+    manufacturer: "Huawei",
+    model: "LUNA2000-97KWH-1H1 Smart String C&I ESS (97 kWh)",
+    voltageV: 768,
+    capacityAh: 126,
+    energyKwh: 97,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "commercial_bess",
+    formFactor: "floor_standing",
+    maxDischargeCurrentA: 125,
+    cycleLife: 6000,
+  },
+  {
+    id: "sungrow-st225",
+    manufacturer: "Sungrow",
+    model: "PowerStack ST225kWh C&I ESS (225 kWh)",
+    voltageV: 768,
+    capacityAh: 293,
+    energyKwh: 225,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "commercial_bess",
+    formFactor: "containerized",
+    maxDischargeCurrentA: 280,
+    cycleLife: 6000,
+  },
+  {
+    id: "pylontech-powercube-m1",
+    manufacturer: "Pylontech",
+    model: "Powercube-M1 C&I ESS Rack (76.8 kWh)",
+    voltageV: 768,
+    capacityAh: 100,
+    energyKwh: 76.8,
+    dodPercent: 90,
+    efficiencyPercent: 95,
+    chemistry: "LiFePO4",
+    voltageType: "commercial_bess",
+    formFactor: "floor_standing",
+    maxDischargeCurrentA: 100,
+    cycleLife: 6000,
+  },
 ];
 
 // ==========================================
@@ -4552,6 +5063,151 @@ export function determineRecommendedInverter(
  * Automatically sizes all solar equipment, validates against PEC 2017 & safety standards,
  * and seamlessly supports user-editable manual overrides with instant "Reset to Auto".
  */
+/**
+ * Battery bank for a battery model: arrangement and unit count from the backup energy and the inverter
+ * battery current. Library batteries are complete packs at their working voltage (48-51.2 V low-voltage
+ * packs, or 160-800 V high-voltage stacks / cabinets), so additional units are connected in parallel. A
+ * low-voltage module sold for high-voltage use (e.g. 51.2 V HV modules) is stacked in series behind its
+ * BMS to reach the high-voltage battery window. Used by the design and by the battery recommendation.
+ */
+export function sizeBatteryBank(
+  b: Pick<SolarBattery, "manufacturer" | "model" | "voltageV" | "energyKwh" | "capacityAh" | "dodPercent" | "efficiencyPercent" | "voltageType" | "maxDischargeCurrentA">,
+  totalInverterAcKw: number,
+  backupLoadKw: number,
+  backupHours: number
+) {
+  const dod = (b.dodPercent || 90) / 100;
+  const eff = (b.efficiencyPercent || 95) / 100;
+  const energyKwhRequired = Number(((backupLoadKw * backupHours) / (dod * eff)).toFixed(1));
+  const unitKwh = b.energyKwh || 4.8;
+  const unitV = b.voltageV || 48;
+  const voltageType = b.voltageType || (unitV > 100 ? "high_voltage" : "low_voltage");
+  const HV_BATTERY_MIN_V = 150;
+  const unitsInSeries = voltageType === "high_voltage" && unitV < HV_BATTERY_MIN_V ? Math.ceil(HV_BATTERY_MIN_V / unitV) : 1;
+  const bankVoltage = Number((unitV * unitsInSeries).toFixed(1));
+  // Battery-side DC current when the inverters charge / discharge at full rated power (95% efficiency)
+  const maxDcCurrentA = Number(((totalInverterAcKw * 1000) / (bankVoltage * 0.95)).toFixed(1));
+  // Per-unit continuous discharge current: datasheet value (or the library entry), else 1C of the pack (Ah)
+  const library = DEFAULT_BATTERIES.find((x) => x.manufacturer === b.manufacturer && x.model === b.model);
+  const unitMaxA = b.maxDischargeCurrentA || library?.maxDischargeCurrentA || b.capacityAh || 100;
+  // Units needed for the backup energy, and parallel strings needed to deliver the inverter current
+  const unitsForEnergy = Math.max(1, Math.ceil(energyKwhRequired / unitKwh));
+  const parallelForCurrent = Math.max(1, Math.ceil(maxDcCurrentA / unitMaxA));
+  const units = Math.max(Math.ceil(unitsForEnergy / unitsInSeries), parallelForCurrent) * unitsInSeries;
+  const totalKwh = Number((units * unitKwh).toFixed(2));
+  return {
+    energyKwhRequired,
+    unitsInSeries,
+    bankVoltage,
+    maxDcCurrentA,
+    unitMaxA,
+    unitsForEnergy,
+    parallelForCurrent,
+    units,
+    unitsInParallel: units / unitsInSeries,
+    totalKwh,
+    usableKwh: Number((totalKwh * dod * eff).toFixed(1)),
+  };
+}
+
+export type BatteryClass = "low_voltage" | "high_voltage" | "commercial_bess";
+
+/**
+ * Battery voltage class a hybrid / off-grid inverter takes, from its model name (e.g. Deye "LP" = low
+ * voltage 48 V, "HP3" = high voltage; Sungrow SH-RS/RT, Huawei, Fronius GEN24 and GoodWe ET/EH = high
+ * voltage; GoodWe ES, Growatt SPH/SPF and Solis "-L" = low voltage), else from the system size. C&I
+ * storage only for a commercial-size inverter (50 kW and up) with a large bank: a residential hybrid
+ * cannot take a C&I cabinet however large the backup is, so it gets more units of its own class.
+ */
+export function inverterBatteryClass(inv: SolarInverter, systemType: string, totalInverterAcKw: number, energyKwhRequired: number): BatteryClass {
+  if (inv.ratedAcPowerKw >= 50 && energyKwhRequired >= 100) return "commercial_bess";
+  const name = `${inv.manufacturer} ${inv.model}`;
+  if (/LP[13]\b|SG0\dLP|GW\d+D?-ES|\bES\b|EH1P.*-L\b|-L-PRO|SPH\d+(?!.*TL3)|SPF|MultiPlus|Quattro|Axpert|IVEM|MKS/i.test(name)) return "low_voltage";
+  if (/HP3|SH\d+(\.\d+)?R[ST]|SH\d+T|GEN24|\bET\b|\bEH\b|-HV|TL3|LUNA|Huawei/i.test(name)) return "high_voltage";
+  if (systemType === "off-grid") return "low_voltage";
+  return inv.phase === "3PH" && totalInverterAcKw >= 15 ? "high_voltage" : "low_voltage";
+}
+
+/** High-voltage battery makers that publish compatibility with several inverter brands */
+const OPEN_HV_BATTERY_BRANDS = ["BYD", "Pylontech", "Dyness", "LG Energy Solution"];
+
+/** Battery brands that pair with an inverter brand besides its own (listed compatible partners) */
+const BATTERY_PARTNERS: Record<string, string[]> = {
+  Fronius: ["BYD"],
+  Solis: ["Pylontech", "Dyness", "BYD"],
+  SMA: ["BYD", "LG Energy Solution"],
+};
+
+export interface BatteryRecommendation {
+  battery: SolarBattery;
+  batteryClass: BatteryClass;
+  units: number;
+  unitsInSeries: number;
+  unitsInParallel: number;
+  totalKwh: number;
+  usableKwh: number;
+  energyKwhRequired: number;
+  reason: string;
+}
+
+/**
+ * Recommended battery for the setup: among the library models of the voltage class the inverter takes,
+ * the one whose bank meets the backup energy and the inverter battery current with the least oversizing
+ * and a practical number of units, preferring the inverter's own (or partner) brand. AC-coupled batteries
+ * with their own inverter (Enphase IQ, Tesla Powerwall) are not offered for a DC-coupled hybrid.
+ */
+export function recommendBattery(
+  config: SolarDesignConfig,
+  inverter: SolarInverter,
+  totalInverterAcKw: number,
+  library: SolarBattery[] = DEFAULT_BATTERIES
+): BatteryRecommendation | null {
+  const backupLoadKw = config.battery?.requiredBackupLoadKw || 25;
+  const backupHours = config.battery?.backupHours || 4;
+  const roughEnergy = (backupLoadKw * backupHours) / 0.9;
+  const cls = inverterBatteryClass(inverter, config.systemType, totalInverterAcKw, roughEnergy);
+  const classOf = (b: SolarBattery): BatteryClass => b.voltageType || (b.voltageV > 100 ? "high_voltage" : "low_voltage");
+  const acCoupled = (b: SolarBattery) => /Enphase|Tesla/i.test(b.manufacturer) && classOf(b) !== "commercial_bess";
+  let pool = library.filter((b) => !b.isCustom && !acCoupled(b) && classOf(b) === cls);
+  if (!pool.length && cls === "commercial_bess") pool = library.filter((b) => !b.isCustom && classOf(b) === "high_voltage");
+  const brands = [inverter.manufacturer, ...(BATTERY_PARTNERS[inverter.manufacturer] || [])];
+  // High-voltage and C&I batteries talk only to their own inverters (or listed partners); without one,
+  // only open-protocol HV makers. 48 V batteries are widely compatible, so the brand is only preferred.
+  if (cls !== "low_voltage") {
+    const own = pool.filter((b) => brands.includes(b.manufacturer));
+    pool = own.length ? own : pool.filter((b) => OPEN_HV_BATTERY_BRANDS.includes(b.manufacturer));
+  }
+  if (!pool.length) return null;
+  let best: (BatteryRecommendation & { score: number }) | null = null;
+  for (const b of pool) {
+    const z = sizeBatteryBank(b, totalInverterAcKw, backupLoadKw, backupHours);
+    const oversize = Math.max(0, z.totalKwh / z.energyKwhRequired - 1);
+    const brandMatch = brands.includes(b.manufacturer);
+    // Least oversizing, then fewer units (fewer connections), a strong penalty past 20 units, and a
+    // preference for the inverter's own brand (communication / warranty compatibility)
+    const score = oversize * 20 + z.units * 0.8 + Math.max(0, z.units - 20) * 2 + (brandMatch ? 0 : 6);
+    if (!best || score < best.score) {
+      const what = cls === "low_voltage" ? "48 V low-voltage" : cls === "high_voltage" ? "high-voltage" : "C&I";
+      best = {
+        battery: b,
+        batteryClass: cls,
+        units: z.units,
+        unitsInSeries: z.unitsInSeries,
+        unitsInParallel: z.unitsInParallel,
+        totalKwh: z.totalKwh,
+        usableKwh: z.usableKwh,
+        energyKwhRequired: z.energyKwhRequired,
+        reason: `${what} battery for the ${inverter.manufacturer} inverter${brandMatch ? " (same brand)" : ""}: ${z.units} unit${z.units > 1 ? "s" : ""} give ${z.totalKwh} kWh for the ${z.energyKwhRequired} kWh required with the least oversizing`,
+        score,
+      };
+    }
+  }
+  if (!best) return null;
+  const { score: _score, ...rec } = best;
+  void _score;
+  return rec;
+}
+
 export function computeSolarDesign(
   config: SolarDesignConfig,
   panel?: PanelConfig,
@@ -4853,31 +5509,17 @@ export function computeSolarDesign(
   const backupHours = batt.backupHours || 4;
   const dod = (batt.dodPercent || 90) / 100;
   const battEff = (batt.efficiencyPercent || 95) / 100;
-  const batteryEnergyKwhRequired = Number(((backupLoadKw * backupHours) / (dod * battEff)).toFixed(1));
   const battUnitKwh = batt.energyKwh || 4.8;
-  const battUnitV = batt.voltageV || 48;
-
-  // Bank arrangement. Library batteries are complete packs at their working voltage (48-51.2 V
-  // low-voltage packs, or 160-800 V high-voltage stacks / cabinets), so additional units are
-  // connected in parallel. A low-voltage module sold for high-voltage use (e.g. 51.2 V HV
-  // modules) is stacked in series behind its BMS to reach the high-voltage battery window.
-  const battVoltageType = batt.voltageType || (battUnitV > 100 ? "high_voltage" : "low_voltage");
-  const HV_BATTERY_MIN_V = 150;
-  const batteryUnitsInSeries =
-    battVoltageType === "high_voltage" && battUnitV < HV_BATTERY_MIN_V ? Math.ceil(HV_BATTERY_MIN_V / battUnitV) : 1;
-  const batteryBankVoltage = Number((battUnitV * batteryUnitsInSeries).toFixed(1));
-
-  // Battery-side DC current when the inverters charge / discharge at full rated power (95% efficiency)
-  const batteryMaxDcCurrentA = Number(((totalInverterAcKw * 1000) / (batteryBankVoltage * 0.95)).toFixed(1));
-  // Per-unit continuous discharge current: datasheet value (or the library entry), else 1C of the pack (Ah)
-  const libraryBattery = DEFAULT_BATTERIES.find((b) => b.manufacturer === batt.manufacturer && b.model === batt.model);
-  const battUnitMaxA = batt.maxDischargeCurrentA || libraryBattery?.maxDischargeCurrentA || batt.capacityAh || 100;
-
-  // Units needed for the backup energy, and parallel strings needed to deliver the inverter current
-  const batteryUnitsForEnergy = Math.max(1, Math.ceil(batteryEnergyKwhRequired / battUnitKwh));
-  const batteryParallelForCurrent = Math.max(1, Math.ceil(batteryMaxDcCurrentA / battUnitMaxA));
-  const batteryUnitsCalculated =
-    Math.max(Math.ceil(batteryUnitsForEnergy / batteryUnitsInSeries), batteryParallelForCurrent) * batteryUnitsInSeries;
+  // Bank arrangement and unit count (shared with the battery recommendation, see sizeBatteryBank)
+  const bankSizing = sizeBatteryBank(batt, totalInverterAcKw, backupLoadKw, backupHours);
+  const batteryEnergyKwhRequired = bankSizing.energyKwhRequired;
+  const batteryUnitsInSeries = bankSizing.unitsInSeries;
+  const batteryBankVoltage = bankSizing.bankVoltage;
+  const batteryMaxDcCurrentA = bankSizing.maxDcCurrentA;
+  const batteryUnitsForEnergy = bankSizing.unitsForEnergy;
+  const batteryParallelForCurrent = bankSizing.parallelForCurrent;
+  const batteryUnitsCalculated = bankSizing.units;
+  const battUnitMaxA = bankSizing.unitMaxA;
 
   // Automatic unless the user has overridden the unit count (a stored "units" value is ignored)
   const effectiveBatteryUnits =
@@ -5199,6 +5841,11 @@ export function computeSolarDesign(
     batteryEnergyKwhRequired,
     batteryCapacityAhRequired,
     batteryUnitsCalculated,
+    // Best library battery for this inverter and backup (hybrid / off-grid only)
+    recommendedBattery:
+      config.systemType === "hybrid" || config.systemType === "off-grid"
+        ? recommendBattery(config, selectedInverter, totalInverterAcKw, [...DEFAULT_BATTERIES, ...(config.customBatteries || [])])
+        : null,
     batteryUsableEnergyKwh,
     batteryBackupHoursActual,
     batteryUnitsForEnergy,
