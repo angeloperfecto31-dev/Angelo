@@ -10,6 +10,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { WIRE_IMPEDANCE_TABLE } from "../constants";
+import { getActivePoles, getNeutralPoles } from "./computeEngine";
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculatePanelFault, isIdleSpareOrSpace, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, getBreakerFrameSize, calculateUnifiedVD } from "./computeEngine";
 import { groundingElectrode, fmtWireMm2 } from "./groundingElectrode";
 import { serviceFaultStudy } from "./serviceFault";
@@ -339,10 +340,14 @@ const drawFaultStarburst = (b: DxfBuilder, x: number, y: number) => {
 /** Breaker row spacing of a panel SLD, and the smallest spacing used to fit a large board */
 const PANEL_SLD_ROW_SPACING = 16;
 const PANEL_SLD_MIN_ROW_SPACING = 7;
-/** Height of a panel SLD from its base line to the bottom of the board box (39 + 24 + 12 + rows; kept at 81 for margin) */
-const panelSldHeight = (rowCount: number, spacing: number) => 81 + Math.max(0, rowCount - 1) * spacing;
+/** Panel SLD scale: mm per on-screen drawing unit (a 47-unit breaker row is 16 mm) */
+const PANEL_SLD_MM_PER_UNIT = 16 / 47;
+/** Feed line to the first breaker row (205 units) plus last row to the board bottom (79 units), mm */
+const PANEL_SLD_BASE = 97;
+/** Height of a panel SLD from its feed line to the bottom of the board box */
+const panelSldHeight = (rowCount: number, spacing: number) => PANEL_SLD_BASE + Math.max(0, rowCount - 1) * spacing;
 /** Grounding electrode system drawn below a service board (wire, rod and its label) */
-const PANEL_SLD_GROUND_DEPTH = 25;
+const PANEL_SLD_GROUND_DEPTH = 42;
 const panelSldRowCount = (circs: Circuit[]) => Math.ceil(Math.max(circs.reduce((m, c) => Math.max(m, c.circuitNo), 0), 2) / 2);
 
 const drawCadPanelSLD = (
@@ -366,112 +371,104 @@ const drawCadPanelSLD = (
   const phaseText = is3Phase ? "3-PH" : "1-PH";
   const wireNumber = is3Phase ? ((panel.system.includes("4W") || panel.system.includes("5W")) ? 4 : 3) : 2;
 
-  // Same panel-board layout as the on-screen SLD (SingleLineDiagram): service entrance and kWh meter,
-  // feeder callout, PANEL BOARD with the main breaker inside, C-numbered circuit tags, ground terminal
-  // block and (service board) the grounding electrode system. y grows upwards.
+  // Same panel-board layout and proportions as the on-screen SLD (SingleLineDiagram / SLD_GEOM), at
+  // K mm per drawing unit so a full breaker row is 16 mm: service entrance and kWh meter on the feed
+  // line, feeder callout, PANEL BOARD with the main breaker inside, C-numbered circuit tags, ground
+  // terminal block and (service board) the grounding electrode system. y grows upwards; yBase is the
+  // feed line, the first breaker row is 205 units (69.7 mm) below it.
+  const K = PANEL_SLD_MM_PER_UNIT;
+  const u = (v: number) => v * K;
   const polesText = (p: any) => {
-    const s = String(p ?? "").toUpperCase();
+    const s = String(p ?? "").toUpperCase().replace(/\s+/g, "");
     return s.endsWith("P") || s.includes("+N") ? s : `${s}P`;
   };
-  /** Callout tick on a conductor at (x, y) with a dashed leader to toX */
-  const callout = (x: number, y: number, toX: number) => {
+  /** Callout: tick on the conductor at (x, y), dashed leader to toX and a dashed bracket from yA to yB */
+  const callout = (x: number, y: number, toX: number, yA: number, yB: number) => {
     const d = toX > x ? 1 : -1;
-    b.addLine(x + 2.2 * d, y + 1.8, x + 0.4 * d, y, "SLD_GEOMETRY");
-    b.addLine(x + 0.4 * d, y, x + 2.2 * d, y - 1.8, "SLD_GEOMETRY");
-    b.addLine(x + 2.6 * d, y, toX, y, "SLD_DASHED");
+    b.addLine(x + u(7) * d, y + u(6), x + u(1) * d, y, "SLD_GEOMETRY");
+    b.addLine(x + u(1) * d, y, x + u(7) * d, y - u(6), "SLD_GEOMETRY");
+    b.addLine(x + u(9) * d, y, toX, y, "SLD_DASHED");
+    b.addLine(toX, yA, toX, yB, "SLD_DASHED");
   };
+  const H13 = 1.9, H12 = 1.75, H11 = 1.6; // text heights matching the 13 / 12 / 11 unit fonts on screen
+  const row1 = yBase - u(205);
 
   // 1. Source
   if (isSubPanel) {
-    b.addLine(xBase, yBase, xBase, yBase - 15, "SLD_GEOMETRY");
     b.addCircle(xBase, yBase, 1.5, "SLD_GEOMETRY");
-    b.addText(fedFromLabel, xBase - 12, yBase, 1.6, 0, "TEXT_HEADER", "right");
-    b.addText(`${voltage}V, ${phaseText}`, xBase - 12, yBase - 5, 1.5, 0, "TEXT_DATA", "right");
-    b.addText("60 Hz", xBase - 12, yBase - 10, 1.5, 0, "TEXT_DATA", "right");
+    b.addText(fedFromLabel, xBase - 6, yBase + 4, H13, 0, "TEXT_HEADER", "right");
+    b.addText(`${voltage}V, ${phaseText}`, xBase - 6, yBase - 1, H12, 0, "TEXT_DATA", "right");
+    b.addText("60 Hz", xBase - 6, yBase - 6, H12, 0, "TEXT_DATA", "right");
   } else {
-    // Line terminals -> service entrance symbol -> conductor count -> kWh meter -> drop to the board
-    b.addCircle(xBase - 46, yBase + 2.5, 0.9, "SLD_GEOMETRY");
-    b.addCircle(xBase - 46, yBase - 2.5, 0.9, "SLD_GEOMETRY");
-    b.addLine(xBase - 45.1, yBase + 2.5, xBase - 42, yBase + 2.5, "SLD_GEOMETRY");
-    b.addLine(xBase - 45.1, yBase - 2.5, xBase - 42, yBase - 2.5, "SLD_GEOMETRY");
-    b.addLine(xBase - 42, yBase + 5, xBase - 42, yBase - 5, "SLD_GEOMETRY");
-    b.addLine(xBase - 42, yBase + 5, xBase - 34, yBase, "SLD_GEOMETRY");
-    b.addLine(xBase - 42, yBase - 5, xBase - 34, yBase, "SLD_GEOMETRY");
-    b.addText("SERVICE", xBase - 38, yBase + 12, 1.5, 0, "TEXT_HEADER", "center");
-    b.addText("ENTRANCE", xBase - 38, yBase + 8.5, 1.5, 0, "TEXT_HEADER", "center");
-    b.addLine(xBase - 34, yBase, xBase - 17, yBase, "SLD_GEOMETRY");
+    // Line terminals -> service entrance -> one slash per service conductor -> kWh meter -> drop
+    const x = (v: number) => xBase + u(v - 400);
+    b.addCircle(x(84), yBase + u(1), u(5), "SLD_GEOMETRY");
+    b.addCircle(x(84), yBase - u(14), u(5), "SLD_GEOMETRY");
+    b.addLine(x(89), yBase + u(1), x(170), yBase + u(1), "SLD_GEOMETRY");
+    b.addLine(x(89), yBase - u(14), x(170), yBase - u(14), "SLD_GEOMETRY");
+    b.addLine(x(170), yBase + u(28), x(170), yBase - u(29), "SLD_GEOMETRY");
+    b.addLine(x(170), yBase + u(28), x(214), yBase, "SLD_GEOMETRY");
+    b.addLine(x(170), yBase - u(29), x(214), yBase, "SLD_GEOMETRY");
+    b.addText("SERVICE", x(129), yBase + u(43), H13, 0, "TEXT_HEADER", "center");
+    b.addText("ENTRANCE", x(129), yBase + u(26), H13, 0, "TEXT_HEADER", "center");
+    b.addText(`${is3Phase ? "3" : "1"} PHASE, ${voltage}V, ${wireNumber}-WIRE`, x(74), yBase + u(1), H12, 0, "TEXT_HEADER", "right");
+    b.addText("+ GROUND, 60 HZ", x(74), yBase - u(15), H12, 0, "TEXT_HEADER", "right");
+    b.addLine(x(214), yBase, x(322), yBase, "SLD_GEOMETRY");
     for (let i = 0; i < wireNumber; i++) {
-      const tx = xBase - 26 + (i - (wireNumber - 1) / 2) * 1.6;
-      b.addLine(tx - 0.9, yBase - 1.5, tx + 0.9, yBase + 1.5, "SLD_GEOMETRY");
+      const tx = x(259 + (i - (wireNumber - 1) / 2) * 8);
+      b.addLine(tx - u(5), yBase - u(7), tx + u(5), yBase + u(7), "SLD_GEOMETRY");
     }
-    b.addCircle(xBase - 13, yBase, 4, "SLD_GEOMETRY");
-    b.addText("M", xBase - 13, yBase - 1.2, 2.2, 0, "TEXT_HEADER", "center");
-    b.addText("KILOWATT-HOUR METER", xBase - 13, yBase + 5, 1.2, 0, "TEXT_DATA", "center");
-    b.addLine(xBase - 9, yBase, xBase, yBase, "SLD_GEOMETRY");
-
-    // Service description and the utility transformer
-    b.addText(`${is3Phase ? "3" : "1"} PHASE, ${voltage}V, ${wireNumber}-WIRE`, xBase - 49, yBase + 1, 1.4, 0, "TEXT_HEADER", "right");
-    b.addText("+ GROUND, 60 HZ", xBase - 49, yBase - 3.5, 1.4, 0, "TEXT_HEADER", "right");
-    const calcMDP = computePanelScheduleValues(panel, panelCircuits, { availableSubPanels: allSubPanels });
-    const demandKVA = (calcMDP.totalVA / 1000) * (calcMDP.actualDemandFactor ?? 0.8);
-    const STANDARD_SIZES = [15, 30, 45, 75, 112.5, 150, 225, 300, 500, 750, 1000, 1500, 2000, 2500];
-    const ptCount = iscParams?.parallelTransformersCount || 1;
-    let recommendedKVA = iscParams?.transformerKVA;
-    if (!recommendedKVA) {
-      const requiredKVA = demandKVA / 0.8 / ptCount;
-      recommendedKVA = STANDARD_SIZES.find((s) => s >= requiredKVA) || STANDARD_SIZES[STANDARD_SIZES.length - 1];
-    }
-    let txNote = `UTILITY TRANSFORMER: ${recommendedKVA} kVA`;
-    if (ptCount > 1) {
-      const pt2Rating = iscParams?.parallelTransformersRating || recommendedKVA;
-      const matched = iscParams?.parallelTransformersZMatch !== false && iscParams?.parallelTransformerskVAMatch !== false;
-      txNote = `${ptCount}x PARALLEL TRANSFORMERS: ${matched ? recommendedKVA * ptCount : recommendedKVA + (ptCount - 1) * pt2Rating} kVA`;
-    }
-    b.addText(txNote, xBase - 49, yBase - 8, 1.1, 0, "TEXT_DATA", "right");
+    b.addCircle(x(342), yBase, u(20), "SLD_GEOMETRY");
+    b.addText("M", x(342), yBase - 1.2, 2.5, 0, "TEXT_HEADER", "center");
+    b.addText("KILOWATT - HOUR METER", x(347), yBase + u(28), H11, 0, "TEXT_DATA", "center");
+    b.addLine(x(362), yBase, xBase, yBase, "SLD_GEOMETRY");
   }
 
-  // 2. Drop to the board (with the transfer switch, if any) and the feeder callout
-  if (!isSubPanel) b.addLine(xBase, yBase, xBase, yBase - 15, "SLD_GEOMETRY");
+  // 2. Drop to the main breaker (with the transfer switch, if any) and the feeder callout
+  const mainTop = row1 + u(75);
+  const mainBottom = row1 + u(45);
   if (panel.transferSwitchType && panel.transferSwitchType !== "None") {
-    b.addLine(xBase, yBase - 15, xBase, yBase - 29, "SLD_GEOMETRY");
-    b.addRect(xBase - 5, yBase - 35, xBase + 5, yBase - 29, "SLD_GEOMETRY");
-    b.addText(panel.transferSwitchType, xBase, yBase - 33, 2, 0, "TEXT_HEADER", "center");
-    b.addLine(xBase, yBase - 35, xBase, yBase - 39, "SLD_GEOMETRY");
-    b.addLine(xBase - 5, yBase - 32, xBase - 10, yBase - 32, "SLD_GEOMETRY");
-    b.addCircle(xBase - 13, yBase - 32, 3, "SLD_GEOMETRY");
-    b.addText("G", xBase - 13, yBase - 33, 1.5, 0, "TEXT_HEADER", "center");
+    const tsTop = yBase - u(58), tsBottom = yBase - u(78);
+    b.addLine(xBase, yBase, xBase, tsTop, "SLD_GEOMETRY");
+    b.addRect(xBase - u(15), tsBottom, xBase + u(15), tsTop, "SLD_GEOMETRY");
+    b.addText(panel.transferSwitchType, xBase, (tsTop + tsBottom) / 2 - 0.8, 1.4, 0, "TEXT_HEADER", "center");
+    b.addLine(xBase, tsBottom, xBase, mainTop, "SLD_GEOMETRY");
+    const gy = (tsTop + tsBottom) / 2;
+    b.addLine(xBase - u(15), gy, xBase - u(34), gy, "SLD_GEOMETRY");
+    b.addCircle(xBase - u(45), gy, u(11), "SLD_GEOMETRY");
+    b.addText("G", xBase - u(45), gy - 0.8, 1.4, 0, "TEXT_HEADER", "center");
     const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
     const recommendedTsRating = STANDARD_TS_RATINGS.find((r) => r >= (mainFeeder?.cb || 60)) || (mainFeeder?.cb || 60);
     const tsRating = panel.transferSwitchRating || recommendedTsRating;
     const tsPoles = panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2);
-    b.addText(`${tsRating}A, ${tsPoles}P ${panel.transferSwitchType === "ATS" ? "AUTO" : "MANUAL"} TS`, xBase + 10, yBase - 31, 1.5, 0, "TEXT_DATA", "left");
+    b.addText(`${tsRating}A, ${tsPoles}P ${panel.transferSwitchType === "ATS" ? "AUTO" : "MANUAL"} TS`, xBase - u(60), gy, 1.4, 0, "TEXT_DATA", "right");
   } else {
-    b.addLine(xBase, yBase - 15, xBase, yBase - 39, "SLD_GEOMETRY");
+    b.addLine(xBase, yBase, xBase, mainTop, "SLD_GEOMETRY");
   }
   const runs = mainFeeder.runs || mainFeeder.wire?.runs || 1;
   const wireSize = mainFeeder.wire?.size || "38";
   const groundSize = mainFeeder.groundSize || "8.0";
-  const conduitSize = (mainFeeder.conduitSize || "40mm").toString().toUpperCase();
+  const ins = (panel.insulationType || "THHN").toUpperCase();
+  const wireMm2 = fmtWireMm2(parseFloat(String(wireSize)) || 0);
+  const gndMm2 = fmtWireMm2(parseFloat(String(groundSize)) || 0);
+  const nPhase = getActivePoles(mainFeeder.poles || (is3Phase ? "3P" : "2P"));
+  const nNeutral = getNeutralPoles(mainFeeder.poles || "");
+  const conduitSize = String(mainFeeder.conduitSize || "40mm");
   const conduitType = (mainFeeder.conduitType || "PVC").toUpperCase();
-  callout(xBase, yBase - 10, xBase + 9);
+  const material = panel.conductorMaterial === "Aluminum" ? "ALUMINUM" : "COPPER";
+  callout(xBase, yBase - u(32), xBase + u(70), yBase - u(22), yBase - u(60));
   b.addText(
-    `${getConductorLabel(wireSize, groundSize, mainFeeder.poles, runs, panel.insulationType || "THHN")} ${panel.conductorMaterial === "Aluminum" ? "(AL)" : "(CU)"}`,
-    xBase + 10, yBase - 8.5, 1.5, 0, "TEXT_DATA", "left",
+    `${runs > 1 ? `${runs} SETS OF ` : ""}${nPhase} - ${wireMm2}mm² ${ins}${nNeutral ? ` + ${nNeutral} - ${wireMm2}mm² ${ins} (N)` : ""} + ${gndMm2}mm² ${ins} (G)`,
+    xBase + u(82), yBase - u(35), H12, 0, "TEXT_DATA", "left",
   );
-  b.addText(`IN ${conduitSize}Ø ${conduitType} CONDUIT`, xBase + 10, yBase - 12.5, 1.5, 0, "TEXT_DATA", "left");
+  b.addText(
+    panel.conduitArrangement === "separate_per_set" && runs > 1
+      ? `${material} WIRE IN ${runs} - ${conduitSize}ø ${conduitType} PIPES`
+      : `${material} WIRE IN ${conduitSize}ø ${conduitType} PIPE`,
+    xBase + u(82), yBase - u(51), H12, 0, "TEXT_DATA", "left",
+  );
 
   // 3. Panel board: title, box and the main breaker inside it
-  const boxHalf = 26;
-  const boxTop = yBase - 39;
-  b.addText(`PANEL BOARD${panel.designation ? ` (${panel.designation})` : ""}`, xBase + 3, yBase - 36.8, 1.7, 0, "TEXT_TITLE", "left");
-  b.addLine(xBase, boxTop, xBase, yBase - 42, "SLD_GEOMETRY");
-  b.addCircle(xBase, yBase - 42, 1.2, "SLD_GEOMETRY");
-  b.addArc(xBase, yBase - 46, 4, 270, 90, "SLD_GEOMETRY");
-  b.addCircle(xBase, yBase - 50, 1.2, "SLD_GEOMETRY");
-  const mainKaic = mainFeeder.kaic || parseFloat(panel.icRating || "") || 10;
-  b.addText(`${mainFeeder.cb || "100"}AT, ${polesText(mainFeeder.poles || "3")}, ${mainKaic}KAIC`, xBase + 5.5, yBase - 45.5, 1.4, 0, "TEXT_HEADER", "left");
-  b.addText(`${mainFeeder.af || "100"}AF, ${voltage}V, 60HZ`, xBase + 5.5, yBase - 49.5, 1.15, 0, "TEXT_DATA", "left");
-
   const maxCircuitNo = Math.max(...panelCircuits.map((c) => c.circuitNo), 0);
   const rows: { index: number; left?: Circuit; right?: Circuit }[] = [];
   for (let i = 1; i <= Math.max(maxCircuitNo, 2); i += 2) {
@@ -482,63 +479,78 @@ const drawCadPanelSLD = (
     });
   }
   const numRows = rows.length;
-  const rowTop = boxTop - 24;
-  const boxBottom = rowTop - (numRows - 1) * rowSpacing - 12;
-  b.addRect(xBase - boxHalf, boxBottom, xBase + boxHalf, boxTop, "BORDER");
-  b.addLine(xBase, yBase - 50, xBase, rowTop - (numRows - 1) * rowSpacing, "SLD_BUSBAR");
+  const lastRow = row1 - (numRows - 1) * rowSpacing;
+  const boxTop = row1 + u(101);
+  const boxBottom = lastRow - u(79);
+  b.addText("PANEL BOARD", xBase + u(67), row1 + u(113), H13, 0, "TEXT_TITLE", "center");
+  b.addRect(xBase - u(75), boxBottom, xBase + u(72), boxTop, "BORDER");
+  b.addCircle(xBase, mainTop, 1.2, "SLD_GEOMETRY");
+  b.addArc(xBase, (mainTop + mainBottom) / 2, (mainTop - mainBottom) / 2, 270, 90, "SLD_GEOMETRY");
+  b.addCircle(xBase, mainBottom, 1.2, "SLD_GEOMETRY");
+  const mainKaic = mainFeeder.kaic || parseFloat(panel.icRating || "") || 10;
+  b.addText(`${mainFeeder.cb || "100"}AT,${polesText(mainFeeder.poles || "3")},${mainKaic}KAIC`, xBase + u(24), row1 + u(58), H13, 0, "TEXT_HEADER", "left");
+  b.addLine(xBase, mainBottom, xBase, lastRow, "SLD_BUSBAR");
 
-  // 4. Branch circuits: breaker with its rating, circuit tag (C-number with pointer) and description
+  // 4. Branch circuits: breaker with its rating, circuit tag (C-number with chevron) and description
   const circuitMap: Map<number, { arrowX: number; arrowY: number; isLeft: boolean }> = new Map();
+  // Breaker arc and its label shrink with the row spacing on a crowded sheet
+  const arcR = Math.min(u(17.5), rowSpacing * 0.37);
   const drawBranch = (c: Circuit, yRow: number, dir: 1 | -1) => {
-    b.addCircle(xBase, yRow, 0.7, "SLD_BUSBAR");
-    b.addLine(xBase, yRow, xBase + 7 * dir, yRow, "SLD_GEOMETRY");
+    const bIn = xBase + u(20) * dir, bOut = xBase + u(55) * dir;
+    b.addCircle(xBase, yRow, 0.9, "SLD_BUSBAR");
+    b.addLine(xBase, yRow, bIn, yRow, "SLD_GEOMETRY");
     const isSpace = c.description?.toUpperCase() === "SPACE" || c.loadType === LoadType.SPACE;
     if (!isSpace) {
-      b.addCircle(xBase + 15 * dir, yRow, 0.8, "SLD_GEOMETRY");
-      b.addArc(xBase + 11 * dir, yRow, 4, 0, 180, "SLD_GEOMETRY");
-      b.addCircle(xBase + 7 * dir, yRow, 0.8, "SLD_GEOMETRY");
-      b.addText(`${c.mcbAT}AT, ${polesText(c.mcbP || "1P")}`, xBase + 11 * dir, yRow + 4.5, 1.4, 0, "TEXT_HEADER", "center");
+      b.addCircle(bIn, yRow, 0.9, "SLD_GEOMETRY");
+      b.addArc((bIn + bOut) / 2, yRow, arcR, 0, 180, "SLD_GEOMETRY");
+      b.addCircle(bOut, yRow, 0.9, "SLD_GEOMETRY");
+      b.addText(`${c.mcbAT}AT,${polesText(c.mcbP || "1P")}`, (bIn + bOut) / 2, yRow + arcR + 2.6, H13, 0, "TEXT_HEADER", "center");
     } else {
-      b.addLine(xBase + 7 * dir, yRow, xBase + 15 * dir, yRow, "SLD_DASHED");
+      b.addLine(bIn, yRow, bOut, yRow, "SLD_DASHED");
     }
-    const tagX = xBase + 31 * dir;
-    b.addLine(xBase + 15 * dir, yRow, tagX - 2.5 * dir, yRow, "SLD_GEOMETRY");
-    b.addCircle(tagX, yRow, 2.5, "SLD_GEOMETRY");
-    b.addText(`C${c.circuitNo}`, tagX, yRow - 0.8, 1.2, 0, "TEXT_DATA", "center");
-    // Pointer away from the board
-    const tip = xBase + 37 * dir;
-    b.addLine(tagX + 2.2 * dir, yRow + 1.3, tip, yRow, "SLD_GEOMETRY");
-    b.addLine(tagX + 2.2 * dir, yRow - 1.3, tip, yRow, "SLD_GEOMETRY");
-    // Raised a little so a sub-panel feeder leaving the tip does not cross it
-    b.addText((c.description || "SPARE").slice(0, 18), xBase + 40 * dir, yRow + 1.5, 1.8, 0, "TEXT_DATA", dir === 1 ? "left" : "right");
+    const tagX = xBase + u(110) * dir;
+    b.addLine(bOut, yRow, tagX - u(13) * dir, yRow, "SLD_GEOMETRY");
+    b.addCircle(tagX, yRow, u(13), "SLD_GEOMETRY");
+    b.addText(`C${c.circuitNo}`, tagX, yRow - 0.8, 1.3, 0, "TEXT_DATA", "center");
+    const tip = xBase + u(132) * dir;
+    b.addLine(tagX + u(9.2) * dir, yRow + u(9.2), tip, yRow, "SLD_GEOMETRY");
+    b.addLine(tagX + u(9.2) * dir, yRow - u(9.2), tip, yRow, "SLD_GEOMETRY");
+    // A sub-panel feeder leaves the chevron tip horizontally: raise its description clear of it
+    const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+    b.addText((c.description || "SPARE").slice(0, 18), xBase + u(135) * dir, isSub ? yRow + 1.5 : yRow - 0.8, H11, 0, "TEXT_DATA", dir === 1 ? "left" : "right");
     circuitMap.set(c.circuitNo, { arrowX: tip, arrowY: yRow, isLeft: dir === -1 });
   };
   rows.forEach((row, idx) => {
-    const yRow = rowTop - idx * rowSpacing;
+    const yRow = row1 - idx * rowSpacing;
     if (row.left) drawBranch(row.left, yRow, -1);
     if (row.right) drawBranch(row.right, yRow, 1);
   });
 
-  // 5. Grounding: terminal block inside the board; service board also gets the electrode system
-  const gX = xBase + 20;
-  b.addRect(gX - 3, boxBottom + 2, gX + 3, boxBottom + 5.5, "SLD_GEOMETRY");
-  b.addCircle(gX - 1.3, boxBottom + 3.75, 0.5, "SLD_GEOMETRY");
-  b.addCircle(gX + 1.3, boxBottom + 3.75, 0.5, "SLD_GEOMETRY");
-  callout(gX + 3, boxBottom + 3.75, xBase + 29);
-  b.addText(`GROUND TERMINAL BLOCK${isSubPanel ? " (EGC)" : ""}`, xBase + 30, boxBottom + 3, 1.2, 0, "TEXT_DATA", "left");
-  if (!isSubPanel) {
+  // 5. Grounding: terminal block inside the board; the service board also gets the electrode system
+  const gx = (v: number) => xBase + u(v - 400);
+  b.addRect(gx(442), lastRow - u(67), gx(465), lastRow - u(47), "SLD_GEOMETRY");
+  b.addCircle(gx(453), lastRow - u(57), 0.8, "SLD_GEOMETRY");
+  callout(gx(465), lastRow - u(55), gx(532), lastRow - u(46), lastRow - u(64));
+  b.addText("GROUND TERMINAL BLOCK", gx(540), lastRow - u(56), H12, 0, "TEXT_DATA", "left");
+  if (isSubPanel) {
+    b.addText(`(EGC FROM ${(fedFromLabel || "").replace(/^FED FROM\s*/i, "") || "MDP"})`, gx(540), lastRow - u(71), 1.3, 0, "TEXT_DATA", "left");
+  } else {
     const gec = groundingElectrode(wireSize, runs);
-    b.addLine(gX, boxBottom + 2, gX, boxBottom - 14, "SLD_GEOMETRY");
-    callout(gX, boxBottom - 6, xBase + 29);
-    b.addText(`${fmtWireMm2(gec.gecMm2)} mm² TW (G) COPPER WIRE`, xBase + 30, boxBottom - 5.4, 1.2, 0, "TEXT_DATA", "left");
-    b.addText(`IN ${gec.conduit}`, xBase + 30, boxBottom - 8.6, 1.2, 0, "TEXT_DATA", "left");
-    b.addLine(gX - 4, boxBottom - 14, gX + 4, boxBottom - 14, "SLD_GEOMETRY");
-    b.addLine(gX - 2.6, boxBottom - 16, gX + 2.6, boxBottom - 16, "SLD_GEOMETRY");
-    b.addLine(gX - 1.2, boxBottom - 18, gX + 1.2, boxBottom - 18, "SLD_GEOMETRY");
-    callout(gX + 4.2, boxBottom - 15, xBase + 29);
-    b.addText("20mmØ x 3M COPPER WELD GROUND ROD", xBase + 30, boxBottom - 14.4, 1.2, 0, "TEXT_DATA", "left");
-    b.addText("WITH HEAVY DUTY CLAMP", xBase + 30, boxBottom - 17.6, 1.2, 0, "TEXT_DATA", "left");
-    b.addText("GROUNDING SYSTEM", gX, boxBottom - 22.5, 1.3, 0, "TEXT_HEADER", "center");
+    b.addLine(gx(453), lastRow - u(57), gx(453), lastRow - u(144), "SLD_GEOMETRY");
+    callout(gx(453), lastRow - u(95), gx(535), lastRow - u(85), lastRow - u(117));
+    b.addText(`${fmtWireMm2(gec.gecMm2)} mm² TW (G) COPPER WIRE`, gx(544), lastRow - u(95), H12, 0, "TEXT_DATA", "left");
+    b.addText(`IN ${gec.conduit}`, gx(544), lastRow - u(111), H12, 0, "TEXT_DATA", "left");
+    // Ground rod electrode
+    b.addLine(gx(441), lastRow - u(144), gx(465), lastRow - u(144), "SLD_GEOMETRY");
+    b.addLine(gx(441), lastRow - u(144), gx(453), lastRow - u(167), "SLD_GEOMETRY");
+    b.addLine(gx(465), lastRow - u(144), gx(453), lastRow - u(167), "SLD_GEOMETRY");
+    b.addLine(gx(444), lastRow - u(151), gx(462), lastRow - u(151), "SLD_GEOMETRY");
+    b.addLine(gx(447.5), lastRow - u(158), gx(458.5), lastRow - u(158), "SLD_GEOMETRY");
+    callout(gx(461), lastRow - u(154), gx(535), lastRow - u(144), lastRow - u(176));
+    b.addText("20mmø x 3M COPPER WELD GROUND ROD", gx(544), lastRow - u(154), H12, 0, "TEXT_DATA", "left");
+    b.addText("WITH HEAVY DUTY CLAMP", gx(544), lastRow - u(170), H12, 0, "TEXT_DATA", "left");
+    b.addText("GROUNDING", gx(453), lastRow - u(180), H11, 0, "TEXT_HEADER", "center");
+    b.addText("SYSTEM", gx(453), lastRow - u(195), H11, 0, "TEXT_HEADER", "center");
   }
 
   b.isSLDMode = previousMode;
@@ -662,10 +674,10 @@ const drawSystemSLD = (
   const availableH = 575 - 25 - 15;
   const sldRowSpacing = Math.max(
     PANEL_SLD_MIN_ROW_SPACING,
-    Math.min(PANEL_SLD_ROW_SPACING, (availableH - (maxDepth - 1) * 150 - 81 - PANEL_SLD_GROUND_DEPTH) / Math.max(1, maxRows)),
+    Math.min(PANEL_SLD_ROW_SPACING, (availableH - (maxDepth - 1) * 150 - PANEL_SLD_BASE - PANEL_SLD_GROUND_DEPTH) / Math.max(1, maxRows)),
   );
   // The MDP also carries its grounding electrode system below the board
-  const maxPanelHeight = 81 + maxRows * sldRowSpacing + PANEL_SLD_GROUND_DEPTH;
+  const maxPanelHeight = PANEL_SLD_BASE + maxRows * sldRowSpacing + PANEL_SLD_GROUND_DEPTH;
   const totalHeight = (maxDepth - 1) * 150 + maxPanelHeight; // use 150 vertical gap
   const topY = Math.min(560, 297 + totalHeight / 2);
   const yBase_MDP = topY;
@@ -782,7 +794,7 @@ const drawSystemSLD = (
           }
           
           const isLeft = coord.isLeft;
-          const xGutter = pXBase + (isLeft ? -75 : 75) + (isLeft ? -(index % 5) * 6 : (index % 5) * 6);
+          const xGutter = pXBase + (isLeft ? -140 : 140) + (isLeft ? -(index % 5) * 6 : (index % 5) * 6);
           const yChannel = yBase + 60 + (index % 10) * 8;
           
           b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
@@ -2334,7 +2346,7 @@ export const exportToCAD = (
       // Breaker spacing that keeps the board SLD inside the card
       const cardRowSpacing = Math.max(
         PANEL_SLD_MIN_ROW_SPACING,
-        Math.min(PANEL_SLD_ROW_SPACING, (spBottomSectionHeight - 25 - 81 - 16) / Math.max(1, spRows - 1)),
+        Math.min(PANEL_SLD_ROW_SPACING, (spBottomSectionHeight - 25 - PANEL_SLD_BASE - 16) / Math.max(1, spRows - 1)),
       );
 
       // Render schematic Single Line Diagram representing connection path from Main Panel to Sub Board

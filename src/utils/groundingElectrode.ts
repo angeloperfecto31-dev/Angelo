@@ -35,7 +35,7 @@ export function groundingElectrode(phaseSizeMm2: number | string, sets: number =
   return {
     gecMm2,
     gecText: `${fmtWireMm2(gecMm2)} mm² TW (G) COPPER WIRE`,
-    conduit: "20mmØ uPVC PIPE",
-    rod: "20mmØ x 3M COPPER WELD GROUND ROD WITH HEAVY DUTY CLAMP",
+    conduit: "20mmø uPVC PIPE",
+    rod: "20mmø x 3M COPPER WELD GROUND ROD WITH HEAVY DUTY CLAMP",
   };
 }
