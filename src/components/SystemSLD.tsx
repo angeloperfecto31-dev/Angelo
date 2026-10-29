@@ -6,7 +6,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
-import { SingleLineDiagramContent } from "./SingleLineDiagram";
+import { SingleLineDiagramContent, PANEL_SLD_EXTRA_BOTTOM } from "./SingleLineDiagram";
 import { computeSolarDesign } from "../utils/solarEngine";
 import { toPng } from "html-to-image";
 import {
@@ -214,7 +214,7 @@ export default function SystemSLD({
     [circuits, panel.system],
   );
 
-  const mdpHeight = 320 + mdpRows.length * 60 + 100;
+  const mdpHeight = 320 + mdpRows.length * 60 + PANEL_SLD_EXTRA_BOTTOM;
 
   const spLayouts = useMemo(() => {
     return allSubPanels.map((sp, idx) => {
@@ -224,7 +224,7 @@ export default function SystemSLD({
         availableSubPanels: allSubPanels,
       });
       const spRows = getPanelRows(sp.circuits, sp.panel.system);
-      const spHeight = 320 + spRows.length * 60 + 100;
+      const spHeight = 320 + spRows.length * 60 + PANEL_SLD_EXTRA_BOTTOM;
 
       let parentId: "mdp" | string = "mdp";
       let feedingCircuit: Circuit | null = null;
