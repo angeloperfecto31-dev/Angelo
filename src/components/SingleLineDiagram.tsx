@@ -13,7 +13,7 @@ const fmtKw = (v: number) => (Math.round(v * 100) / 100).toString();
 /**
  * Panel-board SLD geometry (drawing units), proportioned on the standard residential panel SLD:
  * service entrance and kWh meter on the feed line, drop to the main breaker inside the PANEL BOARD,
- * breaker rows 47 apart, circuit tags with chevrons, ground terminal block and grounding system.
+ * breaker rows 47 apart, circuit tags (circle over a triangle), ground terminal block and grounding system.
  * The System SLD routes sub-panel feeders from the tag tips (TIP_LEFT / TIP_RIGHT) to a sub-panel's
  * feed point (SUB_FEED_X, FEED_Y).
  */
@@ -23,13 +23,16 @@ export const SLD_GEOM = {
   SUB_FEED_X: 270,
   ROW1_Y: 290,
   ROW_H: 47,
-  TIP_LEFT: 268,
-  TIP_RIGHT: 532,
+  TIP_LEFT: 400 - 110 - 17,
+  TIP_RIGHT: 400 + 110 + 17,
   /** Service text left of x = 0 on a service board */
   LEFT_OVERFLOW: 90,
   /** Callout text right of x = 800 (long feeder descriptions) */
   WIDTH: 880,
 };
+
+/** Circuit tag (drawing units, from the tag centre): circle radius, triangle back edge, half height and point */
+export const TAG = { R: 13, BACK_X: -2.2, HALF_H: 20.4, TIP_X: 17 };
 
 /** Height of a panel SLD: rows, the board box and (service board) the grounding system or the solar feeder */
 export const panelSldHeight = (rows: number, opts: { solar?: boolean } = {}) =>
@@ -210,11 +213,16 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
     );
   };
 
-  /** Circuit tag: circle with the circuit number and a chevron pointing away from the board */
+  /**
+   * Circuit tag: the circuit number in a circle drawn over a triangle that points away from the board.
+   * The triangle's back edge is just inside the circle and reaches past its top and bottom; its point
+   * lies a little beyond the circle (TAG geometry, shared with the AutoCAD export).
+   */
   const CircuitTag = ({ cx, y, dir, no }: { cx: number; y: number; dir: 1 | -1; no: number }) => (
     <g>
-      <polygon points={`${cx + 9.2 * dir},${y - 9.2} ${cx + 22 * dir},${y} ${cx + 9.2 * dir},${y + 9.2}`} fill="white" className="sld-line" strokeLinejoin="round" strokeWidth="1.8" />
-      <circle cx={cx} cy={y} r="13" className="sld-line" fill="white" strokeWidth="1.8" />
+      <polygon points={`${cx + TAG.BACK_X * dir},${y - TAG.HALF_H} ${cx + TAG.TIP_X * dir},${y} ${cx + TAG.BACK_X * dir},${y + TAG.HALF_H}`} className="sld-line" style={{ fill: 'white' }} strokeLinejoin="miter" strokeWidth="2" />
+      {/* Filled with a style (it beats the .sld-line "fill: none") so it hides the triangle's back edge */}
+      <circle cx={cx} cy={y} r={TAG.R} className="sld-line" style={{ fill: 'white' }} strokeWidth="2" />
       <text x={cx} y={y + 4} className="sld-text" style={{ fontSize: '11px' }} textAnchor="middle">C{no}</text>
     </g>
   );
@@ -322,7 +330,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
            const isSpace = (c.description || "").toUpperCase() === 'SPACE' || c.loadType === LoadType.SPACE;
            const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
            const bIn = BUS + 20 * dir, bOut = BUS + 55 * dir; // breaker terminals
-           const tagX = BUS + 110 * dir; // circuit tag centre (chevron tip at BUS + 132 * dir)
+           const tagX = BUS + 110 * dir; // circuit tag centre (point at BUS + 127 * dir)
            const textX = BUS + 135 * dir;
            const anchor = dir === 1 ? "start" : "end";
            return (

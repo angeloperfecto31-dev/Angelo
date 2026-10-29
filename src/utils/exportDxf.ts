@@ -495,6 +495,22 @@ const drawCadPanelSLD = (
   const circuitMap: Map<number, { arrowX: number; arrowY: number; isLeft: boolean }> = new Map();
   // Breaker arc and its label shrink with the row spacing on a crowded sheet
   const arcR = Math.min(u(17.5), rowSpacing * 0.37);
+  /** Draws the parts of segment (x1,y1)-(x2,y2) that lie outside the circle (cx, cy, r) */
+  const lineOutsideCircle = (x1: number, y1: number, x2: number, y2: number, cx: number, cy: number, r: number) => {
+    const dx = x2 - x1, dy = y2 - y1;
+    const fx = x1 - cx, fy = y1 - cy;
+    const a = dx * dx + dy * dy, bq = 2 * (fx * dx + fy * dy), cq = fx * fx + fy * fy - r * r;
+    const disc = bq * bq - 4 * a * cq;
+    const at = (t: number) => [x1 + dx * t, y1 + dy * t] as const;
+    if (disc <= 0 || a === 0) {
+      b.addLine(x1, y1, x2, y2, "SLD_GEOMETRY");
+      return;
+    }
+    const t1 = Math.max(0, Math.min(1, (-bq - Math.sqrt(disc)) / (2 * a)));
+    const t2 = Math.max(0, Math.min(1, (-bq + Math.sqrt(disc)) / (2 * a)));
+    if (t1 > 0.0001) b.addLine(x1, y1, ...at(t1), "SLD_GEOMETRY");
+    if (t2 < 0.9999) b.addLine(...at(t2), x2, y2, "SLD_GEOMETRY");
+  };
   const drawBranch = (c: Circuit, yRow: number, dir: 1 | -1) => {
     const bIn = xBase + u(20) * dir, bOut = xBase + u(55) * dir;
     b.addCircle(xBase, yRow, 0.9, "SLD_BUSBAR");
@@ -512,9 +528,14 @@ const drawCadPanelSLD = (
     b.addLine(bOut, yRow, tagX - u(13) * dir, yRow, "SLD_GEOMETRY");
     b.addCircle(tagX, yRow, u(13), "SLD_GEOMETRY");
     b.addText(`C${c.circuitNo}`, tagX, yRow - 0.8, 1.3, 0, "TEXT_DATA", "center");
-    const tip = xBase + u(132) * dir;
-    b.addLine(tagX + u(9.2) * dir, yRow + u(9.2), tip, yRow, "SLD_GEOMETRY");
-    b.addLine(tagX + u(9.2) * dir, yRow - u(9.2), tip, yRow, "SLD_GEOMETRY");
+    // Triangle behind the circle, pointing away from the board (as on screen); the parts inside the
+    // circle are left out because a DXF circle is not filled
+    const tip = tagX + u(17) * dir;
+    const back = tagX + u(-2.2) * dir;
+    const tagR = u(13);
+    lineOutsideCircle(back, yRow + u(20.4), back, yRow - u(20.4), tagX, yRow, tagR);
+    lineOutsideCircle(back, yRow + u(20.4), tip, yRow, tagX, yRow, tagR);
+    lineOutsideCircle(back, yRow - u(20.4), tip, yRow, tagX, yRow, tagR);
     // A sub-panel feeder leaves the chevron tip horizontally: raise its description clear of it
     const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
     b.addText((c.description || "SPARE").slice(0, 18), xBase + u(135) * dir, isSub ? yRow + 1.5 : yRow - 0.8, H11, 0, "TEXT_DATA", dir === 1 ? "left" : "right");
