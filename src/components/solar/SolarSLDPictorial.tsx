@@ -153,6 +153,31 @@ function inverterPhases(calc: SolarCalculationResults, q: number): Array<string 
   return Array.from({ length: q }, (_, i) => out[i] ?? null);
 }
 
+/**
+ * Battery bank drawn unit by unit: every battery of the design (calc.effective.batteryUnits) in its
+ * series x parallel arrangement. Each parallel string is a column of its series units hanging from the
+ * bank DC bus; the strings wrap onto further bus rows, BANK_COLS per row.
+ */
+const BANK_UNIT_W = 28;
+const BANK_UNIT_H = 18;
+const BANK_PITCH = 36;
+const BANK_COLS = 8;
+const BANK_PAD = 12;
+export function batteryBankLayout(units: number, inSeries: number) {
+  const S = Math.max(1, inSeries || 1);
+  const total = Math.max(1, units || 1);
+  const P = Math.max(1, Math.ceil(total / S));
+  const cols = Math.min(BANK_COLS, P);
+  const rows = Math.ceil(P / cols);
+  const stackH = S * BANK_UNIT_H + (S - 1) * 6; // series units joined by short links
+  const rowH = 10 + stackH + 14;
+  return {
+    S, P, total, cols, rows, rowH,
+    width: BANK_PAD * 2 + (cols - 1) * BANK_PITCH + BANK_UNIT_W,
+    height: BANK_PAD + rows * rowH,
+  };
+}
+
 const BLOCK_HEADER_H = 34;
 const BLOCK_GAP = 60;
 
@@ -166,6 +191,7 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
   const hasBattery =
     (config.systemType === "hybrid" || config.systemType === "off-grid") && Boolean(config.battery?.enabled);
   const isOffGrid = config.systemType === "off-grid";
+  const bank = batteryBankLayout(eff.batteryUnits, calc.batteryUnitsInSeries);
   const hasEpsCircuit = config.systemType === "hybrid" || config.systemType === "off-grid";
 
   // Array block. The string notes sit left of the modules, so the array starts after the widest note.
@@ -285,7 +311,7 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
     const ctLoopBottom = yEps + 84;
     const blockBottom =
       bi === 0
-        ? Math.max(labelsBottom, hasBattery ? batBankY + 120 : 0, yBk + BREAKER_H + 150, hasCt ? ctLoopBottom + 10 : 0)
+        ? Math.max(labelsBottom, hasBattery ? batBankY + bank.height + 50 : 0, yBk + BREAKER_H + 150, hasCt ? ctLoopBottom + 10 : 0)
         : Math.max(labelsBottom, yBk + BREAKER_H + 150);
     blocks.push({
       inverterNo: bi + 1, firstString: g.first, lastString: g.last, stringCount: g.k, phase: inverterPhase[bi],
@@ -294,7 +320,7 @@ export function computePictorialLayout(config: SolarDesignConfig, calc: SolarCal
       yUnder, yUnderMax, yUnderAc, dcLabelY, yEps, epsX, batBkY, batBankY, ctLoopBottom, blockBottom,
       // shared horizontal geometry (so a block can be drawn on its own)
       noteLines, rowTitle, titleCx, cols, arrayX, arrayRight, riserX, isoX, isoW, isoTermX, bkX, groupRight,
-      invX, pvPortX, batPortX, epsPortX, gridPortX, epsBkX, acBkX, acIsoCx, comX, hasEpsCircuit, hasBattery, isOffGrid,
+      invX, pvPortX, batPortX, epsPortX, gridPortX, epsBkX, acBkX, acIsoCx, comX, hasEpsCircuit, hasBattery, isOffGrid, bank,
     });
     blockTop = blockBottom + BLOCK_GAP;
   });
@@ -612,7 +638,7 @@ export const SolarSLDPictorial: React.FC<Props> = ({
             </Txt>
             {bi > 0 && B.hasBattery && (
               <Txt x={B.acIsoCx + 40} y={B.blockTop + 18} size={12} anchor="end" muted>
-                BATTERY / {B.isOffGrid ? "AC OUT" : "EPS"} CIRCUIT: TYP. AS INVERTER 1
+                {B.isOffGrid ? "AC OUT" : "EPS"} CIRCUIT: TYP. AS INVERTER 1 - BATTERY: COMMON BANK (SEE INVERTER 1)
               </Txt>
             )}
             <line x1={NOTE_X} y1={B.blockTop + 26} x2={B.acIsoCx + 40} y2={B.blockTop + 26} stroke={stroke} strokeWidth={0.8} strokeDasharray="6 4" />
@@ -893,22 +919,63 @@ export const SolarSLDPictorial: React.FC<Props> = ({
                 {calc.batteryBreakerAmps} A DC, 2P
               </Txt>
             </g>
-            <Wire layer="EPH-BATTERY" pts={[[B.batPortX, B.batBkY + BREAKER_H], [B.batPortX, B.batBankY]]} />
-            <g data-cad-layer="EPH-BATTERY" className="cursor-pointer" onClick={() => onSelect("battery_bank")}>
-              <rect x={B.batPortX - 70} y={B.batBankY} width={140} height={90} rx={4} fill={theme.equipmentFill} stroke={theme.equipmentBorder} strokeWidth={1.6} />
-              {[0, 1, 2].map((i) => (
-                <g key={i}>
-                  <rect x={B.batPortX - 60} y={B.batBankY + 10 + i * 24} width={120} height={18} rx={2} fill="none" stroke={stroke} strokeWidth={1} />
-                  <circle cx={B.batPortX + 48} cy={B.batBankY + 19 + i * 24} r={2.5} fill={stroke} />
-                </g>
-              ))}
-              <Txt x={B.batPortX} y={B.batBankY + 108} size={14} anchor="middle">
-                BATTERY BANK - {calc.batteryUsableEnergyKwh} kWh USABLE
-              </Txt>
-              <Txt x={B.batPortX} y={B.batBankY + 123} size={12} anchor="middle" muted>
-                {eff.batteryUnits}x {config.battery.manufacturer} {config.battery.model} ({config.battery.voltageV}V / {config.battery.capacityAh}Ah)
-              </Txt>
-            </g>
+            {(() => {
+              // Every battery unit, numbered, in its series x parallel arrangement on the bank DC bus
+              const k = B.bank;
+              const x0 = B.batPortX - 70;
+              const y0 = B.batBankY;
+              const unitX = (col: number) => x0 + BANK_PAD + col * BANK_PITCH;
+              const busY = (row: number) => y0 + BANK_PAD + row * k.rowH;
+              const firstCx = unitX(0) + BANK_UNIT_W / 2;
+              const lastRowCols = k.P - (k.rows - 1) * k.cols;
+              let n = 0;
+              return (
+                <>
+                  <Wire layer="EPH-BATTERY" pts={[[B.batPortX, B.batBkY + BREAKER_H], [B.batPortX, busY(0)]]} />
+                  <g data-cad-layer="EPH-BATTERY" className="cursor-pointer" onClick={() => onSelect("battery_bank")}>
+                    <rect x={x0} y={y0 - 4} width={k.width} height={k.height + 4} rx={4} fill="none" stroke={theme.equipmentBorder} strokeWidth={1.4} strokeDasharray="8 4" />
+                    {Array.from({ length: k.rows }, (_, row) => {
+                      const cols = row === k.rows - 1 ? lastRowCols : k.cols;
+                      const right = Math.max(unitX(cols - 1) + BANK_UNIT_W / 2, row === 0 ? B.batPortX : 0);
+                      return <line key={`bus-${row}`} x1={firstCx} y1={busY(row)} x2={right} y2={busY(row)} stroke={stroke} strokeWidth={2} />;
+                    })}
+                    {k.rows > 1 && <line x1={firstCx} y1={busY(0)} x2={firstCx} y2={busY(k.rows - 1)} stroke={stroke} strokeWidth={2} />}
+                    {Array.from({ length: k.P }, (_, p) => {
+                      const row = Math.floor(p / k.cols);
+                      const col = p % k.cols;
+                      const cx = unitX(col) + BANK_UNIT_W / 2;
+                      const top = busY(row) + 10;
+                      return (
+                        <g key={`str-${p}`}>
+                          <line x1={cx} y1={busY(row)} x2={cx} y2={top} stroke={stroke} strokeWidth={1.2} />
+                          {Array.from({ length: k.S }, (_, si) => {
+                            n += 1;
+                            if (n > k.total) return null; // an overridden count may end part-way through a series string
+                            const uy = top + si * (BANK_UNIT_H + 6);
+                            return (
+                              <g key={`u-${p}-${si}`}>
+                                {si > 0 && <line x1={cx} y1={uy - 6} x2={cx} y2={uy} stroke={stroke} strokeWidth={1.2} />}
+                                <rect x={unitX(col)} y={uy} width={BANK_UNIT_W} height={BANK_UNIT_H} rx={2} fill={theme.equipmentFill} stroke={stroke} strokeWidth={1.1} />
+                                <rect x={cx - 4} y={uy - 3} width={8} height={3} fill="none" stroke={stroke} strokeWidth={0.9} />
+                                <Txt x={cx} y={uy + 13} size={9} anchor="middle">
+                                  {`B${n}`}
+                                </Txt>
+                              </g>
+                            );
+                          })}
+                        </g>
+                      );
+                    })}
+                  </g>
+                  <Txt x={x0} y={y0 + k.height + 18} size={14}>
+                    BATTERY BANK - {calc.batteryUsableEnergyKwh} kWh USABLE ({k.total} UNITS{k.S > 1 ? `, ${k.S}S x ${k.P}P` : ` IN PARALLEL`})
+                  </Txt>
+                  <Txt x={x0} y={y0 + k.height + 34} size={12} muted>
+                    {k.total} x {config.battery.manufacturer} {config.battery.model} ({config.battery.voltageV}V / {config.battery.capacityAh}Ah, {config.battery.energyKwh} kWh) = {calc.batteryTotalEnergyKwh} kWh
+                  </Txt>
+                </>
+              );
+            })()}
           </g>
         )}
 
