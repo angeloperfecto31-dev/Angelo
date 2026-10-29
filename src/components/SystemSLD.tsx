@@ -6,7 +6,7 @@ import {
   VoltageDropCalculation,
 } from "../types";
 import { computePanelScheduleValues } from "../utils/computeEngine";
-import { SingleLineDiagramContent, SLD_GEOM, panelSldHeight } from "./SingleLineDiagram";
+import { SingleLineDiagramContent, SLD_GEOM, panelSldHeight, panelSldExtents } from "./SingleLineDiagram";
 import { computeSolarDesign } from "../utils/solarEngine";
 import { toPng } from "html-to-image";
 import {
@@ -424,7 +424,8 @@ export default function SystemSLD({
 
       const yOff = new Map<number, number>();
       yOff.set(1, 50); // mdp is at 50
-      let currY = 50 + mdpHeight + 200;
+      // The MDP's solar feeder hangs about 155 units below its grounding system
+      let currY = 50 + mdpHeight + (solarConfig && showSolar ? 160 : 0) + 200;
       for (let d = 2; d <= md; d++) {
         yOff.set(d, currY);
         currY += (dMH.get(d) || 0) + 200;
@@ -437,7 +438,14 @@ export default function SystemSLD({
         yOffsets: yOff,
         depthMaxHeights: dMH,
       };
-    }, [resolvedLayouts, mdpHeight]);
+    }, [resolvedLayouts, mdpHeight, solarConfig, showSolar]);
+
+  /** Side of the parent board the feeding circuit leaves from */
+  const branchSide = (layout: (typeof resolvedLayouts)[number]): "left" | "right" => {
+    if (layout.parentId === "mdp") return layout.tempIsLeft ? "left" : "right";
+    const pLayout = resolvedLayouts.find((l) => l.sp.id === layout.parentId);
+    return pLayout?.spRows[layout.rowIndex]?.left?.id === layout.feedingCircuit?.id ? "left" : "right";
+  };
 
   // 2. Compute horizontal positions (recursive tree placement)
   const { layoutPositions, svgWidth, MdpXOffset } = useMemo(() => {
@@ -447,7 +455,13 @@ export default function SystemSLD({
 
     const placeChildren = (parentId: string, startX: number) => {
       let currentX = startX;
-      const children = getChildren(parentId);
+      // Left-side feeders first (top circuit leftmost), then right-side feeders (top circuit rightmost),
+      // so the feeder routes do not cross
+      const children = [...getChildren(parentId)].sort((a, b) => {
+        const sa = branchSide(a), sb = branchSide(b);
+        if (sa !== sb) return sa === "left" ? -1 : 1;
+        return sa === "left" ? a.rowIndex - b.rowIndex : b.rowIndex - a.rowIndex;
+      });
       children.forEach((c) => {
         const w = widths.get(c.sp.id) || W_COLUMN;
         const cx = currentX + w / 2 - 400; // Center 800px width inside W
@@ -458,12 +472,13 @@ export default function SystemSLD({
     };
 
     // Left side roots
-    const leftRoots = resolvedLayouts.filter(
-      (l) => l.parentId === "mdp" && l.isLeft,
-    );
-    const rightRoots = resolvedLayouts.filter(
-      (l) => l.parentId === "mdp" && !l.isLeft,
-    );
+    // Farthest panel first on the left (fed from the top circuit); nearest first on the right
+    const leftRoots = resolvedLayouts
+      .filter((l) => l.parentId === "mdp" && l.isLeft)
+      .sort((a, b) => a.rowIndex - b.rowIndex);
+    const rightRoots = resolvedLayouts
+      .filter((l) => l.parentId === "mdp" && !l.isLeft)
+      .sort((a, b) => b.rowIndex - a.rowIndex);
 
     let currentLeftX = 50;
     leftRoots.forEach((r) => {
@@ -504,6 +519,88 @@ export default function SystemSLD({
       (yOffsets.get(maxDepth) || 0) + (depthMaxHeights.get(maxDepth) || 0) + 100 + extraSolar
     );
   }, [maxDepth, yOffsets, depthMaxHeights, solarConfig, showSolar]);
+
+  // 3. Feeder routes (sub-panel feeders): each leaves its circuit tag straight out to its own vertical lane
+  // beyond the parent board's labels and callouts, runs down to its own channel above the fed panel and
+  // across to that panel's feed point. Lanes: on each side the top circuit takes the outermost lane.
+  // Channels: left-going routes from the outermost lane run highest, right-going ones likewise mirrored.
+  // With the panels placed in the same order (see placeChildren / roots) no two routes cross.
+  const feederRoutes = useMemo(() => {
+    const LANE = 14;
+    const GAP = 18;
+    const routes = new Map<string, string>();
+    const mdpExt = panelSldExtents({
+      panel,
+      panelRows: mdpRows,
+      solarConfig: showSolar ? solarConfig : undefined,
+      solarCalc: showSolar ? solarCalc : undefined,
+    });
+    const extOf = (pid: string) => {
+      if (pid === "mdp") return mdpExt;
+      const l = resolvedLayouts.find((x) => x.sp.id === pid);
+      return l ? panelSldExtents({ panel: l.sp.panel, panelRows: l.spRows, isSubPanel: true }) : mdpExt;
+    };
+    const originOf = (pid: string) =>
+      pid === "mdp"
+        ? { x: MdpXOffset, y: 50 }
+        : { x: layoutPositions.get(pid)?.x ?? MdpXOffset, y: (yOffsets.get(depths.get(pid) || 2) || 0) + 50 };
+
+    const feeders = resolvedLayouts.map((l) => {
+      const side = branchSide(l);
+      const o = originOf(l.parentId);
+      const ext = extOf(l.parentId);
+      const depth = depths.get(l.sp.id) || 2;
+      const yOff = yOffsets.get(depth) || 0;
+      return {
+        id: l.sp.id,
+        parentId: l.parentId,
+        side,
+        row: l.rowIndex,
+        depth,
+        yOff,
+        tipX: o.x + (side === "left" ? SLD_GEOM.TIP_LEFT : SLD_GEOM.TIP_RIGHT),
+        rowY: o.y + SLD_GEOM.ROW1_Y + l.rowIndex * SLD_GEOM.ROW_H,
+        laneBase: o.x + (side === "left" ? ext.left - GAP : ext.right + GAP),
+        targetX: (layoutPositions.get(l.sp.id)?.x ?? 0) + SLD_GEOM.SUB_FEED_X,
+        targetY: yOff + 50 + SLD_GEOM.FEED_Y,
+        laneX: 0,
+        chanY: 0,
+      };
+    });
+
+    // Lanes per parent side, top circuit outermost
+    const groups = new Map<string, typeof feeders>();
+    feeders.forEach((f) => {
+      const k = `${f.parentId}|${f.side}`;
+      groups.set(k, [...(groups.get(k) || []), f]);
+    });
+    groups.forEach((list) => {
+      list.sort((a, b) => a.row - b.row);
+      list.forEach((f, rank) => {
+        const out = (list.length - 1 - rank) * LANE;
+        f.laneX = f.side === "left" ? f.laneBase - out : f.laneBase + out;
+      });
+    });
+
+    // Channels per fed depth, in the gap above the fed panels
+    const byDepth = new Map<number, typeof feeders>();
+    feeders.forEach((f) => byDepth.set(f.depth, [...(byDepth.get(f.depth) || []), f]));
+    byDepth.forEach((list) => {
+      const leftGoing = list.filter((f) => f.targetX <= f.laneX).sort((a, b) => a.laneX - b.laneX);
+      const rightGoing = list.filter((f) => f.targetX > f.laneX).sort((a, b) => b.laneX - a.laneX);
+      const ordered = [...leftGoing, ...rightGoing];
+      const top = list[0].yOff - 180;
+      const step = Math.min(LANE, 175 / Math.max(1, ordered.length));
+      ordered.forEach((f, i) => {
+        f.chanY = top + step * (i + 0.5);
+      });
+    });
+
+    feeders.forEach((f) => {
+      routes.set(f.id, `M ${f.tipX},${f.rowY} H ${f.laneX} V ${f.chanY} H ${f.targetX} V ${f.targetY}`);
+    });
+    return routes;
+  }, [resolvedLayouts, layoutPositions, yOffsets, depths, MdpXOffset, panel, mdpRows, solarConfig, solarCalc, showSolar]);
 
   const handlePrint = () => {
     const isIframe = window.self !== window.top;
@@ -781,25 +878,11 @@ export default function SystemSLD({
                 isLeftBranchInParent = layout.tempIsLeft;
               }
 
-              const y1 = parentYOffset + SLD_GEOM.ROW1_Y + layout.rowIndex * SLD_GEOM.ROW_H;
-              const x1 = parentXOffset + (isLeftBranchInParent ? SLD_GEOM.TIP_LEFT : SLD_GEOM.TIP_RIGHT);
-
-              // Staggered drop column
-              let dropX = 0;
-              if (isLeftBranchInParent) {
-                dropX = parentXOffset + SLD_GEOM.TIP_LEFT - 40 - ((i % 10) + 1) * 20;
-              } else {
-                // Beyond the board's right-hand callouts (grounding, feeder)
-                dropX = parentXOffset + SLD_GEOM.WIDTH - 60 + ((i % 10) + 1) * 20;
-              }
-
-              // Staggered horizontal channels
-              const yChannel = yOffset - 75 + (i % 10) * 12;
+              // Feeder route: own lane outside the parent board's labels, own channel above this panel
               const spFeedX = spXOffset + SLD_GEOM.SUB_FEED_X;
               const spFeedY = yOffset + 50 + SLD_GEOM.FEED_Y;
-
-              const pathY = y1 + 25;
-              let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
+              const path = feederRoutes.get(id) || "";
+              void isLeftBranchInParent;
 
               const label =
                 depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
@@ -1085,25 +1168,11 @@ export default function SystemSLD({
                     isLeftBranchInParent = layout.tempIsLeft;
                   }
 
-                  const y1 = parentYOffset + SLD_GEOM.ROW1_Y + layout.rowIndex * SLD_GEOM.ROW_H;
-                  const x1 = parentXOffset + (isLeftBranchInParent ? SLD_GEOM.TIP_LEFT : SLD_GEOM.TIP_RIGHT);
-
-                  // Staggered drop column
-                  let dropX = 0;
-                  if (isLeftBranchInParent) {
-                    dropX = parentXOffset + SLD_GEOM.TIP_LEFT - 40 - ((i % 10) + 1) * 20;
-                  } else {
-                    // Beyond the board's right-hand callouts (grounding, feeder)
-                dropX = parentXOffset + SLD_GEOM.WIDTH - 60 + ((i % 10) + 1) * 20;
-                  }
-
-                  // Staggered horizontal channels
-                  const yChannel = yOffset - 75 + (i % 10) * 12;
+                  // Feeder route: own lane outside the parent board's labels, own channel above this panel
                   const spFeedX = spXOffset + SLD_GEOM.SUB_FEED_X;
                   const spFeedY = yOffset + 50 + SLD_GEOM.FEED_Y;
-
-                  const pathY = y1 + 25;
-                  let path = `M ${x1},${y1} L ${x1},${pathY} L ${dropX},${pathY} L ${dropX},${yChannel} L ${spFeedX},${yChannel} L ${spFeedX},${spFeedY}`;
+                  const path = feederRoutes.get(id) || "";
+                  void isLeftBranchInParent;
 
                   const label =
                     depth === 2 ? `SP` : depth === 3 ? `SSP` : `L${depth}`;
