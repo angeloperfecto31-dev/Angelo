@@ -3,11 +3,15 @@ import React from 'react';
 import { Circuit, PanelConfig, LoadType } from '../types';
 import { parseSystemVoltage, getActivePoles, getTotalPoles, getConductorLabel } from '../utils/computeEngine';
 import { computeSolarDesign } from '../utils/solarEngine';
+import { groundingElectrode, fmtWireMm2 } from '../utils/groundingElectrode';
 import type { SolarCalculationResults } from '../types/solar';
 
 /** Standard breaker frame (AF) for a trip rating */
 const frameFor = (at: number) => [100, 225, 400, 600, 800, 1200, 1600, 2000, 2500, 3000, 4000, 5000, 6300].find((f) => f >= at) || at;
 const fmtKw = (v: number) => (Math.round(v * 100) / 100).toString();
+
+/** Space below the board for the grounding system (ground wire, rod and their callouts) */
+export const PANEL_SLD_EXTRA_BOTTOM = 135;
 
 interface SingleLineDiagramProps {
   panel: PanelConfig;
@@ -132,264 +136,200 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
     return size || 1000;
   }, [panelRows, isSubPanel]);
 
+  // ---------- drawing data ----------
+  const polesText = (p: any) => {
+    const s = String(p ?? "").toUpperCase();
+    return s.endsWith("P") || s.includes("+N") ? s : `${s}P`;
+  };
+  const mainPoles = polesText(mainFeeder.poles);
+  const mainKaic = mainFeeder.kaic || parseFloat(panel.icRating || "") || 10;
+  const feederLabel = `${getConductorLabel(
+    mainFeeder.wire.size,
+    mainFeeder.groundSize,
+    mainFeeder.poles,
+    mainFeeder.wire.runs,
+    panel.insulationType || "THHN"
+  )} ${panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'}`;
+  const conduitLabel =
+    panel.conduitArrangement === 'separate_per_set' && (mainFeeder.wire.runs || 1) > 1
+      ? `IN ${mainFeeder.wire.runs} SEPARATE ${mainFeeder.conduitSize.toUpperCase()}Ø ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUITS`
+      : panel.conduitArrangement === 'custom' && panel.customConduitArrangements && panel.customConduitArrangements.length > 0
+        ? `IN ${panel.customConduitArrangements.length} CUSTOM ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUITS`
+        : `IN ${mainFeeder.conduitSize.toUpperCase()}Ø ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT`;
+  const isParallelFeeder = iscParams?.connectionType === 'Parallel' && (mainFeeder.wire.runs || 1) > 1;
+  const serviceLine1 = `${is3Phase ? "3" : "1"} PHASE, ${voltage}V, ${wireNumber}-WIRE`;
+  const ground = groundingElectrode(mainFeeder.wire.size, mainFeeder.wire.runs || 1);
+  // Grounding drawn at the right of the board, or at the left when the solar feeder takes the bottom centre
+  const groundLeft = Boolean(solarDetails && !isSubPanel);
+  const boxL = 250, boxR = 550;
+  const gx = groundLeft ? boxL + 16 : boxR - 16; // ground wire / terminal block centre
+  const out = groundLeft ? -1 : 1; // callouts point away from the board
+  const calloutX = groundLeft ? boxL - 16 : boxR + 16; // text start (end, on the left)
+  const lastRowY = startY + Math.max(0, numRows - 1) * rowHeight;
+
+  /** Callout tick on a conductor, with a dashed leader to the text */
+  const Callout = ({ x, y, toX }: { x: number; y: number; toX: number }) => {
+    const d = toX > x ? 1 : -1;
+    return (
+      <g>
+        <polyline points={`${x + 7 * d},${y - 6} ${x + 1 * d},${y} ${x + 7 * d},${y + 6}`} className="sld-line" strokeWidth="2" />
+        <line x1={x + 8 * d} y1={y} x2={toX} y2={y} className="sld-line" strokeDasharray="4 3" strokeWidth="1" />
+      </g>
+    );
+  };
+
+  /** Circuit tag: circle with the circuit number and a pointer away from the board */
+  const CircuitTag = ({ cx, y, dir, no }: { cx: number; y: number; dir: 1 | -1; no: number }) => (
+    <g>
+      <polygon points={`${cx + 13 * dir},${y - 7} ${cx + 30 * dir},${y} ${cx + 13 * dir},${y + 7}`} fill="white" className="sld-line" strokeLinejoin="round" />
+      <circle cx={cx} cy={y} r="14" className="sld-line" fill="white" strokeWidth="2" />
+      <text x={cx} y={y + 4} className="sld-text" style={{ fontSize: '11px' }} textAnchor="middle">C{no}</text>
+    </g>
+  );
+
+  const transformerNote = (() => {
+    if (isSubPanel) return null;
+    const ptCount = iscParams?.parallelTransformersCount || 1;
+    const baseKVA = iscParams?.transformerKVA || recommendedTransformerKVA || 500;
+    if (ptCount <= 1) return `UTILITY TRANSFORMER: ${baseKVA} kVA`;
+    const pt2Rating = iscParams?.parallelTransformersRating || 100;
+    const matched = iscParams?.parallelTransformersZMatch !== false && iscParams?.parallelTransformerskVAMatch !== false;
+    const total = matched ? baseKVA * ptCount : baseKVA + (ptCount - 1) * pt2Rating;
+    return `${ptCount}x PARALLEL TRANSFORMERS: ${total} kVA`;
+  })();
+
   return (
     <g transform={`translate(${xOffset}, ${yOffset})`}>
-      {/* Source Symbol */}
+      {/* ===================== SOURCE ===================== */}
       {isSubPanel ? (
         <>
           <circle cx="270" cy="100" r="5" fill="#1e293b" />
           <text x="250" y="95" className="sld-text" textAnchor="end">{voltage}V {phaseText}</text>
           <text x="250" y="115" className="sld-text" textAnchor="end">60Hz</text>
           <text x="250" y="75" className="sld-text" textAnchor="end">CONNECTED TO {parentDesignation || 'MDP'}</text>
+          <line x1="270" y1="100" x2="400" y2="100" className="sld-line" />
         </>
-      ) : (() => {
-        const ptCount = iscParams?.parallelTransformersCount || 1;
-        const ptZMatch = iscParams?.parallelTransformersZMatch !== false;
-        const ptkVAMatch = iscParams?.parallelTransformerskVAMatch !== false;
-        const baseKVA = iscParams?.transformerKVA || recommendedTransformerKVA || 500;
-        const pt2Rating = iscParams?.parallelTransformersRating || 100;
-        const totalKVA = ptCount > 1 
-          ? (ptZMatch && ptkVAMatch ? baseKVA * ptCount : baseKVA + (ptCount - 1) * pt2Rating)
-          : baseKVA;
-
-        return (
-          <>
-            {/* Draw parallel transformer triangles if count > 1 */}
-            {ptCount > 1 ? (
-              <>
-                {/* Secondary offset triangle to represent parallel banks */}
-                <path d="M 235,75 L 275,95 L 235,115 Z" className="sld-line stroke-sky-500" strokeWidth="2.5" fill="none" opacity="0.65" />
-                <path d="M 225,85 L 265,105 L 225,125 Z" className="sld-line stroke-red-600" strokeWidth="2.5" fill="none" />
-                <text x="210" y="70" className="sld-text font-bold text-red-600 fill-red-600" textAnchor="end">
-                  {ptCount}x PARALLEL POWER TRANSFORMERS
-                </text>
-                <text x="210" y="88" className="sld-text font-semibold fill-slate-800 dark:fill-slate-100" textAnchor="end">
-                  Total Capacity: {totalKVA} kVA
-                </text>
-                <text x="210" y="104" className="sld-text font-medium fill-slate-500" style={{ fontSize: '11px' }} textAnchor="end">
-                  {ptZMatch && ptkVAMatch ? "Matched Impedance Sharing" : "Unbalanced Impedance Sharing"}
-                </text>
-                <text x="210" y="120" className="sld-text fill-slate-500" style={{ fontSize: '11px' }} textAnchor="end">
-                  Tx1: {baseKVA} kVA ({iscParams?.transformerZ || 5}%) | Tx2+: {pt2Rating} kVA ({iscParams?.parallelTransformersZ || 5}%)
-                </text>
-              </>
-            ) : (
-              <>
-                <path d="M 230,80 L 270,100 L 230,120 Z" className="sld-line" fill="none" strokeWidth="2" />
-                <text x="215" y="75" className="sld-text font-bold" textAnchor="end">POWER TRANSFORMER</text>
-                <text x="215" y="95" className="sld-text font-semibold" textAnchor="end">{baseKVA} kVA, {voltage}V, {phaseText}</text>
-                <text x="215" y="115" className="sld-text text-slate-500" textAnchor="end">60Hz Utility Power</text>
-              </>
-            )}
-          </>
-        );
-      })()}
-
-      {/* Top Feed Wire */}
-      <line x1="270" y1="100" x2="400" y2="100" className="sld-line" />
-      {isSubPanel ? (
-        panel.transferSwitchType && panel.transferSwitchType !== "None" ? (
-          <g>
-            <line x1="400" y1="100" x2="400" y2="150" className="sld-line" />
-            <rect x="385" y="150" width="30" height="20" rx="2" className="sld-line" fill="none" />
-            <text x="400" y="163" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">{panel.transferSwitchType}</text>
-            <line x1="400" y1="170" x2="400" y2="180" className="sld-line" />
-            
-            {/* Gen input */}
-            <line x1="365" y1="160" x2="385" y2="160" className="sld-line" />
-            
-            {/* Generator Stator Frame (Outer Circle) */}
-            <circle cx="355" cy="160" r="11" className="sld-line" fill="none" />
-            
-            {/* Bold stylized "G" letter aligned perfectly in the center */}
-            <text x="355" y="164" className="sld-text" style={{ fontSize: '12px', fontWeight: 900, fontFamily: '"Arial Black", Arial, sans-serif' }} textAnchor="middle">G</text>
-            
-            {/* Stand/Legs Support matching the provided image */}
-            <line x1="348" y1="168.5" x2="341" y2="177" className="sld-line" />
-            <line x1="362" y1="168.5" x2="369" y2="177" className="sld-line" />
-            <line x1="355" y1="171" x2="355" y2="177" className="sld-line" />
-            <rect x="341" y="177" width="28" height="4.5" className="sld-line" fill="none" />
-            
-            {/* ATS/MTS Label */}
-            <text x="425" y="158" className="sld-text" style={{fontSize: '10px'}} textAnchor="start">
-              {panel.transferSwitchRating || (() => {
-                 const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
-                 return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
-              })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
-            </text>
-            <text x="425" y="169" className="sld-text" style={{fontSize: '9px'}} textAnchor="start">
-              {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
-            </text>
-          </g>
-        ) : (
-          <line x1="400" y1="100" x2="400" y2="180" className="sld-line" />
-        )
       ) : (
-         <line x1="400" y1="100" x2="400" y2="120" className="sld-line" />
-      )}
-      
-      {/* Feed Text with Series/Parallel and runs details */}
-      <text x="410" y="65" className="sld-text">
-         {iscParams?.connectionType === 'Parallel' && (mainFeeder.wire.runs || 1) > 1 ? (
-           <tspan x="410" dy="0" className="fill-emerald-600 font-black text-xxs tracking-wider">[PARALLEL FEEDER CONNECTION]</tspan>
-         ) : (
-           <tspan x="410" dy="0" className="fill-slate-400 font-bold text-xxs tracking-wider">[SERIES FEEDER CONNECTION]</tspan>
-         )}
-         <tspan x="410" dy="18">
-           {getConductorLabel(
-             mainFeeder.wire.size,
-             mainFeeder.groundSize,
-             mainFeeder.poles,
-             mainFeeder.wire.runs,
-             panel.insulationType || "THHN"
-           )} {panel.conductorMaterial === 'Aluminum' ? '(AL)' : '(CU)'}
-         </tspan>
-         <tspan x="410" dy="20">
-           {panel.conduitArrangement === 'separate_per_set' && (mainFeeder.wire.runs || 1) > 1 
-             ? `IN ${mainFeeder.wire.runs} SEPARATE ${mainFeeder.conduitSize.toUpperCase()}Ø ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUITS` 
-             : panel.conduitArrangement === 'custom' && panel.customConduitArrangements && panel.customConduitArrangements.length > 0
-             ? `IN ${panel.customConduitArrangements.length} CUSTOM ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUITS`
-             : `IN ${mainFeeder.conduitSize.toUpperCase()}Ø ${(mainFeeder.conduitType || "PVC").toUpperCase()} CONDUIT`}
-         </tspan>
-      </text>
-
-      {/* Meter */}
-      {!isSubPanel && (
         <>
-          <circle cx="400" cy="135" r="15" className="sld-line" />
-          <text x="400" y="140" className="sld-text" textAnchor="middle">M</text>
-          {panel.transferSwitchType && panel.transferSwitchType !== "None" ? (
-             <g>
-               <line x1="400" y1="150" x2="400" y2="153" className="sld-line" />
-               <rect x="385" y="153" width="30" height="18" rx="2" className="sld-line" fill="none" />
-               <text x="400" y="165" className="sld-text" style={{fontSize: '9px'}} textAnchor="middle">{panel.transferSwitchType}</text>
-               <line x1="400" y1="171" x2="400" y2="180" className="sld-line" />
-               
-               {/* Gen input */}
-               <line x1="365" y1="162" x2="385" y2="162" className="sld-line" />
-               {/* Generator Stator Frame (Outer Circle) */}
-               <circle cx="355" cy="162" r="11" className="sld-line" fill="none" />
-               
-               {/* Bold stylized "G" letter aligned perfectly in the center */}
-               <text x="355" y="166" className="sld-text" style={{ fontSize: '12px', fontWeight: 900, fontFamily: '"Arial Black", Arial, sans-serif' }} textAnchor="middle">G</text>
-               
-               {/* Stand/Legs Support matching the provided image */}
-               <line x1="348" y1="170.5" x2="341" y2="179" className="sld-line" />
-               <line x1="362" y1="170.5" x2="369" y2="179" className="sld-line" />
-               <line x1="355" y1="173" x2="355" y2="179" className="sld-line" />
-               <rect x="341" y="179" width="28" height="4.5" className="sld-line" fill="none" />
-               
-               {/* ATS/MTS Label */}
-               <text x="425" y="161" className="sld-text" style={{fontSize: '9px'}} textAnchor="start">
-                 {panel.transferSwitchRating || (() => {
-                    const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
-                    return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
-                 })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
-               </text>
-               <text x="425" y="171" className="sld-text" style={{fontSize: '8px'}} textAnchor="start">
-                 {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
-               </text>
-             </g>
-          ) : (
-             <line x1="400" y1="150" x2="400" y2="180" className="sld-line" />
+          {/* Service entrance: line terminals, service entrance symbol, conductor count, kWh meter */}
+          <text x="190" y="95" className="sld-text" style={{ fontSize: '12px' }} textAnchor="end">{serviceLine1}</text>
+          <text x="190" y="112" className="sld-text" style={{ fontSize: '12px' }} textAnchor="end">+ GROUND, 60 HZ</text>
+          {transformerNote && (
+            <text x="190" y="132" className="sld-text-small" style={{ fontSize: '10px', fill: '#64748b' }} textAnchor="end">{transformerNote}</text>
           )}
+          <circle cx="200" cy="90" r="4" className="sld-line" fill="white" />
+          <circle cx="200" cy="110" r="4" className="sld-line" fill="white" />
+          <line x1="204" y1="90" x2="228" y2="90" className="sld-line" />
+          <line x1="204" y1="110" x2="228" y2="110" className="sld-line" />
+          <path d="M 228,80 L 262,100 L 228,120 Z" className="sld-line" fill="white" strokeWidth="2" />
+          <text x="245" y="52" className="sld-text" style={{ fontSize: '13px' }} textAnchor="middle">SERVICE</text>
+          <text x="245" y="67" className="sld-text" style={{ fontSize: '13px' }} textAnchor="middle">ENTRANCE</text>
+          <line x1="262" y1="100" x2="321" y2="100" className="sld-line" />
+          {/* One slash per service conductor */}
+          {Array.from({ length: wireNumber }, (_, i) => {
+            const hx = 283 + (i - (wireNumber - 1) / 2) * 7;
+            return <line key={`tick-${i}`} x1={hx - 4} y1="107" x2={hx + 4} y2="93" className="sld-line" />;
+          })}
+          <circle cx="335" cy="100" r="14" className="sld-line" fill="white" strokeWidth="2" />
+          <text x="335" y="105" className="sld-text" textAnchor="middle">M</text>
+          <text x="335" y="80" className="sld-text" style={{ fontSize: '11px' }} textAnchor="middle">KILOWATT-HOUR METER</text>
+          <line x1="349" y1="100" x2="400" y2="100" className="sld-line" />
         </>
       )}
 
-      {/* Main Breaker form */}
-      <line x1="400" y1="180" x2="400" y2="195" className="sld-line" />
-      <circle cx="400" cy="195" r="3" fill="#1e293b" />
-      <path d="M 400,195 A 15 15 0 0 1 400,225" className="sld-line" strokeWidth="2.5" fill="none" />
-      <circle cx="400" cy="225" r="3" fill="#1e293b" />
-      <line x1="400" y1="225" x2="400" y2="260" className="sld-line" />
-      
-      {/* Main Breaker Text */}
-      <text x="420" y="202" className="sld-text">
-         <tspan x="420" dy="0">{mainFeeder.cb} AT / {mainFeeder.af} AF</tspan>
-         <tspan x="420" dy="16">{String(mainFeeder.poles).toLowerCase().includes("p") ? mainFeeder.poles : `${mainFeeder.poles}P`}, {voltage}V, 60HZ</tspan>
+      {/* ===================== FEEDER (drop to the board) ===================== */}
+      {panel.transferSwitchType && panel.transferSwitchType !== "None" ? (
+        <g>
+          <line x1="400" y1="100" x2="400" y2="150" className="sld-line" />
+          <rect x="385" y="150" width="30" height="20" rx="2" className="sld-line" fill="white" />
+          <text x="400" y="163" className="sld-text" style={{fontSize: '10px'}} textAnchor="middle">{panel.transferSwitchType}</text>
+          <line x1="400" y1="170" x2="400" y2="188" className="sld-line" />
+          {/* Generator input */}
+          <line x1="366" y1="160" x2="385" y2="160" className="sld-line" />
+          <circle cx="355" cy="160" r="11" className="sld-line" fill="white" />
+          <text x="355" y="164" className="sld-text" style={{ fontSize: '12px', fontWeight: 900, fontFamily: '"Arial Black", Arial, sans-serif' }} textAnchor="middle">G</text>
+          <line x1="348" y1="168.5" x2="341" y2="177" className="sld-line" />
+          <line x1="362" y1="168.5" x2="369" y2="177" className="sld-line" />
+          <line x1="355" y1="171" x2="355" y2="177" className="sld-line" />
+          <rect x="341" y="177" width="28" height="4.5" className="sld-line" fill="none" />
+          <text x="425" y="158" className="sld-text" style={{fontSize: '10px'}} textAnchor="start">
+            {panel.transferSwitchRating || (() => {
+               const STANDARD_TS_RATINGS = [30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+               return STANDARD_TS_RATINGS.find(r => r >= mainFeeder.cb) || mainFeeder.cb;
+            })()} A, {panel.transferSwitchPoles || (panel.system.includes("3PH") ? 3 : 2)}P
+          </text>
+          <text x="425" y="169" className="sld-text" style={{fontSize: '9px'}} textAnchor="start">
+            {panel.transferSwitchType === "ATS" ? "AUTOMATIC" : "MANUAL"} TRANSFER SW
+          </text>
+        </g>
+      ) : (
+        <line x1="400" y1="100" x2="400" y2="188" className="sld-line" />
+      )}
+      <Callout x={400} y={128} toX={452} />
+      {isParallelFeeder && (
+        <text x="458" y="108" className="fill-emerald-600" style={{ fontSize: '10px', fontWeight: 900, letterSpacing: '0.04em' }}>[PARALLEL FEEDER CONNECTION]</text>
+      )}
+      <text x="458" y="125" className="sld-text" style={{ fontSize: '12px' }}>{feederLabel}</text>
+      <text x="458" y="141" className="sld-text" style={{ fontSize: '12px' }}>{conduitLabel}</text>
+
+      {/* ===================== PANEL BOARD ===================== */}
+      <text x="410" y="182" className="sld-text" style={{ fontSize: '13px' }}>
+        PANEL BOARD{panel.designation ? ` (${panel.designation})` : ""}
+      </text>
+      <rect x={boxL} y="188" width={boxR - boxL} height={boxBottom - 188} className="sld-line" fill="none" />
+
+      {/* Main breaker inside the board */}
+      <line x1="400" y1="188" x2="400" y2="200" className="sld-line" />
+      <circle cx="400" cy="200" r="3" fill="#1e293b" />
+      <path d="M 400,200 A 15 15 0 0 1 400,230" className="sld-line" strokeWidth="2.5" fill="none" />
+      <circle cx="400" cy="230" r="3" fill="#1e293b" />
+      <text x="422" y="212" className="sld-text" style={{ fontSize: '13px' }}>
+        {mainFeeder.cb}AT, {mainPoles}, {mainKaic}KAIC
+      </text>
+      <text x="422" y="228" className="sld-text-small" style={{ fontSize: '11px', fill: '#475569' }}>
+        {mainFeeder.af}AF, {voltage}V, 60HZ
       </text>
 
-      {/* Panel Box */}
-      <rect x="250" y={boxTop} width="300" height={boxBottom - boxTop} className="sld-line" />
-      
-      {/* Central Line inside Box */}
-      <line x1="400" y1={boxTop} x2="400" y2={boxBottom} className="sld-line" />
+      {/* Bus */}
+      <line x1="400" y1="230" x2="400" y2={lastRowY} className="sld-line" strokeWidth="2" />
 
-      {/* Branches */}
+      {/* ===================== BRANCH CIRCUITS ===================== */}
       {panelRows.map((row, idx) => {
          const y = startY + idx * rowHeight;
-         
+         const side = (c: Circuit, dir: 1 | -1) => {
+           const isSpace = (c.description || "").toUpperCase() === 'SPACE' || c.loadType === LoadType.SPACE;
+           const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+           const bIn = 400 + 25 * dir, bOut = 400 + 55 * dir; // breaker terminals
+           const tagX = 400 + 178 * dir; // circuit tag centre (pointer tip at 400 + 208 * dir)
+           const textX = 400 + 214 * dir;
+           const anchor = dir === 1 ? "start" : "end";
+           return (
+             <g>
+               <circle cx="400" cy={y} r="3" fill="#1e293b" />
+               <line x1="400" y1={y} x2={bIn} y2={y} className="sld-line" />
+               <circle cx={bIn} cy={y} r="3" fill="#1e293b" />
+               <path d={`M ${bIn},${y} A 15 15 0 0 ${dir === 1 ? 1 : 0} ${bOut},${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
+               <circle cx={bOut} cy={y} r="3" fill="#1e293b" />
+               {!isSpace && (
+                 <text x={(bIn + bOut) / 2} y={y - 20} className="sld-text" style={{ fontSize: '12px' }} textAnchor="middle">
+                   {c.mcbAT}AT, {polesText(c.mcbP || "1P")}
+                 </text>
+               )}
+               <line x1={bOut} y1={y} x2={tagX - 14 * dir} y2={y} className="sld-line" />
+               <CircuitTag cx={tagX} y={y} dir={dir} no={c.circuitNo} />
+               <text x={textX} y={isSub ? y - 6 : y + 4} className="sld-text" style={{ fontSize: '12px' }} textAnchor={anchor}>{c.description}</text>
+               {isSub && (
+                 <text x={textX} y={y + 12} className="sld-text-small" textAnchor={anchor} style={{ fontSize: '10px', fill: '#64748b' }}>
+                   {getFeederText(c)}
+                 </text>
+               )}
+             </g>
+           );
+         };
          return (
            <g key={idx}>
-              {row.left && (
-                 <g>
-                    {/* Left side connection point */}
-                    <circle cx="400" cy={y} r="2" fill="#1e293b" />
-                    <line x1="400" y1={y} x2="375" y2={y} className="sld-line" />
-                    
-                    {/* Circuit Breaker: NECA 11.002 */}
-                    <circle cx="375" cy={y} r="3" fill="#1e293b" />
-                    <path d={`M 375,${y} A 15 15 0 0 0 345,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
-                    <circle cx="345" cy={y} r="3" fill="#1e293b" />
-                    {row.left.description.toUpperCase() !== 'SPACE' && (
-                      <text x="360" y={y - 18} className="sld-text" textAnchor="middle">{row.left.mcbAT} AT</text>
-                    )}
-                    
-                    <line x1="345" y1={y} x2="295" y2={y} className="sld-line" />
-                    
-                    {/* Circuit Number Circle */}
-                    <circle cx="280" cy={y} r="15" className="sld-line" fill="white" />
-                    <text x="280" y={y + 5} className="sld-text" textAnchor="middle">{row.left.circuitNo}</text>
-                    
-                    <line x1="265" y1={y} x2="250" y2={y} className="sld-line" />
-                    
-                    {/* Arrow going OUT. Pointing Left. Tip is 190, Base is 210 */}
-                    <line x1="250" y1={y} x2="210" y2={y} className="sld-line" />
-                    
-                    <polygon points={`190,${y} 210,${y - 10} 210,${y + 10}`} fill="#94a3b8" stroke="#1e293b" />
-                    
-                    <text x="180" y={(row.left.loadType === 'SUB' || row.left.loadType === 'SUBSUB') ? y - 8 : y - 6} className="sld-text" textAnchor="end">{row.left.description}</text>
-                    {(row.left.loadType === 'SUB' || row.left.loadType === 'SUBSUB') && (
-                      <text x="180" y={y + 12} className="sld-text-small text-slate-500" textAnchor="end" style={{ fontSize: '10px', fill: '#64748b' }}>
-                        {getFeederText(row.left)}
-                      </text>
-                    )}
-                 </g>
-              )}
-              {row.right && (
-                 <g>
-                    {/* Right side connection point */}
-                    <circle cx="400" cy={y} r="2" fill="#1e293b" />
-                    <line x1="400" y1={y} x2="425" y2={y} className="sld-line" />
-                    
-                    {/* Circuit Breaker: NECA 11.002 */}
-                    <circle cx="425" cy={y} r="3" fill="#1e293b" />
-                    <path d={`M 425,${y} A 15 15 0 0 1 455,${y}`} className="sld-line" strokeWidth="2.5" fill="none" />
-                    <circle cx="455" cy={y} r="3" fill="#1e293b" />
-                    {row.right.description.toUpperCase() !== 'SPACE' && (
-                      <text x="440" y={y - 18} className="sld-text" textAnchor="middle">{row.right.mcbAT} AT</text>
-                    )}
-                    
-                    <line x1="455" y1={y} x2="505" y2={y} className="sld-line" />
-                    
-                    {/* Circuit Number Circle */}
-                    <circle cx="520" cy={y} r="15" className="sld-line" fill="white" />
-                    <text x="520" y={y + 5} className="sld-text" textAnchor="middle">{row.right.circuitNo}</text>
-                    
-                    <line x1="535" y1={y} x2="550" y2={y} className="sld-line" />
-                    
-                    {/* Arrow going OUT. Pointing Right. Tip is 610, Base is 590 */}
-                    <line x1="550" y1={y} x2="590" y2={y} className="sld-line" />
-                    <polygon points={`610,${y} 590,${y - 10} 590,${y + 10}`} fill="#94a3b8" stroke="#1e293b" />
-                    
-                    <text x="620" y={(row.right.loadType === 'SUB' || row.right.loadType === 'SUBSUB') ? y - 8 : y - 6} className="sld-text" textAnchor="start">{row.right.description}</text>
-                    {(row.right.loadType === 'SUB' || row.right.loadType === 'SUBSUB') && (
-                      <text x="620" y={y + 12} className="sld-text-small text-slate-500" textAnchor="start" style={{ fontSize: '10px', fill: '#64748b' }}>
-                        {getFeederText(row.right)}
-                      </text>
-                    )}
-                 </g>
-              )}
+             {row.left && side(row.left, -1)}
+             {row.right && side(row.right, 1)}
            </g>
          );
       })}
@@ -402,7 +342,7 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
           <circle cx="400" cy={boxBottom + 25} r="3" fill="#d97706" />
           <path d={`M 400,${boxBottom + 25} A 12 12 0 0 1 400,${boxBottom + 49}`} className="sld-line stroke-amber-600" strokeWidth="2.5" fill="none" />
           <circle cx="400" cy={boxBottom + 49} r="3" fill="#d97706" />
-          
+
           <text x="420" y={boxBottom + 35} className="sld-text fill-amber-700 font-bold" style={{ fontSize: '11px' }}>
             {solarDetails.at} AT / {solarDetails.af} AF ({solarDetails.poles}P)
           </text>
@@ -469,12 +409,41 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
         </g>
       )}
 
-      {/* Ground Symbol */}
-      <line x1={solarDetails && !isSubPanel ? 300 : 400} y1={boxBottom} x2={solarDetails && !isSubPanel ? 300 : 400} y2={boxBottom + 20} className="sld-line" />
-      <line x1={(solarDetails && !isSubPanel ? 300 : 400) - 30} y1={boxBottom + 20} x2={(solarDetails && !isSubPanel ? 300 : 400) + 30} y2={boxBottom + 20} className="sld-line" />
-      <line x1={(solarDetails && !isSubPanel ? 300 : 400) - 20} y1={boxBottom + 28} x2={(solarDetails && !isSubPanel ? 300 : 400) + 20} y2={boxBottom + 28} className="sld-line" />
-      <line x1={(solarDetails && !isSubPanel ? 300 : 400) - 10} y1={boxBottom + 36} x2={(solarDetails && !isSubPanel ? 300 : 400) + 10} y2={boxBottom + 36} className="sld-line" />
-
+      {/* ===================== GROUNDING ===================== */}
+      {/* Ground terminal block inside the board */}
+      <g>
+        <rect x={gx - 10} y={boxBottom - 28} width="20" height="14" className="sld-line" fill="white" strokeWidth="1.8" />
+        <circle cx={gx - 4} cy={boxBottom - 21} r="1.8" fill="#1e293b" />
+        <circle cx={gx + 4} cy={boxBottom - 21} r="1.8" fill="#1e293b" />
+        <Callout x={gx + 10 * out} y={boxBottom - 21} toX={calloutX - 4 * out} />
+        <text x={calloutX} y={boxBottom - 24} className="sld-text" style={{ fontSize: '11px' }} textAnchor={groundLeft ? "end" : "start"}>GROUND TERMINAL</text>
+        <text x={calloutX} y={boxBottom - 11} className="sld-text" style={{ fontSize: '11px' }} textAnchor={groundLeft ? "end" : "start"}>BLOCK</text>
+        {isSubPanel && (
+          <text x={calloutX} y={boxBottom + 3} className="sld-text-small" style={{ fontSize: '10px', fill: '#64748b' }} textAnchor={groundLeft ? "end" : "start"}>
+            (EGC FROM {parentDesignation || 'MDP'})
+          </text>
+        )}
+      </g>
+      {/* Service board only: grounding electrode conductor and ground rod */}
+      {!isSubPanel && (
+        <g>
+          <line x1={gx} y1={boxBottom - 14} x2={gx} y2={boxBottom + 70} className="sld-line" strokeWidth="2" />
+          <Callout x={gx} y={boxBottom + 21} toX={calloutX - 4 * out} />
+          {[`${fmtWireMm2(ground.gecMm2)} mm² TW (G)`, "COPPER WIRE IN", ground.conduit].map((t, i) => (
+            <text key={t} x={calloutX} y={boxBottom + 12 + i * 13} className="sld-text" style={{ fontSize: '10.5px' }} textAnchor={groundLeft ? "end" : "start"}>{t}</text>
+          ))}
+          {/* Ground rod electrode */}
+          <line x1={gx - 14} y1={boxBottom + 70} x2={gx + 14} y2={boxBottom + 70} className="sld-line" strokeWidth="2" />
+          <line x1={gx - 9} y1={boxBottom + 76} x2={gx + 9} y2={boxBottom + 76} className="sld-line" strokeWidth="2" />
+          <line x1={gx - 4} y1={boxBottom + 82} x2={gx + 4} y2={boxBottom + 82} className="sld-line" strokeWidth="2" />
+          <Callout x={gx + 15 * out} y={boxBottom + 74} toX={calloutX - 4 * out} />
+          {["20mmØ x 3M", "COPPER WELD", "GROUND ROD WITH", "HEAVY DUTY CLAMP"].map((t, i) => (
+            <text key={t} x={calloutX} y={boxBottom + 56 + i * 13} className="sld-text" style={{ fontSize: '10.5px' }} textAnchor={groundLeft ? "end" : "start"}>{t}</text>
+          ))}
+          <text x={gx} y={boxBottom + 110} className="sld-text" style={{ fontSize: '11px' }} textAnchor="middle">GROUNDING</text>
+          <text x={gx} y={boxBottom + 123} className="sld-text" style={{ fontSize: '11px' }} textAnchor="middle">SYSTEM</text>
+        </g>
+      )}
     </g>
   );
 };
@@ -484,7 +453,7 @@ export const SingleLineDiagram: React.FC<SingleLineDiagramProps> = (props) => {
   const startY = 320;
   const rowHeight = 60;
   const boxBottom = startY + numRows * rowHeight;
-  const extraBottom = props.solarConfig && !props.isSubPanel ? 280 : 100;
+  const extraBottom = props.solarConfig && !props.isSubPanel ? 280 : PANEL_SLD_EXTRA_BOTTOM;
   const svgHeight = boxBottom + extraBottom;
   const svgWidth = 800;
 
