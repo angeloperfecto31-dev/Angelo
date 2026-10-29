@@ -51,6 +51,134 @@ interface SingleLineDiagramProps {
   solarCalc?: SolarCalculationResults | null;
 }
 
+/** Solar PV feeder drawn under a service panel: the Solar Design's own sizing */
+export function solarFeederDetails(solarConfig: any, solarCalc: SolarCalculationResults | null | undefined, panel: PanelConfig) {
+  if (!solarConfig) return null;
+  let calc = solarCalc || null;
+  if (!calc) {
+    try {
+      calc = computeSolarDesign(solarConfig, panel);
+    } catch {
+      return null;
+    }
+  }
+  const eff = calc.effective;
+  const inv = calc.selectedInverter;
+  const mod = calc.selectedModule;
+  const qty = calc.inverterQuantity || eff.inverterQuantity || 1;
+  const source = calc.interconnectionBackfeedSource;
+  // Back-feed device at this panel (PEC 6.90.7.2(D)): the inverter breaker for one inverter, else the
+  // solar main disconnect combining all inverters, or the transformer secondary breaker
+  const at = calc.interconnectionBackfeedAmps || eff.acBreakerAtAmps;
+  const single = source === "inverter-breaker";
+  const af = single ? eff.acBreakerAfAmps : frameFor(at);
+  const poles = single ? eff.acBreakerPoles : calc.acSystem?.mainDisconnectPoles || eff.acBreakerPoles;
+  const ocpdNote = source === "solar-main-disconnect"
+    ? `SOLAR MAIN DISCONNECT, PEC 6.90.7.2(D) (${qty} × ${eff.acBreakerAtAmps} AT inverter breakers)`
+    : source === "transformer-secondary"
+      ? "TRANSFORMER SECONDARY BREAKER, PEC 6.90.7.2(D) BACKFEED"
+      : "PEC 6.90.7.2(D) BACKFEED OCPD";
+  const ac = solarConfig.cabling?.acCable || {};
+  const conductors = calc.acSystem?.currentCarryingConductors || (poles >= 3 ? 4 : 2);
+  const acCable = `${qty > 1 ? 'Each inverter: ' : ''}${conductors}-${eff.acCableSizeMm2} mm² ${ac.insulation || 'THHN'} + 1-${eff.acEgcSizeMm2} mm² EGC, ${eff.acConduitSizeMm} mmØ ${ac.conduitType || 'PVC'}`;
+  const dcVolts = (calc.stringVoc || 0) > 1000 ? 1500 : 1000;
+  const dcProtection = `${dcVolts}V DC Isolator ${eff.dcIsolatorRatingAmps} A + ${eff.dcFuseRatingAmps} A gPV Fuses + Type II SPD (Uc ≥ ${eff.dcSpdUcVolts} V)`;
+  return {
+    // Short label inside the inverter symbol; make, model and total beside it
+    inverterLabel: qty > 1 ? `${qty} × ${fmtKw(inv.ratedAcPowerKw)} kW` : `${fmtKw(inv.ratedAcPowerKw)} kW INV`,
+    inverterModel: `${qty > 1 ? `${qty} inverters: ` : ''}${inv.manufacturer} ${inv.model}${qty > 1 ? ` · ${fmtKw(calc.totalInverterAcKw)} kW AC total` : ''}`,
+    pvKwp: fmtKw(calc.totalDcCapacityKwp),
+    arrayDetail: `${calc.totalModules} × ${mod.ratedPowerWp} Wp (${calc.numberOfStrings} strings × ${calc.modulesPerString}) · DC/AC ${calc.dcAcRatio.toFixed(2)}`,
+    at, af, poles, ocpdNote,
+    acIsolator: `${eff.acIsolatorRatingAmps} A`,
+    acCable,
+    dcProtection,
+  };
+}
+
+/** Feeder description of a sub-panel circuit (phase, voltage, poles, conductors, conduit) */
+export function feederTextFor(c: Circuit, panel: PanelConfig): string {
+  const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+  if (!isSub) return "";
+  
+  let phaseText = "1-Φ L-N";
+  const parsedParent = parseSystemVoltage(panel.system);
+  if (getActivePoles(c.mcbP) === 3) {
+    phaseText = "3-Φ";
+  } else {
+    if (parsedParent.is3Phase) {
+      if (parsedParent.vln !== null && c.voltage === parsedParent.vln) {
+        phaseText = "1-Φ L-N";
+      } else {
+        phaseText = "1-Φ L-L";
+      }
+    } else {
+      if (panel.connectionType === "Line-to-Neutral") {
+        phaseText = "1-Φ L-N";
+      } else {
+        phaseText = "1-Φ L-L";
+      }
+    }
+  }
+
+  const pText = typeof c.mcbP === "string" && c.mcbP.endsWith("P") ? c.mcbP : typeof c.mcbP === "string" && c.mcbP.includes("+N") ? c.mcbP : `${c.mcbP}P`;
+  const conductorLabel = getConductorLabel(c.wireSize || "2.0", c.groundSize || "2.0", c.mcbP, c.wireSets || c.calculatedWireSets || 1, c.wireType || "THHN");
+  // The size may already carry its unit ("32mm"): write it once
+const conduit = c.conduitSize ? ` IN ${String(c.conduitSize).replace(/s*mm$/i, '')}mmØ ${(c.conduitType || 'PVC').toUpperCase()}` : '';
+  
+  return `${phaseText}, ${c.voltage}V | ${pText}, ${conductorLabel}${conduit}`;
+}
+
+/**
+ * Horizontal reach of a panel drawing from its first breaker row down (local units, the bus at
+ * SLD_GEOM.BUS_X): the leftmost and rightmost points of its circuit labels, grounding callouts and solar
+ * notes. The System SLD runs sub-panel feeders outside this span, so a feeder never crosses the board's
+ * own labels. Text widths are estimated generously from the font size.
+ */
+export function panelSldExtents(args: {
+  panel: PanelConfig;
+  panelRows: any[];
+  isSubPanel?: boolean;
+  solarConfig?: any;
+  solarCalc?: SolarCalculationResults | null;
+  parentDesignation?: string;
+}): { left: number; right: number } {
+  const { panel, panelRows, isSubPanel } = args;
+  const w = (text: string | undefined, size: number, bold = true) => (text || "").length * size * (bold ? 0.64 : 0.56);
+  let left = SLD_GEOM.SUB_FEED_X - 10;
+  let right = 560;
+  const rowText = (c: Circuit | undefined, dir: 1 | -1) => {
+    if (!c) return;
+    const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
+    const reach = Math.max(w(c.description, 11), isSub ? w(feederTextFor(c, panel), 10, false) : 0);
+    if (dir === -1) left = Math.min(left, SLD_GEOM.BUS_X - 135 - reach);
+    else right = Math.max(right, SLD_GEOM.BUS_X + 135 + reach);
+  };
+  panelRows.forEach((r) => {
+    rowText(r.left, -1);
+    rowText(r.right, 1);
+  });
+  // (The service text and the feeder callout sit above the first breaker row; feeders run below it.)
+  if (isSubPanel) {
+    left = Math.min(left, 250 - w(`CONNECTED TO ${args.parentDesignation || "MDP"}`, 13));
+    right = Math.max(right, 540 + w("GROUND TERMINAL BLOCK", 12));
+    return { left: left - 6, right: right + 6 };
+  }
+  const solar = args.solarConfig ? solarFeederDetails(args.solarConfig, args.solarCalc, panel) : null;
+  if (solar) {
+    // Grounding is mirrored to the left of the board; the solar notes run to the right of its stack
+    left = Math.min(left, 209 - w("20mmø x 3M COPPER WELD GROUND ROD", 12));
+    right = Math.max(
+      right,
+      458 + w(solar.inverterModel, 9, false),
+      420 + Math.max(w(solar.ocpdNote, 9, false), w(solar.dcProtection, 9, false), w(solar.acCable, 8, false)),
+    );
+  } else {
+    right = Math.max(right, 544 + w("20mmø x 3M COPPER WELD GROUND ROD", 12));
+  }
+  return { left: left - 6, right: right + 6 };
+}
+
 export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffset?: number; yOffset?: number }> = ({ panel, mainFeeder, panelRows, formatWireSize, isSubPanel, iscParams, parentDesignation, solarConfig, solarCalc, xOffset = 0, yOffset = 0 }) => {
   // SVG Dimensions Calculation
   const numRows = panelRows.length;
@@ -66,81 +194,8 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
   const wireNumber = parsedSys.wireCount; 
 
   // Solar PV feeder: the Solar Design's own sizing (inverters, array, back-feed device, cables, DC protection)
-  const solarDetails = React.useMemo(() => {
-    if (!solarConfig) return null;
-    let calc = solarCalc || null;
-    if (!calc) {
-      try {
-        calc = computeSolarDesign(solarConfig, panel);
-      } catch {
-        return null;
-      }
-    }
-    const eff = calc.effective;
-    const inv = calc.selectedInverter;
-    const mod = calc.selectedModule;
-    const qty = calc.inverterQuantity || eff.inverterQuantity || 1;
-    const source = calc.interconnectionBackfeedSource;
-    // Back-feed device at this panel (PEC 6.90.7.2(D)): the inverter breaker for one inverter, else the
-    // solar main disconnect combining all inverters, or the transformer secondary breaker
-    const at = calc.interconnectionBackfeedAmps || eff.acBreakerAtAmps;
-    const single = source === "inverter-breaker";
-    const af = single ? eff.acBreakerAfAmps : frameFor(at);
-    const poles = single ? eff.acBreakerPoles : calc.acSystem?.mainDisconnectPoles || eff.acBreakerPoles;
-    const ocpdNote = source === "solar-main-disconnect"
-      ? `SOLAR MAIN DISCONNECT, PEC 6.90.7.2(D) (${qty} × ${eff.acBreakerAtAmps} AT inverter breakers)`
-      : source === "transformer-secondary"
-        ? "TRANSFORMER SECONDARY BREAKER, PEC 6.90.7.2(D) BACKFEED"
-        : "PEC 6.90.7.2(D) BACKFEED OCPD";
-    const ac = solarConfig.cabling?.acCable || {};
-    const conductors = calc.acSystem?.currentCarryingConductors || (poles >= 3 ? 4 : 2);
-    const acCable = `${qty > 1 ? 'Each inverter: ' : ''}${conductors}-${eff.acCableSizeMm2} mm² ${ac.insulation || 'THHN'} + 1-${eff.acEgcSizeMm2} mm² EGC, ${eff.acConduitSizeMm} mmØ ${ac.conduitType || 'PVC'}`;
-    const dcVolts = (calc.stringVoc || 0) > 1000 ? 1500 : 1000;
-    const dcProtection = `${dcVolts}V DC Isolator ${eff.dcIsolatorRatingAmps} A + ${eff.dcFuseRatingAmps} A gPV Fuses + Type II SPD (Uc ≥ ${eff.dcSpdUcVolts} V)`;
-    return {
-      // Short label inside the inverter symbol; make, model and total beside it
-      inverterLabel: qty > 1 ? `${qty} × ${fmtKw(inv.ratedAcPowerKw)} kW` : `${fmtKw(inv.ratedAcPowerKw)} kW INV`,
-      inverterModel: `${qty > 1 ? `${qty} inverters: ` : ''}${inv.manufacturer} ${inv.model}${qty > 1 ? ` · ${fmtKw(calc.totalInverterAcKw)} kW AC total` : ''}`,
-      pvKwp: fmtKw(calc.totalDcCapacityKwp),
-      arrayDetail: `${calc.totalModules} × ${mod.ratedPowerWp} Wp (${calc.numberOfStrings} strings × ${calc.modulesPerString}) · DC/AC ${calc.dcAcRatio.toFixed(2)}`,
-      at, af, poles, ocpdNote,
-      acIsolator: `${eff.acIsolatorRatingAmps} A`,
-      acCable,
-      dcProtection,
-    };
-  }, [solarConfig, solarCalc, panel]);
-
-  // Helpers to describe sub-panel dynamic connection configurations
-  const getFeederText = (c: Circuit) => {
-    const isSub = c.loadType === LoadType.SUB_PANEL || c.loadType === LoadType.SUB_SUB_PANEL;
-    if (!isSub) return "";
-    
-    let phaseText = "1-Φ L-N";
-    const parsedParent = parseSystemVoltage(panel.system);
-    if (getActivePoles(c.mcbP) === 3) {
-      phaseText = "3-Φ";
-    } else {
-      if (parsedParent.is3Phase) {
-        if (parsedParent.vln !== null && c.voltage === parsedParent.vln) {
-          phaseText = "1-Φ L-N";
-        } else {
-          phaseText = "1-Φ L-L";
-        }
-      } else {
-        if (panel.connectionType === "Line-to-Neutral") {
-          phaseText = "1-Φ L-N";
-        } else {
-          phaseText = "1-Φ L-L";
-        }
-      }
-    }
-
-    const pText = typeof c.mcbP === "string" && c.mcbP.endsWith("P") ? c.mcbP : typeof c.mcbP === "string" && c.mcbP.includes("+N") ? c.mcbP : `${c.mcbP}P`;
-    const conductorLabel = getConductorLabel(c.wireSize || "2.0", c.groundSize || "2.0", c.mcbP, c.wireSets || c.calculatedWireSets || 1, c.wireType || "THHN");
-    const conduit = c.conduitSize ? ` IN ${c.conduitSize}mmØ ${(c.conduitType || 'PVC').toUpperCase()}` : '';
-    
-    return `${phaseText}, ${c.voltage}V | ${pText}, ${conductorLabel}${conduit}`;
-  };
+  const solarDetails = React.useMemo(() => solarFeederDetails(solarConfig, solarCalc, panel), [solarConfig, solarCalc, panel]);
+  const getFeederText = (c: Circuit) => feederTextFor(c, panel);
 
   // Dynamically calculate recommended transformer size for Main panel
   const recommendedTransformerKVA = React.useMemo(() => {
@@ -343,9 +398,10 @@ export const SingleLineDiagramContent: React.FC<SingleLineDiagramProps & { xOffs
                {!isSpace && <T x={(bIn + bOut) / 2} y={y - 21} t={`${c.mcbAT}AT,${polesText(c.mcbP || "1P")}`} size={13} anchor="middle" />}
                <line x1={bOut} y1={y} x2={tagX - 13 * dir} y2={y} className="sld-line" strokeWidth="1.8" />
                <CircuitTag cx={tagX} y={y} dir={dir} no={c.circuitNo} />
-               <T x={textX} y={isSub ? y - 5 : y + 4} t={c.description} size={11} anchor={anchor} />
+               {/* A sub-panel feeder leaves the tag point along the row: its name above, its cable below */}
+               <T x={textX} y={isSub ? y - 7 : y + 4} t={c.description} size={11} anchor={anchor} />
                {isSub && (
-                 <text x={textX} y={y + 12} className="sld-text-small" textAnchor={anchor} style={{ fontSize: '10px', fill: '#64748b' }}>
+                 <text x={textX} y={y + 16} className="sld-text-small" textAnchor={anchor} style={{ fontSize: '10px', fill: '#64748b' }}>
                    {getFeederText(c)}
                  </text>
                )}
