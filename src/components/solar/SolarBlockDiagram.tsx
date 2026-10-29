@@ -371,6 +371,7 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
             <Battery cx={batCx} top={batTop} />
             <T x={batCx} y={batTop + 88} t="BATTERY BANK" bold />
             <T x={batCx} y={batTop + 106} t={`${calc.batteryUsableEnergyKwh} kWh USABLE`} size={12} muted />
+            <T x={batCx} y={batTop + 121} t={`${calc.effective.batteryUnits} x ${config.battery.energyKwh} kWh UNITS`} size={12} muted />
           </>
         ) : (
           <>
@@ -378,6 +379,7 @@ export const SolarBlockDiagram: React.FC<Props> = ({ config, calc, theme, panelD
             <Battery cx={invCx} top={batTop} />
             <T x={invCx} y={batTop + 88} t="BATTERY BANK" bold />
             <T x={invCx} y={batTop + 106} t={`${calc.batteryUsableEnergyKwh} kWh USABLE`} size={12} muted />
+            <T x={invCx} y={batTop + 121} t={`${calc.effective.batteryUnits} x ${config.battery.energyKwh} kWh UNITS`} size={12} muted />
           </>
         ))}
       {(isHybrid || isOffGrid) && (
