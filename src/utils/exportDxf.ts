@@ -363,6 +363,8 @@ const drawCadPanelSLD = (
   iscParams?: ShortCircuitParams,
   /** Vertical distance between breaker rows; reduced by callers so a large board fits its space */
   rowSpacing: number = PANEL_SLD_ROW_SPACING,
+  /** Sub-panel on the System SLD: the side its feeder arrives from (feed point and label on that side) */
+  feedFrom?: "left" | "right",
 ) => {
   const previousMode = b.isSLDMode;
   b.isSLDMode = true;
@@ -395,10 +397,15 @@ const drawCadPanelSLD = (
 
   // 1. Source
   if (isSubPanel) {
-    b.addCircle(xBase, yBase, 1.5, "SLD_GEOMETRY");
-    b.addText(fedFromLabel, xBase - 6, yBase + 4, H13, 0, "TEXT_HEADER", "right");
-    b.addText(`${voltage}V, ${phaseText}`, xBase - 6, yBase - 1, H12, 0, "TEXT_DATA", "right");
-    b.addText("60 Hz", xBase - 6, yBase - 6, H12, 0, "TEXT_DATA", "right");
+    // Feed point: on the bus, or (System SLD) out on the side the feeder arrives from, as on screen
+    const out = feedFrom === "right" ? 1 : -1;
+    const fx = feedFrom ? xBase + out * u(130) : xBase;
+    b.addCircle(fx, yBase, 1.5, "SLD_GEOMETRY");
+    if (feedFrom) b.addLine(fx, yBase, xBase, yBase, "SLD_GEOMETRY");
+    const align = out === 1 ? "left" : "right";
+    b.addText(fedFromLabel, fx + out * 6, yBase + 4, H13, 0, "TEXT_HEADER", align);
+    b.addText(`${voltage}V, ${phaseText}`, fx + out * 6, yBase - 1, H12, 0, "TEXT_DATA", align);
+    b.addText("60 Hz", fx + out * 6, yBase - 6, H12, 0, "TEXT_DATA", align);
   } else {
     // Line terminals -> service entrance -> one slash per service conductor -> kWh meter -> drop
     const x = (v: number) => xBase + u(v - 400);
@@ -578,6 +585,9 @@ const drawCadPanelSLD = (
   return circuitMap;
 };
 
+/** System SLD (AutoCAD): column width per sub-panel, room for its labels and feeder lanes, mm */
+const DXF_SUB_COLUMN = 240;
+
 const drawSystemSLD = (
   b: DxfBuilder,
   sheetIndex: number,
@@ -662,10 +672,10 @@ const drawSystemSLD = (
   });
 
   const getWidth = (id: string, seen: Set<string> = new Set()): number => {
-    if (seen.has(id)) return 180;
+    if (seen.has(id)) return DXF_SUB_COLUMN;
     seen.add(id);
     const children = getChildren(id);
-    if (children.length === 0) return 180;
+    if (children.length === 0) return DXF_SUB_COLUMN;
     return children.reduce((sum, c) => sum + getWidth(c.sp.id, seen), 0);
   };
 
@@ -677,30 +687,47 @@ const drawSystemSLD = (
   const usableLeft = xOffset + 10;
   const usableRight = xOffset + sheetWidth - 130;
   const usableWidth = usableRight - usableLeft;
-  
-  let xBase_MDP = usableLeft + usableWidth / 2;
-  
-  if (spLayouts.length === 0 && sheetWidth === 841) {
-    xBase_MDP = usableLeft + usableWidth / 2;
-  }
+  const xBase_MDP = usableLeft + usableWidth / 2;
 
+  // Circuit position on its board: odd numbers on the left, two circuits per row
+  const sideOf = (c: Circuit | null) => ((c?.circuitNo || 1) % 2 === 1 ? "left" : "right");
+  const rowOf = (c: Circuit | null) => Math.ceil((c?.circuitNo || 1) / 2) - 1;
 
-  let maxRows = 0;
-  [mdpCircuits, ...subPanelsData.map(s => s.circuits)].forEach(circs => {
-    const maxCircuitNo = circs.reduce((max, c) => Math.max(max, c.circuitNo), 0);
-    const numRows = Math.ceil(Math.max(maxCircuitNo, 2) / 2);
-    if (numRows > maxRows) maxRows = numRows;
+  // ---- Vertical layout: one row of panels per depth, with a channel band above each fed row ----
+  // Panel height (feed line to the lowest drawing) = PANEL_SLD_BASE + rows x spacing (+ ground on the MDP)
+  const rowsOf = (circs: Circuit[]) => panelSldRowCount(circs);
+  const depthIds = new Map<number, string[]>();
+  depthIds.set(1, ["mdp"]);
+  spLayouts.forEach((l) => {
+    const d = depths.get(l.sp.id) || 2;
+    depthIds.set(d, [...(depthIds.get(d) || []), l.sp.id]);
   });
-  // Fit the hierarchy between y = 25 and y = 575 (a few units sit above each panel's base line)
+  const circuitsOf = (id: string) => (id === "mdp" ? mdpCircuits : spLayouts.find((l) => l.sp.id === id)?.sp.circuits || []);
+  const depthRows = (d: number) => Math.max(1, ...(depthIds.get(d) || []).map((id) => rowsOf(circuitsOf(id))));
+  const groundDepth = (d: number) => (d === 1 ? PANEL_SLD_GROUND_DEPTH : 6);
+  const FEED_LABELS = 22; // "FEED TO" box and the source labels above a sub-panel's feed line
+  const LANE = 5; // mm between parallel feeders
+  const bandOf = (d: number) => 14 + LANE * (depthIds.get(d + 1) || []).length; // feeders into depth d + 1
+  // Breaker spacing that fits every depth between y = 25 and y = 575
   const availableH = 575 - 25 - 15;
+  let fixedH = 0;
+  let rowUnits = 0;
+  for (let d = 1; d <= maxDepth; d++) {
+    fixedH += PANEL_SLD_BASE + groundDepth(d) + (d < maxDepth ? bandOf(d) + FEED_LABELS : 0);
+    rowUnits += depthRows(d) - 1;
+  }
   const sldRowSpacing = Math.max(
     PANEL_SLD_MIN_ROW_SPACING,
-    Math.min(PANEL_SLD_ROW_SPACING, (availableH - (maxDepth - 1) * 150 - PANEL_SLD_BASE - PANEL_SLD_GROUND_DEPTH) / Math.max(1, maxRows)),
+    Math.min(PANEL_SLD_ROW_SPACING, (availableH - fixedH) / Math.max(1, rowUnits)),
   );
-  // The MDP also carries its grounding electrode system below the board
-  const maxPanelHeight = PANEL_SLD_BASE + maxRows * sldRowSpacing + PANEL_SLD_GROUND_DEPTH;
-  const totalHeight = (maxDepth - 1) * 150 + maxPanelHeight; // use 150 vertical gap
+  const depthHeight = (d: number) => PANEL_SLD_BASE + groundDepth(d) + (depthRows(d) - 1) * sldRowSpacing;
+  const totalHeight = fixedH + rowUnits * sldRowSpacing;
   const topY = Math.min(560, 297 + totalHeight / 2);
+  const yBaseOf = new Map<number, number>();
+  yBaseOf.set(1, topY);
+  for (let d = 2; d <= maxDepth; d++) {
+    yBaseOf.set(d, (yBaseOf.get(d - 1) as number) - depthHeight(d - 1) - bandOf(d - 1) - FEED_LABELS);
+  }
   const yBase_MDP = topY;
 
   const mdpCircuitCoords = drawCadPanelSLD(
@@ -709,20 +736,13 @@ const drawSystemSLD = (
 
   const leftRoots: SpLayout[] = [];
   const rightRoots: SpLayout[] = [];
-
   spLayouts.forEach((l) => {
     if (l.parentId === "mdp") {
-      let isL = true;
-      if (l.feedingCircuit) {
-        const coord = mdpCircuitCoords.get(l.feedingCircuit.circuitNo);
-        if (coord) isL = coord.isLeft;
-      }
-      l.tempIsLeft = isL;
-      if (isL) leftRoots.push(l);
+      l.tempIsLeft = sideOf(l.feedingCircuit) === "left";
+      if (l.tempIsLeft) leftRoots.push(l);
       else rightRoots.push(l);
     }
   });
-
   const resolveIsLeft = (id: string, seen: Set<string> = new Set()): boolean => {
     if (seen.has(id)) return true;
     seen.add(id);
@@ -731,112 +751,143 @@ const drawSystemSLD = (
     if (layout.parentId === "mdp") return layout.tempIsLeft;
     return resolveIsLeft(layout.parentId, seen);
   };
-
   spLayouts.forEach((l) => {
     l.isLeft = resolveIsLeft(l.sp.id);
   });
 
+  // ---- Horizontal placement. Order (as on screen): on the left of a board the top circuit feeds the
+  // farthest panel, on the right likewise, so the feeder routes below never cross ----
+  const byRow = (dir: 1 | -1) => (a: SpLayout, b2: SpLayout) => dir * (rowOf(a.feedingCircuit) - rowOf(b2.feedingCircuit));
   const positions = new Map<string, number>();
   const placeChildren = (parentId: string, startX: number) => {
     let currentX = startX;
     const children = getChildren(parentId);
-    children.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
-    
-    children.forEach((c) => {
-      const w = widths.get(c.sp.id) || 180;
-      const cx = currentX + w / 2;
-      positions.set(c.sp.id, cx);
+    const left = children.filter((c) => sideOf(c.feedingCircuit) === "left").sort(byRow(1));
+    const right = children.filter((c) => sideOf(c.feedingCircuit) === "right").sort(byRow(-1));
+    [...left, ...right].forEach((c) => {
+      const w = widths.get(c.sp.id) || DXF_SUB_COLUMN;
+      positions.set(c.sp.id, currentX + w / 2);
       placeChildren(c.sp.id, currentX);
       currentX += w;
     });
   };
 
-  const leftTotalWidth = leftRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 180), 0);
+  const leftTotalWidth = leftRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || DXF_SUB_COLUMN), 0);
   const leftSpan = xBase_MDP - 100 - (xOffset + 60);
-  const leftS = leftSpan - leftTotalWidth;
-  const leftGap = leftRoots.length > 0 ? leftS / (leftRoots.length + 1) : 0;
-
+  const leftGap = leftRoots.length > 0 ? (leftSpan - leftTotalWidth) / (leftRoots.length + 1) : 0;
   let currentLeftX = xOffset + 60;
-  leftRoots.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
-  leftRoots.forEach((r) => {
-    const w = widths.get(r.sp.id) || 180;
-    const cx = currentLeftX + leftGap + w / 2;
-    positions.set(r.sp.id, cx);
+  leftRoots.sort(byRow(1)).forEach((r) => {
+    const w = widths.get(r.sp.id) || DXF_SUB_COLUMN;
+    positions.set(r.sp.id, currentLeftX + leftGap + w / 2);
     placeChildren(r.sp.id, currentLeftX + leftGap);
     currentLeftX += w + leftGap;
   });
 
-  const rightTotalWidth = rightRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || 180), 0);
+  const rightTotalWidth = rightRoots.reduce((sum, r) => sum + (widths.get(r.sp.id) || DXF_SUB_COLUMN), 0);
   const rightSpan = (usableRight - 50) - (xBase_MDP + 100);
-  const rightS = rightSpan - rightTotalWidth;
-  const rightGap = rightRoots.length > 0 ? rightS / (rightRoots.length + 1) : 0;
-
+  const rightGap = rightRoots.length > 0 ? (rightSpan - rightTotalWidth) / (rightRoots.length + 1) : 0;
   let currentRightX = xBase_MDP + 100;
-  rightRoots.sort((a, b) => (a.feedingCircuit?.circuitNo || 0) - (b.feedingCircuit?.circuitNo || 0));
-  rightRoots.forEach((r) => {
-    const w = widths.get(r.sp.id) || 180;
-    const cx = currentRightX + rightGap + w / 2;
-    positions.set(r.sp.id, cx);
+  rightRoots.sort(byRow(-1)).forEach((r) => {
+    const w = widths.get(r.sp.id) || DXF_SUB_COLUMN;
+    positions.set(r.sp.id, currentRightX + rightGap + w / 2);
     placeChildren(r.sp.id, currentRightX + rightGap);
     currentRightX += w + rightGap;
   });
 
-  const drawnCoords = new Map<string, Map<number, { arrowX: number, arrowY: number, isLeft: boolean }>>();
+  // ---- Panels ----
+  const xOf = (id: string) => (id === "mdp" ? xBase_MDP : positions.get(id) ?? xOffset + 355);
+  const yOf = (id: string) => (id === "mdp" ? yBase_MDP : yBaseOf.get(depths.get(id) || 2) as number);
+  const fromOf = (l: SpLayout): "left" | "right" => (xOf(l.parentId) > xOf(l.sp.id) ? "right" : "left");
+  const drawnCoords = new Map<string, Map<number, { arrowX: number; arrowY: number; isLeft: boolean }>>();
   drawnCoords.set("mdp", mdpCircuitCoords);
-
   for (let d = 2; d <= maxDepth; d++) {
-    const layoutsAtDepth = spLayouts.filter(l => depths.get(l.sp.id) === d);
-    const yBase = topY - (d - 1) * 150;
-    
-    layoutsAtDepth.forEach((layout, index) => {
+    spLayouts.filter((l) => depths.get(l.sp.id) === d).forEach((layout) => {
       const sp = layout.sp;
-      const xBase = positions.get(sp.id) || xOffset + 355;
-      
-      const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits, {
-        availableSubPanels: subPanelsData,
-      });
-      const parentLabel = layout.parentId === "mdp" ? `FED FROM ${mdpPanel.designation || "MDP"}` : `FED FROM SUB-PANEL`;
-      
-      const coords = drawCadPanelSLD(
-        b, sp.panel, sp.circuits, spCalcData.mainFeeder, xBase, yBase, true, parentLabel, [], undefined, sldRowSpacing
-      );
-      drawnCoords.set(sp.id, coords);
-      
-      const parentCoords = drawnCoords.get(layout.parentId);
-      if (parentCoords && layout.feedingCircuit) {
-        const coord = parentCoords.get(layout.feedingCircuit.circuitNo);
-        if (coord) {
-          const xStart = coord.arrowX;
-          const yStart = coord.arrowY;
-          
-          let pXBase = xBase_MDP;
-          if (layout.parentId !== "mdp") {
-            pXBase = positions.get(layout.parentId) || xBase_MDP;
-          }
-          
-          const isLeft = coord.isLeft;
-          const xGutter = pXBase + (isLeft ? -140 : 140) + (isLeft ? -(index % 5) * 6 : (index % 5) * 6);
-          const yChannel = yBase + 60 + (index % 10) * 8;
-          
-          b.addLine(xStart, yStart, xGutter, yStart, "SLD_FEEDER");
-          b.addLine(xGutter, yStart, xGutter, yChannel, "SLD_FEEDER");
-          b.addLine(xGutter, yChannel, xBase, yChannel, "SLD_FEEDER");
-          b.addLine(xBase, yChannel, xBase, yBase, "SLD_FEEDER");
-        } else {
-          b.addLine(xBase, yBase + 100, xBase, yBase, "SLD_FEEDER");
-        }
-      } else {
-        b.addLine(xBase, yBase + 100, xBase, yBase, "SLD_FEEDER");
-      }
-      
-      b.addRect(xBase - 26, yBase + 10, xBase + 26, yBase + 18, "BORDER");
-      const labelText = d === 2 ? "SUB-PANEL" : d === 3 ? "SUB-SUB PANEL" : `LEVEL ${d} PANEL`;
-      b.addText(
-        `FEED TO ${sp.panel.designation || labelText}`,
-        xBase, yBase + 12.5, 1.3, 0, "TEXT_HEADER", "center"
+      const spCalcData = computePanelScheduleValues(sp.panel, sp.circuits, { availableSubPanels: subPanelsData });
+      const parentName = layout.parentId === "mdp"
+        ? mdpPanel.designation || "MDP"
+        : subPanelsData.find((p) => p.id === layout.parentId)?.panel.designation || "SUB-PANEL";
+      drawnCoords.set(
+        sp.id,
+        drawCadPanelSLD(b, sp.panel, sp.circuits, spCalcData.mainFeeder, xOf(sp.id), yOf(sp.id), true, `FED FROM ${parentName}`, [], undefined, sldRowSpacing, fromOf(layout)),
       );
     });
   }
+
+  // ---- Feeder routes: tag point -> own lane beyond the board's labels -> own channel -> feed point ----
+  // Reach of a board's labels from its bus (mm), at AutoCAD's text width (a capital letter of an Arial
+  // MText is about as wide as the text height): circuit descriptions (18 characters at most), and on the
+  // right the ground terminal block note and, on the MDP, the grounding-electrode callouts
+  const CHAR = 0.95;
+  const textW = (chars: number, h: number) => chars * h * 1.6 * CHAR;
+  const reach = (id: string) => {
+    const circs = circuitsOf(id);
+    const w = (side: "left" | "right") => {
+      const longest = Math.max(0, ...circs.filter((c) => sideOf(c) === side).map((c) => Math.min(18, (c.description || "SPARE").length)));
+      return 46 + textW(longest, 1.6);
+    };
+    const groundText = id === "mdp" ? 49 + textW(33, 1.75) : 48 + textW(21, 1.75);
+    return { left: w("left"), right: Math.max(w("right"), groundText) };
+  };
+  interface Route { l: SpLayout; tipX: number; rowY: number; laneX: number; chanY: number; feedX: number; feedY: number; depth: number }
+  const routes: Route[] = [];
+  spLayouts.forEach((l) => {
+    const coord = l.feedingCircuit ? drawnCoords.get(l.parentId)?.get(l.feedingCircuit.circuitNo) : undefined;
+    if (!coord) return;
+    const from = fromOf(l);
+    routes.push({
+      l,
+      tipX: coord.arrowX,
+      rowY: coord.arrowY,
+      laneX: 0,
+      chanY: 0,
+      feedX: xOf(l.sp.id) + (from === "right" ? 1 : -1) * 130 * PANEL_SLD_MM_PER_UNIT,
+      feedY: yOf(l.sp.id),
+      depth: depths.get(l.sp.id) || 2,
+    });
+  });
+  // Lanes: per board side, the top circuit outermost
+  const laneGroups = new Map<string, Route[]>();
+  routes.forEach((r) => {
+    const k = `${r.l.parentId}|${sideOf(r.l.feedingCircuit)}`;
+    laneGroups.set(k, [...(laneGroups.get(k) || []), r]);
+  });
+  laneGroups.forEach((list, k) => {
+    const [pid, side] = k.split("|");
+    const ext = reach(pid);
+    list.sort((a, b2) => rowOf(a.l.feedingCircuit) - rowOf(b2.l.feedingCircuit));
+    list.forEach((r, rank) => {
+      const outer = (list.length - 1 - rank) * LANE;
+      r.laneX = side === "left" ? xOf(pid) - ext.left - 6 - outer : xOf(pid) + ext.right + 6 + outer;
+    });
+  });
+  // Channels: in the band above each fed row; left-going routes from the outermost lane run highest,
+  // right-going ones mirrored
+  for (let d = 2; d <= maxDepth; d++) {
+    const list = routes.filter((r) => r.depth === d);
+    if (!list.length) continue;
+    const bandTop = (yBaseOf.get(d - 1) as number) - depthHeight(d - 1) - 3;
+    const bandBottom = (yBaseOf.get(d) as number) + FEED_LABELS;
+    const leftGoing = list.filter((r) => r.feedX <= r.laneX).sort((a, b2) => a.laneX - b2.laneX);
+    const rightGoing = list.filter((r) => r.feedX > r.laneX).sort((a, b2) => b2.laneX - a.laneX);
+    const step = Math.min(LANE, (bandTop - bandBottom) / list.length);
+    [...leftGoing, ...rightGoing].forEach((r, i) => {
+      r.chanY = bandTop - step * (i + 0.5);
+    });
+  }
+  routes.forEach((r) => {
+    b.addLine(r.tipX, r.rowY, r.laneX, r.rowY, "SLD_FEEDER");
+    b.addLine(r.laneX, r.rowY, r.laneX, r.chanY, "SLD_FEEDER");
+    b.addLine(r.laneX, r.chanY, r.feedX, r.chanY, "SLD_FEEDER");
+    b.addLine(r.feedX, r.chanY, r.feedX, r.feedY, "SLD_FEEDER");
+    // "FEED TO" tag beside the feeder (outside the feed point), not across it
+    const out = r.feedX > xOf(r.l.sp.id) ? 1 : -1;
+    const x1 = r.feedX + out * 3, x2 = r.feedX + out * 55;
+    b.addRect(Math.min(x1, x2), r.feedY + 10, Math.max(x1, x2), r.feedY + 18, "BORDER");
+    const d = r.depth;
+    const labelText = d === 2 ? "SUB-PANEL" : d === 3 ? "SUB-SUB PANEL" : `LEVEL ${d} PANEL`;
+    b.addText(`FEED TO ${r.l.sp.panel.designation || labelText}`, (x1 + x2) / 2, r.feedY + 12.5, 1.3, 0, "TEXT_HEADER", "center");
+  });
 
   b.isSLDMode = previousMode;
 };
@@ -1274,7 +1325,7 @@ export const exportToCAD = (
     else rightSpCount++;
   });
 
-  const spRequiredWidth = 180; // Generous width per subpanel to avoid text collisions
+  const spRequiredWidth = DXF_SUB_COLUMN; // width per sub-panel: its labels and feeder lanes
   const leftRequired = Math.max(300, leftSpCount * spRequiredWidth);
   const rightRequired = Math.max(300, rightSpCount * spRequiredWidth);
   const maxSideRequired = Math.max(leftRequired, rightRequired);
