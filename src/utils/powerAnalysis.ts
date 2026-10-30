@@ -113,6 +113,8 @@ export interface BusResult {
   z1: Cx;
   /** This bus's own feeder, per phase, 20 °C (Ω) */
   zFeeder: Cx;
+  /** Cumulative per-phase feeder impedance from the transformer to this bus (for fault points along the way) */
+  zFeeders: Cx;
   xr: number;
   i3ph: number; // kA, bolted, without motors
   motorKA: number;
@@ -488,7 +490,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
       n.id === "mdp" && iscParams.feederLength > 0
         ? serviceZ
         : sizeKnown && feeder.lengthM > 0 ? feederFaultImpedance(feeder.lengthM, feeder.size, feeder.sets, feeder.material) : cx(0, 0);
-    const zPathFeeders = add(parent ? (parent as any)._zFeeders : cx(0, 0), zFeeder);
+    const zPathFeeders = add(parent ? parent.zFeeders : cx(0, 0), zFeeder);
     const upperBound = n.id === "mdp" && iscParams.feederLength > 0 ? false : feeder.lengthAssumed || !sizeKnown || (parent ? parent.faultUpperBound : false);
     const fl = faultLevels(src, zPathFeeders, { groundReturn: is3 && mdpSys.wireCount >= 4 });
     const zPath = fl.z1;
@@ -560,7 +562,7 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
       iPeak: iPeak / 1000, iAsym: iAsym / 1000, faultMVA,
       mainKaic, lowestKaic, lowestDevice, kaicKnown, missingBranchKaic: missingKaic, dutyPct, adjustedDutyPct, xrMultiplier, faultStatus,
       withstand: { k: kAd, areaMm2: area, faultKA: lineEndKA, maxTimeS, status: wStatus },
-      _zFeeders: zPathFeeders,
+      zFeeders: zPathFeeders,
     } as any;
     buses.push(bus);
     byId[n.id] = bus;
@@ -600,7 +602,6 @@ export function analysePowerSystem(input: PowerAnalysisInput): PowerAnalysisResu
     });
   const counts: Record<Status, number> = { pass: 0, warning: 0, fail: 0 };
   findings.forEach((f) => counts[f.status]++);
-  buses.forEach((b) => delete (b as any)._zFeeders);
   return { source, buses, byId, findings, basis, powerFactor: pf, assumptions, counts };
 }
 

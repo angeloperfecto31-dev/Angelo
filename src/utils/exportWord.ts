@@ -32,6 +32,7 @@ import { serviceFaultStudy } from './serviceFault';
 import { analysePowerSystem } from './powerAnalysis';
 import { kaicAudit } from './kaicAudit';
 import { buildImpedanceSld, sldOptionsFor, sldToPngDataUrl } from './impedanceSld';
+import { resolveFaultPoints } from './faultPoints';
 import { computePanelScheduleValues, getPanelSystemVoltageFallback, calculateEquivalentFeederImpedance, getConductorLabel, formatStandardCableDescription, calculateUnifiedVD } from './computeEngine';
 
 // Helper to map LaTeX macros to clean Unicode symbols or text representation
@@ -1419,6 +1420,24 @@ Using PEC rules, the Maximum Demand Current is calculated as:`;
     ),
     new Paragraph({ spacing: { after: 200 } }),
   );
+  // Fault locations of the impedance diagram (F1, F2 ...): the same points and values as the drawing
+  const faultPts = resolveFaultPoints(scResult, { panel, circuits, subPanels, iscParams: params }, params.sldSettings?.faultPoints || []);
+  if (faultPts.length) {
+    const fpStatus = (s: string) => (s === "fail" ? "FAIL" : s === "warning" ? "CHECK" : s === "info" ? "UTILITY" : "PASS");
+    docChildren.push(
+      createSubHeader(`E.1 Fault Locations (Single Line Impedance Diagram)`),
+      createParagraph("Fault points F# of the impedance diagram: panel buses and any points set on feeders (distance from the supply end) or at branch circuits (cable length from the panel). Duty is the fault at the interrupting device's line terminals, X/R corrected, over its rating."),
+      scTable(
+        ["Tag", "Location", "Conductor", "Type", "Isym kA", "X/R", "Peak kA", "Interrupting device", "Duty", "Status"],
+        faultPts.map((fp) => [
+          fp.tag, fp.where, fp.location === "bus" ? "-" : `${fp.conductor}, ${fp.distanceM} m`, fp.faultType, `${kA(fp.iSym)}${fp.upperBound ? " ↑" : ""}`,
+          fp.xr.toFixed(1), kA(fp.iPeak), fp.deviceText, Number.isFinite(fp.dutyPct) ? `${fp.dutyPct.toFixed(0)}%` : "-", fpStatus(fp.status),
+        ]),
+        (i) => (faultPts[i].status === "fail" ? "B91C1C" : faultPts[i].status === "warning" ? "C2410C" : undefined),
+      ),
+      new Paragraph({ spacing: { after: 200 } }),
+    );
+  }
 
   // F. Interrupting-rating audit summary
   const failRows = scAudit.filter((r) => r.status === "FAIL");

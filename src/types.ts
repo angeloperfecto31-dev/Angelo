@@ -168,12 +168,33 @@ export interface PanelConfig {
   };
 }
 
+/** A fault location of the short-circuit study (see utils/faultPoints) */
+export interface FaultPointSetting {
+  id: string;
+  /** Tag on the drawing (F1, F2 ...); numbered automatically when empty */
+  label?: string;
+  location: "bus" | "feeder" | "branch";
+  /** Bus: the panel; feeder: the panel the feeder supplies; branch: the panel the circuit is in */
+  busId: string;
+  /** Branch: the circuit */
+  circuitId?: string;
+  /** Feeder: distance from the supply breaker (m); branch: cable length from the panel to the fault (m) */
+  distanceM?: number;
+  /** A panel-bus point removed from the study */
+  removed?: boolean;
+}
+
 export interface ShortCircuitParams {
   /** Single Line Impedance Diagram settings (study scope and title block), shared by both AutoCAD exports */
   sldSettings?: {
     faultTypes?: { threePhase?: boolean; lineLine?: boolean; lineGround?: boolean; doubleLineGround?: boolean };
     showImpedance?: boolean;
     title?: Partial<Record<"project" | "location" | "client" | "drawingNo" | "revision" | "preparedBy" | "checkedBy" | "date", string>>;
+    /**
+     * Fault locations of the short-circuit study. Every panel bus has one unless it is removed here;
+     * further points can be added on a feeder (distance from its supply breaker) or at a branch circuit.
+     */
+    faultPoints?: FaultPointSetting[];
   };
   transformerKVA: number;
   transformerZ: number; // percentage

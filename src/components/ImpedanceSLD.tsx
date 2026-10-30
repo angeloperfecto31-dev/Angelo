@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, Download, FileType2, Maximize2, Minimize2 } from "lucide-react";
 import type { Circuit, PanelConfig, ShortCircuitParams, VoltageDropCalculation } from "../types";
 import { analysePowerSystem } from "../utils/powerAnalysis";
+import FaultLocationsEditor from "./FaultLocationsEditor";
 import { LAYER_STYLE, type Prim, type SldOptions, buildImpedanceSld, exportSldDxf, exportSldPdf, sldOptionsFor } from "../utils/impedanceSld";
 
 interface Props {
@@ -35,6 +36,7 @@ export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vd
   const save = (next: NonNullable<ShortCircuitParams["sldSettings"]>) => (onSettingsChange ? onSettingsChange(next) : setLocal(next));
   const setFaultTypes = (fn: (f: SldOptions["faultTypes"]) => SldOptions["faultTypes"]) => save({ ...saved, faultTypes: fn(faultTypes) });
   const setShowImpedance = (v: boolean) => save({ ...saved, showImpedance: v });
+  const setFaultPoints = (faultPoints: NonNullable<SldOptions["faultPoints"]>) => save({ ...saved, faultPoints });
   const setTitle = (fn: (t: SldOptions["title"]) => SldOptions["title"]) => save({ ...saved, title: { ...(saved.title || {}), ...fn(title) } });
   const sheet = useMemo(() => buildImpedanceSld({ result, panel, circuits, subPanels, iscParams }, opts), [result, panel, circuits, subPanels, iscParams, opts]);
   const fileBase = `${(title.project || panel.designation || "Project").replace(/[^a-z0-9]+/gi, "_")}_Impedance_SLD`;
@@ -114,6 +116,8 @@ export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vd
         </div>
       </div>
 
+      <FaultLocationsEditor result={result} panel={panel} circuits={circuits} subPanels={subPanels} iscParams={iscParams} value={opts.faultPoints || []} onChange={setFaultPoints} />
+
       <div className={`rounded-xl border border-slate-300 dark:border-slate-700 bg-white overflow-auto ${big ? "max-h-[85vh]" : ""}`}>
         <svg viewBox={`0 0 ${sheet.w} ${sheet.h}`} style={{ width: big ? `${sheet.w * 3}px` : "100%", height: "auto", display: "block" }} fontFamily="Helvetica, Arial, sans-serif">
           <rect x={0} y={0} width={sheet.w} height={sheet.h} fill="#ffffff" />
@@ -121,7 +125,7 @@ export default function ImpedanceSLD({ panel, circuits, subPanels, iscParams, vd
         </svg>
       </div>
       <p className="text-[11px] text-slate-500">
-        To change the diagram, edit the project: panels, breakers and kAIC in the Load Schedule, feeder lengths in Voltage Drop, utility and transformer data above. Study scope and title block are saved with the project and used by both this DXF and "Export AutoCAD Drawing". AutoCAD: the DXF opens directly (save as DWG if needed); every element is on its own E-* layer, the same layers as the full drawing set.
+        To change the diagram, edit the project: panels, breakers and kAIC in the Load Schedule, feeder lengths in Voltage Drop, utility and transformer data above. Study scope, fault locations and title block are saved with the project and used by both this DXF and "Export AutoCAD Drawing". AutoCAD: the DXF opens directly (save as DWG if needed); every element is on its own E-* layer, the same layers as the full drawing set.
       </p>
     </div>
   );

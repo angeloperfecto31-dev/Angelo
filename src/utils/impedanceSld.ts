@@ -12,9 +12,10 @@
 import { jsPDF } from "jspdf";
 import "./pdfSafeText";
 import Drawing from "dxf-writer";
-import type { Circuit, PanelConfig, ShortCircuitParams } from "../types";
+import type { Circuit, FaultPointSetting, PanelConfig, ShortCircuitParams } from "../types";
 import { CLEARING_TIME_S, type BusResult, type PowerAnalysisResult, type Status } from "./powerAnalysis";
 import { isIdleSpareOrSpace, parseSystemVoltage } from "./computeEngine";
+import { resolveFaultPoints, type FaultPoint } from "./faultPoints";
 
 // ------------------------------------------------------------------------------------------ primitives
 export type Layer =
@@ -48,6 +49,8 @@ export interface SldOptions {
   title: { project: string; location: string; client: string; drawingNo: string; revision: string; preparedBy: string; checkedBy: string; date: string };
   /** Smallest sheet to use (the full project drawing uses A1 sheets) */
   minSize?: "A3" | "A2" | "A1" | "A0";
+  /** Fault locations edited by the user (panel buses are fault points unless removed) */
+  faultPoints?: FaultPointSetting[];
 }
 
 /**
@@ -60,6 +63,7 @@ export function sldOptionsFor(panel: PanelConfig, iscParams?: ShortCircuitParams
   return {
     faultTypes: { threePhase: true, lineLine: true, lineGround: true, doubleLineGround: false, ...(saved?.faultTypes || {}) },
     showImpedance: saved?.showImpedance ?? true,
+    faultPoints: saved?.faultPoints || [],
     title: {
       project: panel.project || "",
       location: panel.location || "",
@@ -135,12 +139,17 @@ function loadSymbol(p: Prim[], x: number, y: number) {
   p.push({ t: "line", x1: x + 2.5, y1: y, x2: x, y2: y + 4, layer: "EQUIP" });
   return y + 4;
 }
-function faultMark(p: Prim[], x: number, y: number) {
-  // fault arrow (lightning) pointing at the bus
-  p.push({ t: "line", x1: x, y1: y, x2: x + 2, y2: y - 3, layer: "FLAG" });
-  p.push({ t: "line", x1: x + 2, y1: y - 3, x2: x + 1, y2: y - 3, layer: "FLAG" });
-  p.push({ t: "line", x1: x + 1, y1: y - 3, x2: x + 3, y2: y - 6, layer: "FLAG" });
+function faultMark(p: Prim[], x: number, y: number, dir: 1 | -1 = 1) {
+  // fault arrow (lightning) pointing at the bus / line (dir -1: drawn to the left)
+  p.push({ t: "line", x1: x, y1: y, x2: x + 2 * dir, y2: y - 3, layer: "FLAG" });
+  p.push({ t: "line", x1: x + 2 * dir, y1: y - 3, x2: x + 1 * dir, y2: y - 3, layer: "FLAG" });
+  p.push({ t: "line", x1: x + 1 * dir, y1: y - 3, x2: x + 3 * dir, y2: y - 6, layer: "FLAG" });
 }
+const fpStatusText = (st: FaultPoint["status"]) => (st === "fail" ? "INSUFFICIENT" : st === "warning" ? "CHECK" : st === "info" ? "UTILITY" : "OK");
+const fpLayer = (st: FaultPoint["status"]): Layer => (st === "fail" ? "FLAG" : st === "warning" ? "MISSING" : "TEXT");
+/** Short value of a feeder fault point on the drawing ("F3 · 15 m · 12.34 kA") */
+const fpShort = (fp: FaultPoint) =>
+  `${fp.tag} · ${fp.distanceM} m · ${fp.iSym.toFixed(2)} kA${fp.upperBound ? " ↑" : ""}`;
 
 // ------------------------------------------------------------------------------------------ tree
 interface Leaf {
@@ -195,6 +204,9 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
     return { kind: "bus", bus, children: kids, width, x: 0, depth };
   };
   const root = make(R.byId.mdp, 0);
+  // Fault locations: panel buses (unless removed) and the user's feeder / branch points, F1, F2 ...
+  const FP = resolveFaultPoints(R, input, opt.faultPoints || []);
+  const fpAt = (busId: string, loc: FaultPoint["location"]) => FP.filter((p) => p.busId === busId && p.location === loc);
   let maxDepth = 0;
   const place = (n: Leaf, left: number) => {
     maxDepth = Math.max(maxDepth, n.depth);
@@ -210,8 +222,7 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   // Room for the source labels right of the root line, and for the deepest panel's branch group
   const diagW = Math.max(root.width + 6, root.x + 75);
   const diagH = chainH + maxDepth * LH + 8;
-  const n = R.buses.length;
-  const tableRows = n + 1;
+  const tableRows = Math.max(1, FP.length) + 1;
   const tableH = tableRows * 5 + 10;
   const colW = 130; // title column of the drawing-set template (frame margin included)
   const headH = 16;
@@ -263,6 +274,7 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   y += 30;
   D.push({ t: "line", x1: rx, y1: yCableTop, x2: rx, y2: y, layer: "LINE" });
   feederLabels(D, rx, yCableTop + 3, mdp, "SERVICE ENTRANCE", opt, rightW + 20);
+  feederPoints(D, rx, yCableTop + 3, yCableTop + 27, mdp);
   breakerLabels(D, rx, y + 1, mdp, mdp.feeder.breakerAT, mdp.feeder.breakerAF, mdp.feeder.breakerPoles, mdp.feeder.breakerKaic, "MAIN BREAKER", mdp.iSym, rightW + 20);
   y = breakerSymbol(D, rx, y);
   D.push({ t: "line", x1: rx, y1: y, x2: rx, y2: chainH, layer: "LINE" });
@@ -289,7 +301,7 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
         [(p, x, yy) => p.push({ t: "line", x1: x - 6, y1: yy + 2, x2: x + 6, y2: yy + 2, layer: "BUS" }), "Bus (panelboard)"],
         [(p, x, yy) => p.push({ t: "line", x1: x, y1: yy - 2, x2: x, y2: yy + 6, layer: "LINE" }), "Feeder / cable"],
         [(p, x, yy) => loadSymbol(p, x, yy), "Load (branch circuits)"],
-        [(p, x, yy) => faultMark(p, x - 1, yy + 5), "Fault location (bus)"],
+        [(p, x, yy) => faultMark(p, x - 1, yy + 5), "Fault location F# (bus/feeder/branch)"],
       ];
       legend.forEach(([draw, label]) => {
         draw(C, sx + 12, sy);
@@ -330,8 +342,8 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   P.push({ t: "line", x1: margin, y1: ty, x2: cR, y2: ty, layer: "BORDER" });
   P.push({ t: "text", x: margin + 4, y: ty + 5, s: 3, text: "CALCULATION SUMMARY", layer: "TITLE", bold: true });
   const cols: Array<[string, number]> = [
-    ["BUS", 34], ["SYSTEM", 30], ["FEEDER (SIZE, LENGTH)", 62], ["I 3PH/1PH kA", 22], ["I L-L kA", 18], ["I L-G kA", 18], ["I LLG kA", 18],
-    ["X/R", 12], ["Ip kA", 16], ["MOTOR kA", 16], ["LOWEST DEVICE kAIC", 40], ["DUTY %", 16], ["BUS SCCR", 22], ["STATUS", 24],
+    ["TAG", 10], ["FAULT LOCATION", 70], ["SYSTEM", 24], ["CONDUCTOR (SIZE, LENGTH)", 48], ["I 3PH/1PH kA", 22], ["I L-L kA", 16], ["I L-G kA", 16], ["I LLG kA", 16],
+    ["X/R", 11], ["Ip kA", 15], ["MOTOR kA", 16], ["Isym kA", 16], ["INTERRUPTING DEVICE", 72], ["DUTY %", 14], ["BUS SCCR", 26], ["STATUS", 26],
   ];
   const tW = cols.reduce((s, c) => s + c[1], 0);
   const tScale = Math.min(1, (cR - margin - 8) / tW);
@@ -339,33 +351,42 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
   const hy = ty + 8;
   cols.forEach(([h, w]) => {
     P.push({ t: "rect", x: tx, y: hy, w: w * tScale, h: 5, layer: "GRID", fill: "#e2e8f0" });
-    P.push({ t: "text", x: tx + 1, y: hy + 3.5, s: 1.9 * Math.min(1, tScale + 0.1), text: clip(h, w * tScale - 2, 1.9), layer: "TEXT", bold: true });
+    P.push({ t: "text", x: tx + 1, y: hy + 3.5, s: 1.9 * Math.min(1, tScale + 0.1), text: clip(h, w * tScale - 2, 1.9, true), layer: "TEXT", bold: true });
     tx += w * tScale;
   });
-  R.buses.forEach((b, i) => {
+  if (!FP.length) P.push({ t: "text", x: margin + 5, y: hy + 8.5, s: 1.9, text: "No fault locations: every bus point was removed (Fault locations editor).", layer: "MISSING" });
+  FP.forEach((fp, i) => {
     const ry = hy + 5 + i * 5;
-    const st = rowStatus(b);
+    const b = R.byId[fp.busId];
+    const isBus = fp.location === "bus";
+    const st: FaultPoint["status"] = isBus ? rowStatus(b) : fp.status;
+    const ub = fp.upperBound ? " ↑" : "";
+    const conductor = isBus
+      ? `${b.feeder.label}, ${b.feeder.lengthAssumed ? "L NOT SET" : `${b.feeder.lengthM} m`}`
+      : `${fp.conductor}, ${fp.distanceM} m`;
     const cells: Array<[string, Layer]> = [
-      [`${"  ".repeat(b.level - 1)}${b.name}`, "TEXT"],
-      [`${b.nominalV} V ${b.is3Phase ? "3PH" : "1PH"}`, "LABEL"],
-      [`${b.feeder.label}, ${b.feeder.lengthAssumed ? "L NOT SET" : `${b.feeder.lengthM} m`}`, b.feeder.lengthAssumed ? "MISSING" : "LABEL"],
-      [`${b.i3ph.toFixed(2)}${b.faultUpperBound ? " ↑" : ""}`, b.faultUpperBound ? "MISSING" : "FAULT"],
-      [opt.faultTypes.lineLine ? b.iLL.toFixed(2) : "-", "FAULT"],
-      [opt.faultTypes.lineGround && Number.isFinite(b.iLG) ? b.iLG.toFixed(2) : "-", "FAULT"],
-      [opt.faultTypes.doubleLineGround && Number.isFinite(b.iLLG) ? b.iLLG.toFixed(2) : "-", "FAULT"],
-      [b.xr.toFixed(1), "LABEL"],
-      [b.iPeak.toFixed(2), "LABEL"],
-      [b.motorKA.toFixed(2), "LABEL"],
-      [b.kaicKnown ? b.lowestDevice : "NOT SPECIFIED", b.kaicKnown ? "LABEL" : "MISSING"],
-      [b.kaicKnown ? b.adjustedDutyPct.toFixed(0) : "-", b.faultStatus === "fail" ? "FLAG" : "LABEL"],
-      ["NOT SPECIFIED", "MISSING"],
-      [st === "fail" ? "INSUFFICIENT" : st === "warning" ? "CHECK" : "OK", st === "fail" ? "FLAG" : st === "warning" ? "MISSING" : "TEXT"],
+      [fp.tag, "FLAG"],
+      [`${"  ".repeat(b.level - 1)}${fp.where}`, "TEXT"],
+      [`${b.nominalV} V ${fp.is3Phase ? "3PH" : "1PH"}`, "LABEL"],
+      [conductor, (isBus ? b.feeder.lengthAssumed : fp.conductor === "Not set") ? "MISSING" : "LABEL"],
+      [`${fp.i3ph.toFixed(2)}${ub}`, fp.upperBound ? "MISSING" : "FAULT"],
+      [opt.faultTypes.lineLine ? fp.iLL.toFixed(2) : "-", "FAULT"],
+      [opt.faultTypes.lineGround && Number.isFinite(fp.iLG) ? fp.iLG.toFixed(2) : "-", "FAULT"],
+      [opt.faultTypes.doubleLineGround && Number.isFinite(fp.iLLG) ? fp.iLLG.toFixed(2) : "-", "FAULT"],
+      [fp.xr.toFixed(1), "LABEL"],
+      [fp.iPeak.toFixed(2), "LABEL"],
+      [fp.motorKA.toFixed(2), "LABEL"],
+      [`${fp.iSym.toFixed(2)}${ub}`, "FAULT"],
+      [fp.deviceText, fp.deviceKaic > 0 || fp.status === "info" ? "LABEL" : "MISSING"],
+      [Number.isFinite(fp.dutyPct) ? fp.dutyPct.toFixed(0) : "-", fp.status === "fail" ? "FLAG" : "LABEL"],
+      [isBus ? "NOT SPECIFIED" : "-", isBus ? "MISSING" : "LABEL"],
+      [fpStatusText(st), fpLayer(st)],
     ];
     let cxp = margin + 4;
     cells.forEach(([v, layer], k) => {
       const w = cols[k][1] * tScale;
       P.push({ t: "rect", x: cxp, y: ry, w, h: 5, layer: "GRID" });
-      P.push({ t: "text", x: cxp + 1, y: ry + 3.5, s: 1.9 * Math.min(1, tScale + 0.1), text: clip(v, w - 2, 1.9), layer, bold: k === 13 && st !== "pass" });
+      P.push({ t: "text", x: cxp + 1, y: ry + 3.5, s: 1.9 * Math.min(1, tScale + 0.1), text: clip(v, w - 2, 1.9), layer, bold: k === 0 || (k === cells.length - 1 && st !== "pass") });
       cxp += w;
     });
   });
@@ -379,10 +400,20 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
     const x0 = Math.min(node.x - 14, ...kids.map((k) => k.x));
     const x1 = Math.max(node.x + 14, ...kids.map((k) => k.x));
     Dp.push({ t: "line", x1: x0, y1: yb, x2: x1, y2: yb, layer: "BUS", w: 1.2 });
-    faultMark(Dp, node.x + 2, yb - 1);
+    const busFp = fpAt(b.id, "bus")[0];
+    if (busFp) {
+      faultMark(Dp, node.x + 2, yb - 1);
+      Dp.push({ t: "text", x: node.x + 6, y: yb - 3.2, s: 2.4, text: busFp.tag, layer: "FLAG", bold: true });
+    }
     // bus annotation: left of the incoming line, above the bus
     const leftW = CW / 2 - 6;
-    const lines = busLines(b, o);
+    const lines: Line[] = busFp
+      ? busLines(b, o, busFp.tag)
+      : [
+          { text: `${b.name}`, layer: "TEXT", bold: true },
+          { text: `${b.nominalV} V ${b.is3Phase ? "3PH" : "1PH"} ${parseSystemVoltage(b.system).wireCount}W` },
+          { text: "No fault point at this bus" },
+        ];
     const top = yb - 3 - lines.length * LINE;
     textBlock(Dp, node.x - 5, top + 2, leftW, lines, "end");
     // children
@@ -397,6 +428,8 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
         const yBus = yTop + LH;
         Dp.push({ t: "line", x1: k.x, y1: yAfter, x2: k.x, y2: yBus, layer: "LINE" });
         feederLabels(Dp, k.x, yAfter + 14, kb, "FEEDER", o, CW / 2 - 5);
+        // Points along the feeder: left of the line, above the panel's bus annotation
+        feederPoints(Dp, k.x, yAfter + 4, yBus - 36, kb);
         drawBus(Dp, k, yBus, o, ckts);
       } else {
         const g = k.group!;
@@ -405,6 +438,19 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
         const yAfter = breakerSymbol(Dp, k.x, yCb, flag ? "FLAG" : "EQUIP");
         Dp.push({ t: "line", x1: k.x, y1: yAfter, x2: k.x, y2: yAfter + 14, layer: "LINE" });
         loadSymbol(Dp, k.x, yAfter + 14);
+        // Fault points at branch circuits: one mark on the branch line, the points listed on the left
+        const bps = fpAt(b.id, "branch");
+        if (bps.length) {
+          faultMark(Dp, k.x - 1, yAfter + 9, -1);
+          textBlock(
+            Dp, k.x - 6, yAfter + 4, CW / 2 - 7,
+            bps.flatMap((fp): Line[] => [
+              { text: `${fp.tag} CKT ${fp.circuitNo ?? ""}`, layer: fp.status === "fail" ? "FLAG" : "FAULT", bold: true },
+              { text: `${fp.distanceM} m · ${fp.iSym.toFixed(2)} kA${fp.upperBound ? " ↑" : ""}`, layer: fp.status === "fail" ? "FLAG" : "FAULT" },
+            ]),
+            "end",
+          );
+        }
         textBlock(Dp, k.x + 4, yCb + 3, CW / 2 - 5, [
           { text: `BRANCH CIRCUITS (${g.count})`, layer: "TEXT", bold: true },
           { text: `${g.kva.toFixed(2)} kVA${g.motors ? `, ${g.motors} mtr/AC` : ""}` },
@@ -418,10 +464,10 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
     }
   }
 
-  function busLines(b: BusResult, o: SldOptions): Line[] {
+  function busLines(b: BusResult, o: SldOptions, tag: string): Line[] {
     const sys = parseSystemVoltage(b.system);
     const lines: Line[] = [
-      { text: `${b.name}`, layer: "TEXT", bold: true },
+      { text: `${b.name} (${tag})`, layer: "TEXT", bold: true },
       { text: `${b.nominalV} V ${b.is3Phase ? "3PH" : "1PH"} ${sys.wireCount}W` },
     ];
     const ub = b.faultUpperBound ? " ↑" : "";
@@ -436,6 +482,24 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
     else if (b.faultStatus === "fail") lines.push({ text: `DUTY ${b.adjustedDutyPct.toFixed(0)}%, ${b.lowestKaic} kA ✗`, layer: "FLAG", bold: true });
     else lines.push({ text: `duty ${b.adjustedDutyPct.toFixed(0)}% of ${b.lowestKaic} kA ✓`, layer: b.faultStatus === "warning" ? "MISSING" : "LABEL" });
     return lines;
+  }
+
+  /** Fault points along the feeder of bus b, drawn on the line between y0 and y1 by their distance */
+  function feederPoints(Dp: Prim[], x: number, y0: number, y1: number, b: BusResult) {
+    const pts = fpAt(b.id, "feeder");
+    if (!pts.length) return;
+    const L = b.id === "mdp" && iscParams.feederLength > 0 ? iscParams.feederLength : b.feeder.lengthM || 0;
+    let last = -Infinity;
+    pts
+      .map((fp) => ({ fp, y: y0 + (y1 - y0) * (L > 0 ? Math.min(1, fp.distanceM / L) : 0.5) }))
+      .sort((a, c) => a.y - c.y)
+      .forEach(({ fp, y }) => {
+        const yy = Math.max(y, last + LINE); // keep the tags apart
+        last = yy;
+        Dp.push({ t: "line", x1: x - 1.2, y1: yy, x2: x + 1.2, y2: yy, layer: "FLAG" });
+        faultMark(Dp, x - 1, yy, -1);
+        Dp.push({ t: "text", x: x - 5, y: yy - 0.6, s: TXT, text: clip(fpShort(fp), CW / 2 - 6, TXT, true), anchor: "end", layer: fp.status === "fail" ? "FLAG" : "FAULT", bold: true });
+      });
   }
 
   function breakerLabels(Dp: Prim[], x: number, y0: number, b: BusResult, at: number, af: number, poles: number | undefined, kaic: number | undefined, title: string, lineSideKA: number, width: number) {
@@ -493,7 +557,8 @@ function wrap(text: string, n: number): string[] {
 
 function sldNotes(R: PowerAnalysisResult, o: SldOptions): string[] {
   const notes = [
-    "Fault currents are bolted (zero fault impedance) symmetrical RMS values at each bus, with 4 × FLA motor contribution included in the duty check.",
+    "Fault currents are bolted (zero fault impedance) symmetrical RMS values at each fault location F#, with 4 × FLA motor contribution included in Isym and the duty check.",
+    "Fault locations: each panel bus unless removed, plus points on feeders (distance from the supply end) and at branch circuits (cable length from the panel). Duty uses the fault at the device's line terminals.",
     `Shown: ${[o.faultTypes.threePhase && "3-phase (1-phase loop for 1-phase systems)", o.faultTypes.lineLine && "line-to-line", o.faultTypes.lineGround && "line-to-ground", o.faultTypes.doubleLineGround && "double line-to-ground"].filter(Boolean).join(", ")}.`,
     "Zero sequence: Dyn transformer (utility blocked by the delta) plus phase and equal-size neutral return of each feeder.",
     "Utility X/R 10 and transformer X/R (IEEE Std 141 typical) are assumptions; the project has no X/R inputs.",
