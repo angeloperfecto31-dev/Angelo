@@ -65,6 +65,7 @@ import ShortCircuitCalc, {
 } from "./components/ShortCircuitCalc";
 import { serviceFaultStudy } from "./utils/serviceFault";
 import { analysePowerSystem } from "./utils/powerAnalysis";
+import { resolveFaultPoints } from "./utils/faultPoints";
 import { STANDARD_KAIC, kaicAudit } from "./utils/kaicAudit";
 import VoltageDropCalc from "./components/VoltageDropCalc";
 import PowerSystemAnalysis from "./components/PowerSystemAnalysis";
@@ -3724,6 +3725,18 @@ export default function App() {
             r.selectedKAIC > 0 ? r.selectedKAIC : "NOT SPECIFIED", r.status, r.recommendation,
           ]),
         ];
+        // Fault locations of the impedance diagram (same points and values as the drawing)
+        const faultPts = resolveFaultPoints(scResult, { panel, circuits, subPanels, iscParams: scParams as ShortCircuitParams }, (scParams as ShortCircuitParams).sldSettings?.faultPoints || []);
+        const fpTitleRow = kaicData.length + 1;
+        kaicData.push(
+          [],
+          ["FAULT LOCATIONS OF THE SINGLE LINE IMPEDANCE DIAGRAM (UB = upper bound)"],
+          ["Tag", "Location", "Conductor", "Type", "Isym kA", "X/R", "Peak kA", "Interrupting device", "Duty %", "Status"],
+          ...faultPts.map((fp) => [
+            fp.tag, `${fp.where}${fp.upperBound ? " (UB)" : ""}`, fp.location === "bus" ? "-" : `${fp.conductor}, ${fp.distanceM} m`, fp.faultType, num(fp.iSym), num(fp.xr, 1), num(fp.iPeak),
+            fp.deviceText, Number.isFinite(fp.dutyPct) ? num(fp.dutyPct, 0) : "-", fp.status === "fail" ? "FAIL" : fp.status === "warning" ? "CHECK" : fp.status === "info" ? "UTILITY" : "PASS",
+          ]),
+        );
         const wsK = XLSX.utils.aoa_to_sheet(kaicData);
         wsK["!cols"] = [{ wch: 44 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 46 }, { wch: 10 }, { wch: 30 }, { wch: 18 }];
         const auditTitleRow = scResult.buses.length + 3;
@@ -3733,8 +3746,8 @@ export default function App() {
             const addr = XLSX.utils.encode_cell({ r: R, c: C });
             const cell = wsK[addr];
             if (!cell) continue;
-            const isTitle = R === 0 || R === auditTitleRow;
-            const isHead = R === 1 || R === auditTitleRow + 1;
+            const isTitle = R === 0 || R === auditTitleRow || R === fpTitleRow;
+            const isHead = R === 1 || R === auditTitleRow + 1 || R === fpTitleRow + 1;
             const v = String(cell.v);
             cell.s = {
               font: { name: "Segoe UI", sz: isTitle ? 11 : 10, bold: isTitle || isHead || v === "FAIL", color: { rgb: isTitle || isHead ? "FFFFFF" : v === "FAIL" ? "B91C1C" : /NOT SPECIFIED|UB/.test(v) ? "C2410C" : "334155" } },
