@@ -294,20 +294,23 @@ export function buildImpedanceSld(input: SldInput, opt: SldOptions): SldSheet {
       let sy = sy0;
       C.push({ t: "text", x: sx + 4, y: sy, s: 3, text: "LEGEND", layer: "TITLE", bold: true });
       sy += 6;
-      const legend: Array<[(p: Prim[], x: number, y: number) => void, string]> = [
-        [(p, x, yy) => sourceSymbol(p, x, yy - 4), "Utility source"],
-        [(p, x, yy) => transformerSymbol(p, x, yy - 6), "Transformer"],
-        [(p, x, yy) => breakerSymbol(p, x, yy - 1), "Circuit breaker"],
-        [(p, x, yy) => p.push({ t: "line", x1: x - 6, y1: yy + 2, x2: x + 6, y2: yy + 2, layer: "BUS" }), "Bus (panelboard)"],
-        [(p, x, yy) => p.push({ t: "line", x1: x, y1: yy - 2, x2: x, y2: yy + 6, layer: "LINE" }), "Feeder / cable"],
-        [(p, x, yy) => loadSymbol(p, x, yy), "Load (branch circuits)"],
-        [(p, x, yy) => faultMark(p, x - 1, yy + 5), "Fault location F# (bus/feeder/branch)"],
+      // Each symbol is drawn from the top of its own row, the row as tall as the symbol, so none overlap
+      const legend: Array<[(p: Prim[], x: number, top: number) => void, string, number]> = [
+        [(p, x, top) => sourceSymbol(p, x, top), "Utility source", 12],
+        [(p, x, top) => transformerSymbol(p, x, top), "Transformer", 17],
+        [(p, x, top) => breakerSymbol(p, x, top), "Circuit breaker", 6],
+        [(p, x, top) => p.push({ t: "line", x1: x - 6, y1: top + 1, x2: x + 6, y2: top + 1, layer: "BUS" }), "Bus (panelboard)", 2],
+        [(p, x, top) => p.push({ t: "line", x1: x, y1: top, x2: x, y2: top + 8, layer: "LINE" }), "Feeder / cable", 8],
+        [(p, x, top) => loadSymbol(p, x, top), "Load (branch circuits)", 4],
+        [(p, x, top) => faultMark(p, x - 1, top + 6), "Fault location F# (bus/feeder/branch)", 6],
       ];
-      legend.forEach(([draw, label]) => {
+      sy -= 2;
+      legend.forEach(([draw, label, h]) => {
         draw(C, sx + 12, sy);
-        C.push({ t: "text", x: sx + 24, y: sy + 3.5, s: 2.4, text: label, layer: "LABEL" });
-        sy += 12;
+        C.push({ t: "text", x: sx + 24, y: sy + h / 2 + 1.1, s: 2.4, text: label, layer: "LABEL" });
+        sy += Math.max(h, 3) + 4;
       });
+      sy += 2;
       ([["FAULT", "Calculated fault current"], ["FLAG", "Rating insufficient / exceeded"], ["MISSING", "Missing data or upper bound"]] as Array<[Layer, string]>).forEach(([layer, label]) => {
         C.push({ t: "rect", x: sx + 8, y: sy, w: 8, h: 3, layer, fill: LAYER_STYLE[layer].color });
         C.push({ t: "text", x: sx + 24, y: sy + 2.6, s: 2.4, text: label, layer: "LABEL" });
