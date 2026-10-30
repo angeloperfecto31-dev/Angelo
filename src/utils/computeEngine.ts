@@ -834,6 +834,8 @@ export const getConduitSizeForWiresLocal = (
 const getSystemVoltage = (system: string): number => {
   const match = system.match(/^(\d+)V/);
   if (match) return parseInt(match[1]);
+  // "120/208V" or "400/230V" style: the line-to-line voltage is the larger value
+  if (/^\d+\/\d+V/i.test(system)) return parseSystemVoltage(system).vll;
   return 230;
 };
 
