@@ -73,9 +73,12 @@ export const SYSTEM_VOLTAGES = {
   '480V/277V, 3PH, 4W': 480,
   '575V/330V, 3PH, 4W': 575,
   '600V/347V, 3PH, 4W': 600,
+  '120/208V, 3PH, 4W': 208,
+  '400/230V, 3PH, 4W': 400,
 
   // Three-Phase, 3-Wire (3PH, 3W) Systems
   '115V, 3PH, 3W': 115,
+  '120V, 3PH, 3W': 120,
   '200V, 3PH, 3W': 200,
   '208V, 3PH, 3W': 208,
   '230V, 3PH, 3W': 230,

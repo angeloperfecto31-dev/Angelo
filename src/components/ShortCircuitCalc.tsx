@@ -38,7 +38,7 @@ export const detectPhaseType = (system: string | undefined): '1PH' | '3PH' => {
 export const getMappedSystemForPhase = (currentSystem: string, targetPhase: '1PH' | '3PH'): string => {
   if (!currentSystem) return targetPhase === '1PH' ? '230V, 1PH, 2W' : '230V, 3PH, 3W';
   if (targetPhase === '1PH') {
-    if (currentSystem.includes('120V')) {
+    if (currentSystem.includes('120V') || currentSystem.startsWith('120/')) {
       return '120V, 1PH, 2W';
     }
     if (currentSystem.includes('230V') || currentSystem.includes('220V') || currentSystem.includes('240V')) {
